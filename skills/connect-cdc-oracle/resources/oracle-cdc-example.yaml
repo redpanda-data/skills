@@ -1,0 +1,108 @@
+# oracle-cdc-example.yaml
+#
+# Redpanda Connect: Oracle CDC -> Redpanda
+# Uses oracledb_cdc (Enterprise, Connect >= 4.83.0)
+#
+# Prerequisites (run as DBA on Oracle):
+#   ALTER DATABASE ADD SUPPLEMENTAL LOG DATA;
+#   ALTER TABLE MYSCHEMA.ORDERS    ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
+#   ALTER TABLE MYSCHEMA.PRODUCTS  ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
+#   CREATE USER rpcn IDENTIFIED BY "SecurePassword1";
+#   GRANT CREATE SESSION, LOGMINING, SELECT ANY TRANSACTION TO rpcn;
+#   GRANT SELECT ON V_$DATABASE, V_$LOG, V_$LOGFILE,
+#                   V_$ARCHIVED_LOG, V_$ARCHIVE_DEST_STATUS,
+#                   V_$LOGMNR_CONTENTS TO rpcn;
+#   GRANT SELECT ON ALL_TABLES, ALL_LOG_GROUPS, ALL_TAB_COLUMNS TO rpcn;
+#   GRANT SELECT ON ALL_CONSTRAINTS, ALL_CONS_COLUMNS TO rpcn;  -- snapshot PK discovery
+#   GRANT SELECT ON MYSCHEMA.ORDERS, MYSCHEMA.PRODUCTS TO rpcn;
+#   GRANT CREATE TABLE, CREATE PROCEDURE TO rpcn;
+#   -- (No separate schema creation needed; CREATE USER rpcn implicitly creates the schema)
+#
+# Run:
+#   rpk connect run oracle-cdc-example.yaml
+#
+# Environment variables used:
+#   ORACLE_DSN       - e.g. oracle://rpcn:SecurePassword1@oracle-host:1521/ORCL
+#   REDPANDA_BROKERS - e.g. redpanda-broker:9092
+
+# Optional: external Redis checkpoint cache for durability without Oracle CREATE TABLE
+# cache_resources:
+#   - label: redis_scn
+#     redis:
+#       url: redis://redis-host:6379
+
+input:
+  label: oracle_cdc
+  oracledb_cdc:
+    connection_string: ${ORACLE_DSN}
+
+    # Snapshot existing rows before streaming live changes.
+    # Set to false to start from the current SCN only.
+    stream_snapshot: true
+    max_parallel_snapshot_tables: 2
+    snapshot_max_batch_size: 1000
+
+    # Tables to capture (Go regex, SCHEMA.TABLE format, case-sensitive).
+    # Patterns are unanchored substring matches — use ^...$ to match exactly.
+    # Without anchors, MYSCHEMA\.ORDERS also matches MYSCHEMA.ORDERS_2024, etc.
+    include:
+      - ^MYSCHEMA\.ORDERS$
+      - ^MYSCHEMA\.PRODUCTS$
+
+    # Optional: exclude specific tables matched by include patterns (also unanchored)
+    # exclude:
+    #   - ^MYSCHEMA\.ORDERS_ARCHIVE$
+
+    logminer:
+      # SCN range per mining cycle. Increase for high-throughput databases.
+      scn_window_size: 20000
+
+      # Backoff when caught up with redo logs (low-traffic tables: increase)
+      backoff_interval: 5s
+
+      # Poll interval during catch-up (near-real-time: decrease to 100ms)
+      mining_interval: 300ms
+
+      # Only supported strategy
+      strategy: online_catalog
+
+      # 0 = no limit. Set >0 to discard transactions exceeding N events
+      # (prevents memory exhaustion from large bulk loads).
+      max_transaction_events: 0
+
+      # Include CLOB/BLOB column values. Set false to skip LOBs for performance.
+      lob_enabled: true
+
+      # External cache for in-flight transaction buffer (optional).
+      # Recommended when transactions are large or long-running.
+      # transaction_cache: redis_scn
+      # transaction_cache_key: oracle-prod-orders-txn
+
+    # External SCN checkpoint cache (optional).
+    # If not set, a table is auto-created under RPCN schema in Oracle.
+    # checkpoint_cache: redis_scn
+    # checkpoint_cache_key: oracle-prod-scn
+
+    checkpoint_limit: 1024
+
+    # CDB/PDB mode: set pdb_name when connecting to CDB root
+    # pdb_name: MYPDB
+
+pipeline:
+  processors:
+    # Route each table to a separate topic using metadata.
+    # Remove this processor to send everything to a single topic.
+    - mapping: |
+        let schema = meta("database_schema").lowercase()
+        let table  = meta("table_name").lowercase()
+        meta topic = $schema + "." + $table
+
+output:
+  kafka_franz:
+    seed_brokers:
+      - ${REDPANDA_BROKERS}
+    # Uses per-message topic from the mapping processor above.
+    # Replace with a fixed topic name to disable per-table routing:
+    #   topic: oracle-cdc-events
+    topic: ${! meta("topic") }
+    compression: snappy
