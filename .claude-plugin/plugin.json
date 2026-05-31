@@ -1,0 +1,23 @@
+{
+  "name": "redpanda",
+  "description": "Agent Skills for Redpanda's four products — Streaming (Kafka-compatible engine), SQL (Oxla), Connect (incl. CDC connectors), and Cloud (Serverless, BYOC, Dedicated) — plus the rpk CLI. Grounded in Redpanda source, docs, and APIs.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Redpanda Data"
+  },
+  "homepage": "https://github.com/redpanda-data",
+  "repository": "https://github.com/redpanda-data",
+  "license": "Apache-2.0",
+  "keywords": [
+    "redpanda",
+    "kafka",
+    "streaming",
+    "rpk",
+    "redpanda-connect",
+    "cdc",
+    "oxla",
+    "cloud",
+    "byoc",
+    "serverless"
+  ]
+}

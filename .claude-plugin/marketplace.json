@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "redpanda-skills",
+  "description": "Agent Skills for Redpanda products: Streaming, SQL, Connect, Cloud, and the rpk CLI.",
+  "owner": {
+    "name": "Redpanda Data",
+    "url": "https://github.com/redpanda-data"
+  },
+  "plugins": [
+    {
+      "name": "redpanda",
+      "description": "Skills for Redpanda's four products (Streaming, SQL, Connect, Cloud) plus the rpk CLI, grounded in Redpanda source, docs, and APIs.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Redpanda Data"
+      },
+      "source": "./",
+      "category": "devops",
+      "homepage": "https://github.com/redpanda-data/skills"
+    }
+  ]
+}
