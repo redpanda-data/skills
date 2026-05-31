@@ -1,0 +1,42 @@
+# docker-compose-local.yml — self-contained single-node Oxla with local storage
+#
+# Does NOT require AWS credentials. Suitable for local development and testing.
+# Ports exposed: 5432 (PostgreSQL), 8080 (Prometheus metrics), 9090 (admin API).
+#
+# Usage:
+#   docker compose -f docker-compose-local.yml up
+#   psql -h localhost -p 5432 -U oxla -d oxla   # password: oxla
+#   curl http://localhost:9090/healthz           # should return: OK
+#   curl http://localhost:8080/metrics           # Prometheus metrics
+
+services:
+  oxla:
+    image: 778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+    stop_grace_period: 3m
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "5432:5432"
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - oxla_data:/oxla/data
+      - oxla_logs:/oxla/logs
+    environment:
+      - OXLA__LEADER_ELECTION__LEADER_NAME=oxla_node_1
+      - OXLA__NETWORK__HOST_NAME=oxla_node_1
+      - OXLA__STORAGE__OXLA_HOME=/oxla/data
+      - OXLA__LOGGING__LEVEL=INFO
+      - OXLA__ACCESS_CONTROL__MODE=default
+      - OXLA__FEATURE_FLAGS__ALLOW_TABLE_OPERATIONS=true
+      - OXLA__FEATURE_FLAGS__ALLOW_NONATOMIC_STORAGE=true
+      - OXLA__FEATURE_FLAGS__ARRAY_SUPPORT=TRUE
+      - OXLA_LOG_FILE=/oxla/logs/oxla.log
+    ulimits:
+      nofile:
+        soft: 20000
+        hard: 40000
+
+volumes:
+  oxla_data:
+  oxla_logs:
