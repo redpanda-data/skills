@@ -52,13 +52,13 @@ const producer = kafka.producer({ metadataMaxAge: 30000 });
 
 ### Fast Refresh After Error (librdkafka only)
 
-`topic.metadata.refresh.fast.interval.ms` — initial retry interval after a metadata error or `NOT_LEADER_OR_FOLLOWER` is received, growing exponentially up to `retry.backoff.max.ms`.
+`topic.metadata.refresh.fast.interval.ms` — initial retry interval after a metadata error or `NOT_LEADER_OR_FOLLOWER` is received, growing exponentially up to the setting's configured maximum (60 000 ms). This ceiling is independent of `retry.backoff.max.ms`.
 
 | Default | Range |
 |---|---|
 | 100 ms | 1–60 000 ms |
 
-This is the *initial* interval of an exponential backoff sequence, not a fixed fast-refresh rate. The client doubles the interval on successive failures until it reaches `retry.backoff.max.ms`. Keep at 100 ms (default) for most use cases; the default is already optimized for fast recovery.
+This is the *initial* interval of an exponential backoff sequence, not a fixed fast-refresh rate. The client doubles the interval on successive failures until it reaches 60 000 ms. Keep at 100 ms (default) for most use cases; the default is already optimized for fast recovery.
 
 ```c
 /* librdkafka — usually leave at default; reduce only if recovery latency is measured to be a problem */
@@ -100,7 +100,7 @@ cl, _ := kgo.NewClient(
 |---|---|---|---|
 | Java | `connections.max.idle.ms` | 540 000 ms (9 min) | Closes broker connections idle longer than this |
 | librdkafka | `connections.max.idle.ms` | 0 (disabled) | 0 = never close idle connections |
-| franz-go | `kgo.ConnIdleTimeout(d)` | 30 s | Idle connections are not reused after this |
+| franz-go | `kgo.ConnIdleTimeout(d)` | 20 s | Idle connections are not reused after this; eviction occurs between 20 s and 40 s (uniform jitter). Note: franz-go marks connections ineligible for reuse rather than actively closing them — the OS reclaims the socket when both sides are idle. |
 
 Keeping idle connections alive avoids the TLS handshake and SASL re-auth overhead on reconnect. However, very long idle timeouts can exhaust broker-side socket limits in large clusters.
 
@@ -157,16 +157,24 @@ rd_kafka_conf_set(conf, "reconnect.backoff.ms", "100", NULL, 0);
 rd_kafka_conf_set(conf, "reconnect.backoff.max.ms", "5000", NULL, 0);
 ```
 
+franz-go manages TCP reconnects internally and does not expose a direct `reconnect.backoff.ms` equivalent. `kgo.RetryBackoffFn` controls backoff between **request-level retries** (e.g., waiting before re-issuing a failed Produce or Metadata request) — not TCP reconnect timing.
+
 ```go
-// franz-go — custom exponential backoff function
+// franz-go — request-retry backoff (not TCP reconnect backoff)
+import (
+    "math"
+    "time"
+    "github.com/twmb/franz-go/pkg/kgo"
+)
+
 cl, _ := kgo.NewClient(
     kgo.SeedBrokers("localhost:9092"),
     kgo.RetryBackoffFn(func(attempt int) time.Duration {
         base := 250 * time.Millisecond
-        max := 5 * time.Second
+        cap := 5 * time.Second
         d := time.Duration(float64(base) * math.Pow(2, float64(attempt)))
-        if d > max {
-            d = max
+        if d > cap {
+            d = cap
         }
         return d
     }),
@@ -224,7 +232,8 @@ Total time from `send()` call until the record is acknowledged or permanently fa
 props.put("delivery.timeout.ms", "300000");
 props.put("request.timeout.ms", "30000");
 props.put("linger.ms", "5");
-// delivery.timeout >= linger.ms + request.timeout.ms → 300000 >= 35000 ✓
+// enforced: delivery.timeout >= linger.ms + request.timeout.ms → 300000 >= 30005 ✓
+// recommended: delivery.timeout >= linger.ms + retry.backoff.ms + request.timeout.ms → 300000 >= 30105 ✓
 ```
 
 ```c
@@ -290,7 +299,7 @@ Recommended client settings alongside this enterprise feature:
 
 `enable_shadow_linking=true` (enterprise) replicates topics to a shadow cluster for disaster recovery. During `rpk shadow failover`, clients must reconnect to a **completely different bootstrap cluster**.
 
-**Pre-configure multiple bootstrap addresses** in both the primary and shadow cluster. Clients attempt bootstrap addresses in order, so listing two addresses from each cluster minimizes downtime:
+**Pre-configure multiple bootstrap addresses** from both the primary and shadow cluster. The Java client shuffles the bootstrap list before connecting, so order is not guaranteed — list addresses from both clusters so the client can reach the shadow cluster's brokers after failover regardless of which is tried first. Note: this pattern only makes sense when the primary cluster is unreachable; the client does not understand "primary vs shadow" and will use whichever cluster successfully returns metadata at bootstrap time.
 
 ```java
 // Primary and shadow broker addresses both listed
@@ -330,10 +339,9 @@ Apply the same metadata and delivery timeout settings as Continuous Data Balanci
 
 ### Tiered Storage (Cold Reads)
 
-For topics with `redpanda.storage.mode=tiered`, fetching data beyond the local retention window reads from object storage. Object storage fetch latency (typically 50–500 ms for the first segment) can exceed the default `fetch.max.wait.ms` (500 ms) in the consumer, causing the broker to return a partial response.
+For topics with `redpanda.storage.mode=tiered`, fetching data beyond the local retention window reads from object storage. Object storage fetch latency (typically 50–500 ms for the first segment) can exceed the default `fetch.max.wait.ms` (500 ms) in the consumer, causing the broker to return a FetchResponse with whatever data is currently available rather than waiting for `fetch.min.bytes`.
 
 | Consumer setting | Recommendation for cold-data workloads |
 |---|---|
 | `fetch.max.wait.ms` | Raise to 1 000–2 000 ms to allow the broker to populate the response from object storage |
 | `request.timeout.ms` | Keep at 30 000 ms; cold-data reads complete well within this |
-| `max.partition.fetch.bytes` | Consider reducing to 256 KiB for first reads to avoid large object-storage fetches on startup |
