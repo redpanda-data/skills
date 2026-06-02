@@ -148,7 +148,7 @@ Key producer properties (standard Kafka config keys):
 |---|---|---|
 | `acks` | `all` | Waits for majority quorum + fsync on Redpanda |
 | `enable.idempotence` | `true` | Default `true` in Java client (3.0+) and librdkafka-based clients; **not supported** in kafka-python-ng; requires `acks=all` |
-| `compression.type` | `zstd` or `lz4` | Options: `none`, `gzip`, `snappy`, `lz4`, `zstd` |
+| `compression.type` | `zstd` | Options: `none`, `gzip`, `snappy`, `lz4`, `zstd` |
 | `batch.size` | `16384` (default) | Bytes; increase for throughput |
 | `linger.ms` | `0` (default) | Increase to fill batches, costs latency |
 | `max.in.flight.requests.per.connection` | `5` | With idempotence, up to 5 in-flight preserve order |
@@ -320,3 +320,4 @@ Replicates topic data, configs, consumer offsets, ACLs, and Schema Registry. See
 - [Continuous Data Balancing](references/continuous-balancing.md): `partition_autobalancing_mode` modes, continuous-mode disk/availability/decommission thresholds, intra-broker `core_balancing_continuous`/`core_balancing_on_core_count_change`, and `rpk cluster partitions balancer-status`/`movement-cancel`. (Enterprise)
 - [Shadow Linking](references/shadow-linking.md): Cross-cluster DR via Shadow Links — `enable_shadow_linking`, the `rpk shadow` workflow (create/list/describe/status/update/failover/delete), shadow-config.yaml nested sync options and filters, topic-property replication rules, and limitations. (Enterprise)
 - [Kafka Client Metadata and Connection Settings](references/kafka-client-metadata.md): Per-client config keys for metadata refresh intervals (`metadata.max.age.ms`, `topic.metadata.refresh.interval.ms`, `kgo.MetadataMaxAge`), fast-refresh after leader errors, reconnect backoff, idle connection timeout, request timeouts, and producer delivery budgets (`delivery.timeout.ms`, `message.timeout.ms`) — with recommended values for latency, throughput, and resilience goals, and explicit callouts for Continuous Data Balancing, Shadow Linking failover, Cloud Topics, Leader Pinning, and Tiered Storage cold-read interactions.
+- [TLS and Authentication](references/tls-and-auth.md): Client-side TLS certificate loading (truststore/keystore for Java, ssl.ca.location/ssl.certificate.location for librdkafka, kgo.DialTLSConfig for franz-go, ssl options for KafkaJS), mutual TLS (mTLS) configuration, Redpanda broker listener addresses (`kafka_api`, `kafka_api_tls`), and how Redpanda extracts the Kafka principal from client certificate DNs via `kafka_mtls_principal_mapping_rules`.
