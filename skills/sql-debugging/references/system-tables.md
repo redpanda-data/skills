@@ -1,6 +1,6 @@
-# Oxla System Catalog Tables
+# Redpanda SQL System Catalog Tables
 
-Oxla exposes diagnostic state through virtual tables in the `system` schema (schema name `system`, registered via `src/metastore/metastore.cpp` `createSystemTables()`). These tables are **populated at query runtime** by distributed processors on each node — there is no materialized cache. Access follows Oxla's access-control model: superusers see everything; regular users see rows scoped to resources they have grants on.
+Redpanda SQL exposes diagnostic state through virtual tables in the `system` schema (schema name `system`, registered via `src/metastore/metastore.cpp` `createSystemTables()`). These tables are **populated at query runtime** by distributed processors on each node — there is no materialized cache. Access follows Redpanda SQL's access-control model: superusers see everything; regular users see rows scoped to resources they have grants on.
 
 Connect with any PostgreSQL client:
 
@@ -147,8 +147,8 @@ Source: `src/metastore/system_storage.cpp`
 |---|---|---|---|
 | `name` | TEXT | NO | Connection name |
 | `type` | TEXT | NO | Storage type (e.g. `s3`, `gcs`, `azure`) |
-| `schema_name` | TEXT | NO | Oxla schema (namespace) this connection belongs to |
-| `database_name` | TEXT | NO | Oxla database this connection belongs to |
+| `schema_name` | TEXT | NO | Redpanda SQL schema (namespace) this connection belongs to |
+| `database_name` | TEXT | NO | Redpanda SQL database this connection belongs to |
 | `parameters` | JSON | NO | Provider-specific parameters (url, region, endpoint, account_name, path_style, etc.) |
 
 The `parameters` column contains a JSON object whose keys depend on the storage provider. The `url` key is emitted first when a URL is configured and is present for all provider types:
@@ -227,7 +227,7 @@ SELECT * FROM system.catalogs;
 
 ## databases, tables, columns
 
-These tables enumerate the user-visible Oxla schema objects.
+These tables enumerate the user-visible Redpanda SQL schema objects.
 
 **databases** (`system.databases`): one column — `name TEXT`.
 
@@ -253,7 +253,7 @@ WHERE database_name = 'default' AND table_name = 'my_table';
 
 ## information_schema views
 
-Oxla implements several standard SQL `information_schema` views for compatibility with PostgreSQL tooling.
+Redpanda SQL implements several standard SQL `information_schema` views for compatibility with PostgreSQL tooling.
 
 | View | Columns (subset) |
 |---|---|
@@ -274,7 +274,7 @@ ORDER BY table_schema, table_name;
 
 ## pg_catalog compatibility tables
 
-Oxla also implements several standard `pg_catalog` tables for driver compatibility (representative subset — more tables exist):
+Redpanda SQL also implements several standard `pg_catalog` tables for driver compatibility (representative subset — more tables exist):
 
 - `pg_catalog.pg_class` — relations
 - `pg_catalog.pg_attribute` — columns
@@ -286,7 +286,7 @@ Oxla also implements several standard `pg_catalog` tables for driver compatibili
 - `pg_catalog.pg_database` — databases
 - `pg_catalog.pg_index`, `pg_constraint`, `pg_depend`, `pg_description`, `pg_am`, `pg_enum`, `pg_range`, `pg_policy`, `pg_tablespace`, `pg_statio_user_tables`, and others
 
-These allow standard PostgreSQL introspection tools (e.g., `\d`, `\dt` in psql) and JDBC/ODBC drivers to work correctly with Oxla.
+These allow standard PostgreSQL introspection tools (e.g., `\d`, `\dt` in psql) and JDBC/ODBC drivers to work correctly with Redpanda SQL.
 
 ---
 
