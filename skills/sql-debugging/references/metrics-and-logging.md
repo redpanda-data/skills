@@ -1,10 +1,10 @@
-# Oxla Metrics & Logging
+# Redpanda SQL Metrics & Logging
 
 ---
 
 ## Prometheus Metrics Endpoint
 
-Oxla exposes a Prometheus-compatible metrics endpoint via HTTP. Configuration is in `config/Release/default_config.yml` (exact path is deployment-dependent):
+Redpanda SQL exposes a Prometheus-compatible metrics endpoint via HTTP. Configuration is in `config/Release/default_config.yml` (exact path is deployment-dependent):
 
 ```yaml
 metrics:
