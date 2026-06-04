@@ -1,6 +1,6 @@
-# Oxla: Apache Iceberg Queries
+# Redpanda SQL: Apache Iceberg Queries
 
-Oxla connects to Apache Iceberg REST catalogs (e.g., Apache Polaris, AWS Glue
+Redpanda SQL connects to Apache Iceberg REST catalogs (e.g., Apache Polaris, AWS Glue
 Data Catalog, Tabular) and can query Iceberg tables using the `catalog=>path.table`
 syntax. Partition pruning and predicate pushdown are applied automatically.
 
@@ -50,7 +50,7 @@ All option names are grounded in `hsql::option_names::iceberg`
 | `oauth2_client_id` | Yes | Client ID |
 | `oauth2_client_secret` | Yes | Client secret (stored encrypted) |
 | `oauth2_scope` | No | OAuth2 scope. Default: `'PRINCIPAL_ROLE:ALL'` (matches Redpanda's default). |
-| `oauth2_token_endpoint_url` | No | Token endpoint URL. When omitted, Oxla discovers it from the catalog's `/config` endpoint (works with Polaris). Set explicitly for external IdPs (Okta, Azure AD). |
+| `oauth2_token_endpoint_url` | No | Token endpoint URL. When omitted, Redpanda SQL discovers it from the catalog's `/config` endpoint (works with Polaris). Set explicitly for external IdPs (Okta, Azure AD). |
 | `oauth2_token_refresh_margin_seconds` | No | Seconds before token expiry to trigger a refresh. Must be between 0 and INT32_MAX. |
 
 **Basic auth options** (when `auth_type = 'basic'`):
@@ -173,7 +173,7 @@ SELECT id, name FROM my_ice=>ns.orders;
 
 ### Partition Pruning
 
-Oxla pushes equality and range predicates on partition columns to the Iceberg
+Redpanda SQL pushes equality and range predicates on partition columns to the Iceberg
 scan planner. The scan plan is computed by the Apache Iceberg C++ library via
 `planScan`, which returns only the data files relevant to the filter.
 
@@ -206,7 +206,7 @@ SELECT id FROM test_iceberg_catalog=>my.path.partitioned_table WHERE val_bool = 
 
 ### Multi-file Partitions
 
-Tables with multiple data files per partition are supported transparently. Oxla
+Tables with multiple data files per partition are supported transparently. Redpanda SQL
 distributes file reads across nodes using a hash-based assignment.
 
 ```sql
@@ -217,7 +217,7 @@ WHERE id = 1;
 ### Joins with Native Tables
 
 ```sql
--- Join an Iceberg table with a native Oxla table
+-- Join an Iceberg table with a native Redpanda SQL table
 SELECT o.order_id, c.name, o.total
 FROM   my_ice=>sales.orders o
 JOIN   customers c ON o.customer_id = c.id;
@@ -237,7 +237,7 @@ provides:
 - `planScan` — compute the set of data files to read given predicates
 
 Note from the source: "Residual filters are not yet returned, so the consumer is
-expected to handle all filtering during actual file scan." This means Oxla applies
+expected to handle all filtering during actual file scan." This means Redpanda SQL applies
 the predicates again during the actual data read even after partition pruning.
 
 ---
@@ -260,8 +260,8 @@ Columns:
 | `uri` | TEXT | REST catalog URI |
 | `warehouse` | TEXT | Warehouse path (empty if not set) |
 | `auth_type` | TEXT | Authentication type: `'oauth2'`, `'basic'`, `'aws_sigv4'`, or `''` |
-| `namespace_name` | TEXT | Oxla schema (namespace) containing this catalog |
-| `database_name` | TEXT | Oxla database containing this catalog |
+| `namespace_name` | TEXT | Redpanda SQL schema (namespace) containing this catalog |
+| `database_name` | TEXT | Redpanda SQL database containing this catalog |
 
 ```sql
 -- List all Iceberg catalogs
@@ -273,19 +273,19 @@ SELECT name, uri FROM system.iceberg_catalogs WHERE auth_type = 'oauth2';
 
 ### `system.iceberg_tables`
 
-Lists all Iceberg tables that have been REFRESHed into Oxla's local catalog.
+Lists all Iceberg tables that have been REFRESHed into Redpanda SQL's local catalog.
 One row per root Iceberg `UserType` (the 3-segment internal name with
 `source == Iceberg`). Nested types and Kafka user types are excluded.
 
 Note: Dropping an Iceberg table from the REST catalog leaves its `UserType`
-in Oxla's catalog until explicitly dropped; the view continues to list it.
+in Redpanda SQL's catalog until explicitly dropped; the view continues to list it.
 
 Columns:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `database_name` | TEXT | Oxla database |
-| `namespace_name` | TEXT | Oxla schema (namespace) |
+| `database_name` | TEXT | Redpanda SQL database |
+| `namespace_name` | TEXT | Redpanda SQL schema (namespace) |
 | `catalog_name` | TEXT | Iceberg catalog name (owner segment of the internal name) |
 | `name` | TEXT | Qualified Iceberg table path (e.g., `ns1.ns2.tbl`) |
 | `oid` | INT | OID of the root UserType (joinable with `system.schema_types.oid` and `pg_type.oid`) |
@@ -299,7 +299,7 @@ SELECT catalog_name, name
 FROM   system.iceberg_tables
 WHERE  catalog_name = 'my_ice';
 
--- Find tables in a specific Oxla namespace
+-- Find tables in a specific Redpanda SQL namespace
 SELECT name, catalog_name
 FROM   system.iceberg_tables
 WHERE  namespace_name = 'public';
@@ -310,7 +310,7 @@ WHERE  namespace_name = 'public';
 ## Transparent Kafka-Iceberg Queries
 
 When a Kafka catalog has an Iceberg catalog linked to it (via `USING CATALOG`),
-Oxla can read Kafka topics through their Iceberg table representation. This is
+Redpanda SQL can read Kafka topics through their Iceberg table representation. This is
 called a "transparent" query.
 
 The Kafka catalog connection must include a `pandaproxy_url` (the Panda Proxy
@@ -329,7 +329,7 @@ WITH (
   pandaproxy_url      = 'http://localhost:8082'
 );
 
--- Query the Kafka topic; Oxla reads schema from Iceberg
+-- Query the Kafka topic; Redpanda SQL reads schema from Iceberg
 SELECT age, name FROM my_kafka=>users;
 ```
 
@@ -339,6 +339,6 @@ Kafka query: `partition` (INT), `offset` (BIGINT), `timestamp` (TIMESTAMPTZ),
 `headers` (ARRAY of STRUCT), `key` (BYTEA), `timestamp_type` (INT).
 
 Schema widening: if the Kafka Avro/Protobuf schema is a strict name-superset
-of the Iceberg schema (additional fields in Kafka not present in Iceberg), Oxla
+of the Iceberg schema (additional fields in Kafka not present in Iceberg), Redpanda SQL
 widens the column type to accommodate both. Arrays with widened struct elements
 are also handled.

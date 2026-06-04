@@ -1,8 +1,8 @@
 # Redpanda Agent Skills
 
 Agent Skills for Redpanda's products — **Streaming** (the Kafka-compatible engine),
-**SQL** (Oxla), **Connect**, and **Cloud** (Serverless, BYOC, Dedicated) — unified by the
-**rpk** command-line experience. Each skill is grounded in Redpanda's own source code,
+**SQL** (Cloud only), **Connect**, and **Cloud** (Serverless, BYOC, Dedicated) — unified by the
+**rpk** command-line experience. Each skill is grounded in Redpanda's source code,
 documentation, and APIs.
 
 ## Installation
@@ -45,7 +45,7 @@ The Kafka-compatible streaming engine (the Redpanda broker).
 - [**streaming-debugging**](./skills/streaming-debugging) — Diagnose a broker/cluster: debug bundles, metrics endpoints, logs, CPU profiling, partition/raft health, and failure-mode playbooks.
 
 ### 🧮 SQL
-Redpanda SQL — the distributed, columnar, PostgreSQL-compatible analytical database (Oxla).
+Redpanda SQL — the distributed, columnar, PostgreSQL-compatible analytical database (Cloud only).
 - [**sql**](./skills/sql) — Write SQL: connection (PostgreSQL wire protocol), data types, DDL/DML, functions, and analytical queries.
 - [**sql-admin-api**](./skills/sql-admin-api) — Operate a cluster: configuration, node roles and ports, leader election, storage backends, memory limits, and the gRPC admin service.
 - [**sql-federated-queries**](./skills/sql-federated-queries) — Query external data: Kafka topics via catalogs, Apache Iceberg tables, and S3/GCS/Azure parquet/ORC files.

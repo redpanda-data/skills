@@ -1,0 +1,63 @@
+name: connect-pipelines
+skill: connect
+version: "1.0"
+
+tasks:
+  - id: basic-pipeline
+    prompt: "Create a Redpanda Connect pipeline that reads from stdin and writes to stdout"
+    expected_commands:
+      - pattern: "input:|stdin"
+        required: true
+      - pattern: "output:|stdout"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: kafka-to-kafka
+    prompt: "Create a pipeline that reads from Kafka topic 'orders' and writes to topic 'processed-orders'"
+    expected_commands:
+      - pattern: "kafka"
+        required: true
+      - pattern: "orders"
+        required: true
+      - pattern: "processed-orders"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: lint-config
+    prompt: "How do I validate my Redpanda Connect configuration file?"
+    expected_commands:
+      - pattern: "rpk connect lint"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: run-pipeline
+    prompt: "Run a Redpanda Connect pipeline from a file called pipeline.yaml"
+    expected_commands:
+      - pattern: "rpk connect run"
+        required: true
+      - pattern: "pipeline.yaml"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: add-processor
+    prompt: "Add a Bloblang processor to transform the message by adding a 'processed_at' timestamp field"
+    expected_commands:
+      - pattern: "bloblang|mapping"
+        required: true
+      - pattern: "processed_at"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: negative-simple-run
+    type: negative_transfer_check
+    prompt: "What's the simplest way to run a Redpanda Connect pipeline?"
+    acceptable_responses:
+      - contains: "rpk connect run"
+    must_not:
+      require_enterprise_features: true
+      step_count: "> 2"

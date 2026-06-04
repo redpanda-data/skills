@@ -1,29 +1,8 @@
 ---
 name: ai
-description: >-
-  Manages the lifecycle of the Redpanda AI CLI plugin (rpk ai: install,
-  upgrade, uninstall) and injects cloud auth (RPAI_TOKEN/RPAI_ENDPOINT)
-  before delegating subcommands to the downloaded rpai binary. Also exposes
-  Redpanda cluster operations to AI agents via the Model Context Protocol
-  (rpk cloud mcp). Use when: installing, upgrading, or uninstalling the
-  rpk ai plugin; delegating subcommands to the rpai binary with auto-injected
-  cloud credentials; setting up the MCP server so an AI agent like Claude can
-  drive Redpanda Cloud; wiring rpk cloud mcp stdio or rpk cloud mcp install
-  into a Claude Desktop or Claude Code config; configuring the MCP proxy to a
-  remote dataplane MCP server; understanding which Redpanda APIs are exposed
-  as MCP tools (control-plane clusters, IAM, dataplane
-  topics/ACLs/pipelines/transforms, AI Gateway); passing RPAI_TOKEN or
-  RPAI_ENDPOINT env vars to the AI plugin; resolving cloud auth errors for
-  the AI Gateway; or choosing between rpk ai and rpk cloud mcp. Also covers
-  the AI Gateway enterprise governance and security surfaces (guardrails /
-  word and content filters, rate limits, spend limits, routing rules, model
-  providers, access-control/RBAC policies, roles and teams, audit logging,
-  SSO/OIDC/OAuth2 identity providers, FIPS) and the dataplane AI resources
-  (AI Agents, MCP servers and their auth variants, Knowledge Bases) with
-  their nested config keys. Redpanda Cloud is a managed Redpanda Enterprise
-  Edition deployment; the self-managed analogues (Audit Logging, RBAC,
-  OIDC/OAuthBearer/Kerberos auth, FIPS, schema ID validation) require an
-  Enterprise license.
+description: "Manages the rpk ai plugin lifecycle (install, upgrade, uninstall) and the MCP server for AI agents (rpk cloud mcp). Use when: installing or upgrading rpk ai; setting up MCP for Claude Desktop or Claude Code; wiring rpk cloud mcp stdio or install; configuring MCP proxy to dataplane; understanding MCP tools (clusters, topics, ACLs, AI Gateway); passing RPAI_TOKEN/RPAI_ENDPOINT; resolving cloud auth errors; or choosing between rpk ai and rpk cloud mcp. Also covers AI Gateway governance (guardrails, rate limits, RBAC, audit logging) and dataplane AI resources (Agents, Knowledge Bases)."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk ai: AI CLI & MCP Integration

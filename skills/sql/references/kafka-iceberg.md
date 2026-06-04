@@ -1,8 +1,8 @@
 # Redpanda/Kafka Catalogs, Iceberg Catalogs, and Object Storage
 
-Oxla can attach **external sources** — Redpanda/Kafka topics and Apache Iceberg
+Redpanda SQL can attach **external sources** — Redpanda/Kafka topics and Apache Iceberg
 tables — and query them with plain SQL through the PostgreSQL wire protocol. This
-is the central Oxla + Redpanda **enterprise differentiator** for this skill: it
+is the central Redpanda SQL **enterprise differentiator** for this skill: it
 lets analysts run OLAP queries directly against streaming data in Redpanda and
 against Iceberg lakehouse tables, without a separate ingestion pipeline.
 
@@ -10,14 +10,14 @@ This integration pairs with the corresponding Redpanda Enterprise features
 (licensed in Redpanda itself):
 
 - **Iceberg Topics** (`redpanda.iceberg.mode`) — Redpanda materializes topic data
-  as Iceberg tables in object storage. Oxla then attaches that Iceberg catalog and
+  as Iceberg tables in object storage. Redpanda SQL then attaches that Iceberg catalog and
   queries it. See the Iceberg property reference below.
 - **Tiered Storage / Cloud Topics** — the object-storage backing that Iceberg
   Topics and remote reads depend on.
 
 > **License note.** On the **Redpanda** side, Iceberg Topics, Tiered Storage, and
 > Cloud Topics each require a Redpanda **Enterprise license** (they enter a
-> restricted state on license expiration). The Oxla-side `CREATE REDPANDA CATALOG`
+> restricted state on license expiration). The Redpanda SQL-side `CREATE REDPANDA CATALOG`
 > / `CREATE ICEBERG CATALOG` / `CREATE STORAGE` / `CREATE TABLE ... WITH (...)`
 > statements documented here are the SQL surface that consumes those Redpanda
 > enterprise features.
@@ -152,7 +152,7 @@ Grounded in `connection_option_names.h` (`namespace iceberg`) and
 
 ## Redpanda/Kafka catalogs (`CREATE REDPANDA CATALOG`)
 
-A Redpanda/Kafka catalog points Oxla at a Redpanda/Kafka cluster (brokers + Schema
+A Redpanda/Kafka catalog points Redpanda SQL at a Redpanda/Kafka cluster (brokers + Schema
 Registry). `REDPANDA` and `KAFKA` are interchangeable keywords. Optionally bind it
 to an Iceberg catalog with `USING CATALOG` so topic data lands as Iceberg tables.
 
@@ -250,7 +250,7 @@ Grounded in `KafkaSourceOptions::k_option_definitions`
 This is the canonical Kafka-catalog rebind form. Use **`IF EXISTS`**, and the
 table name **must** use the `catalog=>table_name` external-source form (the parser
 raises `YYERROR` "Expected catalog=>table_name syntax" otherwise). This is the
-only `ALTER TABLE` form Oxla supports — there is no `ADD/DROP/RENAME COLUMN`.
+only `ALTER TABLE` form Redpanda SQL supports — there is no `ADD/DROP/RENAME COLUMN`.
 
 ```sql
 ALTER TABLE IF EXISTS my_rp=>orders WITH (
@@ -295,7 +295,7 @@ REVOKE SELECT ON EXTERNAL SOURCE my_rp FROM analyst;
 
 ## Related Redpanda Enterprise Iceberg-topic properties
 
-When Redpanda is the producer of the Iceberg tables Oxla reads, these
+When Redpanda is the producer of the Iceberg tables Redpanda SQL reads, these
 **Redpanda topic-level** properties control materialization (require a Redpanda
 **Enterprise license**; grounded in the Redpanda licensing/Iceberg docs):
 
@@ -308,5 +308,5 @@ When Redpanda is the producer of the Iceberg tables Oxla reads, these
 | `redpanda.iceberg.invalid.record.action` | `drop` or `dlq_table` handling for records that fail schema translation (default `dlq_table`) |
 
 These are set on the Redpanda side (e.g. via `rpk topic create -c
-redpanda.iceberg.mode=...`); Oxla consumes the resulting Iceberg catalog with
+redpanda.iceberg.mode=...`); Redpanda SQL consumes the resulting Iceberg catalog with
 `CREATE ICEBERG CATALOG`.

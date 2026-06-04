@@ -1,41 +1,24 @@
 ---
 name: sql-admin-api
-description: >-
-  Configures and operates an Oxla cluster: YAML config (default_config.yml),
-  OXLA__ environment-variable overrides, node ports and roles, leader election,
-  storage backends (local/S3/GCS/Azure), memory limits, access control, TLS,
-  OIDC, and the HTTP-based ConnectRPC admin service (port 9090) with its
-  LoggingService (GetLogLevel/SetLogLevel). Also covers the Prometheus metrics
-  endpoint (port 8080) and Docker/Compose deployment patterns. Covers Oxla's
-  lakehouse and streaming differentiators: Apache Iceberg REST catalogs
-  (CREATE ICEBERG CATALOG, oauth2/basic/aws_sigv4 auth, feature_flags.allow_iceberg_queries),
-  transparent Redpanda/Kafka integration (CREATE REDPANDA CATALOG, topic-backed
-  tables, schema_lookup_policy/error_handling_policy), object-storage connections
-  (CREATE STORAGE TYPE S3/GCS/ABS), plus security: OIDC/JWT auth, SCRAM passwords,
-  centralized access control, and AES-256-GCM secret encryption (OXLA_ENCRYPTION_KEY).
-  Use when: configuring an Oxla cluster; setting ports or node names; enabling
-  TLS or OIDC authentication; choosing a storage backend (S3/GCS/Azure);
-  setting up Iceberg catalogs or a lakehouse; querying Redpanda/Kafka topics as
-  tables; creating storage connections; encrypting connection secrets; tuning
-  memory limits; running Oxla via Docker; changing log levels at runtime
-  via the admin API; checking cluster health via /healthz; scraping Prometheus
-  metrics on port 8080; deploying a single-node or multi-node Oxla cluster;
-  overriding config values with OXLA__ env vars; or any Oxla operations or
-  administration task.
+description: "Configures and operates a Redpanda SQL cluster: YAML config, OXLA__ environment overrides, ports, leader election, storage backends (local/S3/GCS/Azure), memory limits, TLS, OIDC, and the ConnectRPC admin service (port 9090). Also covers Prometheus metrics (port 8080) and Docker deployment. Use when: configuring Redpanda SQL; setting ports or storage backends; enabling TLS/OIDC; setting up Iceberg or Kafka catalogs; creating storage connections; tuning memory; changing log levels via admin API; checking /healthz; scraping metrics; or deploying Redpanda SQL clusters."
+metadata:
+  version: "1.0.0"
 ---
 
 # Redpanda SQL: Administration & Operations
 
-Oxla is a distributed columnar analytical database with a PostgreSQL wire-compatible interface. **There is no REST admin API.** Administration is performed through three mechanisms: (1) a YAML configuration file loaded at startup, (2) `OXLA__` environment-variable overrides, and (3) a ConnectRPC-based HTTP admin service (default port 9090) that currently exposes runtime log-level control. A Prometheus metrics endpoint runs on port 8080.
+> **Important**: Redpanda SQL is currently available only on **Redpanda Cloud**. Self-managed deployment is not yet supported. This skill documents internal configuration for reference purposes only. For Cloud users, administration is handled through the Redpanda Cloud console.
 
-Clients connect to Oxla via the PostgreSQL wire protocol on port 5432. SQL-level administration (roles, grants, system tables) is covered in the `sql` skill.
+Redpanda SQL is a distributed columnar analytical database with a PostgreSQL wire-compatible interface. **There is no REST admin API.** Administration is performed through three mechanisms: (1) a YAML configuration file loaded at startup, (2) `OXLA__` environment-variable overrides, and (3) a ConnectRPC-based HTTP admin service (default port 9090) that currently exposes runtime log-level control. A Prometheus metrics endpoint runs on port 8080.
+
+Clients connect to Redpanda SQL via the PostgreSQL wire protocol on port 5432. SQL-level administration (roles, grants, system tables) is covered in the `sql` skill.
 
 ## Quickstart
 
 ### Single-node via Docker (minimal config)
 
 ```bash
-# Run a single Oxla node with local storage and all defaults
+# Run a single Redpanda SQL node with local storage and all defaults
 docker run --rm -it \
   -p 5432:5432 \
   -p 8080:8080 \
@@ -134,7 +117,7 @@ psql -h localhost -p 5432 -U oxla -d oxla
 
 ## Configuration Model
 
-Oxla uses a layered configuration system:
+Redpanda SQL uses a layered configuration system:
 
 1. **Compiled defaults** (built into the binary)
 2. **Config file** — partial YAML at `/oxla/startup_config/config.yml` (only fields you specify are applied; missing fields use defaults)
@@ -150,7 +133,7 @@ The YAML path separator in env var names is `__` (double underscore). Example:
 | `leader_election.leader_name` | `OXLA__LEADER_ELECTION__LEADER_NAME` |
 | `memory.max` | `OXLA__MEMORY__MAX` |
 
-If no config file is present at startup, Oxla generates one from env-var overrides at `/oxla/startup_config/config.yml`. To use a specific config file path, set `OXLA_CONFIG_FILE=path/to/config.yml`. An empty path (`OXLA_CONFIG_FILE=`) signals Oxla to use compiled defaults only.
+If no config file is present at startup, Redpanda SQL generates one from env-var overrides at `/oxla/startup_config/config.yml`. To use a specific config file path, set `OXLA_CONFIG_FILE=path/to/config.yml`. An empty path (`OXLA_CONFIG_FILE=`) signals Redpanda SQL to use compiled defaults only.
 
 Unknown `OXLA__` env vars cause a degraded-state warning but do not prevent startup.
 
@@ -203,9 +186,9 @@ For S3, set `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` a
 
 ## Lakehouse, Streaming & Security Differentiators
 
-Oxla's differentiators in its analytical-database domain are configured through SQL connection objects and cluster config (none require a separate license key — Oxla ships as a single binary):
+Redpanda SQL's differentiators in its analytical-database domain are configured through SQL connection objects and cluster config (none require a separate license key — Redpanda SQL ships as a single binary):
 
-- **Apache Iceberg REST catalogs** — `CREATE ICEBERG CATALOG name STORAGE conn WITH (uri=..., auth_type='oauth2'|'basic'|'aws_sigv4', ...)`. Gated by `feature_flags.allow_iceberg_queries` (default `false`) for direct SELECT. This is Oxla's analog of Redpanda's Iceberg Topics open-table-format differentiator. See [lakehouse-and-streaming.md](references/lakehouse-and-streaming.md).
+- **Apache Iceberg REST catalogs** — `CREATE ICEBERG CATALOG name STORAGE conn WITH (uri=..., auth_type='oauth2'|'basic'|'aws_sigv4', ...)`. Gated by `feature_flags.allow_iceberg_queries` (default `false`) for direct SELECT. This is Redpanda SQL's analog of Redpanda's Iceberg Topics open-table-format differentiator. See [lakehouse-and-streaming.md](references/lakehouse-and-streaming.md).
 - **Transparent Redpanda/Kafka** — `CREATE REDPANDA CATALOG` (or `KAFKA`) `WITH (initial_brokers=..., schema_registry_url=..., ...)` and `CREATE TABLE catalog=>tbl WITH (topic='...', schema_lookup_policy='LATEST'|'SCHEMA_ID', error_handling_policy='FAIL'|'FILL_NULL'|'DROP_RECORD')`. A Kafka catalog can link an Iceberg catalog via `USING CATALOG`. See [lakehouse-and-streaming.md](references/lakehouse-and-streaming.md).
 - **Object-storage connections** — `CREATE STORAGE name TYPE = S3|GCS|ABS WITH (...)`. Reusable, credential-bearing connections referenced by Iceberg catalogs. See [lakehouse-and-streaming.md](references/lakehouse-and-streaming.md).
 - **OIDC/JWT auth, SCRAM passwords, centralized access control, AES-256-GCM secret encryption** (`OXLA_ENCRYPTION_KEY`). See [auth-and-security.md](references/auth-and-security.md).
@@ -217,10 +200,10 @@ Oxla's differentiators in its analytical-database domain are configured through 
 - [configuration.md](references/configuration.md): The YAML config file section by section — network ports, heartbeat, leader election, storage backends, metrics, access control, memory, SSL, OIDC, logging. The OXLA__ env-var override scheme and the public vs internal parameter classification.
 - [cluster-and-deploy.md](references/cluster-and-deploy.md): Cluster topology (cluster_name, host_name, leader vs worker nodes, inter-node ports), single-node and multi-node Docker Compose deployment patterns, environment-variable wiring from the reference configurations, and the Ansible playbooks (`ansible/devcluster_deploy.yml`, `ansible/devcluster_deploy_aws.yml`) and Terraform module (`terraform/devcluster/`) for deploying to real servers and EC2.
 - [admin-grpc-and-runtime.md](references/admin-grpc-and-runtime.md): The ConnectRPC admin server on port 9090 — LoggingService (GetLogLevel/SetLogLevel), the /healthz endpoint, TLS/mTLS for the admin API, the Prometheus metrics endpoint on port 8080, and memory/OOM controls.
-- [lakehouse-and-streaming.md](references/lakehouse-and-streaming.md): Oxla's lakehouse and streaming integration surfaces — object-storage connections (`CREATE STORAGE TYPE S3/GCS/ABS` with full per-type option keys), Apache Iceberg REST catalogs (`CREATE ICEBERG CATALOG` with oauth2/basic/aws_sigv4 auth, TLS options, `feature_flags.allow_iceberg_queries`), and transparent Redpanda/Kafka integration (`CREATE REDPANDA/KAFKA CATALOG`, topic-backed tables, `schema_lookup_policy`/`error_handling_policy`/`struct_mapping_policy`/`confluent_wire_protocol`, and the `USING CATALOG` Iceberg link). All option keys grounded in `src/sqlparser` and `src/catalog`. No separate license key required.
+- [lakehouse-and-streaming.md](references/lakehouse-and-streaming.md): Redpanda SQL's lakehouse and streaming integration surfaces — object-storage connections (`CREATE STORAGE TYPE S3/GCS/ABS` with full per-type option keys), Apache Iceberg REST catalogs (`CREATE ICEBERG CATALOG` with oauth2/basic/aws_sigv4 auth, TLS options, `feature_flags.allow_iceberg_queries`), and transparent Redpanda/Kafka integration (`CREATE REDPANDA/KAFKA CATALOG`, topic-backed tables, `schema_lookup_policy`/`error_handling_policy`/`struct_mapping_policy`/`confluent_wire_protocol`, and the `USING CATALOG` Iceberg link). All option keys grounded in `src/sqlparser` and `src/catalog`. No separate license key required.
 - [auth-and-security.md](references/auth-and-security.md): Authentication and security — access-control modes (`access_control.mode`), SCRAM-SHA-256 passwords, OIDC/JWT bearer auth (all `oidc.*` keys), centralized access control (`feature_flags.centralized_access_control.*`), and AES-256-GCM at-rest encryption of connection secrets via `OXLA_ENCRYPTION_KEY` (hex, ≤64 chars, cycled to a 256-bit key).
 
 ## Scripts and Resources
 
 - [scripts/set_log_level.sh](scripts/set_log_level.sh): Saves the current log level, sets a new one (default: DEBUG), waits for you to press Enter, then restores the original. Usage: `./scripts/set_log_level.sh [LEVEL] [ADMIN_URL]`
-- [resources/docker-compose-local.yml](resources/docker-compose-local.yml): Self-contained single-node Oxla with local storage — no AWS credentials required. Run with: `docker compose -f resources/docker-compose-local.yml up`
+- [resources/docker-compose-local.yml](resources/docker-compose-local.yml): Self-contained single-node Redpanda SQL with local storage — no AWS credentials required. Run with: `docker compose -f resources/docker-compose-local.yml up`

@@ -1,6 +1,6 @@
-# Oxla: File-Based External Data & System Tables
+# Redpanda SQL: File-Based External Data & System Tables
 
-Oxla supports reading and writing parquet and ORC files from object storage
+Redpanda SQL supports reading and writing parquet and ORC files from object storage
 (S3, GCS, Azure Blob Storage) and local paths via `COPY FROM` / `COPY TO`.
 Four system virtual tables expose the metadata of all registered external
 connections.
@@ -21,7 +21,7 @@ Sources grounded in: `oxla/src/filesystem/path/protocol.h`,
 
 ## COPY FROM / COPY TO
 
-`COPY FROM` loads data from an external file into a native Oxla table.
+`COPY FROM` loads data from an external file into a native Redpanda SQL table.
 `COPY TO` exports a native table to an external file.
 
 ### Syntax
@@ -291,8 +291,8 @@ One row per registered Kafka/Redpanda catalog connection.
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
-| `database_name` | TEXT | No | Oxla database containing this connection |
-| `namespace_name` | TEXT | No | Oxla schema (namespace) containing this connection |
+| `database_name` | TEXT | No | Redpanda SQL database containing this connection |
+| `namespace_name` | TEXT | No | Redpanda SQL schema (namespace) containing this connection |
 | `name` | TEXT | No | Catalog name |
 | `options` | TEXT | No | Formatted connection options (bootstrap_brokers, schema_registry_hostname/port/use_ssl, pandaproxy settings, librdkafka_configs) |
 | `iceberg_catalog` | TEXT | Yes | Linked Iceberg catalog in `namespace.name` format; NULL if no link or caller lacks privileges to see it |
@@ -314,8 +314,8 @@ One row per registered Kafka topic source (i.e., each `CREATE TABLE catalog=>nam
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `database_name` | TEXT | Oxla database |
-| `namespace_name` | TEXT | Oxla schema |
+| `database_name` | TEXT | Redpanda SQL database |
+| `namespace_name` | TEXT | Redpanda SQL schema |
 | `name` | TEXT | Source name (table name within the catalog) |
 | `connection_name` | TEXT | Name of the parent Kafka connection |
 | `topic_name` | TEXT | Kafka topic being consumed |
@@ -350,8 +350,8 @@ One row per registered Iceberg catalog connection.
 | `uri` | TEXT | REST catalog URI |
 | `warehouse` | TEXT | Warehouse path (empty if not configured) |
 | `auth_type` | TEXT | `'oauth2'`, `'basic'`, `'aws_sigv4'`, or `''` (unauthenticated) |
-| `namespace_name` | TEXT | Oxla schema containing this catalog |
-| `database_name` | TEXT | Oxla database containing this catalog |
+| `namespace_name` | TEXT | Redpanda SQL schema containing this catalog |
+| `database_name` | TEXT | Redpanda SQL database containing this catalog |
 
 The `auth_type` is derived from the proto's `auth_case()`:
 `kOauth2` → `"oauth2"`, `kBasic` → `"basic"`, `kAwsSigv4` → `"aws_sigv4"`.
@@ -366,21 +366,21 @@ SELECT name, uri FROM system.iceberg_catalogs WHERE auth_type = 'aws_sigv4';
 
 ### `system.iceberg_tables`
 
-One row per Iceberg table whose schema has been REFRESHed into Oxla's local
+One row per Iceberg table whose schema has been REFRESHed into Redpanda SQL's local
 catalog. Only root-level Iceberg types (3-segment internal names) are listed;
 nested types and Kafka sources are excluded.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `database_name` | TEXT | Oxla database |
-| `namespace_name` | TEXT | Oxla schema |
+| `database_name` | TEXT | Redpanda SQL database |
+| `namespace_name` | TEXT | Redpanda SQL schema |
 | `catalog_name` | TEXT | Iceberg catalog name |
 | `name` | TEXT | Qualified Iceberg table path (e.g., `ns1.ns2.tbl`) |
 | `oid` | INT | OID of the root UserType (joinable with `system.schema_types.oid` and `pg_type.oid`) |
 
 Note: stale entries persist — dropping a table from the REST catalog does not
 automatically remove it from `system.iceberg_tables`. The entry remains until
-explicitly dropped in Oxla.
+explicitly dropped in Redpanda SQL.
 
 ```sql
 -- List all known Iceberg tables
@@ -424,7 +424,7 @@ WHERE  snap.status = 'pending';
   options on the `COPY` statement (see "Inline COPY Credentials" above).
 - `FORMAT` values are case-insensitive (`parquet`, `PARQUET`, `Parquet` are all
   accepted).
-- Multi-node Oxla clusters distribute parquet/ORC file reads using a hash-based
+- Multi-node Redpanda SQL clusters distribute parquet/ORC file reads using a hash-based
   assignment across nodes. Individual files are not split across nodes.
 - The `mem://` protocol exists for internal/testing use; it is not intended for
   production data loading.

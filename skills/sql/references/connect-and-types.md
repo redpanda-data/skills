@@ -2,7 +2,7 @@
 
 ## Connection
 
-Oxla listens on the PostgreSQL wire protocol. The default port is **5432**
+Redpanda SQL listens on the PostgreSQL wire protocol. The default port is **5432**
 (configured via `network.postgresql.port` in `default_config.yml`).
 
 ### Default credentials
@@ -146,7 +146,7 @@ docker run -e OXLA__NETWORK__POSTGRESQL__PORT=5433 ...
 
 ## OIDC Authentication
 
-Oxla supports OIDC-based authentication (disabled by default):
+Redpanda SQL supports OIDC-based authentication (disabled by default):
 
 ```yaml
 oidc:
@@ -219,12 +219,12 @@ SELECT d0::int, d0::bigint FROM tb1;
 
 ### String types
 
-Oxla's bison grammar maps several keywords to the `STRING` internal type.
+Redpanda SQL's bison grammar maps several keywords to the `STRING` internal type.
 Only the parameterized forms carry a length:
 
 | Type | Internal representation | Notes |
 |------|------------------------|-------|
-| `STRING` | `DataType::STRING` | Oxla-native keyword, unbounded |
+| `STRING` | `DataType::STRING` | Redpanda SQL-native keyword, unbounded |
 | `TEXT` | `DataType::STRING` | Alias for STRING |
 | `CHAR` (no length) | `DataType::STRING` | Bare CHAR collapses to STRING |
 | `VARCHAR` (no length) | `DataType::STRING` | Bare VARCHAR collapses to STRING |
@@ -239,7 +239,7 @@ CREATE TABLE users (
     code  CHAR(3),         -- DataType::CHAR, length 3
     name  VARCHAR(255),    -- DataType::VARCHAR, length 255
     notes TEXT,            -- DataType::STRING
-    tag   STRING           -- DataType::STRING (Oxla-native)
+    tag   STRING           -- DataType::STRING (Redpanda SQL-native)
 );
 ```
 
@@ -389,7 +389,7 @@ SELECT CAST(s0 AS INT) FROM tb1;
 
 ---
 
-## What PostgreSQL features are NOT in Oxla
+## What PostgreSQL features are NOT in Redpanda SQL
 
 - No `SERIAL` / `SEQUENCE` auto-increment columns (not found in test cases).
 - No `EXPLAIN <query>` SQL statement. Query-plan output is controlled by config flags `feature_flags.print_query_plan` and `feature_flags.pipeline_visualization`, not by an EXPLAIN command.

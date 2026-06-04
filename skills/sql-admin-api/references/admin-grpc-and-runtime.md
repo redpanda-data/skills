@@ -1,8 +1,8 @@
-# Oxla Admin API, Prometheus Metrics, and Runtime Controls
+# Redpanda SQL Admin API, Prometheus Metrics, and Runtime Controls
 
 ## Admin API Overview
 
-Oxla's admin API is a ConnectRPC-based HTTP server (default port 9090). It is separate from both the PostgreSQL wire protocol (port 5432) and the Prometheus metrics endpoint (port 8080).
+Redpanda SQL's admin API is a ConnectRPC-based HTTP server (default port 9090). It is separate from both the PostgreSQL wire protocol (port 5432) and the Prometheus metrics endpoint (port 8080).
 
 **Key characteristics:**
 - HTTP server using the ConnectRPC protocol (not gRPC-over-HTTP/2; uses standard HTTP/1.1)
@@ -128,7 +128,7 @@ The client automatically uses `application/proto` encoding unless `use_json=True
 
 ### Log level effect on the startup config
 
-The `SetLogLevel` RPC changes the log level **in memory only** — it is not persisted to the config file. After a restart, Oxla reads `logging.level` from the YAML config (or `OXLA__LOGGING__LEVEL` env var) again.
+The `SetLogLevel` RPC changes the log level **in memory only** — it is not persisted to the config file. After a restart, Redpanda SQL reads `logging.level` from the YAML config (or `OXLA__LOGGING__LEVEL` env var) again.
 
 ---
 
@@ -205,7 +205,7 @@ curl -s --cacert /certs/admin-ca.pem \
 
 ## Prometheus Metrics Endpoint
 
-Oxla exposes Prometheus metrics on port 8080 (configurable via `metrics.port`). This is a plain HTTP server — no authentication.
+Redpanda SQL exposes Prometheus metrics on port 8080 (configurable via `metrics.port`). This is a plain HTTP server — no authentication.
 
 ```bash
 # Scrape all metrics (metrics endpoint is on port 8080, not 9090)
@@ -234,15 +234,15 @@ Memory limits are controlled by two parameters (both **internal**):
 ```yaml
 memory:
   max: 0           # query memory budget
-                   # 0 = Oxla reads available RAM from OS and calculates max
+                   # 0 = Redpanda SQL reads available RAM from OS and calculates max
                    # Minimum non-zero value: 8G (e.g., "8G", "32G")
   max_non_query: 6442M  # non-query memory (buffers, catalog cache, etc.)
                          # Must be at least ~6442 MB
 ```
 
-Setting `max: 0` is recommended unless you need to cap Oxla's memory usage explicitly (e.g., when running alongside other workloads on the same machine).
+Setting `max: 0` is recommended unless you need to cap Redpanda SQL's memory usage explicitly (e.g., when running alongside other workloads on the same machine).
 
-OOM behavior: Oxla runs a background OOM monitor that samples the process RSS (Resident Set Size) from `/proc/self/status`. When RSS exceeds the operational limit — the total memory budget minus a ~1% margin — the monitor triggers two emergency actions: (1) cancels all running queries (logged as "cancelled due to OOM prevention") and (2) evicts the entire storage cache. The trigger threshold is slightly below `memory.max`, not exactly equal to it.
+OOM behavior: Redpanda SQL runs a background OOM monitor that samples the process RSS (Resident Set Size) from `/proc/self/status`. When RSS exceeds the operational limit — the total memory budget minus a ~1% margin — the monitor triggers two emergency actions: (1) cancels all running queries (logged as "cancelled due to OOM prevention") and (2) evicts the entire storage cache. The trigger threshold is slightly below `memory.max`, not exactly equal to it.
 
 To observe memory pressure, scrape the `oxla_process_memory_total` Prometheus metric (process RSS in bytes) exposed on port 8080. See the `sql-debugging` skill's `metrics-and-logging.md` reference for a full list of available metrics.
 

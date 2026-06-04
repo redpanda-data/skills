@@ -1,39 +1,25 @@
 ---
 name: sql-federated-queries
-description: >-
-  Query external data from Oxla — Kafka topics via catalogs, Apache Iceberg
-  tables, and S3/GCS/Azure parquet/ORC files — alongside native Oxla tables.
-  Use when: querying Kafka topics with CREATE KAFKA CATALOG or CREATE REDPANDA
-  CATALOG; reading Apache Iceberg tables using the catalog=>path.table syntax;
-  loading or exporting parquet/ORC files from S3/GCS/Azure (COPY FROM/TO);
-  joining external data with native tables; or inspecting external metadata via
-  system.kafka_connections, system.kafka_sources, system.iceberg_catalogs, and
-  system.iceberg_tables. Also covers the Redpanda Enterprise features that
-  produce the data Oxla reads — Iceberg Topics (redpanda.iceberg.mode and the
-  redpanda.iceberg.* topic properties; iceberg_enabled and iceberg_rest_catalog_*
-  cluster properties), Tiered Storage (cloud_storage_enabled), and Server-Side
-  Schema ID Validation (enable_schema_id_validation, redpanda.value.schema.id.validation)
-  — all of which require a Redpanda Enterprise license. Trigger phrases: "query Kafka
-  topic from Oxla", "CREATE KAFKA CATALOG", "CREATE ICEBERG CATALOG", "federated
-  query Oxla", "read parquet from S3 in Oxla", "iceberg catalog arrow operator",
-  "catalog=>table syntax", "REFRESH kafka source", "ALTER KAFKA TABLE", "external
-  schema Oxla", "redpanda.iceberg.mode", "enable Iceberg topic for Oxla",
-  "iceberg_rest_catalog_endpoint", "schema ID validation".
+description: "Query external data from Redpanda SQL: Kafka topics via catalogs, Apache Iceberg tables, and S3/GCS/Azure parquet/ORC files. Use when: querying Kafka topics with CREATE KAFKA/REDPANDA CATALOG; reading Iceberg tables (catalog=>path.table syntax); loading parquet/ORC from S3/GCS/Azure (COPY FROM/TO); joining external data with native tables; or inspecting metadata via system.kafka_sources and system.iceberg_tables. Also covers upstream Redpanda Enterprise features: Iceberg Topics, Tiered Storage, and Schema ID Validation."
+metadata:
+  version: "1.0.0"
 ---
 
 # Redpanda SQL: Federated & External Queries
 
-Oxla can query external data — Kafka/Redpanda topics, Apache Iceberg tables, and
+> **Important**: Redpanda SQL is currently available only on **Redpanda Cloud**. Federated query features described in this skill are available to Cloud users.
+
+Redpanda SQL can query external data — Kafka/Redpanda topics, Apache Iceberg tables, and
 object-store files — without ETL, joining them directly with native columnar tables
 using standard SQL. External sources are accessed through named catalog objects
-that Oxla stores in its own metastore. Schemas are decoded automatically from
+that Redpanda SQL stores in its own metastore. Schemas are decoded automatically from
 Avro, Protobuf, or JSON via the Schema Registry and can evolve transparently.
 
-Connect to Oxla via the PostgreSQL wire protocol. The port is configurable via
-`network.postgresql.port` (conventional default: 5432):
+Connect to Redpanda SQL via the PostgreSQL wire protocol (port 5432). Get your connection
+details from the Redpanda Cloud console:
 
 ```bash
-psql -h <oxla-host> -p <port> -U <user>
+psql "postgres://<user>:<password>@<cluster>.cloud.redpanda.com:5432/<database>"
 ```
 
 ---
@@ -114,7 +100,7 @@ COPY my_table FROM 's3://my-bucket/data/file.orc' (FORMAT ORC);
 
 ## Kafka Catalogs
 
-Kafka catalogs connect Oxla to a Kafka or Redpanda cluster. Both `CREATE KAFKA CATALOG`
+Kafka catalogs connect Redpanda SQL to a Kafka or Redpanda cluster. Both `CREATE KAFKA CATALOG`
 and `CREATE REDPANDA CATALOG` are accepted (synonyms).
 
 ### Connection options (`CREATE KAFKA CATALOG ... WITH (...)`)
@@ -191,7 +177,7 @@ REFRESH my_kafka=>orders;
 
 ## Iceberg Catalogs
 
-Oxla connects to Apache Iceberg REST catalogs (e.g., Polaris, AWS Glue, Tabular).
+Redpanda SQL connects to Apache Iceberg REST catalogs (e.g., Polaris, AWS Glue, Tabular).
 
 ### Connection options (`CREATE ICEBERG CATALOG ... WITH (...)`)
 
@@ -245,7 +231,7 @@ WHERE val_ts = TIMESTAMP '2024-01-03 12:00:00';
 
 ## File-Based External Data (COPY FROM/TO)
 
-Oxla supports `COPY FROM` and `COPY TO` with parquet and ORC on S3, GCS, and Azure.
+Redpanda SQL supports `COPY FROM` and `COPY TO` with parquet and ORC on S3, GCS, and Azure.
 
 ```sql
 -- Load parquet
@@ -306,14 +292,14 @@ FROM   system.iceberg_catalogs;
 
 ---
 
-## Redpanda Enterprise Source Config (producing the data Oxla reads)
+## Redpanda Enterprise Source Config (producing the data Redpanda SQL reads)
 
-The Iceberg tables, Tiered Storage segments, and validated schemas that Oxla
+The Iceberg tables, Tiered Storage segments, and validated schemas that Redpanda SQL
 queries are produced on the Redpanda side by **Enterprise Edition** features
-(valid license required). When Oxla reads an Iceberg table or runs a transparent
+(valid license required). When Redpanda SQL reads an Iceberg table or runs a transparent
 Kafka-Iceberg query, the Redpanda cluster must first be configured to write it.
 
-| Oxla read path | Redpanda enterprise feature | Key config |
+| Redpanda SQL read path | Redpanda enterprise feature | Key config |
 |----------------|-----------------------------|------------|
 | `CREATE ICEBERG CATALOG`, `cat=>ns.table` | Iceberg Topics | `iceberg_enabled=true`; topic `redpanda.iceberg.mode` |
 | Transparent Kafka-Iceberg (`USING CATALOG`) | Iceberg Topics + catalog backing | `iceberg_catalog_type`, `iceberg_rest_catalog_endpoint` |
@@ -321,7 +307,7 @@ Kafka-Iceberg query, the Redpanda cluster must first be configured to write it.
 | Avro/Protobuf/JSON decoding via registry | Server-Side Schema ID Validation | `enable_schema_id_validation=true`; topic `redpanda.value.schema.id.validation` |
 
 ```bash
-# Redpanda side (Enterprise): produce an Iceberg table Oxla can read.
+# Redpanda side (Enterprise): produce an Iceberg table Redpanda SQL can read.
 rpk cluster config set cloud_storage_enabled true        # Tiered Storage (prereq)
 rpk cluster config set iceberg_enabled true              # Iceberg Topics
 rpk cluster config set iceberg_catalog_type rest
@@ -334,7 +320,7 @@ The `redpanda.iceberg.*` topic properties (`mode`, `delete`,
 `iceberg_rest_catalog_*` cluster properties, and the schema-validation knobs are
 documented in
 [redpanda-iceberg-source-config.md](references/redpanda-iceberg-source-config.md).
-Point Oxla's `CREATE ICEBERG CATALOG` `uri` / `auth_type` at the same REST
+Point Redpanda SQL's `CREATE ICEBERG CATALOG` `uri` / `auth_type` at the same REST
 catalog Redpanda writes to (`iceberg_rest_catalog_endpoint` /
 `iceberg_rest_catalog_authentication_mode`).
 
@@ -345,4 +331,4 @@ catalog Redpanda writes to (`iceberg_rest_catalog_endpoint` /
 - [kafka-catalogs.md](references/kafka-catalogs.md): Complete reference for `CREATE KAFKA CATALOG`, `CREATE TABLE catalog=>name`, `ALTER KAFKA CATALOG/TABLE`, `REFRESH`, all options, schema decoding (Avro/Protobuf/JSON), the `redpanda` metadata struct, and transparent Kafka-Iceberg queries.
 - [iceberg.md](references/iceberg.md): Querying Apache Iceberg REST catalogs — `CREATE ICEBERG CATALOG`, the `catalog=>path.table` syntax, partition pruning and range/date/timestamp filters, all auth modes (OAuth2/Basic/SigV4), and multi-file partition scans.
 - [files-and-system-tables.md](references/files-and-system-tables.md): `COPY FROM/TO` with parquet and ORC on S3/GCS/Azure, storage path protocols (`s3://`, `gs://`, `az://`/`wasbs://`, `local://`), `CREATE STORAGE` credential configuration, inline per-statement `AWS_CRED`/`GCS_CRED`/`AZURE_CRED` credentials, and the four external-metadata system tables with their column schemas and example queries.
-- [redpanda-iceberg-source-config.md](references/redpanda-iceberg-source-config.md): The Redpanda **Enterprise** features that produce the data Oxla reads — Iceberg Topics (`iceberg_enabled`, the `redpanda.iceberg.mode`/`delete`/`invalid.record.action`/`partition.spec`/`target.lag.ms` topic properties, the four Iceberg modes, DLQ tables), the REST and `object_storage` catalog backing (`iceberg_catalog_type`, all `iceberg_rest_catalog_*` properties) and how to align them with Oxla's `CREATE ICEBERG CATALOG`, Tiered Storage as a prerequisite (`cloud_storage_enabled`), and Server-Side Schema ID Validation (`enable_schema_id_validation`, `redpanda.key/value.schema.id.validation`, subject-name strategies). Notes license requirements and expiration behavior.
+- [redpanda-iceberg-source-config.md](references/redpanda-iceberg-source-config.md): The Redpanda **Enterprise** features that produce the data Redpanda SQL reads — Iceberg Topics (`iceberg_enabled`, the `redpanda.iceberg.mode`/`delete`/`invalid.record.action`/`partition.spec`/`target.lag.ms` topic properties, the four Iceberg modes, DLQ tables), the REST and `object_storage` catalog backing (`iceberg_catalog_type`, all `iceberg_rest_catalog_*` properties) and how to align them with Redpanda SQL's `CREATE ICEBERG CATALOG`, Tiered Storage as a prerequisite (`cloud_storage_enabled`), and Server-Side Schema ID Validation (`enable_schema_id_validation`, `redpanda.key/value.schema.id.validation`, subject-name strategies). Notes license requirements and expiration behavior.

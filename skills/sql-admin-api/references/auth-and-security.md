@@ -1,6 +1,6 @@
-# Oxla Authentication, Access Control & Secret Encryption
+# Redpanda SQL Authentication, Access Control & Secret Encryption
 
-This reference covers Oxla's security surfaces: password (SCRAM) authentication, OIDC/JWT bearer-token authentication, access-control modes, centralized access control, and at-rest encryption of stored connection secrets. These are the security differentiators relevant to operating Oxla; all keys below are verified against `config/Release/default_config.yml`, `src/config/config_parameter_list.h`, `src/config/startup_config.{h,cpp}`, and `src/access_control/`.
+This reference covers Redpanda SQL's security surfaces: password (SCRAM) authentication, OIDC/JWT bearer-token authentication, access-control modes, centralized access control, and at-rest encryption of stored connection secrets. These are the security differentiators relevant to operating Redpanda SQL; all keys below are verified against `config/Release/default_config.yml`, `src/config/config_parameter_list.h`, `src/config/startup_config.{h,cpp}`, and `src/access_control/`.
 
 Authentication for the PostgreSQL wire port is distinct from TLS for the admin API (port 9090) — see [admin-grpc-and-runtime.md](admin-grpc-and-runtime.md) for the latter.
 
@@ -31,7 +31,7 @@ Passwords are stored using **SCRAM-SHA-256** (`src/access_control/scram_sha256/`
 
 ## OIDC / JWT Bearer Authentication
 
-Oxla supports OAuth/OpenID Connect JWT bearer-token authentication on the PostgreSQL wire port — the analog of Redpanda's OIDC/OAUTHBEARER enterprise authentication. All `oidc.*` keys are **public** parameters.
+Redpanda SQL supports OAuth/OpenID Connect JWT bearer-token authentication on the PostgreSQL wire port — the analog of Redpanda's OIDC/OAUTHBEARER enterprise authentication. All `oidc.*` keys are **public** parameters.
 
 ```yaml
 oidc:
@@ -58,7 +58,7 @@ Notes:
 
 ## Centralized Access Control (CAC)
 
-A managed/centralized access-control mode used in Oxla Cloud-style deployments where roles and privileges are governed by an external control plane keyed by organization/cluster identifiers. Configured under `feature_flags.centralized_access_control` (the source comment notes "centralized_access_control is under feature_flags for now"). All four keys are **public** parameters.
+A managed/centralized access-control mode used in Redpanda SQL Cloud-style deployments where roles and privileges are governed by an external control plane keyed by organization/cluster identifiers. Configured under `feature_flags.centralized_access_control` (the source comment notes "centralized_access_control is under feature_flags for now"). All four keys are **public** parameters.
 
 ```yaml
 feature_flags:

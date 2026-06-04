@@ -1,0 +1,53 @@
+name: streaming-debugging-triage
+skill: streaming-debugging
+version: "1.0"
+
+tasks:
+  - id: cluster-unhealthy
+    prompt: "My Redpanda cluster is unhealthy. What should I check first?"
+    expected_commands:
+      - pattern: "rpk cluster health"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: under-replicated
+    prompt: "I see under-replicated partitions in my cluster. How do I diagnose this?"
+    expected_commands:
+      - pattern: "rpk cluster health|partition|replica"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: collect-bundle
+    prompt: "How do I collect a debug bundle for Redpanda support?"
+    expected_commands:
+      - pattern: "rpk debug bundle"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: check-license
+    prompt: "Enterprise features aren't working. What should I check?"
+    expected_commands:
+      - pattern: "rpk cluster license|license"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: disk-pressure
+    prompt: "My broker is running out of disk space. What are my options?"
+    expected_commands:
+      - pattern: "retention|delete|disk"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: negative-simple-health
+    type: negative_transfer_check
+    prompt: "Is my Redpanda cluster healthy?"
+    acceptable_responses:
+      - contains: "rpk cluster health"
+    must_not:
+      require_enterprise_features: true
+      step_count: "> 2"

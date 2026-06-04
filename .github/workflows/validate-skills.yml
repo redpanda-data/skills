@@ -1,0 +1,93 @@
+name: Validate Skills
+
+on:
+  pull_request:
+    paths:
+      - 'skills/**'
+      - 'resources/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'skills/**'
+      - 'resources/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install skill-validator
+        run: |
+          go install github.com/agent-ecosystem/skill-validator/cmd/skill-validator@v1.5.2
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Validate all skills
+        run: |
+          # Create directory for validation results
+          mkdir -p validation-results
+
+          echo "## Skill Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          failed=0
+          for skill in skills/*/; do
+            skill_name=$(basename "$skill")
+            echo "Validating $skill_name..."
+
+            # Run validator and capture exit code
+            set +e
+            output=$(skill-validator check "$skill" --emit-annotations 2>&1)
+            exit_code=$?
+            set -e
+
+            echo "  Exit code: $exit_code"
+
+            # Save detailed output to file
+            echo "# Validation results for $skill_name" > "validation-results/$skill_name.txt"
+            echo "" >> "validation-results/$skill_name.txt"
+            echo "Exit code: $exit_code" >> "validation-results/$skill_name.txt"
+            echo "" >> "validation-results/$skill_name.txt"
+            echo "$output" >> "validation-results/$skill_name.txt"
+
+            # Exit code 0 = pass, 1 = errors, 2 = warnings only
+            if [ $exit_code -eq 0 ]; then
+              echo "- ✅ **$skill_name**: passed" >> $GITHUB_STEP_SUMMARY
+            elif [ $exit_code -eq 2 ]; then
+              echo "- ⚠️ **$skill_name**: warnings" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ❌ **$skill_name**: failed (exit $exit_code)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "<details><summary>Details</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "$output" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              failed=1
+            fi
+          done
+
+          if [ $failed -eq 1 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Some skills failed validation**" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **All skills passed validation**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-validation-results
+          path: validation-results/
+          retention-days: 30

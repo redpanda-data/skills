@@ -1,31 +1,8 @@
 ---
 name: rpk-cloud
-description: >-
-  Authenticate and manage Redpanda Cloud from the CLI using the `rpk cloud`
-  command group. Covers login (SSO browser flow and client credentials),
-  logout, cloud auth management (list/use/delete/token), cluster selection
-  (rpk cloud cluster select), resource group management, BYOC plugin
-  provisioning (install/apply/destroy/validate), and the MCP server
-  (stdio/install/proxy) that exposes Redpanda Cloud to AI agents.
-  Use when: logging in to Redpanda Cloud with SSO or --client-id/--client-secret;
-  setting RPK_CLOUD_CLIENT_ID or RPK_CLOUD_CLIENT_SECRET; creating or switching
-  an rpk profile that points at a Cloud cluster; running rpk cloud cluster select;
-  managing resource groups in Redpanda Cloud; running rpk cloud byoc apply or
-  rpk cloud byoc install; configuring the rpk MCP server for Claude Desktop or
-  Claude Code; running rpk cloud mcp stdio or rpk cloud mcp install; printing
-  the current auth token with rpk cloud auth token; listing or switching cloud
-  auths across multiple Redpanda Cloud organizations. Also covers the enterprise
-  data features you drive against a Cloud cluster after cluster select: Tiered
-  Storage Mountable Topics (rpk cluster storage mount/unmount/list-mountable),
-  Iceberg Topics (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/
-  invalid.record.action and iceberg_enabled), Cloud Topics
-  (redpanda.cloud_topic.enabled / redpanda.storage.mode), Tiered Storage
-  topic-level retention (redpanda.remote.read/write/delete), and RBAC/IAM
-  (control-plane roles and role bindings, data-plane SecurityService).
-  Use when: mounting or unmounting Cloud topics from object storage; enabling
-  Iceberg or Cloud Topics on a Redpanda Cloud cluster; managing Cloud RBAC roles,
-  role bindings, or service accounts. These are Redpanda Enterprise features,
-  licensed by the managed Cloud platform.
+description: "Authenticate and manage Redpanda Cloud via rpk cloud. Covers login (SSO and client credentials), logout, cloud auth management, cluster selection, resource groups, BYOC provisioning, and the MCP server for AI agents. Use when: logging in with SSO or client credentials; setting RPK_CLOUD_CLIENT_ID; running rpk cloud cluster select; managing resource groups; running rpk cloud byoc apply; configuring MCP for Claude; printing auth tokens; or switching cloud auths. Also covers enterprise features after cluster select: Mountable Topics, Iceberg Topics, Cloud Topics, and RBAC/IAM."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk cloud: Authenticate & Manage Redpanda Cloud

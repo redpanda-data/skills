@@ -71,7 +71,7 @@ TRUNCATE orders;         -- TABLE keyword is optional
 
 ## ALTER TABLE
 
-Oxla does **not** support `ALTER TABLE ... ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`. The parser has no such production.
+Redpanda SQL does **not** support `ALTER TABLE ... ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`. The parser has no such production.
 
 The only `ALTER TABLE` form re-binds an external Redpanda/Kafka catalog table.
 Use the `IF EXISTS` form — it is the canonical Kafka-catalog rebind syntax and the
@@ -83,7 +83,7 @@ ALTER TABLE IF EXISTS my_catalog=>my_table WITH (schema_lookup_policy = 'LATEST'
 ```
 
 See [kafka-iceberg.md](kafka-iceberg.md) for the full Redpanda/Kafka and Iceberg
-catalog integration (an Oxla + Redpanda Enterprise differentiator), including all
+catalog integration (a Redpanda SQL enterprise differentiator), including all
 connection-option keys.
 
 To change a table's column structure, recreate it with `CREATE TABLE AS SELECT`:
@@ -171,7 +171,7 @@ supported object levels are:
 | `ON DATABASE name` | database |
 | `ON EXTERNAL SOURCE name[.obj] [EXTERNAL_ACCESS '...']` | external source (Kafka/Iceberg catalog) |
 
-> **`ON ALL TABLES IN SCHEMA` is NOT valid in Oxla.** The grammar has an
+> **`ON ALL TABLES IN SCHEMA` is NOT valid in Redpanda SQL.** The grammar has an
 > `ON ALL <object> IN SCHEMA <schema>` production, but it hard-errors with
 > `YYERROR` ("syntax error at or near \"tables\"") whenever the object word is
 > literally `tables` (case-insensitive, bison_parser.y line ~2953). So
@@ -369,7 +369,7 @@ SELECT TIMESTAMP '2024-01-01 12:00:00' AT TIME ZONE 'UTC';
 
 ## INSERT
 
-Oxla supports both `INSERT INTO ... VALUES (...)` (native literal rows) and
+Redpanda SQL supports both `INSERT INTO ... VALUES (...)` (native literal rows) and
 `INSERT INTO ... SELECT ...` (for transformed or bulk loads). They are independent
 forms — VALUES is not "via SELECT". Multi-row VALUES is supported.
 
@@ -500,7 +500,7 @@ ORDER BY yr, mo;
 
 ## SELECT INTO
 
-`SELECT INTO` in Oxla supports **two forms**, determined by the INTO target:
+`SELECT INTO` in Redpanda SQL supports **two forms**, determined by the INTO target:
 
 1. **Table destination** — `SELECT ... INTO new_table FROM ...` creates a new table (like PostgreSQL's `SELECT INTO`).
 2. **File destination** — `SELECT ... INTO 'path' (options) FROM ...` exports to a file (S3, local, etc.). The **parenthesized option list** is what selects the file form.
@@ -579,7 +579,7 @@ ROLLBACK;
 SELECT CASE WHEN i0 = 0 THEN a0 ELSE ARRAY[1,2] END
 FROM tb1;
 
--- IF(condition, true_val, false_val) -- Oxla-specific
+-- IF(condition, true_val, false_val) -- Redpanda SQL-specific
 SELECT IF(b1, i1, l1), IF(b0, i0, i1)
 FROM tb1;
 ```

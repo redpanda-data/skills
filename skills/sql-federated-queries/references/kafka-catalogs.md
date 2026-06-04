@@ -1,6 +1,6 @@
-# Oxla: Kafka Catalogs
+# Redpanda SQL: Kafka Catalogs
 
-Oxla can query Kafka and Redpanda topics as tables using named catalog objects.
+Redpanda SQL can query Kafka and Redpanda topics as tables using named catalog objects.
 The Kafka catalog stores connection details (broker addresses, Schema Registry URL,
 optional PandaProxy URL) and a set of registered topic sources. Both `CREATE KAFKA CATALOG`
 and `CREATE REDPANDA CATALOG` are accepted synonyms.
@@ -133,7 +133,7 @@ WITH (
 ## REFRESH
 
 `REFRESH` pulls the current schema from the Schema Registry and stores it in
-Oxla's internal catalog. It must be called after `CREATE TABLE` and whenever
+Redpanda SQL's internal catalog. It must be called after `CREATE TABLE` and whenever
 the schema evolves.
 
 ```sql
@@ -316,7 +316,7 @@ Two policies control how schemas are resolved at read time
 (grounded in `oxla/src/kafka/decoders/schema_lookup_policy.h`):
 
 **`LATEST` (default):**
-- Oxla fetches the latest schema version at `REFRESH` time and stores it.
+- Redpanda SQL fetches the latest schema version at `REFRESH` time and stores it.
 - All incoming records are decoded with that fixed schema.
 - The Confluent wire-format header (5-byte magic+schema-ID prefix) is used by
   default (`confluent_wire_protocol = 'true'`).
@@ -324,7 +324,7 @@ Two policies control how schemas are resolved at read time
 
 **`SCHEMA_ID`:**
 - Each Kafka record carries its own Confluent schema ID in the 5-byte wire header.
-- Oxla resolves the schema per-record from the registry.
+- Redpanda SQL resolves the schema per-record from the registry.
 - At `REFRESH` time, all known schema versions are merged into a widened type.
 - Best for topics with multiple active schema versions.
 
@@ -333,7 +333,7 @@ Two policies control how schemas are resolved at read time
 ## Transparent Kafka-Iceberg Queries
 
 When a Kafka catalog is linked to an Iceberg catalog (via `USING CATALOG` or
-`ALTER KAFKA CATALOG ... USING CATALOG`), Oxla can read Kafka topics through
+`ALTER KAFKA CATALOG ... USING CATALOG`), Redpanda SQL can read Kafka topics through
 their Iceberg table representation for time-travel and partition-aware scans.
 
 ```sql
@@ -341,7 +341,7 @@ their Iceberg table representation for time-travel and partition-aware scans.
 ALTER KAFKA CATALOG my_kafka USING CATALOG my_ice;
 
 -- Now query the Kafka source as if it were an Iceberg table
--- (uses the catalog=>source syntax, but Oxla routes through Iceberg)
+-- (uses the catalog=>source syntax, but Redpanda SQL routes through Iceberg)
 SELECT age, name FROM my_kafka=>users;
 ```
 
@@ -359,7 +359,7 @@ WHERE  (t.redpanda)."offset" > 0;
 
 Schema superset handling: when the Kafka Avro/Protobuf schema is a strict
 name-superset of the Iceberg table schema (i.e., additional fields exist in
-Kafka that are not in Iceberg), Oxla widens the struct type to include both.
+Kafka that are not in Iceberg), Redpanda SQL widens the struct type to include both.
 
 ---
 
@@ -382,4 +382,4 @@ Kafka that are not in Iceberg), Oxla widens the struct type to include both.
 
 Note: `FLATTEN` and `VARIANT` are parsed by the grammar but currently rejected at
 execution time with an error ("only JSON and COMPOUND struct mapping policy is
-supported in current Oxla version").
+supported in current Redpanda SQL version").

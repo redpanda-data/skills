@@ -1,26 +1,8 @@
 ---
 name: rpk-security
-description: >-
-  Manages Redpanda authentication and authorization from the CLI using the
-  `rpk security` command group (user, acl, role, secret subcommands). Use when:
-  creating or deleting SASL/SCRAM users; changing user passwords; listing SASL
-  users; granting or revoking Kafka ACLs (topics, consumer groups, cluster,
-  transactional IDs, Schema Registry subjects); listing or deleting ACLs;
-  creating or deleting RBAC roles (Enterprise); assigning or unassigning roles
-  to principals; describing a role's members and ACL bindings; managing secrets
-  for Redpanda Cloud clusters; setting up authentication on a self-hosted or
-  cloud cluster; configuring SASL/SCRAM, SASL/PLAIN, OAUTHBEARER/OIDC
-  (Enterprise), GSSAPI/Kerberos (Enterprise), mTLS principal mapping, or HTTP
-  Basic/OIDC auth; configuring enterprise security features and their config
-  keys — Audit Logging (`audit_enabled`), GBAC with OIDC `Group:` principals
-  (`oidc_group_claim_path`), server-side Schema ID Validation
-  (`enable_schema_id_validation`), Schema Registry Authorization
-  (`schema_registry_enable_authorization`), FIPS mode (`fips_mode`); managing
-  the Enterprise license (`rpk cluster license info/set`, `rpk generate
-  license`); bootstrapping a new cluster with a superuser; understanding the
-  relationship between SASL users (authn) and ACLs (authz); using prefixed
-  resource patterns; using `RedpandaRole:` and `Group:` principals in ACLs;
-  `rpk acl` (deprecated alias).
+description: "Manages Redpanda authentication and authorization via rpk security (user, acl, role, secret subcommands). Use when: creating or deleting SASL/SCRAM users; changing passwords; granting or revoking ACLs (topics, groups, cluster); creating RBAC roles (Enterprise); assigning roles to principals; managing Cloud secrets; configuring SASL/SCRAM, OAUTHBEARER/OIDC, Kerberos, or mTLS; enabling Audit Logging, Schema ID Validation, or Schema Registry Authorization; managing the Enterprise license; or understanding SASL users vs ACLs."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk security: ACLs, Users, Roles & Secrets

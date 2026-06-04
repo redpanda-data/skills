@@ -1,0 +1,57 @@
+name: connect-cdc-postgres-setup
+skill: connect-cdc-postgres
+version: "1.0"
+
+tasks:
+  - id: check-wal-level
+    prompt: "Before setting up PostgreSQL CDC, what database setting do I need to verify?"
+    expected_commands:
+      - pattern: "wal_level.*logical|SHOW wal_level"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: create-user
+    prompt: "Create a PostgreSQL user for CDC replication"
+    expected_commands:
+      - pattern: "REPLICATION"
+        required: true
+      - pattern: "CREATE USER|CREATE ROLE"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: table-needs-pk
+    prompt: "My CDC snapshot is failing. The table has no primary key. What's the issue?"
+    expected_commands:
+      - pattern: "primary key|PK"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: slot-growth
+    prompt: "My PostgreSQL WAL is growing unbounded. The CDC connector was stopped. What's happening?"
+    expected_commands:
+      - pattern: "replication.slot|slot|WAL"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: toast-columns
+    prompt: "Updates are missing some column values in my CDC events. What could be wrong?"
+    expected_commands:
+      - pattern: "TOAST|REPLICA IDENTITY"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: negative-simple-setup
+    type: negative_transfer_check
+    prompt: "What's the minimum I need to set up PostgreSQL CDC?"
+    acceptable_responses:
+      - contains: "wal_level"
+      - contains: "REPLICATION"
+      - contains: "logical"
+    must_not:
+      require_enterprise_features: false
+      step_count: "> 5"

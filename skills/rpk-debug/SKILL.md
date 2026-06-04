@@ -1,20 +1,8 @@
 ---
 name: rpk-debug
-description: >-
-  Collects local and remote Redpanda diagnostics bundles and gathers broker
-  process info using the `rpk debug` command group. Use when: collecting a
-  debug bundle for Redpanda support or self-triage, generating a
-  remote (cluster-wide) bundle via the Admin API, gathering local broker
-  process or diagnostic info from the CLI, using rpk debug bundle or rpk debug
-  remote-bundle, troubleshooting a Redpanda cluster and needing to capture
-  logs/metrics/profiles, passing a debug bundle to the support team, or
-  running rpk debug on Linux or Kubernetes. Also covers triaging enterprise
-  (license-gated) features from a bundle — Tiered Storage, Cloud Topics,
-  Iceberg Topics, Continuous Data Balancing, Shadow Linking (cross-cluster
-  DR), Remote Read Replicas, Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/
-  Kerberos auth, FIPS mode, Server-side Schema ID Validation, Schema Registry
-  Authorization, and Leadership Pinning, plus checking license status and
-  license violations.
+description: "Collects local and remote Redpanda diagnostics bundles and gathers broker process info using the `rpk debug` command group. Use when: collecting a debug bundle for Redpanda support or self-triage, generating a remote (cluster-wide) bundle via the Admin API, gathering local broker process or diagnostic info from the CLI, using rpk debug bundle or rpk debug remote-bundle, troubleshooting a Redpanda cluster and needing to capture logs/metrics/profiles, passing a debug bundle to the support team, or running rpk debug on Linux or Kubernetes. Also covers triaging enterprise (license-gated) features from a bundle — Tiered Storage, Cloud Topics, Iceberg Topics, Continuous Data Balancing, Shadow Linking (cross-cluster DR), Remote Read Replicas, Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/Kerberos auth, FIPS mode, Server-side Schema ID Validation, Schema Registry Authorization, and Leadership Pinning, plus checking license status and license violations."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk debug: Debug Bundles & Local Diagnostics

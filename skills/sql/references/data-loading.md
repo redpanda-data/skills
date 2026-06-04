@@ -1,6 +1,6 @@
 # Data Loading
 
-Oxla loads data via `COPY FROM` (into a table) and exports via `COPY TO` (from
+Redpanda SQL loads data via `COPY FROM` (into a table) and exports via `COPY TO` (from
 a table or query). All grounded in
 `tests/UT/query_planner/cases/copy_from/` and
 `tests/UT/query_planner/cases/copy_to/`.
@@ -65,7 +65,7 @@ COPY tb FROM 'my_file.orc' (FORMAT ORC);
 
 ### Multi-node copy (three_nodes configuration)
 
-The same `COPY FROM` syntax works in multi-node clusters. Oxla distributes
+The same `COPY FROM` syntax works in multi-node clusters. Redpanda SQL distributes
 the load automatically:
 
 ```sql
@@ -148,7 +148,7 @@ TO 'my_file.csv'
 
 ## SELECT INTO (file export form)
 
-`SELECT INTO` in Oxla supports two forms. When the INTO target is a quoted path
+`SELECT INTO` in Redpanda SQL supports two forms. When the INTO target is a quoted path
 with a **parenthesized option list**, it writes query results to a file (S3, local, etc.).
 When the target is a bare table name (no option list), it creates a new table —
 exactly like PostgreSQL's `SELECT INTO new_table`. See ddl-dml.md for the table-destination form.
@@ -264,7 +264,7 @@ in `COPY FROM/TO`.
 ### Pattern 1: Stream CSV from shell pipeline
 
 ```bash
-# Generate data and stream into Oxla
+# Generate data and stream into Redpanda SQL
 python generate_data.py | \
   psql -h localhost -p 5432 -U oxla oxla \
   -c "COPY orders FROM STDIN (FORMAT CSV, DELIMITER ',', HEADER ON);"
@@ -345,7 +345,7 @@ For `aws_cred(...)` parameters:
 
 ## Insertion buffer tuning
 
-From `default_config.yml`, Oxla buffers small insertions in memory before flushing:
+From `default_config.yml`, Redpanda SQL buffers small insertions in memory before flushing:
 
 ```yaml
 insertion:

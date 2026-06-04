@@ -1,31 +1,8 @@
 ---
 name: rpk-topic
-description: >-
-  Manage Redpanda topics and produce/consume records from the CLI using the
-  `rpk topic` command group. Covers creating topics with custom partition
-  counts, replication factors, and configs; listing and describing topics
-  (summary, configs, partitions); altering topic configs (set/delete/append/
-  subtract); adding partitions; trimming/deleting records; analyzing throughput
-  and batch size; describing tiered-storage status; and deleting topics.
-  Also covers `rpk topic produce` and `rpk topic consume` in depth including
-  the --format percent-escape syntax, keys, headers, compression, acks,
-  tombstones, schema-registry encoding/decoding, and all --offset forms.
-  Also covers Redpanda enterprise topic properties (Enterprise license
-  required): Tiered Storage (redpanda.remote.read/write/delete/recovery,
-  redpanda.storage.mode, retention.local.target.*), Cloud Topics
-  (redpanda.cloud_topic.enabled / redpanda.storage.mode=cloud), Iceberg Topics
-  (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/
-  invalid.record.action), Remote Read Replicas (redpanda.remote.readreplica),
-  Leader Pinning (redpanda.leaders.preference), and server-side Schema ID
-  Validation (redpanda.key/value.schema.id.validation, subject.name.strategy).
-  Use when: creating or deleting Redpanda topics from the CLI, changing topic
-  configs or retention policy, adding partitions to an existing topic,
-  trimming old records with trim-prefix, producing keyed or JSON records to a
-  topic, consuming records from specific offsets or consumer groups, using
-  schema registry to encode/decode Avro/Protobuf/JSON records with rpk,
-  analyzing topic throughput, describing tiered-storage cloud status, or
-  enabling enterprise topic features (tiered storage, cloud topics, Iceberg,
-  remote read replicas, leader pinning, schema ID validation).
+description: "Manage Redpanda topics and produce/consume records via rpk topic. Covers creating topics with partitions/replication/configs, listing and describing topics, altering configs, adding partitions, trimming records, and deleting topics. Also covers rpk topic produce/consume with --format syntax, keys, headers, compression, and schema-registry encoding. Use when: creating or deleting topics; changing configs or retention; adding partitions; trimming records; producing or consuming with rpk; using schema registry encoding; or enabling enterprise topic features (Tiered Storage, Iceberg Topics, Cloud Topics, Leader Pinning)."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk topic: Manage, Produce & Consume

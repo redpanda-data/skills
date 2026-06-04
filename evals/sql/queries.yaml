@@ -1,0 +1,62 @@
+name: sql-queries
+skill: sql
+version: "1.0"
+
+tasks:
+  - id: connect-psql
+    prompt: "How do I connect to Redpanda SQL using psql?"
+    expected_commands:
+      - pattern: "psql"
+        required: true
+      - pattern: "5432|5433"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: create-table
+    prompt: "Create a table called 'events' with columns: id (bigint), timestamp (timestamp), data (jsonb)"
+    expected_commands:
+      - pattern: "CREATE TABLE"
+        required: true
+      - pattern: "events"
+        required: true
+      - pattern: "bigint|BIGINT"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: query-iceberg
+    prompt: "Query an Iceberg table from a Kafka catalog named 'streaming'"
+    expected_commands:
+      - pattern: "SELECT"
+        required: true
+      - pattern: "streaming"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: check-nodes
+    prompt: "How do I check the health of Redpanda SQL nodes?"
+    expected_commands:
+      - pattern: "system.nodes"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: list-catalogs
+    prompt: "Show all registered external catalogs in Redpanda SQL"
+    expected_commands:
+      - pattern: "system.catalogs"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: negative-simple-query
+    type: negative_transfer_check
+    prompt: "What's the simplest way to run a SELECT query in Redpanda SQL?"
+    acceptable_responses:
+      - contains: "SELECT"
+      - contains: "psql"
+    must_not:
+      require_enterprise_features: true
+      step_count: "> 2"

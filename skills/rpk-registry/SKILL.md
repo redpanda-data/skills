@@ -1,25 +1,8 @@
 ---
 name: rpk-registry
-description: >-
-  Manages schemas, subjects, compatibility levels, modes, and contexts in the
-  Redpanda Schema Registry via the rpk registry CLI (alias: rpk sr). Covers
-  registering Avro/Protobuf/JSON schemas, fetching schemas by version or ID,
-  listing/deleting subjects and schemas, setting BACKWARD/FORWARD/FULL/NONE
-  compatibility levels, controlling registry mode (READONLY/READWRITE/IMPORT),
-  and using schema contexts for namespace isolation. Also covers the
-  Enterprise-licensed registry features: Schema Registry Authorization
-  (schema_registry_enable_authorization, registry/subject ACLs via
-  rpk security acl with --registry-global/--registry-subject) and
-  Server-Side Schema ID Validation (enable_schema_id_validation,
-  redpanda.key/value.schema.id.validation, subject name strategies), plus
-  registry authentication (HTTP Basic, OIDC/OAUTHBEARER, mTLS).
-  Use when: registering or fetching schemas, managing schema subjects and
-  versions, setting or checking compatibility levels, checking schema
-  compatibility before registration, administering Schema Registry mode,
-  working with schema contexts (--schema-context flag), securing the registry
-  with ACLs/RBAC, enabling schema ID validation, authenticating to the
-  registry, or using rpk topic produce/consume with schema registry
-  encoding/decoding.
+description: "Manages schemas, subjects, compatibility, and modes via rpk registry (alias: rpk sr). Covers registering Avro/Protobuf/JSON schemas, fetching by version or ID, listing/deleting subjects, setting compatibility levels, and controlling registry mode. Use when: registering or fetching schemas; managing subjects and versions; setting compatibility levels; checking compatibility before registration; administering registry mode; using schema contexts; securing with ACLs/RBAC; enabling Schema ID Validation; or using rpk topic produce/consume with schema encoding/decoding."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk registry: Schema Registry

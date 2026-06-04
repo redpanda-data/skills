@@ -1,26 +1,8 @@
 ---
 name: cloud-serverless
-description: >-
-  Provision and manage Redpanda Cloud Serverless clusters via the public Control
-  Plane API (https://api.redpanda.com). Covers OAuth2 client-credentials
-  authentication, ResourceGroup management, ServerlessRegion discovery,
-  ServerlessCluster lifecycle (create/get/list/update/delete), the async
-  Operation state machine (STATE_PLACING → STATE_CREATING → STATE_READY), and
-  calling the per-cluster Data Plane API for topics, ACLs, users, secrets, and
-  pipelines. Also covers the Enterprise differentiators configurable on
-  Serverless via topic configs and roles: Iceberg Topics
-  (redpanda.iceberg.mode/target.lag.ms/partition.spec/invalid.record.action/delete),
-  Server-Side Schema ID Validation (redpanda.key|value.schema.id.validation,
-  subject.name.strategy), Leadership Pinning (redpanda.leaders.preference), and
-  Role-Based Access Control (/v1/roles) — all Enterprise-licensed (license
-  included on Cloud).
-  Use when: creating, listing, updating, or deleting Redpanda Cloud Serverless
-  clusters via the public API; authenticating with OAuth client credentials for
-  api.redpanda.com; choosing a serverless region; tracking a create/delete
-  Operation until it completes; calling the data-plane URL returned by
-  GetServerlessCluster to manage topics, ACLs, users, or secrets; enabling
-  Iceberg Topics, schema ID validation, leader pinning, or RBAC on a Serverless
-  cluster; or distinguishing Serverless from BYOC provisioning.
+description: "Provision and manage Redpanda Cloud Serverless clusters via the Control Plane API. Covers OAuth2 auth, ResourceGroup management, ServerlessRegion discovery, cluster lifecycle, and the Data Plane API for topics/ACLs/users. Use when: creating or managing Serverless clusters via API; authenticating with OAuth client credentials; choosing a serverless region; tracking Operations; calling the data-plane URL for topics or ACLs; enabling Iceberg Topics, schema ID validation, or RBAC; or distinguishing Serverless from BYOC."
+metadata:
+  version: "1.0.0"
 ---
 
 # Redpanda Cloud API: Serverless Clusters
