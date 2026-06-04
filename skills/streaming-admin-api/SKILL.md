@@ -1,26 +1,8 @@
 ---
 name: streaming-admin-api
-description: >-
-  Operate a Redpanda cluster via its HTTP Admin API on port 9644 (base path /v1).
-  Covers authentication (Basic, Bearer, mTLS), all major endpoint groups (brokers,
-  partitions, cluster config, cluster health, features, licensing, transactions,
-  cloud_storage, security/RBAC, debug, debug_bundle), and ConnectRPC endpoints added
-  in v25.3. Also covers configuring and operating Redpanda's Enterprise features
-  through the Admin API: Tiered Storage / shadow indexing, Cloud Topics, Iceberg
-  Topics, Continuous Data Balancing (partition_autobalancing_mode=continuous), Shadow
-  Linking cross-cluster disaster recovery (ShadowLinkService ConnectRPC), Remote Read
-  Replicas, Topic Recovery / Whole Cluster Restore, Audit Logging, Role-Based Access
-  Control (RBAC), OIDC/OAuthBearer/Kerberos authentication, FIPS mode, Server-Side
-  Schema ID Validation, and Leadership Pinning (most require an Enterprise license).
-  Use when: calling the Redpanda Admin API directly over HTTP, decommissioning or
-  recommissioning brokers, reading or altering cluster configuration, moving or
-  recovering partitions, checking cluster health, managing feature flags or
-  licensing (including enterprise-feature violation checks), managing security users
-  and roles (RBAC), inspecting transactions, querying or configuring tiered storage
-  (cloud_storage), enabling Iceberg/Cloud Topics/Audit Logging/Continuous Data
-  Balancing, setting up shadow links for disaster recovery, running self-test or cpu
-  profiling via the debug endpoints, starting a debug bundle via HTTP, or scripting
-  cluster operations without rpk. Port 9644, base path /v1.
+description: "Operate a Redpanda cluster via the HTTP Admin API on port 9644. Covers authentication (Basic, Bearer, mTLS), endpoint groups (brokers, partitions, cluster config, health, features, licensing, transactions, cloud_storage, security/RBAC, debug), and ConnectRPC endpoints (v25.3+). Use when: calling the Admin API over HTTP; decommissioning brokers; altering cluster config; moving partitions; checking health; managing licensing or RBAC; configuring Tiered Storage, Iceberg Topics, or Shadow Links; running self-test or debug bundles; or scripting cluster operations without rpk."
+metadata:
+  version: "1.0.0"
 ---
 
 # Redpanda Streaming: Admin API

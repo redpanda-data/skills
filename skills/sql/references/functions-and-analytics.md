@@ -88,7 +88,7 @@ SELECT BOOL_AND(b0) OVER () FROM tb1;   -- true if all values are true
 SELECT CORR(i0, i1) FROM tb1;  -- both nullable
 ```
 
-### FOR_MIN / FOR_MAX (Oxla-specific)
+### FOR_MIN / FOR_MAX (Redpanda SQL-specific)
 
 Returns the value of one column corresponding to the min/max of another:
 

@@ -1,6 +1,6 @@
-# Oxla Lakehouse & Streaming Integration (Iceberg, Redpanda/Kafka, Storage Connections)
+# Redpanda SQL Lakehouse & Streaming Integration (Iceberg, Redpanda/Kafka, Storage Connections)
 
-Oxla's analytical-database differentiators are its native object-storage backing, its **Apache Iceberg REST catalog** integration (lakehouse interoperability), and its **transparent Redpanda/Kafka** integration (query streaming topics as SQL tables). Unlike a Kafka broker's enterprise features, these are **not gated by a separate license key** — they are configured through SQL DDL (connection objects) and cluster config. The relevant licensing note: Oxla runs as a single binary; the streaming/lakehouse surfaces below are configured with SQL `CREATE` statements whose options are parsed in `src/catalog/`.
+Redpanda SQL's analytical-database differentiators are its native object-storage backing, its **Apache Iceberg REST catalog** integration (lakehouse interoperability), and its **transparent Redpanda/Kafka** integration (query streaming topics as SQL tables). Unlike a Kafka broker's enterprise features, these are **not gated by a separate license key** — they are configured through SQL DDL (connection objects) and cluster config. The relevant licensing note: Redpanda SQL runs as a single binary; the streaming/lakehouse surfaces below are configured with SQL `CREATE` statements whose options are parsed in `src/catalog/`.
 
 All connection DDL options are verified against:
 - `src/sqlparser/sql/connection_option_names.h` (the authoritative option-key constants)
@@ -13,7 +13,7 @@ Credentials inside these connection objects are encrypted at rest (see [auth-and
 
 ## 1. Storage Connections (object-storage backends)
 
-A **storage connection** is a named, reusable object that holds the credentials and endpoint for an object store. Iceberg catalogs reference a storage connection by name. This is Oxla's analog of Tiered Storage / object-storage-native data: the object store is a first-class backing target.
+A **storage connection** is a named, reusable object that holds the credentials and endpoint for an object store. Iceberg catalogs reference a storage connection by name. This is Redpanda SQL's analog of Tiered Storage / object-storage-native data: the object store is a first-class backing target.
 
 ### DDL syntax
 
@@ -67,13 +67,13 @@ When `access_key_id`/`secret_access_key` are omitted, the AWS default credential
 | `client_secret` | — | Azure AD app secret; sensitive (redacted) |
 | `endpoint` | — | custom endpoint |
 
-> Note: a storage **connection** (named SQL object) is distinct from the cluster-level `storage.oxla_home` backing store described in [configuration.md](configuration.md). The `oxla_home` URI is where Oxla stores its own data; a `CREATE STORAGE` connection is referenced by Iceberg catalogs for reading/writing external lakehouse data.
+> Note: a storage **connection** (named SQL object) is distinct from the cluster-level `storage.oxla_home` backing store described in [configuration.md](configuration.md). The `oxla_home` URI is where Redpanda SQL stores its own data; a `CREATE STORAGE` connection is referenced by Iceberg catalogs for reading/writing external lakehouse data.
 
 ---
 
 ## 2. Iceberg REST Catalogs (lakehouse interoperability)
 
-Oxla integrates with **Apache Iceberg via the Iceberg REST catalog protocol** (Polaris, AWS Glue/S3 Tables, Nessie, and other REST-compatible catalogs). This is the direct analog of Redpanda's Iceberg Topics differentiator: it exposes table data in the open Iceberg format for query engines across the lakehouse.
+Redpanda SQL integrates with **Apache Iceberg via the Iceberg REST catalog protocol** (Polaris, AWS Glue/S3 Tables, Nessie, and other REST-compatible catalogs). This is the direct analog of Redpanda's Iceberg Topics differentiator: it exposes table data in the open Iceberg format for query engines across the lakehouse.
 
 The cluster gate `feature_flags.allow_iceberg_queries` (default `false`) controls whether direct `SELECT` from an Iceberg catalog is permitted. Transparent Kafka+Iceberg queries are unaffected by this flag (see source comment in `default_config.yml`). Enable with:
 
@@ -155,7 +155,7 @@ REFRESH ns.catalog_name=>ns2.table_name;
 
 ## 3. Transparent Redpanda / Kafka Integration
 
-Oxla can query **Redpanda/Kafka topics directly as SQL tables** ("transparent Kafka"), reading records via the schema registry. The DDL keyword `REDPANDA` and `KAFKA` are interchangeable (`redpanda_or_kafka` grammar rule). This is the streaming-platform connection surface.
+Redpanda SQL can query **Redpanda/Kafka topics directly as SQL tables** ("transparent Kafka"), reading records via the schema registry. The DDL keyword `REDPANDA` and `KAFKA` are interchangeable (`redpanda_or_kafka` grammar rule). This is the streaming-platform connection surface.
 
 ### DDL syntax
 

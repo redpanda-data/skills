@@ -1,0 +1,60 @@
+name: streaming-topic-creation
+skill: streaming
+version: "1.0"
+
+tasks:
+  - id: basic-topic
+    prompt: "Create a Redpanda topic named 'orders' with 6 partitions and replication factor 3"
+    expected_commands:
+      - pattern: "rpk topic create orders -p 6 -r 3"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: topic-with-retention
+    prompt: "Create a topic called 'events' with 7 days retention"
+    expected_commands:
+      - pattern: "rpk topic create events"
+        required: true
+      - pattern: "retention.ms=604800000"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: tiered-storage-topic
+    prompt: "Create a topic with tiered storage enabled, 1-day local retention, and 30-day total retention"
+    expected_commands:
+      - pattern: "redpanda.storage.mode=tiered"
+        required: true
+      - pattern: "retention.local.target.ms=86400000"
+        required: true
+      - pattern: "retention.ms=2592000000"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: compacted-topic
+    prompt: "Create a compacted topic for storing the latest state of user profiles"
+    expected_commands:
+      - pattern: "cleanup.policy=compact"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: describe-topic
+    prompt: "Show me the configuration of the 'orders' topic"
+    expected_commands:
+      - pattern: "rpk topic describe orders"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: negative-transfer-simple-create
+    prompt: "What's the simplest way to create a topic in Redpanda?"
+    type: negative_transfer_check
+    acceptable_responses:
+      - contains: "rpk topic create"
+    must_not:
+      - require_tiered_storage: true
+      - require_enterprise_features: true
+      - step_count: "> 2"

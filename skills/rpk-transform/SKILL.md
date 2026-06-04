@@ -1,27 +1,8 @@
 ---
 name: rpk-transform
-description: >-
-  Builds, deploys, and manages Redpanda Data Transforms — WebAssembly (Wasm)
-  functions that run inside the broker to transform records in-flight from an
-  input topic to one or more output topics. Covers the full lifecycle: enabling
-  the feature, initializing a project, writing transform logic in Go (TinyGo),
-  Rust, JavaScript, or TypeScript, building the Wasm binary, deploying with
-  rpk transform deploy, listing and inspecting running transforms, viewing
-  logs, pausing/resuming, and deleting transforms.
-  Use when: writing or deploying a Redpanda data transform, in-broker Wasm
-  transform, wiring an input topic to an output topic, filtering or
-  transforming Kafka records inside the broker, using rpk transform init /
-  build / deploy / list / logs / pause / resume / delete, enabling
-  data_transforms_enabled cluster config, using the Go transform SDK,
-  Rust transform SDK, or JavaScript/TypeScript transform SDK, from-offset
-  reprocessing, or setting environment variables on a transform.
-  Also covers wiring transform output topics to Redpanda Enterprise features
-  (require an Enterprise license): Iceberg Topics (redpanda.iceberg.mode for
-  lakehouse output), Tiered Storage (redpanda.remote.read/write), server-side
-  Schema ID Validation (enable_schema_id_validation,
-  redpanda.value.schema.id.validation), Leadership Pinning
-  (redpanda.leaders.preference controls where transform processors run), and
-  RBAC / Audit Logging for transform topics.
+description: "Builds, deploys, and manages Redpanda Data Transforms: Wasm functions that transform records in-flight from input to output topics. Covers enabling the feature, initializing projects, writing in Go/Rust/JS/TS, building Wasm, deploying, viewing logs, and pausing/deleting transforms. Use when: writing or deploying data transforms; wiring input to output topics; filtering records inside the broker; using rpk transform init/build/deploy/list/logs/pause/delete; enabling data_transforms_enabled; or using transform SDKs. Output topics support Iceberg Topics, Tiered Storage, and Schema ID Validation."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk transform: Data Transforms (Wasm)

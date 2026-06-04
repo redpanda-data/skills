@@ -1,20 +1,8 @@
 ---
 name: rpk-group
-description: >-
-  Use rpk group to list and describe consumer groups, inspect lag and members,
-  reset or seek consumer group offsets, delete groups, and delete committed
-  offsets. Use when: inspecting consumer group lag and membership; resetting or
-  seeking consumer group offsets (to earliest/latest/timestamp/specific offset
-  or to another group's commits); stopping consumers and rewinding after a bad
-  deploy; deleting a consumer group; deleting committed offsets for specific
-  topic-partitions; reading CURRENT-OFFSET, LOG-END-OFFSET, and LAG columns;
-  spotting stuck or over-lagged consumer groups; using rpk group list, describe,
-  seek, offset-delete, or delete subcommands; verifying or repairing consumer
-  group offsets after a Shadow Linking disaster-recovery failover (Enterprise
-  offset-preserving replication, consumer_offset_sync_options, group_filters,
-  offset clamping); and authorizing rpk group operations via GROUP-resource ACLs,
-  Enterprise RBAC roles (rpk security role / --allow-role), or Enterprise GBAC
-  OIDC Group: principals.
+description: "Use rpk group to list and describe consumer groups, inspect lag, reset or seek offsets, and delete groups. Use when: inspecting consumer group lag and membership; resetting offsets to earliest/latest/timestamp; rewinding after a bad deploy; deleting groups or committed offsets; reading LAG columns; spotting stuck groups; using rpk group list/describe/seek/offset-delete/delete; or verifying offsets after Shadow Linking DR failover. Covers GROUP ACLs and RBAC authorization."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk group: Consumer Group Management

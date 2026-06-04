@@ -1,0 +1,32 @@
+{
+  "name": "redpanda-skills",
+  "version": "0.1.0",
+  "description": "Agent Skills for Redpanda products",
+  "author": "Redpanda Data",
+  "license": "Apache-2.0",
+  "scripts": {
+    "eval": "node scripts/eval-runner.js",
+    "eval:streaming": "node scripts/eval-runner.js --skill streaming",
+    "eval:streaming:all": "node scripts/eval-runner.js --skill streaming --compare-all --report",
+    "eval:all": "node scripts/eval-runner.js --all",
+    "eval:all:compare": "node scripts/eval-runner.js --all --compare-all --report",
+    "eval:dry-run": "node scripts/eval-runner.js --all --dry-run",
+    "lint": "echo 'TODO: Add skill linting'"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/redpanda-data/skills.git"
+  },
+  "keywords": [
+    "redpanda",
+    "kafka",
+    "streaming",
+    "agent-skills",
+    "claude-code"
+  ]
+}

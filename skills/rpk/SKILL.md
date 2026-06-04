@@ -1,28 +1,8 @@
 ---
 name: rpk
-description: >-
-  Install and configure the rpk CLI — the single binary for all Redpanda
-  operations. Covers installing rpk on macOS (Homebrew or curl/zip), Linux
-  (amd64/arm64 curl/zip), and via Docker; creating and switching rpk profiles
-  (rpk.yaml); the -X flag system and RPK_ environment variables for one-off
-  overrides; connecting to self-hosted clusters and Redpanda Cloud clusters;
-  and understanding the full command-group map. Also covers managing the
-  Enterprise license (rpk cluster license) and operating Redpanda's Enterprise
-  differentiators through rpk: Tiered Storage, Cloud Topics, Iceberg Topics,
-  Continuous Data Balancing, Shadow Linking / cross-cluster disaster recovery
-  (rpk shadow), Remote Read Replicas, Audit Logging, RBAC, OIDC/Kerberos/FIPS
-  auth, server-side Schema ID Validation, and Leadership Pinning — with their
-  nested config keys and topic properties.
-  Use when: installing rpk; setting up or switching rpk profiles; configuring
-  broker/admin/registry endpoints; adding SASL or TLS credentials to rpk;
-  using -X flags or RPK_ env vars for connection settings; deciding which rpk
-  subcommand group to use; creating a profile from a Redpanda Cloud cluster ID;
-  understanding rpk.yaml vs redpanda.yaml; checking/applying an Enterprise
-  license or fixing a license violation; enabling or configuring Tiered Storage,
-  Cloud Topics, Iceberg Topics, Continuous Data Balancing, Shadow Links/DR,
-  Remote Read Replicas, Audit Logging, RBAC roles, OIDC/Kerberos/FIPS, Schema ID
-  Validation, or Leader Pinning via rpk; or starting with rpk before diving
-  into topic/cluster/group/security/cloud/registry/transform/debug subskills.
+description: "Install and configure the rpk CLI. Covers installing on macOS/Linux/Docker, creating and switching profiles (rpk.yaml), -X flags and RPK_ env vars, and connecting to self-hosted or Cloud clusters. Use when: installing rpk; setting up profiles; configuring broker/admin/registry endpoints; adding SASL or TLS credentials; using -X flags; deciding which rpk subcommand to use; understanding rpk.yaml vs redpanda.yaml; checking or applying an Enterprise license; or starting with rpk before diving into topic/cluster/group/security/cloud/registry/transform/debug subskills."
+metadata:
+  version: "1.0.0"
 ---
 
 # rpk: Install, Profiles & Configuration

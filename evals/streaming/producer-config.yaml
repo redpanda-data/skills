@@ -1,0 +1,65 @@
+name: streaming-producer-config
+skill: streaming
+version: "1.0"
+
+tasks:
+  - id: produce-message
+    prompt: "Produce a message with the value 'hello world' to the 'test' topic"
+    expected_commands:
+      - pattern: "rpk topic produce test"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: produce-with-key
+    prompt: "Produce a message with key 'user-123' and value '{\"name\": \"John\"}' to the 'users' topic"
+    expected_commands:
+      - pattern: "rpk topic produce users"
+        required: true
+      - pattern: "user-123"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: idempotent-producer-java
+    prompt: "Show me how to configure an idempotent producer in Java"
+    expected_content:
+      - pattern: "enable.idempotence"
+        required: true
+      - pattern: "acks.*all"
+        required: true
+    validation:
+      type: content_pattern
+
+  - id: exactly-once-producer
+    prompt: "Configure a Java producer for exactly-once semantics with transactions"
+    expected_content:
+      - pattern: "transactional.id"
+        required: true
+      - pattern: "initTransactions"
+        required: true
+      - pattern: "beginTransaction"
+        required: true
+      - pattern: "commitTransaction"
+        required: true
+    validation:
+      type: content_pattern
+
+  - id: compression-config
+    prompt: "What compression should I use for best compression ratio?"
+    expected_content:
+      - pattern: "zstd"
+        required: true
+    validation:
+      type: content_pattern
+
+  - id: negative-transfer-simple-produce
+    prompt: "How do I send a single test message to Redpanda?"
+    type: negative_transfer_check
+    acceptable_responses:
+      - contains: "echo"
+      - contains: "rpk topic produce"
+    must_not:
+      - require_transactions: true
+      - require_idempotence_config: true
+      - complexity_score: "> 2"

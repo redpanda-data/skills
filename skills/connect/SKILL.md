@@ -1,28 +1,8 @@
 ---
 name: connect
-description: >-
-  Teaches how to build streaming data pipelines with Redpanda Connect (formerly
-  Benthos) — declarative YAML config, the input/pipeline/output model, Bloblang
-  mapping language, error handling, and canonical pipeline patterns. Use when:
-  building or running a Redpanda Connect pipeline; wiring an input to an output
-  with processors; writing Bloblang mappings or mutations; choosing connectors
-  (kafka, redpanda, http_server, file, generate, sql_*, aws_*, gcp_*); running
-  pipelines with rpk connect run or redpanda-connect; configuring buffers,
-  caches, metrics, rate limits, or the global redpanda block; writing
-  config.yaml for redpanda-connect; asking what Connect components exist and
-  how to discover them; error handling with fallback outputs or catch processors;
-  batching records before writing; understanding the difference between mapping
-  and mutation processors; choosing between the bloblang and mapping processor
-  names; connecting to Kafka or Redpanda with SASL/TLS from Connect; enterprise
-  vs community components or license setup; dry-run and lint commands; enterprise
-  features and their config keys — enterprise connectors and CDC inputs
-  (postgres_cdc, mysql_cdc, mongodb_cdc, oracledb_cdc with its logminer block,
-  microsoft_sql_server_cdc, gcp_spanner_cdc, aws_dynamodb_cdc, salesforce_cdc),
-  AI/ML processors (openai_*, aws_bedrock_*, cohere_*, gcp_vertex_ai_*, ollama_*),
-  allow/deny lists (connector_list.yaml), secrets management (--secrets URNs:
-  env/redis/aws/gcp/az/none), FIPS compliance, and the Redpanda Connect
-  configuration service (logs_topic/status_topic); supplying a Redpanda Enterprise
-  license (--redpanda-license, REDPANDA_LICENSE, /etc/redpanda/redpanda.license).
+description: "Teaches Redpanda Connect (formerly Benthos): declarative YAML config, input/pipeline/output model, Bloblang mappings, and error handling. Use when: building Connect pipelines; wiring inputs to outputs with processors; writing Bloblang; choosing connectors; running rpk connect run; configuring buffers, caches, or metrics; error handling with fallback outputs; batching records; connecting to Kafka/Redpanda with SASL/TLS; or using enterprise features (CDC inputs, AI/ML processors, secrets management, FIPS, allow/deny lists)."
+metadata:
+  version: "1.0.0"
 ---
 
 # Redpanda Connect

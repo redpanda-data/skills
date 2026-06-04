@@ -1,6 +1,6 @@
-# Oxla Configuration Reference
+# Redpanda SQL Configuration Reference
 
-Oxla uses a YAML configuration file (`config.yml`) with layered overrides. The authoritative defaults are in `config/Release/default_config.yml`. Every setting can also be overridden by an environment variable using the `OXLA__` prefix and `__` as the path separator.
+Redpanda SQL uses a YAML configuration file (`config.yml`) with layered overrides. The authoritative defaults are in `config/Release/default_config.yml`. Every setting can also be overridden by an environment variable using the `OXLA__` prefix and `__` as the path separator.
 
 ## Configuration Layering
 
@@ -9,7 +9,7 @@ Priority order (highest wins):
 2. Mounted config file at `/oxla/startup_config/config.yml`
 3. Compiled binary defaults
 
-If no config file exists at startup, Oxla generates one at `/oxla/startup_config/config.yml` from the env-var overrides. Pass `OXLA_CONFIG_FILE=/path/to/config.yml` to override the config file path. Pass `OXLA_CONFIG_FILE=` (empty) to use defaults only.
+If no config file exists at startup, Redpanda SQL generates one at `/oxla/startup_config/config.yml` from the env-var overrides. Pass `OXLA_CONFIG_FILE=/path/to/config.yml` to override the config file path. Pass `OXLA_CONFIG_FILE=` (empty) to use defaults only.
 
 A partial config file is valid — any missing field falls back to its compiled default. An empty config file is legitimate.
 
@@ -193,12 +193,12 @@ For a MinIO endpoint, add `OXLA__STORAGE__S3__ENDPOINT=http://minio:9000`.
 
 ```yaml
 memory:
-  max: 0             # query memory budget; 0 = Oxla auto-detects available RAM
+  max: 0             # query memory budget; 0 = Redpanda SQL auto-detects available RAM
                      # must be 0 or at least 8G when set explicitly
   max_non_query: 6442M  # non-query memory budget; must be at least 6442M
 ```
 
-- `max: 0` instructs Oxla to read available RAM from the OS and calculate the limit automatically.
+- `max: 0` instructs Redpanda SQL to read available RAM from the OS and calculate the limit automatically.
 - `max_non_query` covers internal overhead (buffers, catalog, etc.) and must be at least ~6 GB.
 - These are **internal** parameters — not listed in the public set but settable via `OXLA__MEMORY__MAX` and `OXLA__MEMORY__MAX_NON_QUERY`.
 
@@ -368,7 +368,7 @@ data_tasks:
   compaction_timeout: 10s # timeout for a compaction data task
 ```
 
-Data tasks are background jobs (e.g. compaction). `max_capacity: 0` lets Oxla size them to the hardware concurrency.
+Data tasks are background jobs (e.g. compaction). `max_capacity: 0` lets Redpanda SQL size them to the hardware concurrency.
 
 ---
 

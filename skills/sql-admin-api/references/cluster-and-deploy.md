@@ -1,8 +1,8 @@
-# Oxla Cluster Topology and Deployment
+# Redpanda SQL Cluster Topology and Deployment
 
 ## Cluster Model
 
-An Oxla cluster consists of one **leader** node and zero or more **worker** nodes. The leader is designated by setting `leader_election.leader_name` to the `host_name` of the intended leader. Every node in the cluster must have:
+A Redpanda SQL cluster consists of one **leader** node and zero or more **worker** nodes. The leader is designated by setting `leader_election.leader_name` to the `host_name` of the intended leader. Every node in the cluster must have:
 
 - The same `network.cluster_name` value
 - A unique `network.host_name` value
@@ -94,7 +94,7 @@ docker run -d --name minio \
 docker exec minio mc alias set local http://localhost:9000 oxla-user oxla-password
 docker exec minio mc mb local/oxla-data
 
-# 3. Run Oxla with S3 home
+# 3. Run Redpanda SQL with S3 home
 docker run --rm -it \
   -p 5432:5432 \
   --link minio \
@@ -374,14 +374,14 @@ Also set `security_opt: [seccomp:unconfined]` as shown in the reference configur
 
 ## Ansible Deployment
 
-The repo ships two Ansible playbooks under `ansible/` for deploying Oxla to real (non-Docker-only) servers.
+The repo ships two Ansible playbooks under `ansible/` for deploying Redpanda SQL to real (non-Docker-only) servers.
 
 ### Playbooks
 
 | Playbook | Target | Notes |
 |----------|--------|-------|
 | `ansible/devcluster_deploy.yml` | Hetzner or any bare-metal/VM host (Docker-based) | Installs Docker, AWS CLI, Node Exporter, then templates `config.yml.j2` and runs `docker compose up` |
-| `ansible/devcluster_deploy_aws.yml` | AWS EC2 instances provisioned by Terraform | Assumes Docker + AWS CLI already installed via EC2 userdata; templates `config_aws.yml.j2` and runs `docker compose up`. Also deploys optional Redpanda nodes and a client node. |
+| `ansible/devcluster_deploy_aws.yml` | AWS EC2 instances provisioned by Terraform | Assumes Docker + AWS CLI already installed via EC2 userdata; templates `config_aws.yml.j2` and runs `docker compose up`. Also deploys optional Redpanda broker nodes and a client node. |
 
 ### Jinja2 compose templates
 
@@ -441,7 +441,7 @@ devcluster_aws_c5a_8xlarge:
 # Install Ansible collections
 ansible-galaxy collection install -r ansible/requirements.yml
 
-# Deploy to a Hetzner cluster (install Docker + deploy Oxla)
+# Deploy to a Hetzner cluster (install Docker + deploy Redpanda SQL)
 ansible-playbook ansible/devcluster_deploy.yml \
   -i ansible/inventory/devcluster-hetzner-ax102-3nodes.yml \
   -e image=778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest \
@@ -463,7 +463,7 @@ ansible-playbook ansible/devcluster_deploy.yml \
 
 ## Terraform Deployment
 
-The repo's `terraform/devcluster/` module provisions dynamic AWS EC2 instances for Oxla devclusters.
+The repo's `terraform/devcluster/` module provisions dynamic AWS EC2 instances for Redpanda SQL devclusters.
 
 ### What it provisions
 
@@ -471,19 +471,19 @@ The repo's `terraform/devcluster/` module provisions dynamic AWS EC2 instances f
 - **S3 bucket** — dedicated bucket for `OXLA__STORAGE__OXLA_HOME` (named `{environment}-{devcluster_type}[-{alias}]`)
 - **IAM role + instance profile** — grants each EC2 node S3 full access to its home bucket, read-only access to a shared blueprint bucket, and ECR pull access
 - **VPC/subnet** — reuses an existing `redpanda-gh-vpc` if found; otherwise creates a new VPC
-- **EC2 userdata** — `terraform/devcluster/userdata.sh` bootstraps Docker, AWS CLI, the ECR credential helper, Node Exporter, and optionally copies an Oxla home blueprint from S3
+- **EC2 userdata** — `terraform/devcluster/userdata.sh` bootstraps Docker, AWS CLI, the ECR credential helper, Node Exporter, and optionally copies a Redpanda SQL home blueprint from S3
 - **Ansible inventory** — `terraform/devcluster/templates/ansible-inventory.yml.tpl` renders a ready-to-use inventory file (output via `terraform output`) with `oxla_nodes`, optional `redpanda`, and optional `client` groups
 
 ### Key variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `devcluster_node_count` | `1` | Number of Oxla nodes (1–10) |
+| `devcluster_node_count` | `1` | Number of Redpanda SQL nodes (1–10) |
 | `devcluster_instance_type` | `c6i.xlarge` | EC2 instance type (auto-detects x86 vs arm) |
 | `devcluster_alias` | `""` | Short alias appended to cluster/bucket name |
 | `devcluster_bucket_name` | auto-generated | Override the S3 bucket name |
-| `devcluster_home_name` | `home` | Name of the Oxla home path within the bucket |
-| `oxla_password` | random 16-char | Oxla access_control password; injected via `OXLA__ACCESS_CONTROL__INITIAL_PASSWORD` |
+| `devcluster_home_name` | `home` | Name of the Redpanda SQL home path within the bucket |
+| `oxla_password` | random 16-char | Redpanda SQL access_control password; injected via `OXLA__ACCESS_CONTROL__INITIAL_PASSWORD` |
 | `enable_prometheus` | `false` | Deploy a dedicated Prometheus node |
 | `enable_glue` | `false` | Provision AWS Glue Iceberg catalog + IAM policy |
 | `devcluster_copy_blueprint_in_userdata` | `false` | Copy existing Oxla home from blueprint bucket at boot |
@@ -503,7 +503,7 @@ terraform apply \
 # Retrieve the generated Ansible inventory
 terraform output -raw ansible_inventory > /tmp/devcluster-inventory.yml
 
-# Deploy Oxla onto the provisioned nodes
+# Deploy Redpanda SQL onto the provisioned nodes
 ansible-playbook ansible/devcluster_deploy_aws.yml \
   -i /tmp/devcluster-inventory.yml \
   -e image=778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-daily:latest

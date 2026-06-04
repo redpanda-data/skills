@@ -1,0 +1,58 @@
+name: rpk-basic
+skill: rpk
+version: "1.0"
+
+tasks:
+  - id: install-mac
+    prompt: "How do I install rpk on macOS?"
+    expected_commands:
+      - pattern: "brew install redpanda"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: create-profile
+    prompt: "Create an rpk profile named 'prod' for a cluster at seed-1.example.com:9092"
+    expected_commands:
+      - pattern: "rpk profile create"
+        required: true
+      - pattern: "seed-1.example.com:9092"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: list-profiles
+    prompt: "How do I see all my rpk profiles?"
+    expected_commands:
+      - pattern: "rpk profile list"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: set-sasl-creds
+    prompt: "Configure SASL/SCRAM authentication for rpk with username 'admin' and password 'secret'"
+    expected_commands:
+      - pattern: "sasl.mechanism"
+        required: true
+      - pattern: "sasl.username"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: check-version
+    prompt: "How do I check what version of rpk I have installed?"
+    expected_commands:
+      - pattern: "rpk version"
+        required: true
+    validation:
+      type: command_pattern
+
+  - id: negative-simple-install
+    type: negative_transfer_check
+    prompt: "What's the fastest way to get rpk on my Mac?"
+    acceptable_responses:
+      - contains: "brew install"
+      - contains: "homebrew"
+    must_not:
+      require_enterprise_features: true
+      step_count: "> 3"
