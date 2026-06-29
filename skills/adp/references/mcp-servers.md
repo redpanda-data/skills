@@ -20,7 +20,7 @@ rpk ai mcp --help
 rpk ai mcp list
 
 # List tools exposed by a specific server
-rpk ai mcp tools <server-name>
+rpk ai mcp tools list <server-name>
 ```
 
 The sections below document the proto-verified surface. For exact field lists and current limits, confirm live via `--help` and by listing or describing MCP tools on the cluster.

@@ -12,7 +12,7 @@ description: >-
   budgets, guardrails, or Cedar access-control policies via the governance APIs
   (BudgetService, GuardrailService, PolicyService); reading agent transcripts or
   spending insights via TranscriptsService or InsightsService; running rpk ai
-  (install, upgrade, agent, mcp, llm, model, oauth-client, oauth-provider, run);
+  (install, upgrade, agent, auth, mcp, llm, model, oauth-client, oauth-provider, run);
   wiring OAuth clients or providers to the aigw Authorization Server; or
   understanding what ADP does and does not provide (routing/rate limits are out
   of scope). For the separate rpk cloud mcp control-plane MCP server, see
