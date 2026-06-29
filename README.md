@@ -35,8 +35,8 @@ copy-pasteable commands, configs, and code.
 
 ## Available Skills
 
-Redpanda has four public products — Streaming, SQL, Connect, and Cloud — with `rpk` as
-the unifying CLI across all of them.
+Redpanda has five public products — Streaming, SQL, Connect, Cloud, and the Agentic
+Data Plane (ADP) — with `rpk` as the unifying CLI across all of them.
 
 ### 🌊 Streaming
 The Kafka-compatible streaming engine (the Redpanda broker).
@@ -72,6 +72,10 @@ Redpanda Cloud — the managed control plane and per-cluster data plane.
 - [**cloud-byoc**](./skills/cloud-byoc) — BYOC (Bring Your Own Cloud) clusters in your own AWS/GCP/Azure account: networks/VPCs, provider setup, and the `rpk` BYOC agent flow.
 - [**cloud-dedicated**](./skills/cloud-dedicated) — Dedicated clusters (fully Redpanda-managed, single-tenant, in Redpanda's cloud account) via the Control Plane API.
 
+### 🤖 Agentic Data Plane (ADP)
+Redpanda's AI runtime — run AI agents, MCP servers, and LLM-powered pipelines directly on your Redpanda Cloud cluster.
+- [**adp**](./skills/adp) — Build and operate AI on Redpanda Cloud: AI agents, MCP servers (managed catalog + code mode), the AI Gateway (LLM providers and models), governance (budgets, guardrails, Cedar policies, OAuth), and observability (transcripts) — driven through the `rpk ai` CLI and the ADP API.
+
 ### ⌨️ rpk — the unifying CLI
 One CLI across every product.
 - [**rpk**](./skills/rpk) — Install rpk, configure connections with profiles and `-X` flags, and target self-hosted or Redpanda Cloud clusters. Start here.
@@ -79,11 +83,10 @@ One CLI across every product.
 - [**rpk-cluster**](./skills/rpk-cluster) — Health/metadata, brokers, cluster config, partition balancing/movement, maintenance mode, quotas, storage (mountable topics / whole-cluster restore), and self-tests.
 - [**rpk-group**](./skills/rpk-group) — List/describe consumer groups, inspect lag and members, reset/seek offsets, and delete groups or offsets.
 - [**rpk-security**](./skills/rpk-security) — Manage SASL/SCRAM users, Kafka ACLs, RBAC roles, and secrets.
-- [**rpk-cloud**](./skills/rpk-cloud) — Authenticate to Redpanda Cloud, manage credentials, select clusters, manage resource groups, and drive BYOC provisioning.
+- [**rpk-cloud**](./skills/rpk-cloud) — Authenticate to Redpanda Cloud, manage credentials, select clusters, manage resource groups, drive BYOC provisioning, and run the `rpk cloud mcp` server that exposes Redpanda Cloud management to AI agents.
 - [**rpk-debug**](./skills/rpk-debug) — Collect local and remote debug bundles and inspect local process info.
 - [**rpk-registry**](./skills/rpk-registry) — Manage Schema Registry subjects, schemas, compatibility, and modes.
 - [**rpk-transform**](./skills/rpk-transform) — Build, deploy, and manage Redpanda Data Transforms (in-broker WebAssembly functions).
-- [**ai**](./skills/ai) — The `rpk ai` / MCP subcommands: expose Redpanda operations to AI agents over the Model Context Protocol.
 
 ## How these skills were built
 
