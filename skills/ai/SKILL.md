@@ -1,221 +1,143 @@
 ---
-name: ai
+name: adp
 description: >-
-  Manages the lifecycle of the Redpanda AI CLI plugin (rpk ai: install,
-  upgrade, uninstall) and injects cloud auth (RPAI_TOKEN/RPAI_ENDPOINT)
-  before delegating subcommands to the downloaded rpai binary. Also exposes
-  Redpanda cluster operations to AI agents via the Model Context Protocol
-  (rpk cloud mcp). Use when: installing, upgrading, or uninstalling the
-  rpk ai plugin; delegating subcommands to the rpai binary with auto-injected
-  cloud credentials; setting up the MCP server so an AI agent like Claude can
-  drive Redpanda Cloud; wiring rpk cloud mcp stdio or rpk cloud mcp install
-  into a Claude Desktop or Claude Code config; configuring the MCP proxy to a
-  remote dataplane MCP server; understanding which Redpanda APIs are exposed
-  as MCP tools (control-plane clusters, IAM, dataplane
-  topics/ACLs/pipelines/transforms, AI Gateway); passing RPAI_TOKEN or
-  RPAI_ENDPOINT env vars to the AI plugin; resolving cloud auth errors for
-  the AI Gateway; or choosing between rpk ai and rpk cloud mcp. Also covers
-  the AI Gateway enterprise governance and security surfaces (guardrails /
-  word and content filters, rate limits, spend limits, routing rules, model
-  providers, access-control/RBAC policies, roles and teams, audit logging,
-  SSO/OIDC/OAuth2 identity providers, FIPS) and the dataplane AI resources
-  (AI Agents, MCP servers and their auth variants, Knowledge Bases) with
-  their nested config keys. Redpanda Cloud is a managed Redpanda Enterprise
-  Edition deployment; the self-managed analogues (Audit Logging, RBAC,
-  OIDC/OAuthBearer/Kerberos auth, FIPS, schema ID validation) require an
-  Enterprise license.
+  Expert guide for Redpanda's Agentic Data Plane (ADP): the managed platform on
+  Redpanda Cloud for building, running, and governing AI agents and MCP servers.
+  Use when: creating or managing ADP AI agents (managed or self-managed) via
+  rpk ai agent or the AgentRegistryService API; configuring MCP servers on ADP
+  (remote or managed catalog types, code mode, auth variants); setting up LLM
+  providers or querying available models via rpk ai llm / rpk ai model or the
+  LLMProviderService / ModelService API; working with the AI Gateway proxy
+  (provider config, per-provider URLs, credential injection); configuring
+  budgets, guardrails, or Cedar access-control policies via the governance APIs
+  (BudgetService, GuardrailService, PolicyService); reading agent transcripts or
+  spending insights via TranscriptsService or InsightsService; running rpk ai
+  (install, upgrade, agent, mcp, llm, model, oauth-client, oauth-provider, run);
+  wiring OAuth clients or providers to the aigw Authorization Server; or
+  understanding what ADP does and does not provide (routing/rate limits are out
+  of scope). For the separate rpk cloud mcp control-plane MCP server, see
+  /redpanda:rpk-cloud.
 ---
 
-# rpk ai: AI CLI & MCP Integration
+# ADP: Agentic Data Plane
 
-Redpanda exposes two related AI surfaces under `rpk`:
+The Agentic Data Plane (ADP) is the AI-native layer of Redpanda Cloud. It provides a managed runtime for AI agents and MCP servers, a proxying AI Gateway for LLM providers, and governance surfaces (budgets, guardrails, Cedar access-control policies) to operate those workloads safely. This skill is written for an AI agent operating ADP programmatically via `rpk ai` and the ADP API or MCP tools. Optimize for correct field names and service names; confirm the live surface before acting.
 
-1. **`rpk ai`** — a managed plugin (binary slug `rpai`) that gives a rich CLI for the Redpanda **AI Gateway**. `rpk` downloads it on first use and manages its lifecycle (install / upgrade / uninstall). The plugin receives cloud auth automatically from the active rpk profile.
+## Component overview
 
-2. **`rpk cloud mcp`** — an MCP (Model Context Protocol) server built directly into `rpk` that exposes Redpanda Cloud control-plane, IAM, dataplane, and AI Gateway operations as LLM-callable tools. Wire it into Claude Desktop or Claude Code and let an AI agent create topics, list clusters, manage ACLs, configure the AI Gateway, and more — all through natural language.
+### AI agents (Beta)
 
-## Quickstart
+Managed agents run inside the ADP platform. Self-managed (user-hosted) agents are registered as metadata-only records. Both are managed through `AgentRegistryService` (proto) or the `AIAgentService` MCP tool group (v1alpha3). Key fields: `model`, `llm_provider`, `system_prompt`, `max_iterations` (0-200), `mcp_servers` (max 32 refs), `subagents` (max 16). A2A agent cards are published at `/.well-known/agent-card.json`. Triggers (Teams, Cron) fire agents on external events.
 
-### 1. Install the rpk ai plugin
+See [references/agents.md](references/agents.md).
+
+### MCP servers (Beta)
+
+Each MCP server is either `REMOTE` (you own the upstream) or `MANAGED` (a pre-integrated catalog entry). The managed catalog covers 7 categories (AI, AWS, Communication, Database, Google, Streaming, Utility) with 44+ types; use `ListManagedMCPTypes` for the live list. Enabling `code_mode` on a server adds `{name}_search` and `{name}_execute` tools, reducing token usage by 80-90% for large tool sets. Two API layers exist: `adp.v1alpha1.MCPServerService` (management plane, 7 RPCs) and `dataplane.v1alpha3.MCPServerService` (public Cloud API, 9 RPCs including Start/Stop/Lint). Knowledge bases are a separate `v1alpha3` resource, not a sub-resource of MCP servers.
+
+See [references/mcp-servers.md](references/mcp-servers.md).
+
+### AI Gateway and LLM providers (Beta)
+
+The AI Gateway is a managed HTTP proxy. It stores upstream API keys in the Redpanda secret store and injects them on outbound requests; calling applications never see the raw keys. Per-provider URL pattern: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers via `LLMProviderService` (CreateLLMProvider, UpdateLLMProvider, CheckConnection) and discover available models via `ModelService` (ListModels, GetModel). Supported provider types: OpenAI, Anthropic, Google/Gemini, AWS Bedrock, OpenAI-compatible. Pricing overrides use microcents per million tokens on the `provider_models` field.
+
+**Out of scope:** routing/failover, cross-provider load balancing, and per-second/minute/day rate limits are explicitly not part of the AI Gateway. To cap spend rather than request rate, use budgets.
+
+See [references/gateway-and-providers.md](references/gateway-and-providers.md).
+
+### Governance: budgets, guardrails, and policies (Experimental)
+
+- **Budgets** (`BudgetService`): per-agent or tenant-wide spend caps. All cost fields use microcents (`limit_microcents`, `warn_at_microcents`). No `limit_cents` or `current_spend_cents` fields exist.
+- **Spending analysis** (`SpendingService`): GetSpendingSummary, GetSpendingTimeSeries, GetSpendingBreakdown, GetSpendingTimeSeriesByDimension. `start_time` and `end_time` are required.
+- **Guardrails** (`GuardrailService`): Bedrock-backed content safety. Six content filter categories: `hate`, `insults`, `sexual`, `violence`, `misconduct`, `prompt_attack`. Word filters, denied topics, PII filters, and grounding policies are additional sub-policies. Provider is always AWS Bedrock.
+- **Access control** (`PolicyService`, `PolicyTemplateService`, `SystemPolicyService`, `EffectivePolicySetService`): Cedar policy dialect. No `ValidatePolicy`, `EvaluateAccess`, or `ListPolicyVersions` RPCs exist.
+- **OAuth / identity** (`OAuthClientService`, `OAuthProviderService`, `OAuthConnectionService`): manage OAuth clients (for external tools calling the aigw Authorization Server) and OAuth providers (third-party identity sources).
+
+Services absent from the ADP v1alpha1 surface: `SpendLimitService`, `RateLimitService`, `RoutingService`, `BackendPoolService`, `AccessControlService`, `AuditService` (OCSF), `SSOService`. The names exist only in the legacy `aigateway/v1` generated tree used by `rpk cloud mcp`.
+
+See [references/governance.md](references/governance.md).
+
+### Observability: transcripts and insights
+
+- **TranscriptsService** (Stable): `ListTranscripts`, `GetTranscript`. Conversations are grouped by OTel `gen_ai.conversation.id`. `TranscriptSummary` includes token counts and `estimated_cost_usd`. Supports managed and self-managed (BYOA) agents.
+- **InsightsService** (Experimental): single `GetInsights` RPC returning `active_agents`, `total_requests`, `total_cost_microcents` over a time window. May change or be removed without a version bump.
+
+There is no `AuditService` in the ADP public API. For request/response accountability, use `TranscriptsService`.
+
+See [references/observability.md](references/observability.md).
+
+## Operating ADP: CLI and API
+
+The primary CLI is `rpk ai` (binary: `rpai`). It is a first-class command, not a third-party add-on. Manage the binary lifecycle with `rpk ai install`, `rpk ai upgrade`, `rpk ai uninstall`. There is no FIPS build of `rpai`.
+
+Top-level subcommands: `agent`, `auth`, `connection` (stub), `env`, `llm`, `mcp`, `model`, `oauth-client`, `oauth-provider`, `run`, `version`.
+
+Programmatic access uses the ADP API directly (gRPC/Connect) or via the ADP MCP tools exposed on the cluster.
+
+See [references/rpk-ai.md](references/rpk-ai.md).
+
+## Auth model
+
+`rpk ai` authenticates via the active rpk cloud profile. Authenticate first:
 
 ```bash
-# Install the latest version (auto-downloaded on first subcommand too)
-rpk ai install
-
-# Pin a specific version
-rpk ai install --ai-version 0.2.0
-
-# Force reinstall
-rpk ai install --force
-
-# Check the installed version
-rpk ai --version
-
-# Upgrade to latest
-rpk ai upgrade
-
-# Uninstall
-rpk ai uninstall
-```
-
-The plugin binary is installed to `~/.local/bin/.rpk.managed-rpai`.
-
-### 2. Wire the MCP server into Claude Code (one command)
-
-```bash
-# Log in to Redpanda Cloud first
 rpk cloud login
-
-# Auto-install: writes the mcpServers.redpandaCloud entry into ~/.claude.json
-rpk cloud mcp install --client claude-code
-
-# With delete operations enabled (off by default)
-rpk cloud mcp install --client claude-code --allow-delete
+rpk cloud cluster select   # select the cluster with an AI Gateway
+rpk ai agent list          # now works
 ```
 
-After running this command, restart Claude Code. The `redpandaCloud` MCP server is immediately available.
+`rpk` injects `RPAI_TOKEN` (from the active cloud profile) and the AI Gateway endpoint before running the rpai binary. To override the endpoint for a single invocation, pass `--rpai-endpoint <url>`. This flag is intentionally not bound to a `RPAI_ENDPOINT` environment variable.
 
-### 3. Wire the MCP server into Claude Desktop
+The ADP API uses OIDC user identity or service accounts for machine-to-machine access. Confirm available auth flows via `rpk ai auth --help`.
+
+## Discover the live surface
+
+Before acting on ADP, confirm the live API surface. Reference files document a point-in-time snapshot; the catalog and field defaults evolve:
 
 ```bash
-rpk cloud mcp install --client claude
+# Confirm all rpk ai subcommands and global flags
+rpk ai --help
+
+# Per-group help
+rpk ai agent --help
+rpk ai mcp --help
+rpk ai llm --help
+rpk ai model --help
+
+# Discover managed MCP catalog types
+rpk ai mcp types
+
+# List tools on a specific MCP server
+rpk ai mcp tools list <server-name>
+
+# List available models (optionally filter by provider type)
+rpk ai model list
 ```
 
-Writes the entry into `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the equivalent `AppData` path on Windows.
+When using ADP MCP tools: list the available tools for the target service, then describe the tool before calling it to confirm current field names.
 
-### 4. Run the MCP server manually (stdio)
+## Key patterns and gotchas
 
-```bash
-# Start the stdio MCP server — used directly by MCP clients
-rpk cloud mcp stdio
+- **Cost unit is microcents throughout.** `limit_microcents`, `warn_at_microcents`, `total_cost_microcents`: 1 cent = 1,000,000 microcents; $1.00 = 100,000,000 microcents. Never use `limit_cents`.
+- **Static-key auth field is `key_secret_ref`.** Some earlier docs called it `key_ref`. The proto (`auth.proto:26`) is authoritative: `key_secret_ref`.
+- **Guardrail content filter has 6 categories, not 14.** The 14-category taxonomy (`violent_crimes`, etc.) is an RFC draft; the shipped API has `hate`, `insults`, `sexual`, `violence`, `misconduct`, `prompt_attack`.
+- **Routing and rate limits do not exist in the ADP AI Gateway.** The docs explicitly call these out of scope. Do not attempt to configure `RoutingService`, `BackendPoolService`, or `RateLimitService` via ADP; those are legacy `aigateway/v1` names.
+- **A2A agent card path.** The canonical path is `/.well-known/agent-card.json`. There is no bare `/agent.json` route.
+- **`subagents.mcp_servers` is independent, not a subset.** Each subagent's `mcp_servers` list is independent of the parent agent's list; a subagent may reference servers the parent does not.
+- **`tools` field does not exist on `ManagedAgentSpec`.** Agents access tools through `mcp_servers` references only. The `tools` field is on `mcp_server.proto`.
+- **MCP tool name truncation.** The MCP protocol enforces a 64-character limit on tool names. ADP truncates long managed-catalog names with a hash prefix while preserving the method suffix.
+- **No `RPAI_ENDPOINT` env var.** `--rpai-endpoint` is flag-only and applies to one invocation only. Binding it to an env var would silently override the selected ADP environment.
+- **`connection` subcommand is a stub.** `rpk ai connection list` and `rpk ai connection revoke` print "coming soon" and exit 0.
 
-# With delete RPCs enabled
-rpk cloud mcp stdio --allow-delete
-```
+## Control-plane MCP server
 
-### 5. Proxy to a remote dataplane MCP server
+For the `rpk cloud mcp` control-plane server (manages Redpanda Cloud clusters, networks, IAM, and legacy AI Gateway `aigateway/v1` surfaces), see /redpanda:rpk-cloud.
 
-```bash
-# Proxy to an MCP server running inside a specific cluster
-rpk cloud mcp proxy \
-  --cluster-id <cluster-id> \
-  --mcp-server-id <mcp-server-id>
+## Reference files
 
-# Or for a serverless cluster
-rpk cloud mcp proxy \
-  --serverless-cluster-id <serverless-cluster-id> \
-  --mcp-server-id <mcp-server-id>
-
-# Install the proxy config into Claude Code instead of serving live
-rpk cloud mcp proxy \
-  --cluster-id <cluster-id> \
-  --mcp-server-id <mcp-server-id> \
-  --install --client claude-code
-```
-
-### 6. Manual JSON config (if you prefer not to use `rpk cloud mcp install`)
-
-Using `rpk cloud mcp install` is recommended because it writes the correct OS-specific config path automatically. If you hand-edit, the `--config` value must match the path returned by `os.UserConfigDir()` on your OS:
-
-- **Linux/XDG**: `~/.config/rpk/rpk.yaml` (or `$XDG_CONFIG_HOME/rpk/rpk.yaml` if `$XDG_CONFIG_HOME` is set)
-- **macOS**: `~/Library/Application Support/rpk/rpk.yaml`
-- **Windows**: `%AppData%\rpk\rpk.yaml`
-
-```json
-{
-  "mcpServers": {
-    "redpandaCloud": {
-      "command": "rpk",
-      "args": [
-        "--config", "<path from os.UserConfigDir()/rpk/rpk.yaml>",
-        "cloud", "mcp", "stdio"
-      ]
-    }
-  }
-}
-```
-
-For Claude Code place this in `~/.claude.json`; for Claude Desktop place it in the `claude_desktop_config.json` shown above.
-
-### 7. Auth for the rpk ai plugin
-
-```bash
-# rpk auto-injects RPAI_TOKEN from the active cloud profile
-rpk cloud login          # sets the cached token in rpk.yaml
-rpk ai <subcommand>      # rpk exports RPAI_TOKEN + RPAI_ENDPOINT automatically
-
-# Override the AI Gateway endpoint explicitly
-rpk ai <subcommand> --rpai-endpoint https://my-aigw.example.com
-
-# Or via env vars (take priority over profile lookup)
-export RPAI_TOKEN=<bearer-token>
-export RPAI_ENDPOINT=https://my-aigw.example.com
-rpk ai <subcommand>
-```
-
-## rpk ai Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `rpk ai install` | Download and install the Redpanda AI CLI plugin |
-| `rpk ai upgrade` | Upgrade the plugin to the latest version (managed installs only) |
-| `rpk ai uninstall` | Remove the installed plugin |
-| `rpk ai <anything>` | Delegates to the plugin binary after injecting cloud auth |
-
-The plugin itself provides its own subcommands (for managing models, gateways, accounts, etc. in the AI Gateway). Run `rpk ai --help` after installing to see the current list.
-
-## rpk cloud mcp Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `rpk cloud mcp stdio` | Run the MCP server on stdio (used by MCP clients) |
-| `rpk cloud mcp install` | Write MCP config into Claude Desktop or Claude Code |
-| `rpk cloud mcp proxy` | Proxy stdio to a remote dataplane MCP server |
-
-## MCP Tool Groups
-
-When an MCP client connects to `rpk cloud mcp stdio`, it receives tools from these service groups:
-
-- **Control Plane** — Region, ResourceGroup, Cluster (BYOC/dedicated), Network, ServerlessCluster, ServerlessRegion, Operations
-- **IAM** — Organization, Permission, Role, RoleBinding, ServiceAccount, User, UserInvite
-- **Dataplane** — Topic, Pipeline, ACL, CloudStorage, Quota, Secret, Security (RBAC roles), Transform, User, AIAgent, KnowledgeBase, MCPServer
-- **AI Gateway** — AccessControl, Account, Analytics, Audit, Auth, BackendPool, Config, Gateway, GatewayConfig, Guardrail, IAMSettings, MCPTools, ModelPricing, ModelProviders, Models, OAuth2Client, OAuth2Key, Organization, ProviderConfig, RateLimit, Role, Routing, Settings, SpendLimit, SSO, Team, User, VisualMetadata, Workspace
-
-Delete operations are **disabled by default**. Pass `--allow-delete` to enable them.
-
-## AI Gateway Governance and Security (Enterprise)
-
-The AI Gateway runs on Redpanda Cloud — a managed **Redpanda Enterprise Edition** deployment — so its governance, security, and cost-control surfaces are first-class. An AI agent drives them via the `ai_gateway_url`-scoped MCP tool groups (or the `rpai` plugin):
-
-- **Guardrails** — word filters (`words`, `regex`, `mask_replacement`, per-direction `action`/`DirectionConfig`) and content filters (per-category `violent_crimes`, `hate`, `privacy`, ... each with `strength`/`action`/`modalities`).
-- **Rate Limits** — `requests_per_second` / `requests_per_minute` / `requests_per_day` keyed by `key_extractor`/`expression`.
-- **Spend Limits** — `limit_cents`, `tokens_per_minute`/`tokens_per_day`, `window`/`size_seconds`, `alert_thresholds`, `action`; usage via `GetSpendLimitUsage`.
-- **Routing rules** — `backend_pool` + `fallback_pool` + `priority` selected by `expression`.
-- **Model Providers** — `base_url`, `auth_type`, `openai_compat`/`openai_native`, `data_policy`/`data_region`/`data_retention_days`; models via `ModelsService`, pricing via `ModelPricingService`.
-- **Access Control / RBAC** — Cedar-style policies (`policy_text`, `principal`/`resource`/`action`/`effect`, `priority`) plus `RoleService` and `TeamService`; validate/evaluate with `ValidatePolicy`/`EvaluateAccess`.
-- **Audit Logging** — OCSF-aligned `AuditService` (`GetAuditLog`, `ListAuditLogs`).
-- **SSO / OIDC / OAuth2** — identity providers (`issuer_url`, `client_id`, `jwks_uri`, `claim_mappings`, `jit_provisioning`, domain binding), OAuth2 clients, and signing keys.
-
-See [ai-gateway-governance.md](references/ai-gateway-governance.md) for every nested config key.
-
-## Dataplane AI Resources (Agents, MCP Servers, Knowledge Bases)
-
-Per-cluster (`dataplane_api_url`) AI resources, exposed as the v1alpha3 MCP tool groups:
-
-- **AI Agents** — `ManagedAgentSpec` with `model`, `llm_provider`, `system_prompt`, `max_iterations` (0–200), `mcp_servers` (≤32 refs), and `subagents` (each restricted to a subset of the parent's MCP servers).
-- **MCP Servers** — `RemoteMCPConfig`/`ManagedMCPConfig`, `code_mode`, and auth variants (`NoAuth`, `TokenPassthroughAuth`, `StaticKeyAuth`, `BasicAuth`, `APIKeyAuth`, `ServiceAccountOAuthAuth`, `UserOAuthAuth`) that reference secrets via `*_secret_ref`.
-- **Knowledge Bases** — retrieval backing for agents.
-
-See [ai-dataplane-resources.md](references/ai-dataplane-resources.md) for the full field set.
-
-## Enterprise License Notes
-
-Redpanda Cloud requires no separate license key. For **self-managed** Redpanda, the governance/security primitives the AI surface mirrors are gated behind a valid Enterprise license: Audit Logging (`audit_enabled`), RBAC (`rpk security role`), OAUTHBEARER/OIDC and Kerberos auth (`sasl_mechanisms`/`http_authentication`), FIPS (`fips_mode` — note `rpk ai`/`rpai` has no FIPS build), and Server-Side Schema ID Validation (`enable_schema_id_validation`). Check status with `rpk cluster license info`. See [enterprise-self-managed.md](references/enterprise-self-managed.md).
-
-## Reference Directory
-
-- [rpk-ai.md](references/rpk-ai.md): The `rpk ai` managed plugin — install/upgrade/uninstall lifecycle, the `rpai` plugin slug, auto-injection of `RPAI_TOKEN` and `RPAI_ENDPOINT`, and how the plugin is dispatched.
-- [mcp.md](references/mcp.md): `rpk cloud mcp` in depth — stdio server, install command (Claude Desktop / Claude Code), proxy command, MCP tool groups exposed, auth/token refresh, and the allow-delete gate.
-- [ai-gateway-governance.md](references/ai-gateway-governance.md): AI Gateway enterprise governance/security — guardrails (word + content filters), rate limits, spend limits, routing rules, model providers, access-control/RBAC policies, roles/teams, audit logging, and SSO/OIDC/OAuth2 — every nested proto field. Notes which map to Enterprise-licensed self-managed features.
-- [ai-dataplane-resources.md](references/ai-dataplane-resources.md): Dataplane AI resources — AI Agents (`ManagedAgentSpec`), MCP servers (remote/managed config + auth variants), and Knowledge Bases, with their config keys grounded in the adp v1alpha1 proto.
-- [enterprise-self-managed.md](references/enterprise-self-managed.md): The Enterprise-licensed self-managed config keys behind the AI surface's governance/security (Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/Kerberos, FIPS, schema ID validation), plus the cluster/storage Enterprise features and `rpk cluster license info` verification.
+- [references/agents.md](references/agents.md): `AgentRegistryService` RPCs, `ManagedAgentSpec` fields, subagents, A2A agent card, triggers, agent credentials.
+- [references/mcp-servers.md](references/mcp-servers.md): `MCPServerService` API layers, `MCPServer` fields, remote auth modes, code mode, managed catalog, knowledge bases.
+- [references/gateway-and-providers.md](references/gateway-and-providers.md): `LLMProviderService` RPCs, provider types and auth schemes, `ModelService`, pricing overrides, AI Gateway proxy behavior, explicit out-of-scope list.
+- [references/governance.md](references/governance.md): `BudgetService`, `SpendingService`, `GuardrailService` (Bedrock, 6 categories), Cedar access-control services, OAuth/identity services, absent service names.
+- [references/rpk-ai.md](references/rpk-ai.md): `rpk ai` subcommand tree, lifecycle management, global flags, common errors, per-group subcommand details.
+- [references/observability.md](references/observability.md): `TranscriptsService` RPCs and fields, `InsightsService` (Experimental), accountability framing, no AuditService in ADP.
