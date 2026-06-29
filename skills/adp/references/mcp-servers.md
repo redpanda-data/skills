@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` 
 
 # ADP MCP Servers Reference
 
-**Maturity: not formally declared.** The ADP API is alpha (`v1alpha1`); the proto sets no launch-stage annotation, so per-service maturity is not formally declared. Treat the surface as evolving and confirm current status via `--help` and live introspection. Individual managed-catalog entries carry their own per-type maturity badges; see the managed catalog section below. Audience: an AI agent operating ADP MCP servers via `rpk ai mcp` and the ADP API.
+**Maturity:** ADP is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Individual managed-catalog entries carry their own per-type maturity badges; see the managed catalog section below. Audience: an AI agent operating ADP MCP servers via `rpk ai mcp` and the ADP API.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
@@ -106,7 +106,7 @@ The MCP protocol enforces a 64-character limit on tool names. For managed types 
 
 ## Managed catalog
 
-The `type = MANAGED` backend connects to a pre-integrated service. The catalog is organized into 7 categories:
+The `type = MANAGED` backend connects to a pre-integrated service. The catalog is organized into 7 categories (the example lists below are illustrative, not exhaustive):
 
 | Category | Examples |
 |----------|---------|
@@ -118,7 +118,7 @@ The `type = MANAGED` backend connects to a pre-integrated service. The catalog i
 | Streaming | Kafka, NATS |
 | Utility | Azure AD, BambooHR (GA), BILL, DocuSign, Grafana, Greenhouse, Ironclad, NetSuite, Okta, OpenAPI, Ramp, Salesforce (GA), Sentry, SharePoint, Text Chunker, Workday, and others |
 
-The documented catalog has 44 types; the source registry (`defaults.go`) registers 54 types (some are alpha-gated and not documented). Use `ListManagedMCPTypes` to get the live list of available types for your cluster.
+There are ~50 managed types across these 7 categories; the exact set is gated per cluster, so use `ListManagedMCPTypes` to get the live list of available types for your cluster.
 
 Items without a maturity badge are GA. Items marked `badge:beta` are Beta. Confirm the current maturity of any specific type live via the API or UI.
 

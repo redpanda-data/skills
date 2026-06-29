@@ -1,8 +1,8 @@
-Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build). Evidence date: 2026-06-29.
+Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages). Evidence date: 2026-06-29.
 
 # rpk ai CLI Reference
 
-**Maturity: Beta.** All `rpk ai` reference pages in adp-docs carry `:page-beta: true`. The binary is in production use.
+**Maturity: Beta.** The ADP product is generally available; the `rpk ai` CLI itself is Beta (all `rpk ai` reference pages in adp-docs carry `:page-beta: true`). The binary is in production use.
 
 Audience: an AI agent using `rpk ai` to operate the Redpanda AI platform. Optimize for correct command usage.
 
@@ -26,9 +26,9 @@ Always prefer live `--help` output over this document when there is a discrepanc
 
 ## What `rpk ai` is
 
-`rpk ai` is the Redpanda AI CLI (`rpai`). It is a first-class command, analogous to `rpk connect`. The underlying binary is named `rpai` and presents itself as "Redpanda AI command-line interface" (`root.go:115-118`).
+`rpk ai` is the Redpanda AI CLI, delivered as an rpk managed plugin: rpk downloads and manages the underlying `rpai` binary (via `rpk ai install`), and you invoke it as `rpk ai`. The binary presents itself as "Redpanda AI command-line interface" (`root.go:115-118`).
 
-The binary is installed and updated by a separate set of `rpk` commands (`rpk ai install`, `rpk ai upgrade`, `rpk ai uninstall`). Those are lifecycle management commands on the `rpk` side; they are not subcommands of `rpai` itself.
+Because the binary is rpk-managed, the lifecycle commands `rpk ai install`, `rpk ai upgrade`, and `rpk ai uninstall` exist on the `rpk` side to download, update, and remove it; they are not subcommands of `rpai` itself.
 
 ## Lifecycle management (rpk-side commands)
 
@@ -44,19 +44,33 @@ Install path: `~/.local/bin/.rpk.managed-rpai`
 
 Platforms: `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`, `windows-amd64`, `windows-arm64`. Source: `apps/rpai/tools/publish-manifest/manifest.go:41-48`.
 
-**FIPS note:** TODO(verify): The goreleaser config confirms no FIPS build exists in the manifest (no FIPS platform entries, no FIPS build tags). The specific runtime error message and rpk-side FIPS detection logic could not be verified from available rpk source.
+**FIPS note:** No FIPS build of the `rpai` binary exists. The goreleaser config (`.goreleaser.yaml`) defines only the standard `darwin`, `linux`, and `windows` (amd64/arm64) targets with no FIPS platform entries or FIPS build tags, and the publish manifest lists no FIPS artifact. A FIPS-only environment cannot install a FIPS-validated `rpai`.
 
 ## Authentication
 
-`rpk ai` authenticates via the active rpk cloud profile. Before using `rpk ai`, authenticate with:
+`rpk ai` is self-contained: it owns its own credentials and ADP environment selection rather than riding the active `rpk cloud` session. Sign in and pick a target:
 
 ```bash
-rpk cloud login
+rpk ai auth login              # OAuth device-authorization flow
+rpk ai env list                # list local + live ADP environments
+rpk ai env use <environment>   # select the ADP environment whose AI Gateway becomes the active target
+rpk ai auth status             # show the current token state
 ```
 
-Before exec-ing the binary, `rpk` injects the `RPAI_TOKEN` (bearer token from the active cloud profile) and sets the endpoint from the active cluster's AI Gateway URL. If no cluster is selected, `rpk` exits with an error directing you to run `rpk cloud cluster use <id>`.
+`rpk ai auth login` runs the OAuth 2.0 device-authorization grant against Redpanda Cloud and caches the resulting credentials in `~/.rpai/credentials` (mode `0600`). `rpk ai env use <environment>` selects the ADP environment whose AI Gateway URL becomes the active dataplane target (this replaces the old `rpk cloud cluster select` step). `rpk ai env show` prints the resolved environment.
 
-The `rpai` binary also accepts `--token` (or `RPAI_TOKEN` env var) for a static bearer token override.
+Auth modes are `device|rpk|token|none` (default `device`; source `internal/types/types.go:81-90`):
+
+| Mode | Behavior |
+|------|----------|
+| `device` | OAuth device-authorization flow (default); credentials cached in `~/.rpai/credentials` |
+| `rpk` | Reuse the `rpk cloud` token (`cloud_auth.auth_token` from `rpk.yaml`); a selectable fallback, not the primary path |
+| `token` | Static bearer token from `--token` / `RPAI_TOKEN` only |
+| `none` | No Authorization header; for a local/unauthenticated AI Gateway |
+
+Define a local or manual gateway with `rpk ai env add <name> --ai-gateway-url <url> --auth-mode none`.
+
+For headless or CI use, the binary accepts `--token` (or the `RPAI_TOKEN` env var) for a static bearer token override.
 
 ## Global flags (when running as `rpk ai`)
 
@@ -225,7 +239,8 @@ Not yet documented in adp-docs.
 
 | Message | Cause | Fix |
 |---------|-------|-----|
-| `no cluster selected for this rpk profile` | No active cloud profile or no cluster selected | Run `rpk cloud cluster use <id>` |
-| `does not have an AI Gateway v2 endpoint` | Cluster has no AI Gateway | Select a cluster with an AI Gateway |
+| `no token available (run rpai auth login)` | Not signed in (no cached credentials, no `--token`/`RPAI_TOKEN`) | Run `rpk ai auth login` |
+| `is not a local environment and you are not logged in` | `env use <name>` with no matching local env and no credentials | Run `rpk ai auth login`, then `rpk ai env use <environment>` |
+| ADP environment not ready (no AI Gateway URL) | Selected environment has no AI Gateway endpoint yet | Choose a ready environment with `rpk ai env list` / `rpk ai env use` |
 | `The Redpanda AI CLI is already installed` | `install` without `--force` | Use `rpk ai upgrade` or add `--force` |
 | `found a self-managed Redpanda AI CLI` | Binary outside `~/.local/bin` | Run `rpk ai uninstall && rpk ai install` |

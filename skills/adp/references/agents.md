@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (line
 
 # ADP Agents Reference
 
-**Maturity: not formally declared.** The ADP API is alpha (`v1alpha1`); the proto sets no launch-stage annotation, so per-service maturity is not formally declared. Treat the surface as evolving and confirm current status via `--help` and live introspection. Triggers (Teams, Cron) are new fast-follow features; no GA announcement found.
+**Maturity:** ADP is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Triggers (Teams, Cron) are newer fast-follow features.
 
 Audience: an AI agent operating ADP via `rpk ai` and ADP MCP tools. Optimize for correct programmatic use.
 

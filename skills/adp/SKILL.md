@@ -25,29 +25,29 @@ The Agentic Data Plane (ADP) is the AI-native layer of Redpanda Cloud. It provid
 
 ## Component overview
 
-Maturity note: ADP APIs are alpha (`v1alpha1`); per-service stages are not formally declared except where noted (InsightsService is Experimental). Confirm current status live via `--help` and live introspection.
+Maturity note: ADP is generally available. Its APIs are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live. The `rpk ai` CLI is Beta; `InsightsService` is Experimental.
 
-### AI agents (alpha)
+### AI agents
 
 Managed agents run inside the ADP platform. Self-managed (user-hosted) agents are registered as metadata-only records. Both are managed through `AgentRegistryService` (proto) or the `AIAgentService` MCP tool group (v1alpha3). Key fields: `model`, `llm_provider`, `system_prompt`, `max_iterations` (0-200), `mcp_servers` (max 32 refs), `subagents` (max 16). A2A agent cards are published at `/.well-known/agent-card.json`. Triggers (Teams, Cron) fire agents on external events.
 
 See [references/agents.md](references/agents.md).
 
-### MCP servers (alpha)
+### MCP servers
 
-Each MCP server is either `REMOTE` (you own the upstream) or `MANAGED` (a pre-integrated catalog entry). The managed catalog covers 7 categories (AI, AWS, Communication, Database, Google, Streaming, Utility) with 44+ types; use `ListManagedMCPTypes` for the live list. Enabling `code_mode` on a server adds `{name}_search` and `{name}_execute` tools, reducing token usage by 80-90% for large tool sets. Two API layers exist: `adp.v1alpha1.MCPServerService` (management plane, 7 RPCs) and `dataplane.v1alpha3.MCPServerService` (public Cloud API, 9 RPCs including Start/Stop/Lint). Knowledge bases are a separate `v1alpha3` resource, not a sub-resource of MCP servers.
+Each MCP server is either `REMOTE` (you own the upstream) or `MANAGED` (a pre-integrated catalog entry). The managed catalog covers 7 categories (AI, AWS, Communication, Database, Google, Streaming, Utility) with ~50 managed types; the exact set is gated per cluster, so use `ListManagedMCPTypes` for the live list. Enabling `code_mode` on a server adds `{name}_search` and `{name}_execute` tools, reducing token usage by 80-90% for large tool sets. Two API layers exist: `adp.v1alpha1.MCPServerService` (management plane, 7 RPCs) and `dataplane.v1alpha3.MCPServerService` (public Cloud API, 9 RPCs including Start/Stop/Lint). Knowledge bases are a separate `v1alpha3` resource, not a sub-resource of MCP servers.
 
 See [references/mcp-servers.md](references/mcp-servers.md).
 
-### AI Gateway and LLM providers (alpha)
+### AI Gateway and LLM providers
 
 The AI Gateway is a managed HTTP proxy. It stores upstream API keys in the Redpanda secret store and injects them on outbound requests; calling applications never see the raw keys. Per-provider URL pattern: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers via `LLMProviderService` (CreateLLMProvider, UpdateLLMProvider, CheckConnection) and discover available models via `ModelService` (ListModels, GetModel). Supported provider types: OpenAI, Anthropic, Google/Gemini, AWS Bedrock, OpenAI-compatible. Pricing overrides use microcents per million tokens on the `provider_models` field.
 
-**Out of scope:** routing/failover, cross-provider load balancing, and per-second/minute/day rate limits are explicitly not part of the AI Gateway. To cap spend rather than request rate, use budgets.
+**Scope:** spend is capped by budgets (hard per-agent caps), and the gateway is a credential-injecting proxy, not a routing or load-balancing layer. Routing/failover, cross-provider load balancing, and per-second/minute/day rate limits are not part of the AI Gateway. To cap spend rather than request rate, use budgets.
 
 See [references/gateway-and-providers.md](references/gateway-and-providers.md).
 
-### Governance: budgets, guardrails, and policies (alpha)
+### Governance: budgets, guardrails, and policies
 
 - **Budgets** (`BudgetService`): per-agent or tenant-wide spend caps. All cost fields use microcents (`limit_microcents`, `warn_at_microcents`). No `limit_cents` or `current_spend_cents` fields exist.
 - **Spending analysis** (`SpendingService`): GetSpendingSummary, GetSpendingTimeSeries, GetSpendingBreakdown, GetSpendingTimeSeriesByDimension. `start_time` and `end_time` are required.
@@ -61,7 +61,7 @@ See [references/governance.md](references/governance.md).
 
 ### Observability: transcripts and insights
 
-- **TranscriptsService** (alpha): `ListTranscripts`, `GetTranscript`. Conversations are grouped by OTel `gen_ai.conversation.id`. `TranscriptSummary` includes token counts and `estimated_cost_usd`. Supports managed and self-managed (BYOA) agents.
+- **TranscriptsService**: `ListTranscripts`, `GetTranscript`. Conversations are grouped by OTel `gen_ai.conversation.id`. `TranscriptSummary` includes token counts and `estimated_cost_usd`. Supports managed and self-managed (BYOA) agents.
 - **InsightsService** (Experimental): single `GetInsights` RPC returning `active_agents`, `total_requests`, `total_cost_microcents` over a time window. May change or be removed without a version bump.
 
 There is no `AuditService` in the ADP public API. For request/response accountability, use `TranscriptsService`.
@@ -70,7 +70,7 @@ See [references/observability.md](references/observability.md).
 
 ## Operating ADP: CLI and API
 
-The primary CLI is `rpk ai` (binary: `rpai`). It is a first-class command, not a third-party add-on. Manage the binary lifecycle with `rpk ai install`, `rpk ai upgrade`, `rpk ai uninstall`. There is no FIPS build of `rpai`.
+The primary CLI is `rpk ai`, delivered as an rpk managed plugin: rpk downloads and manages the `rpai` binary (install path `~/.local/bin/.rpk.managed-rpai`), so `rpk ai install`, `rpk ai upgrade`, and `rpk ai uninstall` manage that binary's lifecycle. You invoke it as `rpk ai`. There is no FIPS build of `rpai`.
 
 Top-level subcommands: `agent`, `auth`, `connection` (stub), `env`, `llm`, `mcp`, `model`, `oauth-client`, `oauth-provider`, `run`, `version`.
 
@@ -80,17 +80,20 @@ See [references/rpk-ai.md](references/rpk-ai.md).
 
 ## Auth model
 
-`rpk ai` authenticates via the active rpk cloud profile. Authenticate first:
+`rpk ai` is self-contained: it owns its own credentials and ADP environment selection, rather than riding the `rpk cloud` session. Sign in and pick a target:
 
 ```bash
-rpk cloud login
-rpk cloud cluster select   # select the cluster with an AI Gateway
+rpk ai auth login          # OAuth device-authorization flow; caches creds in ~/.rpai/credentials (0600)
+rpk ai env list            # list local + live ADP environments
+rpk ai env use <environment>  # select the ADP environment whose AI Gateway becomes the active target
 rpk ai agent list          # now works
 ```
 
-`rpk` injects `RPAI_TOKEN` (from the active cloud profile) and the AI Gateway endpoint before running the rpai binary. To override the endpoint for a single invocation, pass `--rpai-endpoint <url>`. This flag is intentionally not bound to a `RPAI_ENDPOINT` environment variable.
+`rpk ai auth status` shows the current token state, and `rpk ai env show` prints the resolved environment. Selecting an ADP environment with `rpk ai env use` replaces the old `rpk cloud cluster select` step; the connection target is an ADP environment, not a cluster.
 
-The ADP API uses OIDC user identity or service accounts for machine-to-machine access. Confirm available auth flows via `rpk ai auth --help`.
+Auth modes are `device|rpk|token|none` (default `device`). The `rpk cloud` token is one selectable fallback (`--auth-mode rpk`), not the primary path. Define a local or manual gateway with `rpk ai env add <name> --ai-gateway-url <url> --auth-mode none`.
+
+For headless or CI use, pass a static token via `--token` or the `RPAI_TOKEN` env var. To override the gateway endpoint for a single invocation, pass `--rpai-endpoint <url>`; this flag is intentionally not bound to any environment variable. Confirm available auth flows via `rpk ai auth --help`.
 
 ## Discover the live surface
 

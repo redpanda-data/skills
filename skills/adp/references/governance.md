@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (Bud
 
 # ADP Governance Reference
 
-**Maturity: not formally declared.** The ADP API is alpha (`v1alpha1`); the proto sets no launch-stage annotation, so per-service maturity is not formally declared. Treat the surface as evolving and confirm current status via `--help` and live introspection.
+**Maturity:** ADP is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection.
 
 Audience: an AI agent operating ADP governance (budgets, spending analysis, guardrails, access control, OAuth/identity) via the ADP API and `rpk ai`. Optimize for correct programmatic use.
 
@@ -265,17 +265,17 @@ The names `SpendLimitService`, `RateLimitService`, `AccessControlService`, `Audi
 
 ## Service status summary
 
-| Service | Source | Served | Status |
+| Service | Source | Served | API version |
 |---------|--------|--------|--------|
-| `BudgetService` | `budget.proto:14` | aigw server.go:1253 | alpha (`v1alpha1`) |
-| `SpendingService` | `spending_service.proto:8` | aigw server.go:1217 | alpha (`v1alpha1`) |
-| `GuardrailService` | `guardrail.proto:25` | aigw server.go:1200 | alpha (`v1alpha1`) |
-| `PolicyService` | `policy_service.proto:25` | adp-api server.go:360 | alpha (`v1alpha1`) |
-| `PolicyTemplateService` | `policy_service.proto:66` | adp-api server.go:366 | alpha (`v1alpha1`) |
-| `SystemPolicyService` | `system_policy_service.proto:29` | adp-api server.go:390 | alpha (`v1alpha1`) |
-| `EffectivePolicySetService` | `effective_policy_set_service.proto:20` | adp-api server.go:407 | alpha (`v1alpha1`) |
-| `OAuthClientService` | `oauth_client.proto:22` | aigw server.go:2694 | alpha (`v1alpha1`) |
-| `OAuthProviderService` | `oauth_provider.proto:15` | aigw server.go:1195 | alpha (`v1alpha1`) |
-| `OAuthConnectionService` | `oauth_connection.proto:13` | aigw server.go:1205 | alpha (`v1alpha1`) |
-| `TokenVaultAdminService` | `token_vault_admin.proto:13` | aigw server.go:1209 | alpha (`v1alpha1`) |
-| `PendingAuthRequestService` | `pending_auth_request.proto:20` | proto-only; gRPC handler not wired | alpha (`v1alpha1`) |
+| `BudgetService` | `budget.proto:14` | aigw server.go:1253 | `v1alpha1` |
+| `SpendingService` | `spending_service.proto:8` | aigw server.go:1217 | `v1alpha1` |
+| `GuardrailService` | `guardrail.proto:25` | aigw server.go:1200 | `v1alpha1` |
+| `PolicyService` | `policy_service.proto:25` | adp-api server.go:360 | `v1alpha1` |
+| `PolicyTemplateService` | `policy_service.proto:66` | adp-api server.go:366 | `v1alpha1` |
+| `SystemPolicyService` | `system_policy_service.proto:29` | adp-api server.go:390 | `v1alpha1` |
+| `EffectivePolicySetService` | `effective_policy_set_service.proto:20` | adp-api server.go:407 | `v1alpha1` |
+| `OAuthClientService` | `oauth_client.proto:22` | aigw server.go:2694 | `v1alpha1` |
+| `OAuthProviderService` | `oauth_provider.proto:15` | aigw server.go:1195 | `v1alpha1` |
+| `OAuthConnectionService` | `oauth_connection.proto:13` | aigw server.go:1205 | `v1alpha1` |
+| `TokenVaultAdminService` | `token_vault_admin.proto:13` | aigw server.go:1209 | `v1alpha1` |
+| `PendingAuthRequestService` | `pending_auth_request.proto:20` | proto-only; gRPC handler not wired | `v1alpha1` |

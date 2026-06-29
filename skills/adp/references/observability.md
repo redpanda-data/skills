@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/transcript.proto` 
 
 # ADP Observability Reference
 
-**Maturity: Mixed.** `TranscriptsService` is alpha (`v1alpha1`), non-experimental (package path `redpanda.api.adp.v1alpha1`; the proto sets no launch-stage annotation, so per-service maturity is not formally declared). `InsightsService` is Experimental (package path `redpanda.api.adp.experimental.v1alpha1`; the proto header explicitly warns it may change shape without a version bump or be removed entirely). Do not depend on `InsightsService` from stable clients.
+**Maturity:** ADP is generally available. `TranscriptsService` is on the `v1alpha1` version path and is non-experimental (package path `redpanda.api.adp.v1alpha1`; the proto carries no `LaunchStage` annotation, so treat field-level details as still evolving and confirm them live). `InsightsService` is Experimental (package path `redpanda.api.adp.experimental.v1alpha1`; the proto header explicitly warns it may change shape without a version bump or be removed entirely). Do not depend on `InsightsService` from stable clients.
 
 Audience: an AI agent using ADP observability via the ADP API and `rpk ai`. Optimize for correct programmatic use.
 
@@ -24,7 +24,7 @@ The sections below document the proto-verified surface. For exact field lists an
 
 ## `TranscriptsService` RPCs
 
-Source: `transcript.proto:21`. Served: `adp-api server.go:344-348`. alpha (`v1alpha1`), non-experimental.
+Source: `transcript.proto:21`. Served: `adp-api server.go:344-348`. On the `v1alpha1` version path, non-experimental.
 
 | RPC | Request | Response | Cedar permission |
 |-----|---------|----------|-----------------|
@@ -141,7 +141,7 @@ Note: an `AuditService` (OCSF-shaped) does exist in the legacy generated-only tr
 
 ## Service status summary
 
-| Service | Package | Served in | Status |
-|---------|---------|-----------|--------|
-| `TranscriptsService` | `redpanda.api.adp.v1alpha1` | `apps/adp-api` | alpha (`v1alpha1`), non-experimental |
-| `InsightsService` | `redpanda.api.adp.experimental.v1alpha1` | `apps/aigw` | Experimental |
+| Service | Package | Served in | API version | Maturity |
+|---------|---------|-----------|--------|--------|
+| `TranscriptsService` | `redpanda.api.adp.v1alpha1` | `apps/adp-api` | `v1alpha1` | non-experimental |
+| `InsightsService` | `redpanda.api.adp.experimental.v1alpha1` | `apps/aigw` | `v1alpha1` (experimental path) | Experimental |
