@@ -176,7 +176,7 @@ Three subcommands:
 The `stdio` server exposes tools across the full Redpanda Cloud API surface:
 - Control Plane: clusters, serverless clusters, networks, resource groups, regions, IAM (roles, role bindings, service accounts, users)
 - Data Plane (per cluster): topics, ACLs, users, secrets, pipelines, quotas, transforms, AI agents, MCP servers, knowledge bases
-- AI Gateway: gateways, models, guardrails, rate limits, spend limits, OAuth2 clients, SSO, and more
+- AI Gateway: gateways, backend pools, models, model providers, guardrails, rate limits, spend limits, routing rules, OAuth2 clients and keys, SSO, access control, MCP tools, organizations, teams, roles, audit, analytics, and workspace management
 
 By default, **delete operations are disabled**. Pass `--allow-delete` to enable them.
 
