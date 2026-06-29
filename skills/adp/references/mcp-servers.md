@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` 
 
 # ADP MCP Servers Reference
 
-**Maturity: Beta (individual managed-catalog entries carry per-type maturity; the MCPServerService itself shipped at ADP GA June 2026 on API version `v1alpha1`).** Audience: an AI agent operating ADP MCP servers via `rpk ai mcp` and the ADP API.
+**Maturity: not formally declared.** The ADP API is alpha (`v1alpha1`); the proto sets no launch-stage annotation, so per-service maturity is not formally declared. Treat the surface as evolving and confirm current status via `--help` and live introspection. Individual managed-catalog entries carry their own per-type maturity badges; see the managed catalog section below. Audience: an AI agent operating ADP MCP servers via `rpk ai mcp` and the ADP API.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 

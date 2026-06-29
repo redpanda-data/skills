@@ -25,19 +25,21 @@ The Agentic Data Plane (ADP) is the AI-native layer of Redpanda Cloud. It provid
 
 ## Component overview
 
-### AI agents (Beta)
+Maturity note: ADP APIs are alpha (`v1alpha1`); per-service stages are not formally declared except where noted (InsightsService is Experimental). Confirm current status live via `--help` and live introspection.
+
+### AI agents (alpha)
 
 Managed agents run inside the ADP platform. Self-managed (user-hosted) agents are registered as metadata-only records. Both are managed through `AgentRegistryService` (proto) or the `AIAgentService` MCP tool group (v1alpha3). Key fields: `model`, `llm_provider`, `system_prompt`, `max_iterations` (0-200), `mcp_servers` (max 32 refs), `subagents` (max 16). A2A agent cards are published at `/.well-known/agent-card.json`. Triggers (Teams, Cron) fire agents on external events.
 
 See [references/agents.md](references/agents.md).
 
-### MCP servers (Beta)
+### MCP servers (alpha)
 
 Each MCP server is either `REMOTE` (you own the upstream) or `MANAGED` (a pre-integrated catalog entry). The managed catalog covers 7 categories (AI, AWS, Communication, Database, Google, Streaming, Utility) with 44+ types; use `ListManagedMCPTypes` for the live list. Enabling `code_mode` on a server adds `{name}_search` and `{name}_execute` tools, reducing token usage by 80-90% for large tool sets. Two API layers exist: `adp.v1alpha1.MCPServerService` (management plane, 7 RPCs) and `dataplane.v1alpha3.MCPServerService` (public Cloud API, 9 RPCs including Start/Stop/Lint). Knowledge bases are a separate `v1alpha3` resource, not a sub-resource of MCP servers.
 
 See [references/mcp-servers.md](references/mcp-servers.md).
 
-### AI Gateway and LLM providers (Beta)
+### AI Gateway and LLM providers (alpha)
 
 The AI Gateway is a managed HTTP proxy. It stores upstream API keys in the Redpanda secret store and injects them on outbound requests; calling applications never see the raw keys. Per-provider URL pattern: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers via `LLMProviderService` (CreateLLMProvider, UpdateLLMProvider, CheckConnection) and discover available models via `ModelService` (ListModels, GetModel). Supported provider types: OpenAI, Anthropic, Google/Gemini, AWS Bedrock, OpenAI-compatible. Pricing overrides use microcents per million tokens on the `provider_models` field.
 
@@ -45,7 +47,7 @@ The AI Gateway is a managed HTTP proxy. It stores upstream API keys in the Redpa
 
 See [references/gateway-and-providers.md](references/gateway-and-providers.md).
 
-### Governance: budgets, guardrails, and policies (Experimental)
+### Governance: budgets, guardrails, and policies (alpha)
 
 - **Budgets** (`BudgetService`): per-agent or tenant-wide spend caps. All cost fields use microcents (`limit_microcents`, `warn_at_microcents`). No `limit_cents` or `current_spend_cents` fields exist.
 - **Spending analysis** (`SpendingService`): GetSpendingSummary, GetSpendingTimeSeries, GetSpendingBreakdown, GetSpendingTimeSeriesByDimension. `start_time` and `end_time` are required.
@@ -59,7 +61,7 @@ See [references/governance.md](references/governance.md).
 
 ### Observability: transcripts and insights
 
-- **TranscriptsService** (Stable): `ListTranscripts`, `GetTranscript`. Conversations are grouped by OTel `gen_ai.conversation.id`. `TranscriptSummary` includes token counts and `estimated_cost_usd`. Supports managed and self-managed (BYOA) agents.
+- **TranscriptsService** (alpha): `ListTranscripts`, `GetTranscript`. Conversations are grouped by OTel `gen_ai.conversation.id`. `TranscriptSummary` includes token counts and `estimated_cost_usd`. Supports managed and self-managed (BYOA) agents.
 - **InsightsService** (Experimental): single `GetInsights` RPC returning `active_agents`, `total_requests`, `total_cost_microcents` over a time window. May change or be removed without a version bump.
 
 There is no `AuditService` in the ADP public API. For request/response accountability, use `TranscriptsService`.

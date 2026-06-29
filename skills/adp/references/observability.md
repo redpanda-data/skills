@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/transcript.proto` 
 
 # ADP Observability Reference
 
-**Maturity: Mixed.** `TranscriptsService` is stable (package path `redpanda.api.adp.v1alpha1`, non-experimental). `InsightsService` is Experimental (package path `redpanda.api.adp.experimental.v1alpha1`; the proto header explicitly warns it may change shape without a version bump or be removed entirely). Do not depend on `InsightsService` from stable clients.
+**Maturity: Mixed.** `TranscriptsService` is alpha (`v1alpha1`), non-experimental (package path `redpanda.api.adp.v1alpha1`; the proto sets no launch-stage annotation, so per-service maturity is not formally declared). `InsightsService` is Experimental (package path `redpanda.api.adp.experimental.v1alpha1`; the proto header explicitly warns it may change shape without a version bump or be removed entirely). Do not depend on `InsightsService` from stable clients.
 
 Audience: an AI agent using ADP observability via the ADP API and `rpk ai`. Optimize for correct programmatic use.
 
@@ -24,7 +24,7 @@ The sections below document the proto-verified surface. For exact field lists an
 
 ## `TranscriptsService` RPCs
 
-Source: `transcript.proto:21`. Served: `adp-api server.go:344-348`. Stable.
+Source: `transcript.proto:21`. Served: `adp-api server.go:344-348`. alpha (`v1alpha1`), non-experimental.
 
 | RPC | Request | Response | Cedar permission |
 |-----|---------|----------|-----------------|
@@ -143,5 +143,5 @@ Note: an `AuditService` (OCSF-shaped) does exist in the legacy generated-only tr
 
 | Service | Package | Served in | Status |
 |---------|---------|-----------|--------|
-| `TranscriptsService` | `redpanda.api.adp.v1alpha1` | `apps/adp-api` | Stable |
+| `TranscriptsService` | `redpanda.api.adp.v1alpha1` | `apps/adp-api` | alpha (`v1alpha1`), non-experimental |
 | `InsightsService` | `redpanda.api.adp.experimental.v1alpha1` | `apps/aigw` | Experimental |

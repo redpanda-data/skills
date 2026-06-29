@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto
 
 # AI Gateway, LLM Providers, and Models Reference
 
-**Maturity: Beta.** Both `LLMProviderService` and `ModelService` are registered and served in the aigw server. The API package is `redpanda.api.adp.v1alpha1` (pre-v1 alpha stability). No `google.api.LaunchStage` annotation is set on either service in the proto definitions.
+**Maturity: not formally declared.** The ADP API is alpha (`v1alpha1`); the proto sets no launch-stage annotation, so per-service maturity is not formally declared. Treat the surface as evolving and confirm current status via `--help` and live introspection.
 
 Audience: an AI agent operating the ADP AI Gateway via `rpk ai llm` / `rpk ai model` and the ADP API. Optimize for correct programmatic use.
 

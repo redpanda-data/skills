@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (line
 
 # ADP Agents Reference
 
-**Maturity: Beta.** `AgentRegistryService` is registered and served on the public path. Credentials and A2A card paths are documented with UI screenshots. Triggers (Teams, Cron) are new fast-follow features. No GA announcement found.
+**Maturity: not formally declared.** The ADP API is alpha (`v1alpha1`); the proto sets no launch-stage annotation, so per-service maturity is not formally declared. Treat the surface as evolving and confirm current status via `--help` and live introspection. Triggers (Teams, Cron) are new fast-follow features; no GA announcement found.
 
 Audience: an AI agent operating ADP via `rpk ai` and ADP MCP tools. Optimize for correct programmatic use.
 
