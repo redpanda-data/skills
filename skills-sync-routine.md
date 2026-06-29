@@ -9,9 +9,10 @@ This file is the version-controlled definition of the proposed `adp-skill-sync`
 scheduled routine, which monitors `redpanda-data/cloudv2` for ADP changes and opens
 a PR against `redpanda-data/skills` when user-facing updates require skill updates.
 
-It follows the same generator/critic pattern as `adp-docs-routines.md`
-(at `~/projects/adp-docs-routines.md`), which is the reference for all operational
-gotchas (branch prefix, private-repo read strategy, no `gh` CLI, and so on).
+It follows the same generator/critic pattern as the adp-docs routines, documented at
+https://github.com/redpanda-data/docs-team-standards/blob/main/resources/adp-docs-routines.md
+which is the reference for all operational gotchas (branch prefix, private-repo read
+strategy, no `gh` CLI, and so on).
 
 ---
 
@@ -237,6 +238,6 @@ detail):
 - **Pin `mcp_connections` on create.** If you omit the list, all connected connectors
   are attached. Explicitly list only Redpanda-Github-Read to avoid scope creep.
 
-See `adp-docs-routines.md` ("Building a similar routine" section) for the full
+See the adp-docs routines doc (linked at the top; "Building a similar routine" section) for the full
 checklist, the create-body JSON shape, and the environment facts that made the
 adp-docs routines reliable.
