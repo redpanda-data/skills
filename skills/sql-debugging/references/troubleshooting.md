@@ -1,4 +1,4 @@
-# Oxla Troubleshooting Playbooks
+# Redpanda SQL Troubleshooting Playbooks
 
 ---
 
@@ -110,7 +110,7 @@ grpcurl -plaintext \
 
 ### Background
 
-Oxla's `OOMMonitor` runs a background thread every 100 ms that reads the process RSS from `/proc/self/status` (the `_status_file_path` member points to this file — it is the RSS source, not a file the monitor writes). When RSS exceeds the operational limit — `total - 1%` (margin factor `k_oom_monitor_margin_factor = 0.01`, from `src/mem/limits.h`), where `total` is the computed memory limit derived from `memory.max` or auto-detection — it takes emergency action:
+Redpanda SQL's `OOMMonitor` runs a background thread every 100 ms that reads the process RSS from `/proc/self/status` (the `_status_file_path` member points to this file — it is the RSS source, not a file the monitor writes). When RSS exceeds the operational limit — `total - 1%` (margin factor `k_oom_monitor_margin_factor = 0.01`, from `src/mem/limits.h`), where `total` is the computed memory limit derived from `memory.max` or auto-detection — it takes emergency action:
 
 1. Cancels all running tasks/queries.
 2. Evicts the entire storage cache.
@@ -264,7 +264,7 @@ nc -zv <other-node-ip> 5771
 
 ## Playbook 4: Kafka Ingestion Stalled
 
-If data is not flowing from Kafka into Oxla:
+If data is not flowing from Kafka into Redpanda SQL:
 
 ### Step 1 — Check Kafka metrics
 
@@ -304,7 +304,7 @@ Look for connection errors, authentication failures, or consumer group rebalance
 ### Step 4 — If the source is a Redpanda Iceberg Topic, check the upstream side
 
 If `system.catalogs` shows an `iceberg` (or `redpanda`) source and the table looks
-stale or rows are missing, the cause is often on the Redpanda cluster, not in Oxla.
+stale or rows are missing, the cause is often on the Redpanda cluster, not in Redpanda SQL.
 See [redpanda-iceberg-source.md](redpanda-iceberg-source.md) for the full
 symptom-to-cause checklist: `redpanda.iceberg.target.lag.ms` (commit cadence),
 the `<topic>~dlq` dead-letter table, `redpanda.iceberg.invalid.record.action`,
@@ -396,7 +396,7 @@ curl -s http://<host>:8080/metrics \
 
 ## Quick-Reference Diagnostic Checklist
 
-Run this sequence whenever Oxla is behaving unexpectedly:
+Run this sequence whenever Redpanda SQL is behaving unexpectedly:
 
 ```bash
 # 1. Is the cluster healthy? (Prometheus)

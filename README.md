@@ -1,8 +1,8 @@
 # Redpanda Agent Skills
 
 Agent Skills for Redpanda's products — **Streaming** (the Kafka-compatible engine),
-**SQL** (Oxla), **Connect**, and **Cloud** (Serverless, BYOC, Dedicated) — unified by the
-**rpk** command-line experience. Each skill is grounded in Redpanda's own source code,
+**SQL** (Cloud only), **Connect**, and **Cloud** (Serverless, BYOC, Dedicated) — unified by the
+**rpk** command-line experience. Each skill is grounded in Redpanda's source code,
 documentation, and APIs.
 
 ## Installation
@@ -45,7 +45,7 @@ The Kafka-compatible streaming engine (the Redpanda broker).
 - [**streaming-debugging**](./skills/streaming-debugging) — Diagnose a broker/cluster: debug bundles, metrics endpoints, logs, CPU profiling, partition/raft health, and failure-mode playbooks.
 
 ### 🧮 SQL
-Redpanda SQL — the distributed, columnar, PostgreSQL-compatible analytical database (Oxla).
+Redpanda SQL — the distributed, columnar, PostgreSQL-compatible analytical database (Cloud only).
 - [**sql**](./skills/sql) — Write SQL: connection (PostgreSQL wire protocol), data types, DDL/DML, functions, and analytical queries.
 - [**sql-admin-api**](./skills/sql-admin-api) — Operate a cluster: configuration, node roles and ports, leader election, storage backends, memory limits, and the gRPC admin service.
 - [**sql-federated-queries**](./skills/sql-federated-queries) — Query external data: Kafka topics via catalogs, Apache Iceberg tables, and S3/GCS/Azure parquet/ORC files.
@@ -90,12 +90,17 @@ One CLI across every product.
 
 ## How these skills were built
 
-Each skill was drafted from a grounded spec (source paths into the Redpanda, Connect,
-and Oxla repositories plus the docs), then put through an **adversarial review at maximum
-model effort** that cross-checks every command, flag, config field, endpoint, and code
-example against the actual source — fixing hallucinated or outdated details — followed by
-a dedicated **enterprise-feature coverage** pass (the key differentiators, with their
-nested settings) and a final verification pass.
+Each skill was drafted from Redpanda source code and documentation, then put through an
+**adversarial review** that cross-checks every command, flag, config field, endpoint, and
+code example against the actual source — fixing hallucinated or outdated details.
+
+## Contributing
+
+Before creating a new skill, read [CONTRIBUTING.md](./CONTRIBUTING.md) which explains:
+- **Source of truth hierarchy**: Source Code → Documentation → Skills
+- **Diagnostic flow**: When an agent fails, how to determine if the fix is docs vs skill
+- **Decision framework**: When to create a skill vs improve docs vs other solutions
+- **Skill design guidelines**: Optimal size, structure, and avoiding negative transfer
 
 ## License
 
