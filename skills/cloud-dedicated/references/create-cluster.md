@@ -254,6 +254,9 @@ Operation types (from `operation.proto`, `Operation.Type` enum):
 - `TYPE_DELETE_CLUSTER = 3`
 - `TYPE_CREATE_NETWORK = 4`
 - `TYPE_DELETE_NETWORK = 5`
+- `TYPE_UPDATE_NETWORK = 18`
+- `TYPE_CREATE_NETWORK_PEERING = 13`, `TYPE_DELETE_NETWORK_PEERING = 14`
+- `TYPE_CREATE_SHADOW_LINK = 15`, `TYPE_UPDATE_SHADOW_LINK = 16`, `TYPE_DELETE_SHADOW_LINK = 17`
 
 Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/operation.proto`.
 
@@ -338,38 +341,36 @@ Source: `cluster.proto` (`ListClustersRequest.Filter`).
 
 ## Update Cluster
 
-Updates use PATCH. The request body is decoded directly as a `ClusterUpdate` object (the gateway maps `body: "cluster"`). The `update_mask` is a separate top-level request field — pass it as a query parameter `?update_mask=<field>`. If omitted, the gateway auto-derives the mask from the fields present in the body.
+Updates use **PATCH** to `https://api.redpanda.com/v1/clusters/{cluster.id}` (the path parameter is `cluster.id` — note this differs from GET/DELETE, which use `/v1/clusters/{id}`). The proto maps `body: "cluster"`, so the request body **is the `ClusterUpdate` object directly** — do **not** wrap it as `{"cluster": {...}}`, and do **not** include the `update_mask` in the body.
 
-Returns an Operation.
+`update_mask` is a **required** query parameter: `?update_mask=<comma-separated field paths>`. The proto marks it required, but the generated OpenAPI omits it because of a grpc-gateway `FieldMask` serialization quirk — you must still pass it.
+
+You do not need to include `id` in the body; the cluster ID comes from the path. Returns an Operation.
 
 ```bash
 # Update throughput tier (scale up/down)
-# Pass update_mask as a query parameter, body is the ClusterUpdate object directly
+# Body is the ClusterUpdate object directly; update_mask is a required query parameter.
 UPDATE_OP=$(curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask=throughput_tier" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{
-    "id": "'"${CLUSTER_ID}"'",
-    "throughput_tier": "tier-3-aws-v2-arm"
-  }')
+  -d '{"throughput_tier": "tier-3-aws-v2-arm"}')
 
 # Update maintenance window
 curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask=maintenance_window_config" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "'"${CLUSTER_ID}"'",
     "maintenance_window_config": {
       "day_hour": {"hour_of_day": 3, "day_of_week": "SATURDAY"}
     }
   }'
 
-# Update cluster configuration (Redpanda cluster properties)
-curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask=cluster_configuration" \
+# Update multiple fields: comma-separate the field paths in update_mask
+curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask=cluster_configuration,name" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "'"${CLUSTER_ID}"'",
+    "name": "prod-dedicated-renamed",
     "cluster_configuration": {
       "custom_properties": {
         "log_segment_size": "134217728",
@@ -381,7 +382,7 @@ curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask
 
 Updatable `ClusterUpdate` fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`, `gcp_private_service_connect`, `azure_private_link`, `read_replica_cluster_ids`, `cloud_provider_tags`, `maintenance_window_config`, `cluster_configuration`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`.
 
-Source: `cluster.proto` (`ClusterUpdate` message, `UpdateClusterRequest` with `update_mask`); `cluster.pb.gw.go` (body decoded into `protoReq.Cluster`; `update_mask` populated via query parameters).
+Source: `cluster.proto` (`UpdateCluster` RPC: `patch: "/v1/clusters/{cluster.id}"`, `body: "cluster"`; `UpdateClusterRequest` with separate required top-level `update_mask`); `openapi.controlplane.yaml` (`/v1/clusters/{cluster.id}` PATCH; body schema `ClusterUpdate`; `update_mask` omitted from the generated spec).
 
 ## Delete Cluster
 
@@ -494,6 +495,73 @@ Source: `cluster.proto` (`ClusterCreate.cloud_provider_tags`, `max_pairs = 16`, 
 ```
 
 Source: `cluster.proto` (`AWSPrivateLinkSpec`, `GCPPrivateServiceConnectSpec`, `AzurePrivateLinkSpec`).
+
+## Private Connectivity Options
+
+Dedicated clusters support several private connectivity models. The PrivateLink specs above are set on the cluster directly via `ClusterCreate`/`ClusterUpdate`; VPC peering is a separate resource (see below).
+
+| Option | Cloud | How to configure |
+|---|---|---|
+| AWS PrivateLink (incl. cross-region) | AWS | `aws_private_link` spec on the cluster (`enabled`, `allowed_principals`, `connect_console`, `supported_regions`) |
+| GCP Private Service Connect | GCP | `gcp_private_service_connect` spec (`enabled`, `global_access_enabled`, `consumer_accept_list[].source`) |
+| Azure Private Link | Azure | `azure_private_link` spec (`enabled`, `allowed_subscriptions`, `connect_console`) |
+| VPC / VNet peering | AWS, GCP, Azure | `NetworkPeeringService` (see below) |
+
+For end-to-end networking guidance, see https://docs.redpanda.com/cloud-data-platform/networking/ .
+
+## Network Peering
+
+`NetworkPeeringService` establishes VPC/VNet peering between the Redpanda-managed network and a customer network. Create and delete return long-running Operations; there is no Update.
+
+| Method | Path | Returns |
+|---|---|---|
+| POST | `/v1/network/{network_peering.network_id}/network-peerings` | `Operation` (`TYPE_CREATE_NETWORK_PEERING = 13`) |
+| GET | `/v1/network/{network_id}/network-peerings/{id}` | `NetworkPeering` |
+| GET | `/v1/network/{network_id}/network-peerings` | list of `NetworkPeering` |
+| DELETE | `/v1/network/{network_id}/network-peerings/{id}` | `Operation` (`TYPE_DELETE_NETWORK_PEERING = 14`) |
+
+`NetworkPeering.state` (output only): `STATE_CREATING`, `STATE_PENDING_ACCEPTANCE`, `STATE_READY`, `STATE_DELETING`, `STATE_FAILED`.
+
+**`NetworkPeeringCreate` fields:**
+
+| Field | Required | Notes |
+|---|---|---|
+| `network_id` | Yes | Redpanda network resource (XID) the peering applies to |
+| `display_name` | Yes | Max 128 chars, pattern `^[A-Za-z0-9-_: ]+$` |
+| `cloud_provider` | Yes | `CLOUD_PROVIDER_AWS` / `_GCP` / `_AZURE`; must match the spec |
+| `cloud_provider_spec` | Yes (oneof) | Exactly one of `aws` / `gcp` / `azure` |
+
+Cloud-provider spec fields:
+- `aws`: `peer_owner_id`, `peer_vpc_id`
+- `gcp`: `peer_project_id`, `peer_vpc_name`
+- `azure`: `peer_tenant_id`, `peer_subscription_id`, `peer_resource_group`, `peer_vnet_name`
+
+```bash
+# Create an AWS VPC peering (returns an Operation)
+PEER_OP=$(curl -s -X POST "https://api.redpanda.com/v1/network/${NET_ID}/network-peerings" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "network_peering": {
+      "network_id": "'"${NET_ID}"'",
+      "display_name": "prod-peering",
+      "cloud_provider": "CLOUD_PROVIDER_AWS",
+      "aws": {
+        "peer_owner_id": "123456789012",
+        "peer_vpc_id": "vpc-0a1b2c3d4e5f"
+      }
+    }
+  }')
+PEER_OP_ID=$(echo "${PEER_OP}" | jq -r '.operation.id')
+
+# List peerings on a network
+curl -s "https://api.redpanda.com/v1/network/${NET_ID}/network-peerings" \
+  -H "Authorization: Bearer ${TOKEN}" | jq '.network_peerings[] | {id, display_name, state}'
+```
+
+After creation, the peering moves to `STATE_PENDING_ACCEPTANCE` until you accept it on the customer side, then `STATE_READY`.
+
+Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/network_peering.proto` (`NetworkPeeringService` paths, `NetworkPeeringCreate`, `AWSPeeringSpec`/`GCPPeeringSpec`/`AzurePeeringSpec`, `NetworkPeering.State`); `operation.proto` (`TYPE_CREATE/DELETE_NETWORK_PEERING = 13/14`).
 
 ## Listing Operations
 

@@ -180,12 +180,13 @@ API to set them:
 | Feature | Why not user-configurable on Serverless |
 |---|---|
 | Tiered Storage (`cloud_storage_*`) | Storage is fully managed; Serverless is object-storage-native by design. |
+| Customer-managed encryption keys (BYOK / CMK) | **Not offered on Redpanda Cloud** (any tier). Encryption keys are Redpanda-managed — data at rest uses SSE-S3 / cloud-provider AES-256. There is no API to bring your own key. Source: https://docs.redpanda.com/cloud-data-platform/security/cloud-encryption/ |
 | Cloud Topics (`redpanda.cloud_topic.enabled`) | Managed cluster topology; not a tenant toggle. |
 | Continuous Data Balancing (`partition_autobalancing_mode`, `partition_autobalancing_node_availability_timeout_sec`, disk-pressure thresholds) | Cluster-level balancing is managed by Redpanda. |
 | FIPS mode (`fips_mode` node config) | Node configuration is not tenant-accessible. |
 | Audit Logging (`audit_enabled` cluster config) | Cluster config not tenant-accessible. |
 | Remote Read Replicas (`cloud_storage_enable_remote_read`) | Cross-cluster object-storage reads are not a Serverless tenant feature. |
-| Shadow Linking / cross-cluster DR (`rpk shadow`, `ShadowLinkService`) | The `ShadowLinkService` appears in the data-plane surface but its availability on Serverless is **unconfirmed** (see data-plane.md). DR for Serverless is handled by the managed platform. |
+| Shadow Linking / cross-cluster DR (`rpk shadow`, `ShadowLinkService`) | Shadow Linking is a **control-plane** API (`ShadowLinkService` at `https://api.redpanda.com`: `/v1/shadow-links`, `/v1/shadow-links/{id}`), with a data-plane shadow-topic/failover surface at `/v1/shadow-links/{name}/...`. Availability on Serverless is **unconfirmed** (see data-plane.md); DR for Serverless is handled by the managed platform. |
 | Whole Cluster Restore | Cluster-snapshot restore is a managed/self-managed operation, not a Serverless tenant API. |
 
 To configure these, use a **BYOC or Dedicated** cluster (see the `cloud-byoc`

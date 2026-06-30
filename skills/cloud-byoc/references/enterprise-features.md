@@ -19,16 +19,17 @@ At **create time** (`POST /v1/clusters`) or at **update time** (`PATCH /v1/clust
 ```bash
 # Enable an enterprise cluster property after the cluster exists.
 # Integer-valued properties must be passed as strings in custom_properties.
-curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}" \
+# update_mask is a REQUIRED query parameter (snake_case field paths); the body IS the
+# ClusterUpdate object directly (no "cluster" wrapper, no update_mask inside the body).
+curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask=cluster_configuration.custom_properties" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "cluster_configuration": {
       "custom_properties": {
-        "iceberg_enabled": true
+        "iceberg_enabled": "true"
       }
-    },
-    "update_mask": "clusterConfiguration.customProperties"
+    }
   }' | jq '.operation.id'
 ```
 
@@ -118,10 +119,10 @@ Iceberg integration writes topic data as Apache Iceberg (Parquet) tables in your
 
 ```bash
 # 1. Enable at the cluster level (Control Plane API)
-curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}" \
+#    update_mask is a REQUIRED query param (snake_case field paths); body is the ClusterUpdate object directly.
+curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask=cluster_configuration.custom_properties" \
   -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d '{"cluster_configuration":{"custom_properties":{"iceberg_enabled":true}},
-       "update_mask":"clusterConfiguration.customProperties"}'
+  -d '{"cluster_configuration":{"custom_properties":{"iceberg_enabled":"true"}}}'
 
 # 2. Enable per topic (data plane)
 rpk topic create my-iceberg-topic
@@ -275,6 +276,9 @@ ACLs for Schema Registry resources. Enterprise feature. Gated by cluster propert
 ### FIPS Compliance
 FIPS-validated cryptography. Enterprise feature. Node-level property `fips_mode` (`enabled` / `disabled` / `permissive`). For Cloud, FIPS is selected at cluster provisioning — request a FIPS-enabled BYOC cluster rather than toggling it on a running cluster.
 
+### Encryption keys (BYOK / CMK not offered)
+Redpanda Cloud uses Redpanda-managed encryption keys; **customer-managed keys (BYOK / CMK) are not offered**. Data at rest is encrypted with keys Redpanda manages. Source: `cloud-data-platform/security/cloud-encryption/`.
+
 ---
 
 ## Leadership Pinning
@@ -309,3 +313,5 @@ rpk topic alter-config <topic> --set redpanda.leaders.preference=racks:use1-az1
 ## Redpanda Connect enterprise connectors
 
 Managed Redpanda Connect pipelines on Cloud can use enterprise-only inputs/outputs/processors (including all CDC inputs). These run as data-plane pipelines, not as cluster config. The connector catalog marks enterprise components; they are unlocked by the Cloud subscription. See the dedicated Redpanda Connect / pipelines skill for pipeline configuration.
+
+> **Kafka Connect** (the separate managed Kafka Connect runtime, distinct from Redpanda Connect) is **disabled by default on new clusters** (since July 2025). Enable it explicitly if you need it.

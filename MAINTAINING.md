@@ -49,10 +49,18 @@ lists, version numbers) to runtime calls.
 
 ## Per-file source maps
 
-Each skill area that derives from private source code should carry a source map. The
-ADP source map lives at `skills/adp/SOURCES.md`. It records which `cloudv2` file paths
-each ADP skill file is grounded in, so a maintainer (or automated routine) knows
-exactly where to look when re-verifying.
+Each skill area that derives from private source code should carry a source map. It
+records which `cloudv2` file paths each skill file is grounded in, so a maintainer (or
+automated routine) knows exactly where to look when re-verifying. The repo currently
+carries source maps for:
+
+- **ADP:** `skills/adp/SOURCES.md` (grounded in `proto/public/cloud/redpanda/api/adp/`,
+  `apps/rpai/`, `apps/aigw/`).
+- **Redpanda Cloud:** `skills/cloud-serverless/references/SOURCES.md`,
+  `skills/cloud-byoc/references/SOURCES.md`, and
+  `skills/cloud-dedicated/references/SOURCES.md` (grounded in
+  `proto/public/cloud/redpanda/api/controlplane/v1/`, the byoc plugin proto, and the
+  generated `proto/gen/openapi/openapi.{controlplane,dataplane}.yaml`).
 
 The same pattern generalizes repo-wide: add a `SOURCES.md` alongside any skill whose
 claims need to be traceable to private or versioned source, and reference it from this
@@ -60,11 +68,14 @@ file when it exists.
 
 ## Proposed automation
 
-`skills-sync-routine.md` (repo root) defines a proposed scheduled routine
-(`adp-skill-sync`) that monitors `cloudv2` for ADP changes and opens a PR against
-this repo when user-facing updates are detected. It is **not yet created or enabled**;
-read that file for the full definition and the steps to create it.
+`skills-sync-routine.md` (repo root) defines proposed scheduled routines that monitor
+`cloudv2` and open a PR against this repo when user-facing updates are detected:
+`adp-skill-sync` (for `skills/adp/`) and `cloud-skill-sync` (for the three
+`skills/cloud-*` skills), each paired with a read-only critic. They are **not yet
+created or enabled**; read that file for the full definitions and the steps to create
+them.
 
-Until the routine is live, syncs are manual: a maintainer reads the relevant
-`cloudv2` source paths (listed in `skills/adp/SOURCES.md`), identifies any user-facing
-ADP changes since the last skill update, and applies the four-step process above.
+Until the routines are live, syncs are manual: a maintainer reads the relevant
+`cloudv2` source paths (listed in each skill's `SOURCES.md`), identifies any
+user-facing changes since the last skill update, and applies the four-step process
+above.

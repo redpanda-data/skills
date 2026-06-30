@@ -227,6 +227,10 @@ The Operation object has:
 - `error` — set only if `state` is `STATE_FAILED`
 - `started_at`, `finished_at` — RFC3339 timestamps
 
+### Scheduled Operations (PREVIEW, read-only)
+
+`GET /v1/scheduled-operations` lists scheduled cluster operations such as suspend/resume schedules and pending maintenance. This is **PREVIEW** and **read-only** — only `ListScheduledOperations` is enabled (the planned update RPC is not). Filters: `filter.cluster_id`, `filter.states[]` (`STATE_SCHEDULED/IN_PROGRESS/COMPLETED/FAILED`), and a `filter.schedule_time_start`/`filter.schedule_time_end` range. Source: `scheduled_operation.proto`.
+
 ---
 
 ## Getting and Listing Clusters
@@ -259,20 +263,17 @@ DP_URL=$(curl -s "${BASE}/v1/clusters/${CLUSTER_ID}" \
 
 Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`/`gcp_private_service_connect`/`azure_private_link`, `customer_managed_resources`, `cloud_provider_tags`, `maintenance_window_config`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`.
 
+**`update_mask` is a REQUIRED query parameter**, not a body field. From `cluster.proto` the `UpdateCluster` RPC is `patch: "/v1/clusters/{cluster.id}"` with `body: "cluster"`, plus a separate top-level required `update_mask` FieldMask. Two consequences:
+
+- Pass `update_mask` as a query param: `?update_mask=<comma-separated snake_case field paths>` (the API uses proto field names — e.g. `throughput_tier`, `cluster_configuration.custom_properties` — verified against the live `ClusterService.UpdateCluster` contract). The generated OpenAPI omits this parameter — a known grpc-gateway quirk for top-level FieldMask fields — but it is still required.
+- Because `body: "cluster"`, the JSON body maps directly to the `cluster` (`ClusterUpdate`) field. The body **is** the `ClusterUpdate` object — do **not** wrap it as `{"cluster":{...}}`, and do **not** put `update_mask` in the body.
+
 ```bash
-# Upgrade throughput tier
-# update_mask is REQUIRED; only masked fields are applied.
-# Use camelCase field paths (canonical proto3 JSON FieldMask encoding).
-curl -s -X PATCH "${BASE}/v1/clusters/${CLUSTER_ID}" \
+# Upgrade throughput tier — update_mask in the query string, ClusterUpdate fields in the body
+curl -s -X PATCH "${BASE}/v1/clusters/${CLUSTER_ID}?update_mask=throughput_tier" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"cluster\": {
-      \"id\": \"${CLUSTER_ID}\",
-      \"throughput_tier\": \"tier-2-aws-v2-arm\"
-    },
-    \"update_mask\": \"throughputTier\"
-  }" | jq .
+  -d '{"throughput_tier": "tier-2-aws-v2-arm"}' | jq .
 ```
 
 ---
@@ -285,6 +286,54 @@ curl -s -X DELETE "${BASE}/v1/clusters/${CLUSTER_ID}" \
 ```
 
 Returns a `DeleteClusterOperation`. After the operation starts, the cluster moves to `STATE_DELETING_AGENT`. Run `rpk cloud byoc destroy` to tear down Terraform resources.
+
+---
+
+## Shadow Linking (control-plane API)
+
+Shadow Linking is Redpanda's enterprise cross-cluster DR (asynchronous, offset-preserving replication between two clusters). It can be driven entirely through the **control-plane** `ShadowLinkService` — a first-class API complementary to the `rpk shadow` CLI flow documented in [Enterprise Features](enterprise-features.md#shadow-linking-cross-cluster-disaster-recovery). Grounded in `shadow_link.proto`.
+
+These are **control-plane** paths under `api.redpanda.com` (not the per-cluster data-plane URL):
+
+| Operation | Endpoint | Returns |
+|---|---|---|
+| Create | `POST /v1/shadow-links` | `Operation` (202 Accepted) |
+| Get | `GET /v1/shadow-links/{id}` | `ShadowLink` |
+| List | `GET /v1/shadow-links` | `ShadowLinkListItem[]` |
+| Update | `PATCH /v1/shadow-links/{shadow_link.id}` | `Operation` (202 Accepted) |
+| Delete | `DELETE /v1/shadow-links/{id}` | `Operation` (202 Accepted) |
+
+### ShadowLinkCreate fields
+
+| Field | Required | Notes |
+|---|---|---|
+| `shadow_redpanda_id` | Yes | The target (shadow) cluster where the link is created. Immutable. |
+| `name` | Yes | DNS-1123 subdomain, max 63 chars, pattern `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`. Unique. |
+| `source_redpanda_id` **XOR** `client_options.bootstrap_servers` | Yes | Mutually exclusive, CEL-enforced — supply exactly one. `source_redpanda_id` auto-derives bootstrap servers from a known cluster; `bootstrap_servers` points at an external source. |
+| `client_options` | No | Kafka client config: `bootstrap_servers`, `tls_settings`, `authentication_configuration`, fetch/retry timing. SCRAM/PLAIN passwords must reference a data-plane secret as `${secrets.<SECRET_ID>}`. |
+| `topic_metadata_sync_options` | No | What topic metadata to mirror. |
+| `consumer_offset_sync_options` | No | Consumer group offset replication. |
+| `security_sync_options` | No | ACL / security-settings replication. |
+| `schema_registry_sync_options` | No | Schema Registry replication. |
+
+`PATCH` uses an `UpdateShadowLinkRequest` with a required `update_mask` and a `shadow_link` (`ShadowLinkUpdate`) body; updatable fields are the five sync-options groups plus `client_options`.
+
+```bash
+# Create a shadow link from a known source cluster (control plane)
+curl -s -X POST "${BASE}/v1/shadow-links" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{
+    "shadow_link": {
+      "shadow_redpanda_id": "cjcuq79c4vs94fcufc2g",
+      "name": "dr-link",
+      "source_redpanda_id": "dk2xq89c4vs94fcufc3h"
+    }
+  }' | jq '.operation.id'
+```
+
+**Operation types:** `TYPE_CREATE_SHADOW_LINK` = 15, `TYPE_UPDATE_SHADOW_LINK` = 16, `TYPE_DELETE_SHADOW_LINK` = 17.
+
+**States:** `STATE_CREATING`, `STATE_CREATION_FAILED`, `STATE_DELETING`, `STATE_DELETION_FAILED`, `STATE_ACTIVE`, `STATE_PAUSED`.
 
 ---
 
@@ -308,18 +357,21 @@ rpk cloud byoc uninstall
 
 # Provider-specific apply/destroy/validate subcommands
 # (these are handled by the downloaded plugin binary)
+# GCP apply/destroy require --project-id; Azure apply/destroy require --subscription-id.
 rpk cloud byoc aws apply     --redpanda-id <cluster-id>
 rpk cloud byoc aws destroy   --redpanda-id <cluster-id>
 rpk cloud byoc aws validate
 
-rpk cloud byoc gcp apply     --redpanda-id <cluster-id>
-rpk cloud byoc gcp destroy   --redpanda-id <cluster-id>
+rpk cloud byoc gcp apply     --redpanda-id <cluster-id> --project-id <gcp-project-id>
+rpk cloud byoc gcp destroy   --redpanda-id <cluster-id> --project-id <gcp-project-id>
 rpk cloud byoc gcp validate
 
-rpk cloud byoc azure apply   --redpanda-id <cluster-id>
-rpk cloud byoc azure destroy --redpanda-id <cluster-id>
-rpk cloud byoc azure validate
+rpk cloud byoc azure apply   --redpanda-id <cluster-id> --subscription-id <azure-sub-id>
+rpk cloud byoc azure destroy --redpanda-id <cluster-id> --subscription-id <azure-sub-id>
+# Note: aws and gcp validate are confirmed; azure validate is not separately attested.
 ```
+
+The per-provider account flags (`--project-id` for GCP, `--subscription-id` for Azure) identify the target cloud account for the Terraform run. Source: `apps/cloud-ui/src/utils/rpk.utils.ts` (the UI builds the destroy command with these flags; apply takes the same flags).
 
 ### Plugin Version Pinning
 

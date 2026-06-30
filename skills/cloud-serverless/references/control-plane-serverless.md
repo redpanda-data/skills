@@ -291,6 +291,124 @@ curl -s "https://api.redpanda.com/v1/serverless/clusters/${CLUSTER_ID}/prometheu
 
 ---
 
+## ServerlessPrivateLink
+
+A ServerlessPrivateLink is the AWS PrivateLink resource that backs the
+`private_link_id` field on a ServerlessCluster. It is **AWS-only**: a CEL rule
+on `ServerlessPrivateLinkCreate` enforces `cloudprovider == CLOUD_PROVIDER_AWS`
+with `aws_config` set (`"this.cloudprovider == 1 && has(this.aws_config)"`).
+Serverless on AWS went GA in Feb 2026 with PrivateLink support. Grounded in
+`serverless_private_link.proto` and `operation.proto`.
+
+```
+POST   /v1/serverless/private-links          → 202 CreateServerlessPrivateLinkOperation
+GET    /v1/serverless/private-links/{id}      → GetServerlessPrivateLinkResponse
+GET    /v1/serverless/private-links           → ListServerlessPrivateLinksResponse (paginated)
+PATCH  /v1/serverless/private-links/{id}      → 202 UpdateServerlessPrivateLinkOperation
+DELETE /v1/serverless/private-links/{id}      → 202 DeleteServerlessPrivateLinkOperation
+```
+
+### Create
+
+```bash
+OP=$(curl -s -X POST https://api.redpanda.com/v1/serverless/private-links \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"serverless_private_link\": {
+      \"name\": \"my-private-link\",
+      \"resource_group_id\": \"${RG_ID}\",
+      \"cloudprovider\": \"CLOUD_PROVIDER_AWS\",
+      \"aws_config\": {
+        \"allowed_principals\": [\"arn:aws:iam::123456789012:root\"]
+      },
+      \"serverless_region\": \"us-east-1\"
+    }
+  }")
+PL_OP_ID=$(echo "${OP}" | jq -r .operation.id)
+```
+
+**Create request fields** (from `ServerlessPrivateLinkCreate`):
+
+| Field | Required | Notes |
+|---|---|---|
+| `name` | yes | Private link name |
+| `resource_group_id` | yes | UUID of an existing ResourceGroup |
+| `cloudprovider` | yes | **AWS only** — must be `CLOUD_PROVIDER_AWS` (CEL-enforced together with `aws_config`) |
+| `aws_config.allowed_principals[]` | yes | Min 1 AWS principal ARN (for example, an account ARN) allowed to access the PrivateLink endpoint service |
+| `serverless_region` | yes | Region name string, e.g. `"us-east-1"` |
+
+> `aws_config.allowed_regions[]` (cross-region PrivateLink) is defined in the
+> proto but currently constrained to `max_items = 0` and marked PREVIEW —
+> cross-region links are **not yet enabled** in this proto version, despite the
+> field existing. Treat cross-region as not-yet-available until the constraint
+> is lifted.
+
+### Get / List
+
+```bash
+curl -s "https://api.redpanda.com/v1/serverless/private-links/${PL_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" | jq .serverless_private_link
+
+curl -s "https://api.redpanda.com/v1/serverless/private-links?filter.serverless_region=us-east-1" \
+  -H "Authorization: Bearer ${TOKEN}" | jq '.serverless_private_links[] | {id, name, state}'
+```
+
+**List filter parameters** (`ListServerlessPrivateLinksRequest.Filter`):
+`filter.state_in`, `filter.resource_group_id`, `filter.name_contains`,
+`filter.serverless_region`, plus `page_size` (1–100) and `page_token`.
+
+### Update / Delete
+
+```bash
+# Update allowed principals (returns an Operation):
+curl -s -X PATCH "https://api.redpanda.com/v1/serverless/private-links/${PL_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"aws_config": {"allowed_principals": ["arn:aws:iam::123456789012:root", "arn:aws:iam::210987654321:root"]}}' \
+  | jq .operation.id
+
+# Delete (returns an Operation):
+curl -s -X DELETE "https://api.redpanda.com/v1/serverless/private-links/${PL_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" | jq .operation.id
+```
+
+**ServerlessPrivateLink state enum** (`ServerlessPrivateLink.State`):
+`STATE_CREATING`, `STATE_READY`, `STATE_DELETING`, `STATE_FAILED`,
+`STATE_UPDATING`.
+
+**Operation types** (`operation.proto`): `TYPE_CREATE_SERVERLESS_PRIVATE_LINK`
+= 10, `TYPE_UPDATE_SERVERLESS_PRIVATE_LINK` = 11,
+`TYPE_DELETE_SERVERLESS_PRIVATE_LINK` = 12. Poll at `GET /v1/operations/{id}`
+like any other Operation.
+
+### Workflow: private-networked Serverless cluster
+
+1. Create the private link first: `POST /v1/serverless/private-links` and wait
+   for its Operation to complete.
+2. Read the new private link's 20-char `id` (a 20-char XID; proto constraints `^[a-v0-9]{20}` + length 20).
+3. Create the cluster with that `id` as `private_link_id`, and set
+   `networking_config.private = STATE_ENABLED`. The cluster's CEL rule
+   `private_link_id_required` rejects a create where private networking is
+   enabled but `private_link_id` is empty.
+
+```bash
+curl -s -X POST https://api.redpanda.com/v1/serverless/clusters \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"serverless_cluster\": {
+      \"name\": \"private-cluster\",
+      \"resource_group_id\": \"${RG_ID}\",
+      \"serverless_region\": \"us-east-1\",
+      \"networking_config\": {\"private\": \"STATE_ENABLED\"},
+      \"private_link_id\": \"${PL_ID}\"
+    }
+  }" | jq .operation.id
+```
+
+---
+
 ## Operations
 
 Create and Delete return an `Operation` with an `id`. Update also returns an
