@@ -13,14 +13,17 @@ description: >-
   Server-Side Schema ID Validation (redpanda.key|value.schema.id.validation,
   subject.name.strategy), Leadership Pinning (redpanda.leaders.preference), and
   Role-Based Access Control (/v1/roles) — all Enterprise-licensed (license
-  included on Cloud).
+  included on Cloud). Also covers AWS PrivateLink for private connectivity to a
+  Serverless cluster (ServerlessPrivateLinkService and the private_link_id field).
   Use when: creating, listing, updating, or deleting Redpanda Cloud Serverless
   clusters via the public API; authenticating with OAuth client credentials for
   api.redpanda.com; choosing a serverless region; tracking a create/delete
   Operation until it completes; calling the data-plane URL returned by
   GetServerlessCluster to manage topics, ACLs, users, or secrets; enabling
   Iceberg Topics, schema ID validation, leader pinning, or RBAC on a Serverless
-  cluster; or distinguishing Serverless from BYOC provisioning.
+  cluster; setting up AWS PrivateLink / private networking
+  (ServerlessPrivateLinkService, private_link_id); or distinguishing Serverless
+  from BYOC provisioning.
 ---
 
 # Redpanda Cloud API: Serverless Clusters
@@ -211,6 +214,29 @@ Operation states: `STATE_IN_PROGRESS`, `STATE_COMPLETED`, `STATE_FAILED`.
 When `state == STATE_COMPLETED`, the `response` field contains the final
 resource. When `state == STATE_FAILED`, the `error` field contains a
 `google.rpc.Status`.
+
+### ServerlessPrivateLink (AWS PrivateLink)
+
+The `private_link_id` field on a cluster refers to a **ServerlessPrivateLink**
+resource, managed by its own control-plane service (**AWS only**). Create the
+private link first, then pass its 20-char `id` as `private_link_id` when you
+create a cluster with private networking enabled. Serverless on AWS went GA in
+Feb 2026 with PrivateLink support.
+
+```
+POST   /v1/serverless/private-links       → 202 Operation (TYPE_CREATE_SERVERLESS_PRIVATE_LINK)
+GET    /v1/serverless/private-links/{id}
+GET    /v1/serverless/private-links        # list (paginated, filterable)
+PATCH  /v1/serverless/private-links/{id}   → 202 Operation
+DELETE /v1/serverless/private-links/{id}   → 202 Operation
+```
+
+Required create fields: `name`, `resource_group_id`, `cloudprovider`
+(`CLOUD_PROVIDER_AWS` only — CEL-enforced with `aws_config`),
+`aws_config.allowed_principals` (min 1 AWS principal ARN), and
+`serverless_region`. See
+[Control Plane: Serverless](references/control-plane-serverless.md#serverlessprivatelink)
+for the full field-level reference and the private-networking workflow.
 
 ## Data Plane API
 

@@ -123,6 +123,8 @@ rpk ai model list
 
 When using ADP MCP tools: list the available tools for the target service, then describe the tool before calling it to confirm current field names.
 
+For **what changed / which release introduced a feature**, read the user-facing ADP changelog at `adp/RELEASE_NOTES.md` in `cloudv2` (one section per release, e.g. `v0.2.9`) rather than relying on this skill — version and feature history is volatile and intentionally not duplicated here.
+
 ## Key patterns and gotchas
 
 - **Cost unit is microcents throughout.** `limit_microcents`, `warn_at_microcents`, `total_cost_microcents`: 1 cent = 1,000,000 microcents; $1.00 = 100,000,000 microcents. Never use `limit_cents`.

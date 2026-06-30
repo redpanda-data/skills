@@ -58,19 +58,19 @@ The shared `DataPlaneClientSet` in `dataplane.go` (used by Dedicated, BYOC, and 
 | `SecretService` | `Secret` | `/v1/secrets` |
 | `SecurityService` | `Security` | `/v1/roles` (RBAC roles) |
 | `QuotaService` | `Quota` | `/v1/quotas` |
-| `PipelineService` | `Pipeline` | `/v1/pipelines` |
-| `KafkaConnectService` | `KafkaConnect` | `/v1/kafka-connect/clusters/{cluster_name}/...` |
-| `CloudStorageService` | `CloudStorage` | `/v1/cloud-storage/...` |
-| `MonitoringService` | `Monitoring` | `/v1/monitoring/...` |
-| `TransformService` | `Transform` | `/v1/transforms` |
-| `AIAgentService` | `AIAgent` | `/v1alpha3/ai-agents` |
-| `KnowledgeBaseService` | `KnowledgeBase` | `/v1alpha3/knowledge-bases` |
-| `MCPServerService` | `MCPServer` | `/v1alpha3/mcp-servers` |
-| `ShadowLinkService` | `ShadowLink` | `/v1/shadow-links` |
+| `TransformService` | `Transform` | `/v1/transforms`, `/v1/transforms/{name}` (Wasm data transforms; available on Dedicated) |
+| `PipelineService` | `Pipeline` | `/v1/redpanda-connect/pipelines`, `/v1/redpanda-connect/pipelines/{id}` (+ `/start`, `/stop`) |
+| `CloudStorageService` | `CloudStorage` | `/v1/cloud-storage/topics/mountable`, `/topics/mount`, `/topics/unmount`, `/v1/cloud-storage/mount-tasks`, `/mount-tasks/{id}` |
+| `MonitoringService` | `Monitoring` | `/v1/monitoring/kafka/connections` |
+| `KafkaConnectService` | `KafkaConnect` | `/v1/kafka-connect/clusters/{cluster_name}/...` (disabled by default on new clusters) |
+
+Topic partition management is also under `TopicService`: `GET/POST /v1/topics/{topic_name}/partitions`. Redpanda Connect component metadata is exposed at `/v1/redpanda-connect/components` and `/v1/redpanda-connect/config-schema`.
+
+The verified `/v1` data-plane OpenAPI does **not** include `AIAgentService` or `KnowledgeBaseService` — those are ADP-only services outside the core data plane (see the `adp` skill). `MCPServerService` exists at `/v1/redpanda-connect/mcp-servers` (Redpanda Connect MCP servers), and is also ADP-adjacent. **`ShadowLinkService` is a control-plane service** under `https://api.redpanda.com` (`/v1/shadow-links`, `/v1/shadow-links/{id}`) — see the [Enterprise Features reference](enterprise-features.md#shadow-linking--cross-cluster-disaster-recovery-enterprise).
 
 This skill documents Topics, ACLs, Users, Secrets, Security Roles, and Quotas in detail. Other services follow the same Bearer-auth pattern.
 
-Source: `dataplane.go` (`DataPlaneClientSet` struct fields).
+Source: `openapi.dataplane.yaml` (verified `/v1` paths); `dataplane.go` (`DataPlaneClientSet` struct fields).
 
 ## Topics
 

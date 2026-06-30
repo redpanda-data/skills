@@ -12,8 +12,12 @@ The canonical enterprise-feature list and license-expiration behavior are in the
 # Set a cluster property via Control Plane API (returns an Operation)
 curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask=cluster_configuration" \
   -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d '{"id":"'"${CLUSTER_ID}"'","cluster_configuration":{"custom_properties":{"iceberg_enabled":"true"}}}'
+  -d '{"cluster_configuration":{"custom_properties":{"iceberg_enabled":"true"}}}'
 ```
+
+> **Encryption keys:** Customer-managed encryption keys (BYOK / CMK) are **not** offered on Cloud Dedicated. Data at rest uses the cloud provider's default volume encryption (AES-256), and Tiered Storage uses a Redpanda-managed, periodically rotated master key (SSE-S3). Source: `cloud-data-platform/security/cloud-encryption/`.
+
+> **Kafka Connect (managed connectors)** is **disabled by default on new clusters** (since Jul 2025). To enable it on a Dedicated cluster, contact Redpanda Support; to disable it again, use the Cloud API. Source: `develop/managed-connectors/disable-kc.adoc`, `get-started/cloud-overview.adoc`.
 
 ---
 
@@ -95,7 +99,7 @@ Stores topic data in the Apache Iceberg open table format (Parquet) in object st
 |---|---|
 | `redpanda.iceberg.mode` | `disabled` (default), `key_value`, `value_schema_id_prefix`, `value_schema_latest`. The `value_schema_*` modes require a registered Schema Registry schema. |
 | `redpanda.iceberg.delete` | `true` (default) drops the Iceberg table when the topic is deleted; `false` keeps it. |
-| `redpanda.iceberg.invalid.record.action` | `dlq` (default; routes to `<topic>~dlq` table) or `drop`. |
+| `redpanda.iceberg.invalid.record.action` | `dlq_table` (default; routes invalid records to a `<topic>~dlq` table) or `drop`. |
 | `redpanda.iceberg.partition.spec` | Partitioning scheme, e.g. `(col1)`, `(col1, col2)`, `(year(ts1), col1)`. |
 | `redpanda.iceberg.target.lag.ms` | Per-topic override of `iceberg_target_lag_ms`. |
 
@@ -141,23 +145,41 @@ Source: `manage/pages/cluster-maintenance/continuous-data-balancing.adoc` (`part
 
 ## Shadow Linking — Cross-Cluster Disaster Recovery (Enterprise)
 
-Asynchronous, offset-preserving replication between distinct Redpanda clusters for cross-region DR. Supported on BYOC and Dedicated clusters running v25.3+. The shadow (destination) cluster **pulls** from the source cluster. Managed via the Data Plane `ShadowLinkService` (`/v1/shadow-links`), the Control Plane `POST/PATCH /v1/shadow-links`, `rpk shadow`, or the Cloud UI.
+Asynchronous, offset-preserving replication between distinct Redpanda clusters for cross-region DR. Supported on BYOC and Dedicated clusters running v25.3+. The shadow (destination) cluster **pulls** from the source cluster. Shadow Linking is a first-class **Control Plane API** service (`ShadowLinkService` under `https://api.redpanda.com`, `/v1/shadow-links`), complementary to the `rpk shadow` CLI and the Cloud UI. Each mutating call returns a long-running `Operation`.
 
-**Top-level `ShadowLinkConfig` blocks:**
+> The control-plane `ShadowLinkService` is keyed by **shadow link ID** (`/v1/shadow-links/{id}`, a 20-char XID). A separate data-plane `ShadowLinkService` (keyed by link **name**, `/v1/shadow-links/{name}`) on the cluster's Data Plane URL exposes per-link operational endpoints (`failover`, `metrics`, per-topic). Create/manage links through the control plane.
 
-| Block | Key fields |
-|---|---|
-| `cloud_options` | `source_redpanda_id`, `shadow_redpanda_id` (20-char cluster IDs) |
-| `client_options` | `bootstrap_servers[]`, `tls_settings`, `authentication_configuration`, connection tuning |
-| `topic_metadata_sync_options` | `interval`, `auto_create_shadow_topic_filters[]`, `synced_shadow_topic_properties[]`, `exclude_default`, `paused`, starting offset |
-| `consumer_offset_sync_options` | `interval`, `paused`, `group_filters[]` |
-| `security_sync_options` | `interval`, `paused`, `acl_filters[]` |
-| `schema_registry_sync_options` | `shadow_schema_registry_topic` ({} enables byte-for-byte `_schemas` replication) |
+**Control Plane API paths** (`shadow_link.proto`):
 
-**`client_options` nested keys:**
-- `tls_settings`: `enabled`; `tls_pem_settings.{ca,key,cert}` (Cloud; `key` references `${secrets.<id>}`) or `tls_file_settings.{ca_path,key_path,cert_path}` (self-managed); `do_not_set_sni_hostname`.
-- `authentication_configuration.scram_configuration`: `username`, `password` (Cloud uses `${secrets.<sasl-password-secret-id>}`), `scram_mechanism` (`SCRAM_SHA_256`/`SCRAM_SHA_512`; Control Plane API uses `SCRAM_MECHANISM_SCRAM_SHA_256`).
-- Connection tuning: `metadata_max_age_ms` (10000), `connection_timeout_ms` (1000), `retry_backoff_ms` (100), `fetch_wait_max_ms` (500), `fetch_min_bytes` (5242880), `fetch_max_bytes` (20971520), `fetch_partition_max_bytes` (1048576).
+| Method | Path | Returns |
+|---|---|---|
+| POST | `/v1/shadow-links` | `Operation` (`TYPE_CREATE_SHADOW_LINK = 15`) |
+| GET | `/v1/shadow-links/{id}` | `ShadowLink` |
+| GET | `/v1/shadow-links` | list of `ShadowLinkListItem` |
+| PATCH | `/v1/shadow-links/{shadow_link.id}` | `Operation` (`TYPE_UPDATE_SHADOW_LINK = 16`); required top-level `update_mask` |
+| DELETE | `/v1/shadow-links/{id}` | `Operation` (`TYPE_DELETE_SHADOW_LINK = 17`) |
+
+`ShadowLink.state` (output only): `STATE_CREATING`, `STATE_CREATION_FAILED`, `STATE_DELETING`, `STATE_DELETION_FAILED`, `STATE_ACTIVE`, `STATE_PAUSED`.
+
+**`ShadowLinkCreate` top-level fields** (no `cloud_options` wrapper):
+
+| Field | Required | Notes |
+|---|---|---|
+| `shadow_redpanda_id` | Yes | Destination (shadow) cluster ID; `min_len: 1`. Immutable on the created `ShadowLink`. |
+| `name` | Yes | DNS-1123 subdomain: lowercase alphanumeric + hyphens, max 63 chars, pattern `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`. |
+| `source_redpanda_id` | One of | Source cluster ID. **Mutually exclusive** with `client_options.bootstrap_servers` — provide exactly one. If set, bootstrap info is fetched automatically. |
+| `client_options` | One of | Internal Kafka client config (see below). Provide `bootstrap_servers[]` here when `source_redpanda_id` is not set. |
+| `topic_metadata_sync_options` | No | `interval`, `auto_create_shadow_topic_filters[]`, starting offset, `paused`. |
+| `consumer_offset_sync_options` | No | `interval`, `paused`, `group_filters[]`. |
+| `security_sync_options` | No | `interval`, `paused`, `acl_filters[]`. |
+| `schema_registry_sync_options` | No | `shadow_schema_registry_topic` ({} enables byte-for-byte `_schemas` replication). |
+
+**`ShadowLinkClientOptions` nested keys** (`client_options`):
+- `bootstrap_servers[]` — source cluster brokers; required if `source_redpanda_id` is not provided.
+- `source_cluster_id` — source cluster ID (lives **inside** `client_options`, not at the top level).
+- `tls_settings` — the Control Plane API `TLSSettings` message is **flat**: `enabled` (bool), `ca`, `key` (input only; must reference a data-plane secret `${secrets.<SECRET_ID>}`), `cert` (`key`/`cert` are both-or-neither), `do_not_set_sni_hostname` (bool). Note: the nested `tls_pem_settings.{ca,key,cert}` / `tls_file_settings.{ca_path,key_path,cert_path}` form is the **rpk / self-managed YAML shape**, not the Control Plane API.
+- `authentication_configuration.scram_configuration`: `username`, `password` (must reference `${secrets.<sasl-password-secret-id>}`), `scram_mechanism` (Control Plane API uses `SCRAM_MECHANISM_SCRAM_SHA_256` / `SCRAM_MECHANISM_SCRAM_SHA_512`; rpk YAML uses `SCRAM_SHA_256`/`SCRAM_SHA_512`).
+- Connection tuning (defaults applied when 0): `metadata_max_age_ms` (10000), `connection_timeout_ms` (1000), `retry_backoff_ms` (100), `fetch_wait_max_ms` (500), `fetch_min_bytes` (5242880), `fetch_max_bytes` (20971520), `fetch_partition_max_bytes` (1048576).
 
 **Filters** (`auto_create_shadow_topic_filters`, `group_filters`, `acl_filters`):
 - `pattern_type`: `LITERAL` | `PREFIX` (API: `PATTERN_TYPE_LITERAL` / `PATTERN_TYPE_PREFIX`); ACL `resource_filter.pattern_type` uses `LITERAL`/`PREFIXED`.
@@ -189,6 +211,16 @@ curl -s -X POST "https://api.redpanda.com/v1/shadow-links" \
       "start_at_earliest":{},"paused":false},
     "consumer_offset_sync_options":{"paused":true},
     "security_sync_options":{"paused":true}}}'
+# Returns an Operation; poll GET /v1/operations/{id} until STATE_COMPLETED.
+
+# Get / list / update / delete (control plane):
+curl -s "https://api.redpanda.com/v1/shadow-links/${SHADOW_LINK_ID}" -H "Authorization: Bearer ${TOKEN}"
+curl -s "https://api.redpanda.com/v1/shadow-links" -H "Authorization: Bearer ${TOKEN}"
+# PATCH body maps to shadow_link; update_mask is a required query parameter:
+curl -s -X PATCH "https://api.redpanda.com/v1/shadow-links/${SHADOW_LINK_ID}?update_mask=client_options" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{"shadow_link":{"id":"'"${SHADOW_LINK_ID}"'","client_options":{"fetch_min_bytes":10485760}}}'
+curl -s -X DELETE "https://api.redpanda.com/v1/shadow-links/${SHADOW_LINK_ID}" -H "Authorization: Bearer ${TOKEN}"
 ```
 
 **rpk workflow** (run from the shadow cluster):
@@ -203,7 +235,7 @@ rpk shadow failover <link-name> --topic orders                 # per-topic failo
 
 License expiration: new shadow links cannot be created; existing links keep operating and can be updated.
 
-Source: `manage/pages/disaster-recovery/shadowing/setup.adoc` (full `ShadowLinkConfig` YAML, Control Plane `POST/PATCH /v1/shadow-links`, filter/pattern/auth keys, service-account ACLs, system-topic rules); `reference/pages/rpk/rpk-shadow/rpk-shadow-create.adoc` and `rpk-shadow-failover.adoc`; data-plane `ShadowLinkService` (`/v1/shadow-links`).
+Source: `controlplane/v1/shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`); `controlplane/v1/operation.proto` (`TYPE_CREATE/UPDATE/DELETE_SHADOW_LINK = 15/16/17`); `manage/pages/disaster-recovery/shadowing/setup.adoc` (rpk/self-managed `ShadowLinkConfig` YAML, filter/pattern/auth keys, service-account ACLs, system-topic rules); `reference/pages/rpk/rpk-shadow/rpk-shadow-create.adoc` and `rpk-shadow-failover.adoc`.
 
 ---
 

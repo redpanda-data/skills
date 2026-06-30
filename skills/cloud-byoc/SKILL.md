@@ -11,8 +11,13 @@ description: >-
   cloud byoc apply/destroy/validate flow with --redpanda-id. Use when: creating
   BYOC clusters in AWS/GCP/Azure via the public API; provisioning or tearing
   down BYOC networks; wiring customer-managed IAM roles/buckets/subnets into a
-  Redpanda cluster; running `rpk cloud byoc apply`; understanding BYOC vs
-  Serverless; or scripting the full BYOC provisioning lifecycle end-to-end.
+  Redpanda cluster; setting up private connectivity (AWS PrivateLink, GCP Private
+  Service Connect, Azure Private Link, VPC/network peering via NetworkPeeringService,
+  and AWS Transit Gateway centralized egress); registering cross-account AWS access
+  (CloudProviderAccessService, cloud_provider_access_id); managing Shadow Link
+  cross-cluster DR via the control-plane ShadowLinkService; running `rpk cloud byoc
+  apply`; understanding BYOC vs Serverless; or scripting the full BYOC provisioning
+  lifecycle end-to-end.
   Also covers enabling Redpanda Enterprise features on a BYOC cluster (the
   enterprise license is included with the Cloud subscription) via
   cluster_configuration.custom_properties and topic properties: Tiered Storage
@@ -168,8 +173,12 @@ All mutating operations (CreateNetwork, CreateCluster, DeleteCluster, DeleteNetw
 | Resource | Endpoints |
 |---|---|
 | Networks | `POST /v1/networks`, `GET /v1/networks/{id}`, `GET /v1/networks`, `DELETE /v1/networks/{id}` |
-| Clusters | `POST /v1/clusters`, `GET /v1/clusters/{id}`, `GET /v1/clusters`, `PATCH /v1/clusters/{id}`, `DELETE /v1/clusters/{id}` |
+| Clusters | `POST /v1/clusters`, `GET /v1/clusters/{id}`, `GET /v1/clusters`, `PATCH /v1/clusters/{id}?update_mask=...`, `DELETE /v1/clusters/{id}` |
+| Network Peerings | `POST /v1/network/{network_id}/network-peerings`, `GET`/`DELETE /v1/network/{network_id}/network-peerings/{id}`, `GET /v1/network/{network_id}/network-peerings` |
+| Cloud Provider Access (PREVIEW) | `POST /v1/cloud-provider-accesses`, `GET`/`DELETE /v1/cloud-provider-accesses/{id}`, `GET /v1/cloud-provider-accesses` |
+| Shadow Links | `POST /v1/shadow-links`, `GET`/`DELETE /v1/shadow-links/{id}`, `GET /v1/shadow-links`, `PATCH /v1/shadow-links/{id}?update_mask=...` |
 | Operations | `GET /v1/operations/{id}`, `GET /v1/operations` |
+| Scheduled Operations (PREVIEW) | `GET /v1/scheduled-operations` (list only) |
 | Resource Groups | `POST /v1/resource-groups`, `GET /v1/resource-groups/{id}`, `GET /v1/resource-groups` |
 | Regions | `GET /v1/regions`, `GET /v1/regions/{id}` |
 
@@ -194,17 +203,21 @@ The cluster enters `STATE_CREATING_AGENT` after the API accepts the create reque
 # Install the byoc plugin (pinned to the cluster's required version)
 rpk cloud byoc install --redpanda-id <cluster-id>
 
-# Apply (provision) agent infra — cloud-provider subcommand is required
-rpk cloud byoc aws apply --redpanda-id <cluster-id>
-rpk cloud byoc gcp apply --redpanda-id <cluster-id>
-rpk cloud byoc azure apply --redpanda-id <cluster-id>
+# Apply (provision) agent infra — cloud-provider subcommand is required.
+# GCP also requires --project-id; Azure also requires --subscription-id.
+rpk cloud byoc aws apply   --redpanda-id <cluster-id>
+rpk cloud byoc gcp apply   --redpanda-id <cluster-id> --project-id <gcp-project-id>
+rpk cloud byoc azure apply --redpanda-id <cluster-id> --subscription-id <azure-sub-id>
 
-# Destroy agent infra
-rpk cloud byoc aws destroy --redpanda-id <cluster-id>
+# Destroy agent infra (same per-provider account flags as apply)
+rpk cloud byoc aws destroy   --redpanda-id <cluster-id>
+rpk cloud byoc gcp destroy   --redpanda-id <cluster-id> --project-id <gcp-project-id>
+rpk cloud byoc azure destroy --redpanda-id <cluster-id> --subscription-id <azure-sub-id>
 
 # Validate prerequisites without a cluster ID (uses latest plugin version)
 rpk cloud byoc aws validate
 rpk cloud byoc gcp validate
+# Note: only aws/gcp validate are confirmed; azure validate is not separately attested.
 
 # Uninstall the local plugin binary
 rpk cloud byoc uninstall
@@ -232,15 +245,17 @@ Redpanda Cloud BYOC is a managed deployment of **Redpanda Enterprise Edition** �
 
 Two surfaces:
 
-1. **Cluster-config properties** (e.g. `iceberg_enabled`, `audit_enabled`, `partition_autobalancing_mode`, `default_leaders_preference`, `enable_schema_id_validation`) — set via the Control Plane API under `cluster_configuration.custom_properties` at `POST /v1/clusters` (create) or `PATCH /v1/clusters/{id}` (update, with `update_mask: clusterConfiguration.customProperties`), or via `rpk cluster config set` on the data plane. Integer values must be strings in `custom_properties`.
+1. **Cluster-config properties** (e.g. `iceberg_enabled`, `audit_enabled`, `partition_autobalancing_mode`, `default_leaders_preference`, `enable_schema_id_validation`) — set via the Control Plane API under `cluster_configuration.custom_properties` at `POST /v1/clusters` (create) or `PATCH /v1/clusters/{id}?update_mask=cluster_configuration.custom_properties` (update), or via `rpk cluster config set` on the data plane. Integer values must be strings in `custom_properties`.
 2. **Topic properties** (e.g. `redpanda.iceberg.mode`, `redpanda.remote.write`, `redpanda.cloud_topic.enabled`, `redpanda.leaders.preference`) — set with `rpk topic create -c ...` / `rpk topic alter-config` on the data plane after the cluster is `STATE_READY`.
 
 ```bash
-# Enable an enterprise cluster property after the cluster exists
-curl -s -X PATCH "${BASE}/v1/clusters/${CLUSTER_ID}" \
+# Enable an enterprise cluster property after the cluster exists.
+# update_mask is a REQUIRED query parameter (comma-separated snake_case field paths —
+# the API uses proto field names); the JSON body IS the ClusterUpdate object directly
+# (no "cluster" wrapper, no update_mask in body).
+curl -s -X PATCH "${BASE}/v1/clusters/${CLUSTER_ID}?update_mask=cluster_configuration.custom_properties" \
   -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d '{"cluster_configuration":{"custom_properties":{"iceberg_enabled":true}},
-       "update_mask":"clusterConfiguration.customProperties"}' | jq '.operation.id'
+  -d '{"cluster_configuration":{"custom_properties":{"iceberg_enabled":"true"}}}' | jq '.operation.id'
 ```
 
 Key features and their nested keys (full detail in [Enterprise Features](references/enterprise-features.md)):
@@ -263,6 +278,6 @@ Key features and their nested keys (full detail in [Enterprise Features](referen
 ## Reference Directory
 
 - [BYOC Model and Auth](references/byoc-model-and-auth.md): What BYOC is vs Serverless, OAuth2 client-credentials flow, and the end-to-end provisioning sequence.
-- [Networks](references/networks.md): Creating the Network resource per cloud provider — AWS (VPC/subnet/IAM ARNs), GCP (network name, project, GCS bucket), Azure (VNet, subnets, resource groups). Field-level reference grounded in network.proto and common.proto.
-- [Clusters and Agent](references/clusters-and-agent.md): ClusterCreate fields for BYOC (TYPE_BYOC, network_id, throughput_tier, customer_managed_resources, zones, cloud_provider_tags), Operation lifecycle, and the full rpk cloud byoc install/apply/destroy/validate flow.
+- [Networks](references/networks.md): Creating the Network resource per cloud provider — AWS (VPC/subnet/IAM ARNs), GCP (network name, project, GCS bucket), Azure (VNet, subnets, resource groups). Plus VPC/VNet peering (NetworkPeeringService), Cloud Provider Access cross-account AWS provisioning (PREVIEW), and private connectivity / centralized egress (AWS PrivateLink incl. cross-region, GCP PSC, Azure Private Link, Transit Gateway egress). Field-level reference grounded in network.proto, network_peering.proto, cloud_provider_access.proto, and common.proto.
+- [Clusters and Agent](references/clusters-and-agent.md): ClusterCreate fields for BYOC (TYPE_BYOC, network_id, throughput_tier, customer_managed_resources, zones, cloud_provider_tags), the cluster PATCH/update_mask form, Operation lifecycle, Scheduled Operations (PREVIEW), control-plane Shadow Linking (ShadowLinkService), and the full rpk cloud byoc install/apply/destroy/validate flow.
 - [Enterprise Features](references/enterprise-features.md): Enabling Redpanda Enterprise differentiators on a BYOC cluster (license included with the Cloud subscription) via `cluster_configuration.custom_properties` and topic properties — Tiered Storage, Cloud Topics, Iceberg Topics, Continuous Data Balancing, Shadow Linking DR, Remote Read Replicas, Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/Kerberos, FIPS, Server-Side Schema ID Validation, and Leadership Pinning — with their nested config keys and license-expiration behavior, grounded in the licensing overview and per-feature docs.

@@ -29,6 +29,8 @@ Returns a `CreateNetworkOperation` with an `operation.id` (20-char alphanumeric)
 | `cluster_type` | enum | Yes | `TYPE_BYOC` (or `TYPE_DEDICATED` for dedicated clusters) |
 | `cidr_block` | string | Yes* | Min /21 CIDR. Required unless `customer_managed_resources` is set |
 | `customer_managed_resources` | object | Conditional | Set this instead of `cidr_block` if using BYOVPC (customer-owned VPC) |
+| `cloud_provider_access_id` | string (20-char) | Conditional | **PREVIEW.** Reference to a `CloudProviderAccess` for cross-account provisioning. Valid only with `cluster_type=TYPE_BYOC` and `cloud_provider=CLOUD_PROVIDER_AWS`. Mutually exclusive with `customer_managed_resources`. See [Cloud Provider Access](#cloud-provider-access-preview-aws-only). |
+| `egress_spec` | object | Conditional | **PREVIEW.** Configures how outbound traffic leaves the network (e.g. AWS Transit Gateway centralized egress). See [Centralized egress](#centralized-egress-transit-gateway--hub-vpc-preview). |
 
 ### Option A: Redpanda-Managed Network (CIDR-based)
 
@@ -261,3 +263,126 @@ The `Network` object returned by Get/List contains:
 | `zones` | Availability zones populated after creation |
 | `customer_managed_resources` | The CMR object if BYOVPC |
 | `created_at`, `updated_at` | RFC3339 timestamps |
+
+---
+
+## Network Peering (VPC/VNet peering)
+
+`NetworkPeeringService` connects a Redpanda BYOC network to one of your own VPCs/VNets via cloud-provider peering. Grounded in `network_peering.proto`. Note these endpoints are nested under `/v1/network/...` (singular `network`).
+
+| Operation | Endpoint | Returns |
+|---|---|---|
+| Create | `POST /v1/network/{network_peering.network_id}/network-peerings` | `Operation` (202 Accepted) |
+| Get | `GET /v1/network/{network_id}/network-peerings/{id}` | `NetworkPeering` |
+| List | `GET /v1/network/{network_id}/network-peerings` | `NetworkPeering[]` |
+| Delete | `DELETE /v1/network/{network_id}/network-peerings/{id}` | `Operation` (202 Accepted) |
+
+There is **no Update RPC** — to change a peering, delete and recreate it.
+
+### NetworkPeeringCreate fields
+
+| Field | Required | Notes |
+|---|---|---|
+| `network_id` | Yes | The Redpanda network this peering applies to (also in the URL path). |
+| `display_name` | Yes | Max 128 chars, pattern `^[A-Za-z0-9-_: ]+$`. Unique within the org. |
+| `cloud_provider` | Yes | `CLOUD_PROVIDER_AWS/GCP/AZURE` (non-zero). |
+| `cloud_provider_spec` (oneof) | Yes | Exactly one provider block, matching `cloud_provider` (CEL-enforced). |
+
+Provider spec blocks:
+
+| Provider | `cloud_provider_spec` field | Sub-fields |
+|---|---|---|
+| AWS | `aws` (`AWSPeeringSpec`) | `peer_owner_id`, `peer_vpc_id` |
+| GCP | `gcp` (`GCPPeeringSpec`) | `peer_project_id` (req, 6–30 chars), `peer_vpc_name` (req, 1–63 chars) |
+| Azure | `azure` (`AzurePeeringSpec`) | `peer_tenant_id`, `peer_subscription_id`, `peer_resource_group`, `peer_vnet_name` |
+
+```bash
+# Create an AWS VPC peering on a Redpanda network
+curl -s -X POST "${BASE}/v1/network/${NET_ID}/network-peerings" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "{
+    \"network_peering\": {
+      \"network_id\": \"${NET_ID}\",
+      \"display_name\": \"my-vpc-peering\",
+      \"cloud_provider\": \"CLOUD_PROVIDER_AWS\",
+      \"aws\": {
+        \"peer_owner_id\": \"123456789012\",
+        \"peer_vpc_id\": \"vpc-0abc1234\"
+      }
+    }
+  }" | jq '.operation.id'
+```
+
+**Operation types:** `TYPE_CREATE_NETWORK_PEERING` = 13, `TYPE_DELETE_NETWORK_PEERING` = 14.
+
+**Peering states:** `STATE_CREATING` → `STATE_PENDING_ACCEPTANCE` → `STATE_READY`; plus `STATE_DELETING` and `STATE_FAILED`. AWS peerings sit in `STATE_PENDING_ACCEPTANCE` until you accept the peering connection in your own account.
+
+---
+
+## Cloud Provider Access (PREVIEW, AWS-only)
+
+`CloudProviderAccessService` is a **PREVIEW** alternative to `customer_managed_resources` for cross-account AWS provisioning. A `CloudProviderAccess` is a reusable credential — an AWS IAM role Redpanda assumes (via STS) to provision infrastructure in your account. One access config can back multiple BYOC networks in the same AWS account. Grounded in `cloud_provider_access.proto`.
+
+Unlike most control-plane mutations, **create/delete here are synchronous** — they return the resource (or 204) directly, not an `Operation`.
+
+| Operation | Endpoint | Returns |
+|---|---|---|
+| Create | `POST /v1/cloud-provider-accesses` | `CloudProviderAccess` (201, synchronous) |
+| Get | `GET /v1/cloud-provider-accesses/{id}` | `CloudProviderAccess` |
+| List | `GET /v1/cloud-provider-accesses` | `CloudProviderAccess[]` |
+| Delete | `DELETE /v1/cloud-provider-accesses/{id}` | 204; **409** if still referenced by a network |
+
+### CloudProviderAccessCreate fields
+
+| Field | Required | Notes |
+|---|---|---|
+| `name` | Yes | Max 128 chars, pattern `^[A-Za-z0-9-_: ]+$`. |
+| `cloud_provider` | Yes | **AWS only** this release. |
+| `config.aws.role_arn` | Yes | ARN of the IAM role Redpanda assumes. Pattern `^arn:aws:iam::\d{12}:role/.+$`. |
+
+The server populates `config.aws.external_id` (output-only, derived from your organization ID). You **must** add this External ID to the IAM role's trust policy — it provides STS confused-deputy protection.
+
+```bash
+# Register a cross-account AWS access (PREVIEW)
+curl -s -X POST "${BASE}/v1/cloud-provider-accesses" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{
+    "cloud_provider_access": {
+      "name": "prod-aws-account",
+      "cloud_provider": "CLOUD_PROVIDER_AWS",
+      "aws": { "role_arn": "arn:aws:iam::123456789012:role/redpanda-provisioner" }
+    }
+  }' | jq '.cloud_provider_access | {id, state, aws: .aws.external_id}'
+```
+
+**States:** `STATE_PENDING` → `STATE_ACTIVE`; plus `STATE_FAILED` and `STATE_DELETED`.
+
+### Tie-in: referencing it from a network
+
+Set `NetworkCreate.cloud_provider_access_id` (PREVIEW) to the 20-char access ID. It is valid only when `cluster_type=TYPE_BYOC` and `cloud_provider=CLOUD_PROVIDER_AWS`, and is **mutually exclusive** with `customer_managed_resources`. When set, Redpanda provisions the network infrastructure in your AWS account using the referenced role instead of customer-managed IAM resources.
+
+---
+
+## Private connectivity and egress
+
+BYOC supports a range of private-connectivity options. Most are configured as cluster-level fields on `ClusterCreate`/`ClusterUpdate` (see `clusters-and-agent.md`); VPC peering and centralized egress are network-level.
+
+| Mechanism | Where configured | Notes |
+|---|---|---|
+| AWS PrivateLink | cluster `aws_private_link` (`AWSPrivateLinkSpec`) | `enabled`, `allowed_principals`, `connect_console`, `supported_regions` (cross-region PrivateLink — list of allowed AWS regions). |
+| GCP Private Service Connect | cluster `gcp_private_service_connect` (`GCPPrivateServiceConnectSpec`) | `enabled`, `global_access_enabled`, `consumer_accept_list`. |
+| Azure Private Link | cluster `azure_private_link` (`AzurePrivateLinkSpec`) | `enabled`, `allowed_subscriptions`, `connect_console`. |
+| VPC / VNet peering | network `NetworkPeeringService` | See [Network Peering](#network-peering-vpcvnet-peering) above. |
+| Centralized egress | network `egress_spec` (PREVIEW) | AWS Transit Gateway / GCP hub-VPC peering — see below. |
+
+See the [Redpanda Cloud networking docs](https://docs.redpanda.com/cloud-data-platform/networking/) for the full guidance, including **BYOVPC on AWS (GA, March 2026)** as a fully customer-managed networking variant.
+
+### Centralized egress (Transit Gateway / hub VPC, PREVIEW)
+
+`NetworkCreate.egress_spec` (PREVIEW, `Network.EgressSpec`) controls how outbound internet traffic leaves the network. Exactly one provider block is set, matching the network's `cloud_provider` (CEL-enforced):
+
+| Provider | `egress_spec` field | Key field | Behavior |
+|---|---|---|---|
+| AWS | `aws` | `transit_gateway_id` (req, pattern `^tgw-[0-9a-f]{8,}$`) | **AWS Transit Gateway centralized egress for BYOC (beta, May 2026).** The spoke VPC attaches to your existing TGW; no NAT Gateway / IGW is created and all internet-bound traffic routes through your hub VPC via the TGW. |
+| GCP | `gcp` | `hub_vpc_project`, `hub_vpc_name` (both req) | Peers the Redpanda VPC to your hub/egress VPC; Cloud Router / Cloud NAT creation is skipped. The hub owner must create the mirror peering with `export_custom_routes=true` for the default route to be advertised. |
+| Azure | `azure` | (placeholder) | Not yet specified. |

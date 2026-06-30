@@ -518,14 +518,37 @@ documentation or by inspecting cluster capabilities at runtime.
 | `SecurityService` (RBAC roles) | `/v1/roles` | confirmed |
 | `QuotaService` | `/v1/quotas` | confirmed |
 | `KafkaConnectService` | `/v1/kafka-connect/clusters/{cluster_name}/connectors` | availability unconfirmed |
-| `MonitoringService` | `/v1/metrics` | availability unconfirmed |
-| `CloudStorageService` | `/v1/cloud-storage/topics` | availability unconfirmed |
-| `AIAgentService` (v1alpha3) | `/v1/redpanda-connect/ai-agents` | availability unconfirmed |
-| `MCPServerService` (v1alpha3) | `/v1/redpanda-connect/mcp-servers` | availability unconfirmed |
-| `KnowledgeBaseService` (v1alpha3) | `/v1/redpanda-connect/knowledge-bases` | availability unconfirmed |
-| `TransformService` | `/v1/transforms` | availability unconfirmed |
-| `ShadowLinkService` | `/v1/shadow-link/topics` | availability unconfirmed |
+| `MonitoringService` | `/v1/monitoring/kafka/connections` | availability unconfirmed |
+| `CloudStorageService` | `/v1/cloud-storage/topics/mountable` (+ `.../topics/mount`, `.../topics/unmount`, `/v1/cloud-storage/mount-tasks`, `/v1/cloud-storage/mount-tasks/{id}`) | availability unconfirmed |
+| `TransformService` | `/v1/transforms`, `/v1/transforms/{name}` | availability unconfirmed |
 
 **Note on KafkaConnect**: connectors require a named Kafka Connect cluster;
 the path is `/v1/kafka-connect/clusters/{cluster_name}/connectors` — there is
-no `/v1/connectors` path in the API.
+no `/v1/connectors` path in the API. Kafka Connect is **disabled by default**
+on new clusters (since Jul 2025); it must be enabled before use. Source:
+Redpanda Cloud docs, `develop/managed-connectors/`.
+
+**Note on Monitoring**: the only path in the public v1 data-plane OpenAPI is
+`/v1/monitoring/kafka/connections` (active-Kafka-connections listing). There is
+no `/v1/metrics` data-plane endpoint — cluster metrics are scraped from the
+`prometheus.url` returned by `GetServerlessCluster`.
+
+**Note on Transforms**: Wasm data transforms run on the broker and are
+generally not offered to Serverless (shared-infrastructure) tenants; the paths
+exist in the data-plane surface but Serverless availability is unconfirmed.
+
+**Note on Shadow Linking**: Shadow Linking is a **control-plane** API, not a
+data-plane one. Manage shadow links via `ShadowLinkService` at
+`https://api.redpanda.com` (`POST /v1/shadow-links`, `GET /v1/shadow-links`,
+`GET /v1/shadow-links/{id}`), not the per-cluster data-plane URL. (A separate
+data-plane shadow-topic surface at `/v1/shadow-links/{name}/...` exists for
+failover and per-topic operations, but link lifecycle is control-plane.) On
+Serverless, DR is handled by the managed platform — see
+[Enterprise Features Reference](enterprise-features.md).
+
+**Note on AI Agents, Knowledge Bases, MCP Servers**: `AIAgentService` and
+`KnowledgeBaseService` are **not** present in the public v1 data-plane OpenAPI
+(they are part of the Agentic Data Platform — see the `adp` skill — and out of
+scope here). `MCPServerService` does exist in the data-plane OpenAPI at
+`/v1/redpanda-connect/mcp-servers`, but it is ADP-adjacent rather than a core
+Kafka/Connect data-plane service; see the `adp` skill for MCP server coverage.

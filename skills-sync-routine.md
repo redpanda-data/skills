@@ -1,15 +1,19 @@
-# ADP Skills Sync Routine Definition
+# Skills Sync Routine Definitions
 
-> **THIS IS A PROPOSED DEFINITION. IT IS NOT YET CREATED OR ENABLED.**
-> The live routine does not exist until a maintainer creates it following the
+> **THESE ARE PROPOSED DEFINITIONS. THEY ARE NOT YET CREATED OR ENABLED.**
+> The live routines do not exist until a maintainer creates them following the
 > instructions in "How to create it" below. The decision to create and enable the
-> routine belongs to the maintainer.
+> routines belongs to the maintainer.
 
-This file is the version-controlled definition of the proposed `adp-skill-sync`
-scheduled routine, which monitors `redpanda-data/cloudv2` for ADP changes and opens
-a PR against `redpanda-data/skills` when user-facing updates require skill updates.
+This file is the version-controlled definition of two proposed scheduled-routine
+families that monitor `redpanda-data/cloudv2` and open a PR against
+`redpanda-data/skills` when user-facing updates require skill updates:
 
-It follows the same generator/critic pattern as the adp-docs routines, documented at
+- **`adp-skill-sync`** — keeps `skills/adp/` in sync with the ADP product source.
+- **`cloud-skill-sync`** — keeps the three `skills/cloud-*` skills in sync with the
+  Redpanda Cloud control-plane / data-plane API source.
+
+Both follow the same generator/critic pattern as the adp-docs routines, documented at
 https://github.com/redpanda-data/docs-team-standards/blob/main/resources/adp-docs-routines.md
 which is the reference for all operational gotchas (branch prefix, private-repo read
 strategy, no `gh` CLI, and so on).
@@ -18,12 +22,25 @@ strategy, no `gh` CLI, and so on).
 
 ## System overview
 
-Two routines form a generator/critic loop:
+Each routine family is a generator/critic loop:
 
 | # | Routine | Role | Proposed schedule (UTC) |
 |---|---------|------|------------------------|
-| 1 | ADP skills sync | Generator | `0 12 * * *` (daily, ~6 AM MT) |
+| 1 | ADP skills sync | Generator | `0 7 * * 1` (weekly, Mon midnight MT) |
 | 2 | ADP skills sync critic | Critic | `0 * * * *` (hourly) |
+| 3 | Cloud skills sync | Generator | `0 7 * * 4` (weekly, Thu midnight MT) |
+| 4 | Cloud skills sync critic | Critic | `0 * * * *` (hourly) |
+
+> **Timezone note:** `0 7 * * d` is 07:00 UTC = **00:00 MST** (midnight Mountain Time
+> in winter). Cron runs in fixed UTC with no DST awareness, so during Mountain Daylight
+> Time (summer) this fires at 23:00 MDT — i.e. ~midnight, drifting by an hour across the
+> DST boundary. For a weekly sync with a 7-day lookback the exact minute is immaterial.
+
+Both generators run **weekly** with a **7-day lookback** (the lookback window must
+match the cadence, or changes between runs are missed). They are staggered onto
+different weekdays (ADP Monday, Cloud Thursday) so their PRs don't land for review on
+the same day. The critics run hourly — they are cheap and only act on open sync PRs,
+so a generator's PR is picked up within the hour whatever day it opens.
 
 Common configuration:
 
@@ -41,7 +58,7 @@ Common configuration:
 ## 1. ADP skills sync (generator)
 
 - **Name:** `ADP skills sync`
-- **Schedule:** `0 12 * * *` (daily, ~6 AM MT)
+- **Schedule:** `0 0 * * 1` (weekly, Mon 00:00 UTC)
 - **Cloned source:** `https://github.com/redpanda-data/skills`
 - **MCP connector:** Redpanda-Github-Read
 - **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
@@ -68,14 +85,23 @@ changes.
 
 STEP 1 - IDENTIFY CHANGES:
 Using the Redpanda-Github-Read tools, list commits to the main branch of
-redpanda-data/cloudv2 in the last 24 hours (list_commits with an appropriate
-since/until window). Inspect diffs and files with get_commit for commits touching
-the ADP source paths:
+redpanda-data/cloudv2 in the last 7 days (list_commits with an appropriate
+since/until window matching the weekly cadence). Inspect diffs and files with
+get_commit for commits touching the ADP source paths:
+  - adp/RELEASE_NOTES.md   ← PRIMARY TRIGGER (read this first)
   - proto/public/cloud/redpanda/api/adp/v1alpha1/
   - proto/public/cloud/redpanda/api/adp/experimental/v1alpha1/
   - apps/rpai/
   - apps/aigw/
   - apps/adp-api/
+
+Start with adp/RELEASE_NOTES.md: it is the user-facing ADP changelog (one section per
+release, e.g. v0.2.9). A diff to it is a human-curated summary of exactly the
+user-facing changes a sync should react to, and its bullet categories (MCP Servers,
+LLM Providers, rpk ai, governance, observability, …) map directly onto the skill's
+reference files — use it to scope which files to check, then confirm the specifics in
+the proto/Go source paths above. Do NOT copy release-notes prose into the skill (it is
+volatile); use it only as the change signal and to locate what to verify.
 
 Identify user-facing ADP changes: new or changed config fields, API RPCs,
 CLI flags or subcommands, behaviors, defaults, or features relevant to AI agents,
@@ -83,7 +109,7 @@ MCP servers, the AI Gateway, providers, governance (budgets, guardrails, Cedar
 policies, OAuth), or observability (transcripts, insights).
 
 STEP 2 - NO-OP GUARD:
-If there are no user-facing ADP changes in the last 24 hours, stop and do nothing.
+If there are no user-facing ADP changes in the last 7 days, stop and do nothing.
 Do not open a PR. A run with no changes is a success, not a failure.
 
 STEP 3 - DETERMINE WHAT TO UPDATE:
@@ -198,6 +224,81 @@ STEP 5 - NO-OP GUARD:
 If there are no open automation PRs matching the selection rule, or all are already
 reviewed with no new commits, stop and do nothing.
 ```
+
+---
+
+## 3. Cloud skills sync (generator)
+
+- **Name:** `Cloud skills sync`
+- **Schedule:** `0 0 * * 4` (weekly, Thu 00:00 UTC — staggered to a different weekday than the ADP generator)
+- **Cloned source:** `https://github.com/redpanda-data/skills`
+- **MCP connector:** Redpanda-Github-Read
+- **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
+
+This is the ADP generator (section 1) re-pointed at the Redpanda Cloud skills. It is
+identical except for the source map, the watched source paths, and the skill files it
+edits. Use the section-1 prompt with the following substitutions.
+
+### Prompt (deltas from section 1)
+
+```
+SCOPE: sync the three Redpanda Cloud cluster-type skills — skills/cloud-serverless/,
+skills/cloud-byoc/, skills/cloud-dedicated/ — with recent changes in
+redpanda-data/cloudv2.
+
+SOURCE MAP:
+Read each skill's source map first:
+  - skills/cloud-serverless/references/SOURCES.md
+  - skills/cloud-byoc/references/SOURCES.md
+  - skills/cloud-dedicated/references/SOURCES.md
+Use the cloudv2 paths they list as your starting point.
+
+STEP 1 - IDENTIFY CHANGES:
+List commits to redpanda-data/cloudv2 main in the last 7 days (matching the weekly
+cadence) and inspect diffs for commits touching the Cloud control-plane / data-plane
+API source:
+  - proto/public/cloud/redpanda/api/controlplane/v1/   (cluster, serverless,
+    network, network_peering, serverless_private_link, cloud_provider_access,
+    shadow_link, scheduled_operation, resource_group, region, operation protos)
+  - proto/public/cloud/redpanda/api/byocplugin/v1alpha1/byoc_plugin.proto
+  - proto/gen/openapi/openapi.controlplane.yaml
+  - proto/gen/openapi/openapi.dataplane.yaml
+  - apps/cloud-ui/src/utils/rpk.utils.ts   (rpk cloud byoc command/flag surface)
+
+Identify user-facing changes: new or changed control-plane services, RPCs, HTTP
+paths, request/response fields, enums, cluster/operation state values, throughput
+tiers, networking surfaces (PrivateLink, peering, provider access, scheduled
+operations, shadow links), or rpk cloud / rpk cloud byoc flags. The data-plane and
+enterprise-feature property keys also matter (verify property names against the
+docs property partials, not from memory).
+
+STEP 2-4: identical to section 1, against the Cloud skill files and SOURCES.md.
+
+STEP 5 - CREATE THE PR:
+Branch `claude/sync-skills-YYYY-MM-DD` (the `claude/` prefix is REQUIRED). Title:
+  `skills: sync Redpanda Cloud changes from cloudv2 (YYYY-MM-DD)`
+```
+
+---
+
+## 4. Cloud skills sync critic (read-only)
+
+- **Name:** `Cloud skills sync critic`
+- **Schedule:** `0 * * * *` (hourly)
+- **Cloned source:** `https://github.com/redpanda-data/skills`
+- **MCP connector:** Redpanda-Github-Read
+- **Allowed tools:** Bash, Read, Glob, Grep (no Write or Edit; read-only by design)
+
+Identical to the ADP critic (section 2) with these substitutions:
+
+- **PR selection:** review only PRs whose title starts with
+  `skills: sync Redpanda Cloud changes from cloudv2` AND whose head branch matches
+  `claude/sync-skills-*`.
+- **Comment prefix:** begin every comment body with `[cloud-skills critic]` (and skip
+  PRs that already carry that prefix unless new commits landed).
+- **Source of truth:** verify claims against the cloudv2 paths in each Cloud skill's
+  `references/SOURCES.md` and the control-plane / data-plane protos and OpenAPI files
+  listed in section 3, STEP 1.
 
 ---
 
