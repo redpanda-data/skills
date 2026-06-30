@@ -1,9 +1,9 @@
 # Redpanda Agent Skills
 
-Agent Skills for Redpanda's products — **Streaming** (the Kafka-compatible engine),
-**SQL** (Oxla), **Connect**, and **Cloud** (Serverless, BYOC, Dedicated) — unified by the
-**rpk** command-line experience. Each skill is grounded in Redpanda's own source code,
-documentation, and APIs.
+Agent Skills for Redpanda's five products — **Streaming** (the Kafka-compatible engine),
+**SQL** (Oxla), **Connect**, **Cloud** (Serverless, BYOC, Dedicated), and the **Agentic
+Data Plane** (ADP) — unified by the **rpk** command-line experience. Each skill is grounded
+in Redpanda's own source code, documentation, and APIs.
 
 ## Installation
 
@@ -73,8 +73,8 @@ Redpanda Cloud — the managed control plane and per-cluster data plane.
 - [**cloud-dedicated**](./skills/cloud-dedicated) — Dedicated clusters (fully Redpanda-managed, single-tenant, in Redpanda's cloud account) via the Control Plane API.
 
 ### 🤖 Agentic Data Plane (ADP)
-Redpanda's AI runtime — run AI agents, MCP servers, and LLM-powered pipelines directly on your Redpanda Cloud cluster.
-- [**adp**](./skills/adp) — Build and operate AI on Redpanda Cloud: AI agents, MCP servers (managed catalog + code mode), the AI Gateway (LLM providers and models), governance (budgets, guardrails, Cedar policies, OAuth), and observability (transcripts) — driven through the `rpk ai` CLI and the ADP API.
+Redpanda's governance infrastructure for AI agents and MCP servers — its own product surface that runs on Redpanda, provisioning its own ADP environment (no separate Redpanda Cloud or BYOC cluster required).
+- [**adp**](./skills/adp) — Build and operate AI on Redpanda: AI agents, MCP servers (managed catalog + code mode), the AI Gateway (LLM providers and models), governance (budgets, guardrails, Cedar policies, OAuth), and observability (transcripts) — driven through the `rpk ai` CLI and the ADP API.
 
 ### ⌨️ rpk — the unifying CLI
 One CLI across every product.
