@@ -73,7 +73,7 @@ Redpanda Cloud — the managed control plane and per-cluster data plane.
 - [**cloud-dedicated**](./skills/cloud-dedicated) — Dedicated clusters (fully Redpanda-managed, single-tenant, in Redpanda's cloud account) via the Control Plane API.
 
 ### 🤖 Agentic Data Plane (ADP)
-Redpanda's governance infrastructure for AI agents and MCP servers — its own product surface that runs on Redpanda, provisioning its own ADP environment (no separate Redpanda Cloud or BYOC cluster required).
+Redpanda's governance infrastructure for AI agents and MCP servers — its own product surface that runs on Redpanda, provisioning its own ADP environment.
 - [**adp**](./skills/adp) — Build and operate AI on Redpanda: AI agents, MCP servers (managed catalog + code mode), the AI Gateway (LLM providers and models), governance (budgets, guardrails, Cedar policies, OAuth), and observability (transcripts) — driven through the `rpk ai` CLI and the ADP API.
 
 ### ⌨️ rpk — the unifying CLI
