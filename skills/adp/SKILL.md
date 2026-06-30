@@ -1,8 +1,10 @@
 ---
 name: adp
 description: >-
-  Expert guide for Redpanda's Agentic Data Plane (ADP): the managed platform on
-  Redpanda Cloud for building, running, and governing AI agents and MCP servers.
+  Expert guide for Redpanda's Agentic Data Plane (ADP): Redpanda's governance
+  infrastructure for building, running, and governing AI agents and MCP servers.
+  ADP is its own product surface that runs on Redpanda; it provisions its own ADP
+  environment and does not require a separate Redpanda Cloud or BYOC cluster.
   Use when: creating or managing ADP AI agents (managed or self-managed) via
   rpk ai agent or the AgentRegistryService API; configuring MCP servers on ADP
   (remote or managed catalog types, code mode, auth variants); setting up LLM
@@ -21,7 +23,7 @@ description: >-
 
 # ADP: Agentic Data Plane
 
-The Agentic Data Plane (ADP) is the AI-native layer of Redpanda Cloud. It provides a managed runtime for AI agents and MCP servers, a proxying AI Gateway for LLM providers, and governance surfaces (budgets, guardrails, Cedar access-control policies) to operate those workloads safely. This skill is written for an AI agent operating ADP programmatically via `rpk ai` and the ADP API or MCP tools. Optimize for correct field names and service names; confirm the live surface before acting.
+The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agents and MCP servers. It is its own product surface: it runs on Redpanda and provisions its own ADP environment when you add it, so it does not require a separate Redpanda Cloud or BYOC cluster to stand up first. ADP provides a managed runtime for AI agents and MCP servers, a proxying AI Gateway for LLM providers, and governance surfaces (budgets, guardrails, Cedar access-control policies) to operate those workloads safely. This skill is written for an AI agent operating ADP programmatically via `rpk ai` and the ADP API or MCP tools. Optimize for correct field names and service names; confirm the live surface before acting.
 
 ## Component overview
 
