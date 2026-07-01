@@ -136,6 +136,11 @@ skill defers those to live introspection (e.g. `rpk ai model list`). Most cloudv
 commits will NOT require a skill change. If a change is only a volatile-detail update,
 the correct action is to do nothing. Do not "document the changelog."
 
+SCOPE (HARD RULE):
+Edit only files under skills/adp/. If a user-facing change belongs to another product's
+skill (Cloud, SQL, Connect, Streaming, rpk core), do NOT edit it — note it in the PR
+description as out-of-scope for a future routine.
+
 REPO ACCESS:
 - The redpanda-data/skills repo is cloned in your environment. You have push access.
   Use git (via Bash) to branch, commit, and push. The gh CLI is NOT installed; open
@@ -235,7 +240,11 @@ substitutions.
 ```
 SCOPE: sync the three Redpanda Cloud cluster-type skills — skills/cloud-serverless/,
 skills/cloud-byoc/, skills/cloud-dedicated/ — with recent changes in
-redpanda-data/cloudv2.
+redpanda-data/cloudv2. Edit only files under those three directories. The Cloud
+changelog legitimately mentions other products (e.g. "Redpanda SQL available on BYOC");
+document only the Cloud-availability aspect in the Cloud skill. If a change belongs to
+another product's skill (ADP, SQL, Connect, Streaming, rpk core), do NOT edit that
+skill — note it in the PR description as out-of-scope for a future routine.
 
 SOURCE MAP:
 Read each skill's source map first:
@@ -438,7 +447,8 @@ REPO ACCESS:
   private and NOT cloned. Read it via the Redpanda-Github-Read MCP connector:
   search_code, get_file_contents. Do NOT attempt to clone any private repo.
 
-SCOPE (skills with a SOURCES.md map):
+SCOPE (skills with a SOURCES.md map — edit only files within these skills; do not touch
+skills outside this scope):
   - skills/adp/            (skills/adp/SOURCES.md)
   - skills/cloud-serverless/  (skills/cloud-serverless/references/SOURCES.md)
   - skills/cloud-byoc/        (skills/cloud-byoc/references/SOURCES.md)
