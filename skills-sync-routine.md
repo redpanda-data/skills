@@ -5,42 +5,79 @@
 > instructions in "How to create it" below. The decision to create and enable the
 > routines belongs to the maintainer.
 
-This file is the version-controlled definition of two proposed scheduled-routine
-families that monitor `redpanda-data/cloudv2` and open a PR against
+This file is the version-controlled definition of the proposed scheduled routines that
+monitor `redpanda-data/cloudv2` (and the user-facing changelogs) and open a PR against
 `redpanda-data/skills` when user-facing updates require skill updates:
 
 - **`adp-skill-sync`** — keeps `skills/adp/` in sync with the ADP product source.
 - **`cloud-skill-sync`** — keeps the three `skills/cloud-*` skills in sync with the
   Redpanda Cloud control-plane / data-plane API source.
+- **`skills-sync-critic`** — a single read-only critic that reviews the PRs opened by
+  both generators (and the drift audit).
+- **`skills-drift-audit`** — a low-frequency full re-verification that backstops the
+  change-triggered syncs by re-checking every source-grounded skill against its
+  `SOURCES.md`, regardless of whether a change was detected.
 
-Both follow the same generator/critic pattern as the adp-docs routines, documented at
+All four follow the same generator/critic pattern as the adp-docs routines, documented at
 https://github.com/redpanda-data/docs-team-standards/blob/main/resources/adp-docs-routines.md
 which is the reference for all operational gotchas (branch prefix, private-repo read
 strategy, no `gh` CLI, and so on).
+
+## How skills differ from docs (read this first)
+
+These routines are adapted from the **adp-docs** routines, not copied. The skills repo
+has one property that changes the design: the **durability principle** (see
+`MAINTAINING.md` and the repo `CLAUDE.md`). Stable concepts live in the skill; volatile
+specifics (model lists, region lists, category counts, pricing, version numbers) are
+deferred to live introspection (`rpk ai model list`, `rpk cloud region list`, etc.).
+
+Consequence: **most cloudv2 commits should NOT trigger a skill change.** The
+signal-to-noise ratio of raw commit-watching is far lower for skills than for prose docs.
+So these routines:
+
+1. Trigger off the **highest-signal, human-curated source** first — a user-facing
+   changelog — and only then confirm specifics in the proto/OpenAPI source. (ADP:
+   `adp/RELEASE_NOTES.md`. Cloud: `whats-new-cloud.adoc` in `cloud-docs`.)
+2. Are backstopped by a periodic **full re-verification** (`skills-drift-audit`), because
+   a change-triggered sync alone can miss silent drift (a default or enum that changes
+   without an obvious watched-path match, or a silently-skipped run — there is no
+   alerting).
+3. Use a **lookback window longer than the cadence** so one skipped run self-heals.
+4. Enforce the durability principle as a **hard up-front constraint** in every generator
+   prompt: "adding the volatile detail from a commit" is the #1 failure mode unique to
+   skills, and the routine environment inherits this rule from the repo `CLAUDE.md`.
 
 ---
 
 ## System overview
 
-Each routine family is a generator/critic loop:
+| # | Routine | Role | Proposed schedule (UTC) | Local (America/Denver) |
+|---|---------|------|------------------------|------------------------|
+| 1 | ADP skills sync | Generator | `0 7 * * 1` (weekly, Mon) | ~midnight MT Mon |
+| 2 | Cloud skills sync | Generator | `0 7 * * 4` (weekly, Thu) | ~midnight MT Thu |
+| 3 | Skills sync critic | Critic | `0 */6 * * *` (every 6h) | every 6h |
+| 4 | Skills drift audit | Generator | `0 7 1 * *` (monthly, 1st) | ~midnight MT, 1st |
 
-| # | Routine | Role | Proposed schedule (UTC) |
-|---|---------|------|------------------------|
-| 1 | ADP skills sync | Generator | `0 7 * * 1` (weekly, Mon midnight MT) |
-| 2 | ADP skills sync critic | Critic | `0 * * * *` (hourly) |
-| 3 | Cloud skills sync | Generator | `0 7 * * 4` (weekly, Thu midnight MT) |
-| 4 | Cloud skills sync critic | Critic | `0 * * * *` (hourly) |
+> **Timezone note:** `0 7 * * d` is 07:00 UTC = **00:00 MST** (midnight Mountain Time in
+> winter). Cron runs in fixed UTC with no DST awareness, so during Mountain Daylight Time
+> (summer) this fires at 23:00 MDT — i.e. ~midnight, drifting by an hour across the DST
+> boundary. For weekly/monthly syncs with multi-day lookbacks the exact minute is
+> immaterial.
 
-> **Timezone note:** `0 7 * * d` is 07:00 UTC = **00:00 MST** (midnight Mountain Time
-> in winter). Cron runs in fixed UTC with no DST awareness, so during Mountain Daylight
-> Time (summer) this fires at 23:00 MDT — i.e. ~midnight, drifting by an hour across the
-> DST boundary. For a weekly sync with a 7-day lookback the exact minute is immaterial.
+**Cadence rationale:**
 
-Both generators run **weekly** with a **7-day lookback** (the lookback window must
-match the cadence, or changes between runs are missed). They are staggered onto
-different weekdays (ADP Monday, Cloud Thursday) so their PRs don't land for review on
-the same day. The critics run hourly — they are cheap and only act on open sync PRs,
-so a generator's PR is picked up within the hour whatever day it opens.
+- Both generators run **weekly** with a **10-day lookback** (the lookback is deliberately
+  *longer* than the 7-day cadence: if one weekly run is silently skipped, the next run's
+  window still covers the gap. Overlap at worst produces a duplicate finding, which the
+  no-op guard, the "check recent PRs" step, and the critic all catch — a gap loses
+  changes). They are staggered onto different weekdays (ADP Monday, Cloud Thursday) so
+  their PRs don't land for review on the same day.
+- **One** critic (not two) reviews both generators' PRs plus the drift-audit PRs. Sync
+  PRs land ~weekly, so hourly review is unnecessary; **every 6 hours** picks up any PR
+  within a quarter-day at ~1/6 the session cost of an hourly critic.
+- The **drift audit** runs **monthly** — it is the safety net for silent drift, not the
+  primary sync path, so a monthly full re-verification is enough. It is the automated form
+  of the manual re-verification the team already does periodically.
 
 Common configuration:
 
@@ -48,17 +85,25 @@ Common configuration:
 - **Cloned git source:** `https://github.com/redpanda-data/skills` (public; write
   access required for PR pushes)
 - **MCP connector:** Redpanda-Github-Read
-  (the same connector used by adp-docs routines; reads `redpanda-data/cloudv2` via
-  `search_code`, `get_file_contents`, `list_commits`, `get_commit`, `compare_commits`).
-- **Private repos:** `redpanda-data/cloudv2` is read-only via the connector. It is
-  NOT cloned. (Cloning private repos causes runs to hang; see adp-docs-routines.md.)
+  (the same connector used by adp-docs routines; reads `redpanda-data/cloudv2`,
+  `redpanda-data/cloud-docs`, and `redpanda-data/docs-team-standards` via `search_code`,
+  `get_file_contents`, `list_commits`, `get_commit`, `compare_commits`).
+- **Private repos:** `cloudv2` (and `cloud-docs`/`docs-team-standards` where read) are
+  read-only via the connector. They are NOT cloned. (Cloning private repos causes runs to
+  hang; see adp-docs-routines.md.)
+- **Repo `CLAUDE.md`:** the skills repo carries a committed `CLAUDE.md` with the
+  durability principle, the four-step process, and the "flag-don't-guess" rule as HARD
+  RULES. Because the routines clone the skills repo, Claude Code auto-loads that file on
+  every run, so all four routines inherit these rules without any prompt change (and
+  interactive sessions get them too). Put new cross-cutting rules there, not in each
+  prompt.
 
 ---
 
 ## 1. ADP skills sync (generator)
 
 - **Name:** `ADP skills sync`
-- **Schedule:** `0 0 * * 1` (weekly, Mon 00:00 UTC)
+- **Schedule:** `0 7 * * 1` (weekly, Mon ~midnight MT)
 - **Cloned source:** `https://github.com/redpanda-data/skills`
 - **MCP connector:** Redpanda-Github-Read
 - **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
@@ -69,6 +114,13 @@ Common configuration:
 You are a skills-maintenance agent for the redpanda-data/skills repository. Your
 task is to sync the ADP skill files (skills/adp/) with recent changes in the
 redpanda-data/cloudv2 product source.
+
+DURABILITY PRINCIPLE (HARD RULE — read the repo CLAUDE.md):
+Stable concepts live in the skill; volatile specifics do NOT. Never hardcode model
+lists, category counts, pricing, region lists, or version numbers into a skill — the
+skill defers those to live introspection (e.g. `rpk ai model list`). Most cloudv2
+commits will NOT require a skill change. If a change is only a volatile-detail update,
+the correct action is to do nothing. Do not "document the changelog."
 
 REPO ACCESS:
 - The redpanda-data/skills repo is cloned in your environment. You have push access.
@@ -83,25 +135,26 @@ Read skills/adp/SOURCES.md first. It lists the cloudv2 file paths that each ADP
 skill file is grounded in. Use those paths as your starting point when checking for
 changes.
 
-STEP 1 - IDENTIFY CHANGES:
-Using the Redpanda-Github-Read tools, list commits to the main branch of
-redpanda-data/cloudv2 in the last 7 days (list_commits with an appropriate
-since/until window matching the weekly cadence). Inspect diffs and files with
-get_commit for commits touching the ADP source paths:
-  - adp/RELEASE_NOTES.md   ← PRIMARY TRIGGER (read this first)
+STEP 1 - IDENTIFY CHANGES (primary trigger first):
+Start with adp/RELEASE_NOTES.md — the user-facing ADP changelog (one section per
+release, e.g. v0.2.9). Use compare_commits / get_commit to see how it changed in the
+last 10 days. A diff to it is a human-curated summary of exactly the user-facing
+changes a sync should react to, and its bullet categories (MCP Servers, LLM Providers,
+rpk ai, governance, observability, …) map directly onto the skill's reference files —
+use it to scope which files to check, then confirm the specifics in the proto/Go source
+paths below. Do NOT copy release-notes prose into the skill (it is volatile); use it
+only as the change signal and to locate what to verify.
+
+Then list commits to the main branch of redpanda-data/cloudv2 in the last 10 days
+(list_commits with an appropriate since/until window; the 10-day lookback is longer
+than the weekly cadence on purpose, to cover a possibly-skipped prior run) and inspect
+diffs with get_commit for commits touching the ADP source paths:
+  - adp/RELEASE_NOTES.md   ← PRIMARY TRIGGER (already read above)
   - proto/public/cloud/redpanda/api/adp/v1alpha1/
   - proto/public/cloud/redpanda/api/adp/experimental/v1alpha1/
   - apps/rpai/
   - apps/aigw/
   - apps/adp-api/
-
-Start with adp/RELEASE_NOTES.md: it is the user-facing ADP changelog (one section per
-release, e.g. v0.2.9). A diff to it is a human-curated summary of exactly the
-user-facing changes a sync should react to, and its bullet categories (MCP Servers,
-LLM Providers, rpk ai, governance, observability, …) map directly onto the skill's
-reference files — use it to scope which files to check, then confirm the specifics in
-the proto/Go source paths above. Do NOT copy release-notes prose into the skill (it is
-volatile); use it only as the change signal and to locate what to verify.
 
 Identify user-facing ADP changes: new or changed config fields, API RPCs,
 CLI flags or subcommands, behaviors, defaults, or features relevant to AI agents,
@@ -109,15 +162,19 @@ MCP servers, the AI Gateway, providers, governance (budgets, guardrails, Cedar
 policies, OAuth), or observability (transcripts, insights).
 
 STEP 2 - NO-OP GUARD:
-If there are no user-facing ADP changes in the last 7 days, stop and do nothing.
-Do not open a PR. A run with no changes is a success, not a failure.
+If there are no user-facing ADP changes in the lookback window (or the only changes are
+volatile specifics the skill deliberately defers), stop and do nothing. Do not open a
+PR. A run with no changes is a success, not a failure. Before documenting any change,
+also check open and recently-merged skills PRs (via the GitHub read tools) and skip
+anything a recent sync PR already covered — the 10-day lookback overlaps prior runs by
+design.
 
 STEP 3 - DETERMINE WHAT TO UPDATE:
 For each user-facing change, identify which skill file(s) in skills/adp/ are
 affected. Read those files before editing. Check SOURCES.md to find the relevant
 source paths for each file.
 
-STEP 4 - APPLY THE FOUR-STEP SKILL PROCESS (from README.md):
+STEP 4 - APPLY THE FOUR-STEP SKILL PROCESS (from README.md / CLAUDE.md):
 a. Ground each change in the cloudv2 source. Use get_file_contents and search_code
    to read the actual proto or Go source, not just the commit message.
 b. Apply adversarial review: cross-check every command, flag, config field, endpoint,
@@ -125,9 +182,8 @@ b. Apply adversarial review: cross-check every command, flag, config field, endp
 c. Apply the enterprise-feature coverage pass: ensure that nested settings and key
    differentiators are present for any new feature.
 d. Final verification: confirm the edits are copy-pasteable and decision rules are
-   clear. Follow the durability principle from MAINTAINING.md: stable concepts in the
-   skill, volatile specifics (model lists, category counts) deferred to live
-   introspection (rpk ai model list, etc.).
+   clear. Re-apply the durability principle: stable concepts in the skill, volatile
+   specifics deferred to live introspection.
 
 STEP 5 - CREATE THE PR:
 Create a fresh branch off main named `claude/sync-skills-YYYY-MM-DD` (the `claude/`
@@ -145,99 +201,19 @@ In the PR description:
 
 ---
 
-## 2. ADP skills sync critic (read-only)
-
-- **Name:** `ADP skills sync critic`
-- **Schedule:** `0 * * * *` (hourly)
-- **Cloned source:** `https://github.com/redpanda-data/skills`
-- **MCP connector:** Redpanda-Github-Read
-- **Allowed tools:** Bash, Read, Glob, Grep (no Write or Edit; read-only by design)
-
-This critic automates the adversarial review step from README.md. It reviews open
-sync PRs opened by the generator, verifies claims against cloudv2, and posts advisory
-comments. It cannot approve, merge, or edit.
-
-### Prompt
-
-```
-You are an independent adversarial reviewer (the "critic" in a generator/critic
-pattern) for the redpanda-data/skills repository. Two automated routines open PRs
-against skills/adp/; your job is to review their PRs and post advisory comments.
-Provide a fresh, adversarial second opinion; assume the PR may contain mistakes.
-
-REPO ACCESS:
-- The redpanda-data/skills repo is cloned in your environment (read-only use).
-- The redpanda-data/cloudv2 repo is private and NOT cloned. Read it via the
-  Redpanda-Github-Read MCP connector: search_code, get_file_contents, list_commits,
-  get_commit, compare_commits. Do NOT attempt to clone cloudv2.
-- Read PRs and diffs via the GitHub read tools available to the Redpanda-Github-Read
-  connector.
-- Post comments via your native GitHub comment capability.
-- The gh CLI is NOT installed. Do NOT call gh.
-
-HARD CONSTRAINTS:
-- COMMENTS ONLY. Post only comments via your GitHub comment capability. NEVER
-  approve, NEVER request changes, NEVER merge, NEVER push commits, NEVER edit files,
-  NEVER create or close PRs.
-- SELECT ONLY automation PRs: review only PRs whose title starts with
-  `skills: sync ADP changes from cloudv2` AND whose head branch matches
-  `claude/sync-skills-*`. When in doubt, skip.
-
-STEP 1 - SELECT PRs:
-List open PRs in redpanda-data/skills. Apply the selection rule above. Skip any PR
-that already contains a comment from you (your comments are prefixed
-`[adp-skills critic]`) unless new commits landed after your last review.
-
-STEP 2 - VERIFY CLAIMS AGAINST SOURCE:
-For each selected PR:
-a. Read the diff and the full skill files it modifies (not just the changed hunks).
-b. Read skills/adp/SOURCES.md to find the cloudv2 paths relevant to each changed
-   file.
-c. For every factual claim in the diff (config field names, defaults, API RPCs, CLI
-   flags, behaviors), verify it against cloudv2 via get_file_contents and
-   search_code on redpanda-data/cloudv2. Flag anything that does not match the source
-   or that you cannot find (possible hallucination or stale content).
-d. Check that volatile specifics (model lists, category counts, pricing) are deferred
-   to live introspection rather than hardcoded, per the durability principle in
-   MAINTAINING.md.
-e. Check completeness: does the PR cover all user-facing changes cited in the PR
-   description? Note anything missing.
-f. Check correctness: any broken xrefs, wrong identifiers, or code examples that
-   would not work as written.
-
-STEP 3 - CALIBRATE SEVERITY:
-`critical` only for genuinely wrong or missing content (claim contradicted by
-cloudv2 source, or a real user-facing change the PR omits). `suggestion` or `minor`
-for style, phrasing, or durability improvements.
-
-STEP 4 - POST COMMENT:
-Post your review as a comment. Begin every comment body with `[adp-skills critic]`.
-Include:
-- A one-line verdict (looks accurate / has issues).
-- Findings grouped by severity (Critical / Suggestion / Minor), each with the
-  specific claim, the problem, and (for source-accuracy findings) the cloudv2 path
-  you checked.
-- If you found no problems, still post a short comment saying you reviewed it and it
-  looks accurate against the cloudv2 source paths.
-
-STEP 5 - NO-OP GUARD:
-If there are no open automation PRs matching the selection rule, or all are already
-reviewed with no new commits, stop and do nothing.
-```
-
----
-
-## 3. Cloud skills sync (generator)
+## 2. Cloud skills sync (generator)
 
 - **Name:** `Cloud skills sync`
-- **Schedule:** `0 0 * * 4` (weekly, Thu 00:00 UTC — staggered to a different weekday than the ADP generator)
+- **Schedule:** `0 7 * * 4` (weekly, Thu ~midnight MT — staggered to a different weekday than the ADP generator)
 - **Cloned source:** `https://github.com/redpanda-data/skills`
 - **MCP connector:** Redpanda-Github-Read
 - **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
 
 This is the ADP generator (section 1) re-pointed at the Redpanda Cloud skills. It is
-identical except for the source map, the watched source paths, and the skill files it
-edits. Use the section-1 prompt with the following substitutions.
+identical in structure — the durability principle, no-op guard, four-step process, and
+PR conventions are the same — except for the source map, the primary trigger, the watched
+source paths, and the skill files it edits. Use the section-1 prompt with the following
+substitutions.
 
 ### Prompt (deltas from section 1)
 
@@ -253,10 +229,28 @@ Read each skill's source map first:
   - skills/cloud-dedicated/references/SOURCES.md
 Use the cloudv2 paths they list as your starting point.
 
-STEP 1 - IDENTIFY CHANGES:
-List commits to redpanda-data/cloudv2 main in the last 7 days (matching the weekly
-cadence) and inspect diffs for commits touching the Cloud control-plane / data-plane
-API source:
+STEP 1 - IDENTIFY CHANGES (primary trigger first):
+Start with the user-facing Cloud changelog: redpanda-data/cloud-docs, file
+`modules/get-started/pages/whats-new-cloud.adoc`. Read it via the Redpanda-Github-Read
+connector (get_file_contents), and use compare_commits / get_commit to see how it
+changed in the last 10 days. This is the human-curated equivalent of ADP's
+RELEASE_NOTES.md: a diff to it is exactly the set of user-facing Cloud changes a sync
+should react to (new cluster capabilities, networking surfaces, API features, rpk cloud
+flags, enterprise features). Use it to scope which skill files to check, then confirm
+the specifics in the proto/OpenAPI source below. Do NOT copy changelog prose into the
+skill — use it only as the change signal.
+
+As a second, precise signal, diff the generated OpenAPI specs across the lookback window
+(compare_commits on):
+  - proto/gen/openapi/openapi.controlplane.yaml
+  - proto/gen/openapi/openapi.dataplane.yaml
+These are the actual user-facing API contract the Cloud skills are grounded in; a
+new/changed/removed path, field, or enum in the spec diff is a higher-signal indicator
+than a raw source commit.
+
+Then list commits to redpanda-data/cloudv2 main in the last 10 days (10-day lookback is
+longer than the weekly cadence on purpose) and inspect diffs for commits touching the
+Cloud control-plane / data-plane API source:
   - proto/public/cloud/redpanda/api/controlplane/v1/   (cluster, serverless,
     network, network_peering, serverless_private_link, cloud_provider_access,
     shadow_link, scheduled_operation, resource_group, region, operation protos)
@@ -270,9 +264,14 @@ paths, request/response fields, enums, cluster/operation state values, throughpu
 tiers, networking surfaces (PrivateLink, peering, provider access, scheduled
 operations, shadow links), or rpk cloud / rpk cloud byoc flags. The data-plane and
 enterprise-feature property keys also matter (verify property names against the
-docs property partials, not from memory).
+docs property partials, not from memory). Watch PREVIEW markers
+(`(google.api.api_visibility).restriction = "PREVIEW"` and the field-visibility
+equivalent): a feature moving out of PREVIEW is a user-facing change; a still-PREVIEW
+feature is not GA — do not describe it as GA.
 
-STEP 2-4: identical to section 1, against the Cloud skill files and SOURCES.md.
+STEP 2-4: identical to section 1 (no-op guard incl. the durability check and the
+check-recent-PRs step; four-step process), against the Cloud skill files and their
+SOURCES.md.
 
 STEP 5 - CREATE THE PR:
 Branch `claude/sync-skills-YYYY-MM-DD` (the `claude/` prefix is REQUIRED). Title:
@@ -281,24 +280,181 @@ Branch `claude/sync-skills-YYYY-MM-DD` (the `claude/` prefix is REQUIRED). Title
 
 ---
 
-## 4. Cloud skills sync critic (read-only)
+## 3. Skills sync critic (read-only)
 
-- **Name:** `Cloud skills sync critic`
-- **Schedule:** `0 * * * *` (hourly)
+- **Name:** `Skills sync critic`
+- **Schedule:** `0 */6 * * *` (every 6 hours)
 - **Cloned source:** `https://github.com/redpanda-data/skills`
 - **MCP connector:** Redpanda-Github-Read
 - **Allowed tools:** Bash, Read, Glob, Grep (no Write or Edit; read-only by design)
 
-Identical to the ADP critic (section 2) with these substitutions:
+A single critic reviews the PRs opened by both generators AND the drift audit. It
+automates the adversarial review step from README.md: it reviews open PRs, verifies
+claims against cloudv2, and posts advisory comments. It cannot approve, merge, or edit.
 
-- **PR selection:** review only PRs whose title starts with
-  `skills: sync Redpanda Cloud changes from cloudv2` AND whose head branch matches
-  `claude/sync-skills-*`.
-- **Comment prefix:** begin every comment body with `[cloud-skills critic]` (and skip
-  PRs that already carry that prefix unless new commits landed).
-- **Source of truth:** verify claims against the cloudv2 paths in each Cloud skill's
-  `references/SOURCES.md` and the control-plane / data-plane protos and OpenAPI files
-  listed in section 3, STEP 1.
+> **Two caveats (same as the adp-docs critic):**
+> - **Selection isn't airtight.** The critic picks PRs by title + `claude/` branch
+>   pattern. If a human ever opens a PR matching that pattern, the critic will comment on
+>   it too. Acceptable because its comments are advisory only.
+> - **Trust model.** `Bash` is in the allowed tools, so it could technically `git push`.
+>   The prompt's hard "NEVER push/merge/edit" constraints plus the omission of
+>   `Write`/`Edit` are the trust boundary. The critic is advisory and read-only by intent.
+
+### Prompt
+
+```
+You are an independent adversarial reviewer (the "critic" in a generator/critic
+pattern) for the redpanda-data/skills repository. Automated routines open PRs against
+skills/adp/ and skills/cloud-* ; your job is to review their PRs and post advisory
+comments. Provide a fresh, adversarial second opinion; assume the PR may contain
+mistakes.
+
+REPO ACCESS:
+- The redpanda-data/skills repo is cloned in your environment (read-only use).
+- The redpanda-data/cloudv2 repo is private and NOT cloned. Read it via the
+  Redpanda-Github-Read MCP connector: search_code, get_file_contents, list_commits,
+  get_commit, compare_commits. The redpanda-data/cloud-docs changelog
+  (modules/get-started/pages/whats-new-cloud.adoc) is also read via the connector. Do
+  NOT attempt to clone any private repo.
+- Read PRs and diffs via the GitHub read tools available to the Redpanda-Github-Read
+  connector.
+- Post comments via your native GitHub comment capability.
+- The gh CLI is NOT installed. Do NOT call gh.
+
+HARD CONSTRAINTS:
+- COMMENTS ONLY. Post only comments via your GitHub comment capability. NEVER
+  approve, NEVER request changes, NEVER merge, NEVER push commits, NEVER edit files,
+  NEVER create or close PRs.
+- SELECT ONLY automation PRs: review only PRs whose head branch matches
+  `claude/sync-skills-*` or `claude/drift-audit-*` AND whose title starts with one of:
+    - `skills: sync ADP changes from cloudv2`
+    - `skills: sync Redpanda Cloud changes from cloudv2`
+    - `skills: drift audit`
+  When in doubt, skip.
+
+STEP 1 - SELECT PRs:
+List open PRs in redpanda-data/skills. Apply the selection rule above. Skip any PR
+that already contains a comment from you (your comments are prefixed
+`[skills-sync critic]`) unless new commits landed after your last review.
+
+STEP 2 - VERIFY CLAIMS AGAINST SOURCE:
+For each selected PR:
+a. Read the diff and the full skill files it modifies (not just the changed hunks).
+b. Read the relevant SOURCES.md (skills/adp/SOURCES.md for ADP PRs; each Cloud skill's
+   references/SOURCES.md for Cloud PRs) to find the cloudv2 paths relevant to each
+   changed file.
+c. For every factual claim in the diff (config field names, defaults, API RPCs, HTTP
+   paths, CLI flags, behaviors, enum values), verify it against cloudv2 via
+   get_file_contents and search_code. Flag anything that does not match the source or
+   that you cannot find (possible hallucination or stale content).
+d. Check that volatile specifics (model lists, category counts, region lists, pricing,
+   version numbers) are deferred to live introspection rather than hardcoded, per the
+   durability principle in CLAUDE.md / MAINTAINING.md. Hardcoded volatile detail is a
+   finding.
+e. Check completeness: does the PR cover all user-facing changes cited in the PR
+   description? Note anything missing.
+f. Check correctness: any broken xrefs, wrong identifiers, or code examples that
+   would not work as written.
+
+STEP 3 - CALIBRATE SEVERITY:
+`critical` only for genuinely wrong or missing content (claim contradicted by
+cloudv2 source, a real user-facing change the PR omits, or hardcoded volatile detail
+that will go stale). `suggestion` or `minor` for style, phrasing, or durability
+improvements.
+
+STEP 4 - POST COMMENT:
+Post your review as a comment. Begin every comment body with `[skills-sync critic]`.
+Include:
+- A one-line verdict (looks accurate / has issues).
+- Findings grouped by severity (Critical / Suggestion / Minor), each with the
+  specific claim, the problem, and (for source-accuracy findings) the cloudv2 path
+  you checked.
+- If you found no problems, still post a short comment saying you reviewed it and it
+  looks accurate against the cloudv2 source paths.
+
+STEP 5 - NO-OP GUARD:
+If there are no open automation PRs matching the selection rule, or all are already
+reviewed with no new commits, stop and do nothing.
+```
+
+---
+
+## 4. Skills drift audit (generator, backstop)
+
+- **Name:** `Skills drift audit`
+- **Schedule:** `0 7 1 * *` (monthly, 1st ~midnight MT)
+- **Cloned source:** `https://github.com/redpanda-data/skills`
+- **MCP connector:** Redpanda-Github-Read
+- **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
+
+This is the safety net. The two change-triggered generators react to *detected* changes;
+this routine re-verifies each source-grounded skill against its `SOURCES.md` from
+scratch, whether or not a change was flagged. It catches silent drift the diff-based syncs
+miss — a default or enum that changed without an obvious watched-path match, a claim that
+was wrong from the start, or changes lost because a weekly run silently failed (there is
+no alerting). It is the automated form of the manual periodic re-verification the team
+already does.
+
+Scope: the skills that carry a `SOURCES.md` map — `skills/adp/` and the three
+`skills/cloud-*` skills. As more skills gain `SOURCES.md` maps, add them here.
+
+### Prompt
+
+```
+You are a skills-maintenance agent performing a monthly full re-verification (drift
+audit) of the redpanda-data/skills repository. Unlike the change-triggered sync
+routines, you do NOT look at recent commits — you re-check every claim in the
+source-grounded skills against the current cloudv2 source, to catch drift the
+diff-based syncs missed.
+
+DURABILITY PRINCIPLE (HARD RULE — read the repo CLAUDE.md):
+Stable concepts live in the skill; volatile specifics do NOT (model lists, counts,
+pricing, region lists, version numbers are deferred to live introspection). Do not add
+volatile detail. If a skill correctly defers a volatile specific, that is CORRECT, not
+drift.
+
+REPO ACCESS:
+- The redpanda-data/skills repo is cloned in your environment. You have push access.
+  Use git (via Bash) to branch, commit, and push. The gh CLI is NOT installed; open the
+  PR using your native GitHub PR-creation capability.
+- The redpanda-data/cloudv2 repo (and cloud-docs / docs-team-standards where needed) is
+  private and NOT cloned. Read it via the Redpanda-Github-Read MCP connector:
+  search_code, get_file_contents. Do NOT attempt to clone any private repo.
+
+SCOPE (skills with a SOURCES.md map):
+  - skills/adp/            (skills/adp/SOURCES.md)
+  - skills/cloud-serverless/  (skills/cloud-serverless/references/SOURCES.md)
+  - skills/cloud-byoc/        (skills/cloud-byoc/references/SOURCES.md)
+  - skills/cloud-dedicated/   (skills/cloud-dedicated/references/SOURCES.md)
+
+STEP 1 - RE-VERIFY EACH FILE:
+For each skill file in scope, read its SOURCES.md row to find the cloudv2 source paths,
+open those paths with get_file_contents / search_code, and confirm that every factual
+claim in the skill file still matches the source: config field names and numbers,
+defaults, API RPCs and HTTP paths, CLI flags and subcommands, enum values and numbers,
+state machines, and PREVIEW/GA markers. The most fragile facts are operation Type enum
+numbers, field numbers, endpoint paths, and PREVIEW markers — re-check them explicitly.
+
+STEP 2 - NO-OP GUARD:
+If every claim still matches the source, stop and do nothing. Do not open a PR. A clean
+audit is a success. Also check open and recently-merged skills PRs and skip anything a
+recent sync PR already fixed.
+
+STEP 3 - FIX DRIFT (four-step process from README.md / CLAUDE.md):
+For each mismatch: ground the correction in source, apply adversarial review against the
+source, apply the enterprise-feature coverage pass, and do a final verification pass.
+Keep the durability principle: fix stale facts, do NOT add volatile detail. If you are
+not confident a mismatch is real drift (vs. an intentional simplification), flag it as a
+TODO rather than editing.
+
+STEP 4 - CREATE THE PR:
+Create a fresh branch off main named `claude/drift-audit-YYYY-MM` (the `claude/` prefix
+is REQUIRED). Commit and push. Open a PR against main titled:
+  `skills: drift audit (YYYY-MM)`
+In the description: list each drifted claim, the skill file, the cloudv2 path that
+disproved it (cite the SOURCES.md row), and the correction. Add a TODO for anything you
+could not resolve confidently. Do not guess.
+```
 
 ---
 
@@ -309,36 +465,40 @@ and pre-fills your connected MCP connectors. Alternatively, use the `RemoteTrigg
 tool (actions: `list`, `get`, `create`, `update`, `run`). You cannot delete routines
 via the API; use the dashboard at https://claude.ai/code/routines.
 
-Before creating either routine:
+Before creating any routine:
 
 1. **GitHub App write access:** confirm the Claude GitHub App (installed on
    `redpanda-data`) has read+write access to `redpanda-data/skills`. An org owner must
    grant this. Without it, branch pushes and PR creation will fail silently.
 2. **Connector:** confirm the Redpanda-Github-Read connector is connected in your
-   claude.ai account and can read `redpanda-data/cloudv2` (test with a manual
-   `get_file_contents` call on a known ADP proto path).
-3. **Create disabled, run once manually:** after creating each routine, trigger a
+   claude.ai account and can read `redpanda-data/cloudv2` AND `redpanda-data/cloud-docs`
+   (test with a manual `get_file_contents` on a known ADP proto path and on
+   `cloud-docs` `modules/get-started/pages/whats-new-cloud.adoc`).
+3. **Repo `CLAUDE.md` is committed:** the skills repo `CLAUDE.md` carries the durability
+   principle and four-step process the routine environment relies on. Confirm it is on
+   `main` before enabling, since the routines inherit their guardrails from it.
+4. **Create disabled, run once manually:** after creating each routine, trigger a
    manual `run` from the dashboard or via `RemoteTrigger` `run`. Read the run
-   transcript. Confirm the generator either opens a sensible PR or correctly no-ops.
-   Confirm the critic selects and reviews that PR. Then enable both.
+   transcript. Confirm each generator either opens a sensible PR or correctly no-ops, and
+   that the critic selects and reviews the PR. Then enable.
 
 Key gotchas (from `adp-docs-routines.md`, which is the reference for all operational
 detail):
 
 - **`claude/` branch prefix is required.** Pushes to branches without this prefix are
-  rejected. The generator prompt already enforces this; do not change the branch name
-  pattern.
+  rejected. The generator prompts already enforce this; do not change the branch name
+  patterns (`claude/sync-skills-*`, `claude/drift-audit-*`).
 - **Cron is 5-field UTC, minimum interval 1 hour.** A `*/30 * * * *` expression is
   rejected. For a one-shot test, use `run_once_at` (RFC3339 UTC).
-- **No `gh` CLI in the routine environment.** The generator uses `git` via Bash for
-  branch/commit/push, and the environment's native GitHub capability for PRs and
-  comments. The critic uses only the native GitHub comment capability.
-- **Do not clone `cloudv2`.** It is private. Cloning a private repo causes the run to
-  hang indefinitely during provisioning. Read it exclusively via the
-  Redpanda-Github-Read connector.
+- **No `gh` CLI in the routine environment.** The generators use `git` via Bash for
+  branch/commit/push, and the environment's native GitHub capability for PRs. The critic
+  uses only the native GitHub comment capability.
+- **Do not clone `cloudv2` / `cloud-docs` / `docs-team-standards`.** They are private.
+  Cloning a private repo causes the run to hang indefinitely during provisioning. Read
+  them exclusively via the Redpanda-Github-Read connector.
 - **Pin `mcp_connections` on create.** If you omit the list, all connected connectors
   are attached. Explicitly list only Redpanda-Github-Read to avoid scope creep.
 
-See the adp-docs routines doc (linked at the top; "Building a similar routine" section) for the full
-checklist, the create-body JSON shape, and the environment facts that made the
-adp-docs routines reliable.
+See the adp-docs routines doc (linked at the top; "Building a similar routine" section)
+for the full checklist, the create-body JSON shape, and the environment facts that made
+the adp-docs routines reliable.
