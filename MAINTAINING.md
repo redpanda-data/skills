@@ -68,12 +68,33 @@ file when it exists.
 
 ## Proposed automation
 
-`skills-sync-routine.md` (repo root) defines proposed scheduled routines that monitor
-`cloudv2` and open a PR against this repo when user-facing updates are detected:
-`adp-skill-sync` (for `skills/adp/`) and `cloud-skill-sync` (for the three
-`skills/cloud-*` skills), each paired with a read-only critic. They are **not yet
-created or enabled**; read that file for the full definitions and the steps to create
-them.
+`skills-sync-routine.md` (repo root) defines four proposed scheduled routines that
+monitor `cloudv2` (and the user-facing changelogs) and open a PR against this repo when
+user-facing updates are detected:
+
+- **`adp-skill-sync`** (weekly) — syncs `skills/adp/`, triggered primarily off
+  `adp/RELEASE_NOTES.md`.
+- **`cloud-skill-sync`** (weekly, staggered) — syncs the three `skills/cloud-*` skills,
+  triggered primarily off the Cloud changelog
+  (`cloud-docs/modules/get-started/pages/whats-new-cloud.adoc`) and an OpenAPI-spec diff.
+- **`skills-sync-critic`** (every 6h) — one read-only critic that reviews the PRs from
+  both generators and the drift audit.
+- **`skills-drift-audit`** (monthly) — a full re-verification of every source-grounded
+  skill against its `SOURCES.md`, backstopping the change-triggered syncs against silent
+  drift (there is no failure alerting).
+
+They are **not yet created or enabled**; read that file for the full definitions, the
+cadence rationale (weekly generators use a 10-day lookback so one skipped run
+self-heals), and the steps to create them. Both generators and the drift audit enforce
+the durability principle as a hard constraint — the #1 skills-specific failure mode is
+documenting the volatile detail from a commit that the skill deliberately defers to live
+introspection.
+
+The routine environment cannot see your global `~/CLAUDE.md` or the docs-team-standards
+plugin — it only reads the repo's committed `CLAUDE.md`. That file (repo root) carries
+the durability principle, the four-step process, and the flag-don't-guess rule as HARD
+RULES, so all four routines (and interactive sessions) inherit them. Put new
+cross-cutting rules there rather than duplicating them into each prompt.
 
 Until the routines are live, syncs are manual: a maintainer reads the relevant
 `cloudv2` source paths (listed in each skill's `SOURCES.md`), identifies any
