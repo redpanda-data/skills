@@ -1,9 +1,22 @@
 # Skills Sync Routine Definitions
 
-> **THESE ARE PROPOSED DEFINITIONS. THEY ARE NOT YET CREATED OR ENABLED.**
-> The live routines do not exist until a maintainer creates them following the
-> instructions in "How to create it" below. The decision to create and enable the
-> routines belongs to the maintainer.
+> **STATUS (2026-07-01): All four routines are CREATED but DISABLED (`enabled: false`).**
+> They will not fire on their schedules until enabled. Before enabling, three gates must
+> be met (see "How to create it" below): (1) PR that adds the repo `CLAUDE.md` is merged
+> to `main` so the routines inherit the durability guardrails; (2) the Claude GitHub App
+> has confirmed **write** access to `redpanda-data/skills`; (3) each routine has been
+> `run` once manually and its transcript reviewed. This file is the version-controlled
+> record — if you edit a routine in the dashboard, update this file too, and vice versa.
+>
+> | Routine | Trigger ID |
+> |---------|-----------|
+> | ADP skills sync | `trig_0154oVHsWXAv57ZoHgSYHBXX` |
+> | Cloud skills sync | `trig_01KTyepdPaeH8wJp5Qa62AMQ` |
+> | Skills sync critic | `trig_01HZY8SRDcuAdK1Hfm9Y725B` |
+> | Skills drift audit | `trig_01BMbjQwNvuG39f1akg7RbQg` |
+>
+> Dashboard: https://claude.ai/code/routines · Owner: Michele (michele@redpanda.com) ·
+> Environment: `env_01GtQ6tQeM9RZqpxdkRhWvtU`
 
 This file is the version-controlled definition of the proposed scheduled routines that
 monitor `redpanda-data/cloudv2` (and the user-facing changelogs) and open a PR against
@@ -51,12 +64,12 @@ So these routines:
 
 ## System overview
 
-| # | Routine | Role | Proposed schedule (UTC) | Local (America/Denver) |
-|---|---------|------|------------------------|------------------------|
-| 1 | ADP skills sync | Generator | `0 7 * * 1` (weekly, Mon) | ~midnight MT Mon |
-| 2 | Cloud skills sync | Generator | `0 7 * * 4` (weekly, Thu) | ~midnight MT Thu |
-| 3 | Skills sync critic | Critic | `0 */6 * * *` (every 6h) | every 6h |
-| 4 | Skills drift audit | Generator | `0 7 1 * *` (monthly, 1st) | ~midnight MT, 1st |
+| # | Routine | Role | Schedule (UTC) | Local (America/Denver) | Trigger ID |
+|---|---------|------|----------------|------------------------|-----------|
+| 1 | ADP skills sync | Generator | `0 7 * * 1` (weekly, Mon) | ~midnight MT Mon | `trig_0154oVHsWXAv57ZoHgSYHBXX` |
+| 2 | Cloud skills sync | Generator | `0 7 * * 4` (weekly, Thu) | ~midnight MT Thu | `trig_01KTyepdPaeH8wJp5Qa62AMQ` |
+| 3 | Skills sync critic | Critic | `0 */6 * * *` (every 6h) | every 6h | `trig_01HZY8SRDcuAdK1Hfm9Y725B` |
+| 4 | Skills drift audit | Generator | `0 7 1 * *` (monthly, 1st) | ~midnight MT, 1st | `trig_01BMbjQwNvuG39f1akg7RbQg` |
 
 > **Timezone note:** `0 7 * * d` is 07:00 UTC = **00:00 MST** (midnight Mountain Time in
 > winter). Cron runs in fixed UTC with no DST awareness, so during Mountain Daylight Time
@@ -103,6 +116,7 @@ Common configuration:
 ## 1. ADP skills sync (generator)
 
 - **Name:** `ADP skills sync`
+- **Trigger ID:** `trig_0154oVHsWXAv57ZoHgSYHBXX`
 - **Schedule:** `0 7 * * 1` (weekly, Mon ~midnight MT)
 - **Cloned source:** `https://github.com/redpanda-data/skills`
 - **MCP connector:** Redpanda-Github-Read
@@ -204,6 +218,7 @@ In the PR description:
 ## 2. Cloud skills sync (generator)
 
 - **Name:** `Cloud skills sync`
+- **Trigger ID:** `trig_01KTyepdPaeH8wJp5Qa62AMQ`
 - **Schedule:** `0 7 * * 4` (weekly, Thu ~midnight MT — staggered to a different weekday than the ADP generator)
 - **Cloned source:** `https://github.com/redpanda-data/skills`
 - **MCP connector:** Redpanda-Github-Read
@@ -283,6 +298,7 @@ Branch `claude/sync-skills-YYYY-MM-DD` (the `claude/` prefix is REQUIRED). Title
 ## 3. Skills sync critic (read-only)
 
 - **Name:** `Skills sync critic`
+- **Trigger ID:** `trig_01HZY8SRDcuAdK1Hfm9Y725B`
 - **Schedule:** `0 */6 * * *` (every 6 hours)
 - **Cloned source:** `https://github.com/redpanda-data/skills`
 - **MCP connector:** Redpanda-Github-Read
@@ -382,6 +398,7 @@ reviewed with no new commits, stop and do nothing.
 ## 4. Skills drift audit (generator, backstop)
 
 - **Name:** `Skills drift audit`
+- **Trigger ID:** `trig_01BMbjQwNvuG39f1akg7RbQg`
 - **Schedule:** `0 7 1 * *` (monthly, 1st ~midnight MT)
 - **Cloned source:** `https://github.com/redpanda-data/skills`
 - **MCP connector:** Redpanda-Github-Read
