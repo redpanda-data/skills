@@ -352,6 +352,17 @@ Cancel an in-progress reconfiguration for a specific partition:
 curl -u admin:secret -X POST "$ADMIN/v1/partitions/kafka/my-topic/0/cancel_reconfiguration"
 ```
 
+Since **v26.1.12** this endpoint also accepts the controller partition
+(`redpanda/controller/0`); earlier releases rejected it with a `400`. Targeting
+the controller cancels an in-flight controller (raft0) reconfiguration — an
+escape hatch for a controller wedged by a dead node that joined as a raft0
+learner and never caught up. The request is routed to the raft0 leader (it
+redirects if you hit a follower):
+
+```bash
+curl -u admin:secret -X POST "$ADMIN/v1/partitions/redpanda/controller/0/cancel_reconfiguration"
+```
+
 ### Cancel All Reconfigurations Cluster-Wide
 
 ```bash
@@ -364,6 +375,37 @@ Use only as a last resort when a clean cancel fails:
 
 ```bash
 curl -u admin:secret -X POST "$ADMIN/v1/partitions/kafka/my-topic/0/unclean_abort_reconfiguration"
+```
+
+### Force-Set a Partition's Replicas (Debug, Last Resort)
+
+`POST /v1/debug/partitions/{namespace}/{topic}/{partition}/force_replicas`
+forcibly replaces a partition's replica set, bypassing the normal
+reconfiguration guards. It is unclean by design — reserve it for recovering a
+partition that cannot be reconfigured through the clean endpoints above. The
+body is the same `[{"node_id": <int>, "core": <int>}, ...]` replica array as
+`/replicas`:
+
+```bash
+curl -u admin:secret -X POST \
+  "$ADMIN/v1/debug/partitions/kafka/my-topic/0/force_replicas" \
+  -H "Content-Type: application/json" \
+  -d '[{"node_id": 1, "core": 0}, {"node_id": 2, "core": 0}, {"node_id": 3, "core": 0}]'
+```
+
+**Breaking a wedged controller (raft0).** Since **v26.1.12** this endpoint can
+target the controller partition (`redpanda/controller/0`) to force-reconfigure
+raft0 in one shot — superseding any in-flight or enqueued raft0
+reconfiguration. This is gated behind an explicit `evil_mode=true` query
+parameter; without it the request is rejected with a `400` ("Refusing to
+reconfigure the controller"). Removing the current raft0 leader from the
+replica set makes it step down so a survivor takes over.
+
+```bash
+curl -u admin:secret -X POST \
+  "$ADMIN/v1/debug/partitions/redpanda/controller/0/force_replicas?evil_mode=true" \
+  -H "Content-Type: application/json" \
+  -d '[{"node_id": 1, "core": 0}, {"node_id": 2, "core": 0}, {"node_id": 3, "core": 0}]'
 ```
 
 ---
