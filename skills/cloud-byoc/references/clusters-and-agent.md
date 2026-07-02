@@ -43,6 +43,7 @@ Returns a `CreateClusterOperation`. The `operation.metadata.cluster_id` field ho
 | `cluster_configuration.custom_properties` | Struct | Custom Redpanda cluster config properties (integers must be strings) |
 | `redpanda_node_count` | int32 | Starting node count |
 | `api_gateway_access` | enum | `NETWORK_ACCESS_MODE_PUBLIC` or `NETWORK_ACCESS_MODE_PRIVATE` |
+| `redpanda_connect` | object | Redpanda Connect pipeline settings. `allowed_destination_cidr_ports[]` allowlists custom outbound destinations pipelines may reach. See [Redpanda Connect pipeline egress](#redpanda-connect-pipeline-egress-allowed_destination_cidr_ports) below. |
 
 ### Minimal AWS BYOC Cluster (Redpanda-managed network)
 
@@ -177,6 +178,33 @@ Required fields for `customer_managed_resources.azure`:
 
 ---
 
+## Redpanda Connect Pipeline Egress (allowed_destination_cidr_ports)
+
+`redpanda_connect.allowed_destination_cidr_ports` — settable on `ClusterCreate` and `ClusterUpdate` — allowlists the custom outbound destinations that Redpanda Connect pipelines running on the cluster may reach (for example, an external database or API in a peered network). Each entry is a `Cluster.CidrPort`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `cidr` | string | IPv4 CIDR, pattern `^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$`, e.g. `10.5.0.0/16` |
+| `port_start` | int32 | Start of the TCP/UDP port range, 1–65535 |
+| `port_end` | int32 | Optional end of the port range, 0–65535. `0` (the default) means a single port (`port_start` only); when non-zero it must be ≥ `port_start` |
+
+Maximum 16 entries; each `cidr:port_start:port_end` tuple must be unique. On read-back, `Cluster.redpanda_connect` is output-only and also reports the Connect engine `version`.
+
+```json
+{
+  "redpanda_connect": {
+    "allowed_destination_cidr_ports": [
+      {"cidr": "10.5.0.0/16", "port_start": 5432},
+      {"cidr": "10.6.0.0/16", "port_start": 8000, "port_end": 8100}
+    ]
+  }
+}
+```
+
+Source: `cluster.proto` (`Cluster.RedpandaConnect.allowed_destination_cidr_ports`, `Cluster.CidrPort`; `ClusterCreate.redpanda_connect`, `ClusterUpdate.redpanda_connect`).
+
+---
+
 ## Cluster State Machine
 
 States are defined in the `Cluster.State` enum in `cluster.proto`:
@@ -261,7 +289,7 @@ DP_URL=$(curl -s "${BASE}/v1/clusters/${CLUSTER_ID}" \
 
 `PATCH /v1/clusters/{id}` with a `ClusterUpdate` body. Also returns an `UpdateClusterOperation`.
 
-Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`/`gcp_private_service_connect`/`azure_private_link`, `customer_managed_resources`, `cloud_provider_tags`, `maintenance_window_config`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`.
+Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`/`gcp_private_service_connect`/`azure_private_link`, `customer_managed_resources`, `cloud_provider_tags`, `maintenance_window_config`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`, `redpanda_connect`.
 
 **`update_mask` is a REQUIRED query parameter**, not a body field. From `cluster.proto` the `UpdateCluster` RPC is `patch: "/v1/clusters/{cluster.id}"` with `body: "cluster"`, plus a separate top-level required `update_mask` FieldMask. Two consequences:
 
