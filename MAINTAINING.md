@@ -1,102 +1,119 @@
 # Maintaining This Skills Repo
 
-This repo has no CI or automated enforcement today. Correctness is a human and
-process responsibility. This document records the norms for keeping skills accurate
-and introduces the proposed automation (defined in `skills-sync-routine.md`).
+This repo has no CI enforcement. Skill accuracy is kept up over time by a **human + automation
+process**: a fleet of scheduled agents ("routines") watch each product's source, open PRs when a
+user-facing change needs documenting, and a human reviews and merges. This document is the
+**plain-language overview** of that process (read this first); the exact routine definitions,
+prompts, trigger IDs, and schedules live in [`skills-sync-routine.md`](./skills-sync-routine.md),
+and the guardrails every routine inherits live in the repo [`CLAUDE.md`](./CLAUDE.md).
 
-## How skills are verified
+## How the maintenance automation works
 
-Every skill in this repo was built and must be re-verified with a four-step process
-drawn from `README.md`:
+Seven scheduled cloud routines (Claude Code "routines", stored in the claude.ai backend, run in
+Anthropic's cloud — not on anyone's laptop) maintain this repo. They form a **generator → critic →
+human loop**:
 
-1. **Grounded spec.** Identify the authoritative source paths (proto files, Go source,
-   golden CLI snapshots, API definitions) for the feature area. Write or revise the
-   skill to match those paths exactly, not from memory or prior drafts.
+1. **Generators** (one per product) run weekly. Each watches its product's source, detects
+   *user-facing* changes since the last run, grounds them in source, and opens a PR against `main`.
+   If nothing user-facing changed, the run does nothing (a no-op is a success, not a failure).
+2. **The critic** (read-only, every 6h) reviews each generator PR: it re-verifies every claim
+   against the product source and posts an advisory comment. **It cannot approve, merge, or edit** —
+   it only comments.
+3. **A human maintainer reviews and merges the PR.** The routines never merge their own work;
+   merging (and responding to review comments) is always a human decision.
+4. **The drift audit** (monthly) is the backstop: it re-verifies *every* source-grounded skill
+   against its source from scratch — catching silent drift that the change-triggered generators
+   miss (there is **no failure alerting**, so a silently-skipped run is caught here or by the
+   weekly dashboard check — see "Operating the routines").
 
-2. **Adversarial review at maximum model effort.** Cross-check every command, flag,
-   config field, endpoint, and code example against the actual source. Fix any
-   hallucinated or outdated detail. Assume the draft is wrong until the source confirms
-   it.
+| Routine | Skills it maintains | Source of truth | Trigger model |
+|---------|--------------------|-----------------|---------------|
+| ADP skills sync | `skills/adp/` | `redpanda-data/cloudv2` (private) | commit-watch, keyed off `adp/RELEASE_NOTES.md` |
+| Cloud skills sync | `skills/cloud-*` (3) | `cloudv2` + `cloud-docs` (private) | commit-watch, keyed off `whats-new-cloud.adoc` + OpenAPI diff |
+| Redpanda Core skills sync | `skills/streaming*`, `skills/rpk*` (12) | `redpanda-data/redpanda` + `docs` (public) | **release-pinned** (GitHub Release notes) |
+| SQL skills sync | `skills/sql*` (4) | `redpanda-data/oxla` (private) + `cloud-docs` | commit-watch (Oxla is trunk-based) |
+| Connect skills sync | `skills/connect*` (10) | `connect` + `benthos` engine + `rp-connect-docs` (public) | **release-pinned** (Connect releases) |
+| Skills sync critic | reviews all generator PRs | (per skill's `SOURCES.md`) | every 6h, read-only |
+| Skills drift audit | all 30 source-grounded skills | (per skill's `SOURCES.md`) | monthly full re-verification |
 
-3. **Enterprise-feature coverage pass.** Verify that key differentiating features and
-   their nested settings are present and accurate. These are the details most likely to
-   be missing in a quick draft.
+Generators are staggered onto different weekdays (ADP Mon, Core Tue, SQL Wed, Cloud Thu,
+Connect Fri) so their PRs don't all land on the same day, and use a lookback window slightly
+longer than the weekly cadence so one skipped run self-heals.
 
-4. **Final verification pass.** Read the skill as a user would. Confirm the examples
-   are copy-pasteable and the decision rules are clear. Run `rpk ai --help` (or the
-   equivalent live surface for the product area) to catch any drift since the source
-   was last read.
+## The durability principle (why this differs from prose-docs automation)
 
-**This four-step process must be re-applied on every change**, not just initial
-authoring. A partial update that skips steps 2-4 is likely to introduce drift.
+**Stable concepts live in the skill; volatile specifics do NOT.** A skill documents the *shape and
+semantics* of an API surface (CLI flags, service names, config-key names, endpoint paths, enum
+values) — those are stable. It must **never hardcode** values that rotate frequently (model lists,
+category counts, pricing, region lists, version numbers, metric names, per-release property
+*defaults*, and — for Connect — the auto-generated per-field connector config). Those are deferred
+to **live introspection** (`rpk ai model list`, `rpk cloud region list`, `rpk <cmd> --help`, the
+live `/metrics` endpoint, the auto-generated reference docs).
 
-## The durability principle (ADP skill and generalizing it)
+Consequence: **most product changes do NOT require a skill change.** The generators are built to
+no-op on volatile-only churn — "documenting the changelog" is the #1 failure mode to avoid. This
+rule is a HARD RULE in the repo `CLAUDE.md`, which every routine (and interactive session) inherits.
 
-The ADP skill (`skills/adp/`) uses a durability principle: **stable concepts live in
-the skill; volatile specifics are deferred to live introspection.** For example:
+## The four-step verification process
 
-- The skill explains how to list models and what fields to inspect, rather than
-  hardcoding a model catalog that rotates frequently.
-- CLI flag names and service names are grounded in source because they are stable
-  across releases.
-- Category counts, pricing fields, and model lists are handled by telling the agent
-  to call `rpk ai model list` or equivalent, so the skill does not go stale with every
-  model update.
+Applied on **every** change, by generators, the critic, and human maintainers alike:
 
-Apply this same principle to other skills: document the shape and semantics of an API
-surface; defer enumerated values that change frequently (catalog contents, region
-lists, version numbers) to runtime calls.
+1. **Grounded spec.** Identify the authoritative source paths (proto/Go/C++ source, generated docs,
+   golden CLI snapshots). Write from source, not memory.
+2. **Adversarial review at maximum effort.** Cross-check every command, flag, config key, endpoint,
+   enum, and code example against the actual source. Assume the draft is wrong until source confirms.
+3. **Enterprise-feature coverage pass.** Verify key differentiators and their nested settings.
+4. **Final verification.** Read as a user would: examples copy-pasteable, decision rules clear;
+   re-confirm against the live surface where one exists.
 
-## Per-file source maps
+## Source maps (`SOURCES.md`) — the contract between skills and source
 
-Each skill area that derives from private source code should carry a source map. It
-records which `cloudv2` file paths each skill file is grounded in, so a maintainer (or
-automated routine) knows exactly where to look when re-verifying. The repo currently
-carries source maps for:
+Every source-grounded skill carries a `SOURCES.md` (at `skills/<name>/references/SOURCES.md`, or
+`skills/adp/SOURCES.md`) mapping each skill file to the exact source paths its claims derive from,
+plus a **"Deferred to live introspection"** section (what NOT to hardcode) and a **"TODO / re-verify"**
+section. This is what the generators, critic, and drift audit read first, and where a human starts
+when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 Core; 4 SQL;
+10 Connect). Each names its authoritative source repo(s):
 
-- **ADP:** `skills/adp/SOURCES.md` (grounded in `proto/public/cloud/redpanda/api/adp/`,
-  `apps/rpai/`, `apps/aigw/`).
-- **Redpanda Cloud:** `skills/cloud-serverless/references/SOURCES.md`,
-  `skills/cloud-byoc/references/SOURCES.md`, and
-  `skills/cloud-dedicated/references/SOURCES.md` (grounded in
-  `proto/public/cloud/redpanda/api/controlplane/v1/`, the byoc plugin proto, and the
-  generated `proto/gen/openapi/openapi.{controlplane,dataplane}.yaml`).
+- **ADP / Cloud** → `cloudv2` (+ `cloud-docs`), private.
+- **Core** → `redpanda-data/redpanda` + `docs`, public (verify at the current stable release tag).
+- **SQL** → `redpanda-data/oxla` (private) + `cloud-docs` module `sql`. (`sql-admin-api` is source-only.)
+- **Connect** → `redpanda-data/connect` + the `benthos` engine + the auto-generated `rp-connect-docs`.
 
-The same pattern generalizes repo-wide: add a `SOURCES.md` alongside any skill whose
-claims need to be traceable to private or versioned source, and reference it from this
-file when it exists.
+When adding a new source-grounded skill, add a `SOURCES.md` beside it and register it in the
+drift-audit scope.
 
-## Proposed automation
+## Operating the routines
 
-`skills-sync-routine.md` (repo root) defines four proposed scheduled routines that
-monitor `cloudv2` (and the user-facing changelogs) and open a PR against this repo when
-user-facing updates are detected:
+- **Where they live / how to manage them:** the dashboard at https://claude.ai/code/routines, or the
+  `RemoteTrigger` tool / `/schedule` skill (actions: list, get, create, update, run). You cannot
+  delete a routine via the API — use the dashboard.
+- **Monitoring (there is NO automated alerting).** A silently-failing run notifies no one. The
+  standing responsibility is to **check the dashboard ~weekly** for failed or empty runs; each run's
+  transcript (in the dashboard) is the source of truth for what it did. The **monthly drift audit**
+  is the automated safety net that catches drift a missed weekly run would otherwise leave.
+- **Reviewing generator PRs.** Read the PR description (it lists the source commits/release + what
+  changed and why), read the critic's `[skills-sync critic]` comment, then apply the docs-team review
+  standards and merge. Anything the generator flagged as a TODO needs a human decision — don't guess.
+- **Kill switch.** To stop a routine immediately, disable it: `RemoteTrigger` `update`
+  `{"enabled": false}` on its trigger ID, or toggle it off in the dashboard. This stops future fires;
+  it does not interrupt a run already in flight.
+- **Branch cleanup.** Generators push `claude/sync-skills-*` / `claude/drift-audit-*` branches. The
+  routine environment cannot delete remote branches, so enable the repo's **"Automatically delete
+  head branches"** setting (a repo admin) so merged branches self-clean.
 
-- **`adp-skill-sync`** (weekly) — syncs `skills/adp/`, triggered primarily off
-  `adp/RELEASE_NOTES.md`.
-- **`cloud-skill-sync`** (weekly, staggered) — syncs the three `skills/cloud-*` skills,
-  triggered primarily off the Cloud changelog
-  (`cloud-docs/modules/get-started/pages/whats-new-cloud.adoc`) and an OpenAPI-spec diff.
-- **`skills-sync-critic`** (every 6h) — one read-only critic that reviews the PRs from
-  both generators and the drift audit.
-- **`skills-drift-audit`** (monthly) — a full re-verification of every source-grounded
-  skill against its `SOURCES.md`, backstopping the change-triggered syncs against silent
-  drift (there is no failure alerting).
+### Operational gotchas (self-contained; see `adp-docs-routines.md` for the full reference)
 
-They are **not yet created or enabled**; read that file for the full definitions, the
-cadence rationale (weekly generators use a 10-day lookback so one skipped run
-self-heals), and the steps to create them. Both generators and the drift audit enforce
-the durability principle as a hard constraint — the #1 skills-specific failure mode is
-documenting the volatile detail from a commit that the skill deliberately defers to live
-introspection.
+The [`adp-docs-routines.md`](https://github.com/redpanda-data/docs-team-standards/blob/main/resources/adp-docs-routines.md)
+doc in `docs-team-standards` (private) is the origin reference for these; the essentials are repeated
+here so this repo stands alone:
 
-The routine environment cannot see your global `~/CLAUDE.md` or the docs-team-standards
-plugin — it only reads the repo's committed `CLAUDE.md`. That file (repo root) carries
-the durability principle, the four-step process, and the flag-don't-guess rule as HARD
-RULES, so all four routines (and interactive sessions) inherit them. Put new
-cross-cutting rules there rather than duplicating them into each prompt.
-
-Until the routines are live, syncs are manual: a maintainer reads the relevant
-`cloudv2` source paths (listed in each skill's `SOURCES.md`), identifies any
-user-facing changes since the last skill update, and applies the four-step process
-above.
+- **`claude/` branch prefix is required** — pushes to any other branch name are rejected.
+- **No `gh` CLI** in the routine environment — routines use `git` via Bash for push and the
+  environment's native GitHub capability for PRs/comments.
+- **Private source repos are never cloned** (cloning a private repo hangs the run) — they are read
+  via the read-only Redpanda-Github-Read MCP connector. Only `redpanda-data/skills` is cloned.
+- **GitHub App write access** to `redpanda-data/skills` is required for the generators to open PRs
+  (granted by adding the Claude GitHub App to the repo per the Routines docs — an org action).
+- Cron is 5-field UTC, minimum interval 1 hour; PRs/commits are authored as the routine's creator
+  (so downstream automation selects by PR title + `claude/` branch, not by author).
