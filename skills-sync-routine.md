@@ -1,17 +1,20 @@
 # Skills Sync Routine Definitions
 
-> **STATUS (2026-07-02): ADP/Cloud sync, the critic, and the drift audit are LIVE
-> (`enabled: true`). The Redpanda Core skills sync is CREATED but DISABLED — pending a
-> manual probe run before enabling.** This file is the version-controlled record — if you
-> edit a routine in the dashboard, update this file too, and vice versa.
+> **STATUS (2026-07-02): all seven routines exist and cover all five products. ADP/Cloud/Core
+> sync, the critic, and the drift audit are LIVE (`enabled: true`); the SQL and Connect skills
+> sync are CREATED but DISABLED — pending PR #16 (their `SOURCES.md`) merging to `main`, then a
+> manual probe run before enabling.** This file is the version-controlled record — if you edit a
+> routine in the dashboard, update this file too, and vice versa.
 >
 > | Routine | Trigger ID | State |
 > |---------|-----------|-------|
 > | ADP skills sync | `trig_0154oVHsWXAv57ZoHgSYHBXX` | enabled |
 > | Cloud skills sync | `trig_01KTyepdPaeH8wJp5Qa62AMQ` | enabled |
-> | Redpanda Core skills sync | `trig_01Hmpkh7Bvm7pSv3ej1tikSK` | disabled (probe pending) |
-> | Skills sync critic | `trig_01HZY8SRDcuAdK1Hfm9Y725B` | enabled |
-> | Skills drift audit | `trig_01BMbjQwNvuG39f1akg7RbQg` | enabled |
+> | Redpanda Core skills sync | `trig_01Hmpkh7Bvm7pSv3ej1tikSK` | enabled |
+> | SQL skills sync | `trig_01Hgnuo3x5i82dMwYx17PysY` | disabled (probe pending) |
+> | Connect skills sync | `trig_01Ms8Dm47LXALNSg4KQumNb4` | disabled (probe pending) |
+> | Skills sync critic | `trig_01HZY8SRDcuAdK1Hfm9Y725B` | enabled (reviews all 5 products) |
+> | Skills drift audit | `trig_01BMbjQwNvuG39f1akg7RbQg` | enabled (audits all 5 products) |
 >
 > Dashboard: https://claude.ai/code/routines · Owner: Michele (michele@redpanda.com) ·
 > Environment: `env_01GtQ6tQeM9RZqpxdkRhWvtU`
@@ -26,8 +29,13 @@ product source (and the user-facing changelogs/releases) and open a PR against
 - **`core-skill-sync`** — keeps the 12 Redpanda Core skills (`skills/streaming*`,
   `skills/rpk*`) in sync with the latest **stable release** of `redpanda-data/redpanda`
   (+ the generated reference in `redpanda-data/docs`).
+- **`sql-skill-sync`** — keeps the 4 SQL skills (`skills/sql*`) in sync with the **Oxla**
+  engine source (private `redpanda-data/oxla`, trunk-based; SQL docs in `cloud-docs`).
+- **`connect-skill-sync`** — keeps the 10 Connect skills (`skills/connect*`) in sync with
+  the latest **stable release** of Redpanda Connect (`redpanda-data/connect` + the
+  `redpanda-data/benthos` engine + the auto-generated `redpanda-data/rp-connect-docs`).
 - **`skills-sync-critic`** — a single read-only critic that reviews the PRs opened by all
-  three generators (and the drift audit).
+  five generators (and the drift audit).
 - **`skills-drift-audit`** — a low-frequency full re-verification that backstops the
   change-triggered syncs by re-checking every source-grounded skill against its
   `SOURCES.md`, regardless of whether a change was detected.
@@ -74,8 +82,10 @@ So these routines:
 | 1 | ADP skills sync | Generator | `0 7 * * 1` (weekly, Mon) | ~midnight MT Mon | `trig_0154oVHsWXAv57ZoHgSYHBXX` |
 | 2 | Cloud skills sync | Generator | `0 7 * * 4` (weekly, Thu) | ~midnight MT Thu | `trig_01KTyepdPaeH8wJp5Qa62AMQ` |
 | 3 | Redpanda Core skills sync | Generator | `0 7 * * 2` (weekly, Tue) | ~midnight MT Tue | `trig_01Hmpkh7Bvm7pSv3ej1tikSK` |
-| 4 | Skills sync critic | Critic | `0 */6 * * *` (every 6h) | every 6h | `trig_01HZY8SRDcuAdK1Hfm9Y725B` |
-| 5 | Skills drift audit | Generator | `0 7 1 * *` (monthly, 1st) | ~midnight MT, 1st | `trig_01BMbjQwNvuG39f1akg7RbQg` |
+| 4 | SQL skills sync | Generator | `0 7 * * 3` (weekly, Wed) | ~midnight MT Wed | `trig_01Hgnuo3x5i82dMwYx17PysY` |
+| 5 | Connect skills sync | Generator | `0 7 * * 5` (weekly, Fri) | ~midnight MT Fri | `trig_01Ms8Dm47LXALNSg4KQumNb4` |
+| 6 | Skills sync critic | Critic | `0 */6 * * *` (every 6h) | every 6h | `trig_01HZY8SRDcuAdK1Hfm9Y725B` |
+| 7 | Skills drift audit | Generator | `0 7 1 * *` (monthly, 1st) | ~midnight MT, 1st | `trig_01BMbjQwNvuG39f1akg7RbQg` |
 
 > **Timezone note:** `0 7 * * d` is 07:00 UTC = **00:00 MST** (midnight Mountain Time in
 > winter). Cron runs in fixed UTC with no DST awareness, so during Mountain Daylight Time
@@ -85,13 +95,18 @@ So these routines:
 
 **Cadence rationale:**
 
-- The three generators run **weekly** with a **10–14-day lookback** (deliberately *longer*
+- The five generators run **weekly** with a **10–14-day lookback** (deliberately *longer*
   than the 7-day cadence: if one weekly run is silently skipped, the next run's window
   still covers the gap. Overlap at worst produces a duplicate finding, which the no-op
   guard, the "check recent PRs" step, and the critic all catch — a gap loses changes).
-  They are staggered onto different weekdays (ADP Monday, Core Tuesday, Cloud Thursday) so
-  their PRs don't land for review on the same day.
-- **One** critic (not three) reviews all generators' PRs plus the drift-audit PRs. Sync
+  They are staggered onto different weekdays (ADP Mon, Core Tue, SQL Wed, Cloud Thu,
+  Connect Fri) so their PRs don't land for review on the same day.
+- **Trigger model differs by product.** ADP/Cloud watch cloudv2 commits keyed off a
+  human-curated changelog. Core and Connect are **release-pinned** (verify against the
+  current stable release tag, not `dev`/`main`, since features reach users at release
+  time). SQL is **commit-watching on `redpanda-data/oxla`** (Oxla is trunk-based — no
+  release tags), with the Cloud what's-new as a secondary signal.
+- **One** critic (not five) reviews all generators' PRs plus the drift-audit PRs. Sync
   PRs land ~weekly, so hourly review is unnecessary; **every 6 hours** picks up any PR
   within a quarter-day at ~1/6 the session cost of an hourly critic.
 - The **drift audit** runs **monthly** — it is the safety net for silent drift, not the
@@ -105,16 +120,19 @@ Common configuration:
   access required for PR pushes)
 - **MCP connector:** Redpanda-Github-Read (the same connector used by adp-docs routines),
   reading via `search_code`, `get_file_contents`, `list_commits`, `get_commit`,
-  `compare_commits` (+ release/tag reads for Core):
+  `compare_commits` (+ release/tag reads). Source repo(s) per product (each skill's
+  `SOURCES.md` names its own):
     - ADP/Cloud: `redpanda-data/cloudv2` + `redpanda-data/cloud-docs` (private).
     - Core: `redpanda-data/redpanda` + `redpanda-data/docs` (public).
-- **No cloning of source repos.** cloudv2/cloud-docs are private (cloning hangs the run —
-  see adp-docs-routines.md); redpanda/docs are public but still read via the connector for
-  consistency and to avoid a large monorepo clone. Only `redpanda-data/skills` is cloned.
+    - SQL: `redpanda-data/oxla` (private) + `redpanda-data/cloud-docs` module `sql`.
+    - Connect: `redpanda-data/connect` + `redpanda-data/benthos` + `redpanda-data/rp-connect-docs` (public).
+- **No cloning of source repos.** Private repos (cloudv2, cloud-docs, oxla) hang the run if
+  cloned (see adp-docs-routines.md); the public repos are read via the connector too, for
+  consistency and to avoid large clones. Only `redpanda-data/skills` is cloned.
 - **Repo `CLAUDE.md`:** the skills repo carries a committed `CLAUDE.md` with the
   durability principle, the four-step process, and the "flag-don't-guess" rule as HARD
   RULES. Because the routines clone the skills repo, Claude Code auto-loads that file on
-  every run, so all five routines inherit these rules without any prompt change (and
+  every run, so all seven routines inherit these rules without any prompt change (and
   interactive sessions get them too). Put new cross-cutting rules there, not in each
   prompt.
 
@@ -370,7 +388,113 @@ In the PR description: the release tag(s) you synced; each user-facing change an
 
 ---
 
-## 4. Skills sync critic (read-only)
+## 4. SQL skills sync (generator)
+
+- **Name:** `SQL skills sync`
+- **Trigger ID:** `trig_01Hgnuo3x5i82dMwYx17PysY`
+- **Schedule:** `0 7 * * 3` (weekly, Wed ~midnight MT)
+- **Cloned source:** `https://github.com/redpanda-data/skills`
+- **MCP connector:** Redpanda-Github-Read
+- **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
+
+Syncs the 4 SQL skills against the **Oxla** engine. Oxla (`redpanda-data/oxla`) is **private**
+(connector-read only) and **trunk-based** — no release tags — so this is commit-watching on the
+default branch (like the cloudv2 generators), not release-pinned. SQL user docs are in
+`cloud-docs` (module `sql`); `sql-admin-api` is source-only; the redpanda-iceberg-source files
+are grounded in `redpanda-data/redpanda`.
+
+### Prompt
+
+```
+You are a skills-maintenance agent for the redpanda-data/skills repository. Your task is to sync the Redpanda SQL skills (the Oxla engine) with recent changes in the Oxla source.
+
+SCOPE (HARD RULE): edit ONLY these skill directories: skills/sql/, skills/sql-admin-api/, skills/sql-federated-queries/, skills/sql-debugging/. If a user-facing change belongs to another product's skill (ADP, Cloud, Core/Streaming, rpk, Connect), do NOT edit that skill — note it in the PR description as out-of-scope for a future routine.
+
+DURABILITY PRINCIPLE (HARD RULE — read the repo CLAUDE.md): stable concepts live in the skill; volatile specifics do NOT. For SQL, the stable surface is the SQL grammar/keywords, connection/catalog option keys, system-table column schemas, and admin gRPC/config KEY names. Volatile specifics that MUST stay deferred to live introspection: Oxla config default VALUES, Prometheus metric names, system-table ROW contents, and query results. Most Oxla commits will NOT require a skill change. If a change is only a volatile-detail update, do nothing.
+
+REPO ACCESS:
+- redpanda-data/skills is cloned; you have push access. Use git via Bash to branch/commit/push. The gh CLI is NOT installed; open the PR with your native GitHub PR-creation capability.
+- redpanda-data/oxla is PRIVATE and NOT cloned — read it ONLY via the Redpanda-Github-Read MCP connector: search_code, get_file_contents, list_commits, get_commit, compare_commits. Do NOT clone it and do NOT use gh for oxla.
+- redpanda-data/cloud-docs (the SQL user docs, module `sql`) and redpanda-data/redpanda + redpanda-data/docs (for the Redpanda-side Iceberg source that SQL reads) are also read via the connector.
+
+NOTE: Oxla is trunk-based (no vX.Y.Z release tags); verify against the current default branch. The SQL skills reach users via Redpanda Cloud, so the cloud changelog is a useful secondary signal.
+
+SOURCE MAPS: read each skill's references/SOURCES.md first (all four SQL skills have one). They map each skill file to its oxla / cloud-docs / redpanda source paths. Use them as your starting point. Note: sql-admin-api is source-only (no public docs); the sql/sql-federated docs are in redpanda-data/cloud-docs `modules/sql/pages/`; the redpanda-iceberg-source files are grounded in redpanda-data/redpanda `src/v/datalake/` + docs.
+
+STEP 1 - IDENTIFY CHANGES:
+a. As a secondary user-facing signal, read redpanda-data/cloud-docs `modules/get-started/pages/whats-new-cloud.adoc` for any SQL entries in the last ~10 days.
+b. Primary: list commits to redpanda-data/oxla default branch in the last 10 days (list_commits) and inspect diffs (get_commit / compare_commits) for commits touching the SQL source paths named in the SOURCES.md files: `src/sqlparser/` (grammar `bison_parser.y`, `ColumnType.h`, `connection_option_names.h`, statement headers), `src/catalog/` (kafka/iceberg/storage parsers), `src/metastore/` (system tables), `src/schema/predefined_functions.*`, `src/admin/` (proto + services), `src/access_control/`, `src/config/config_parameter_list.h` + `config/{Release,Debug}/default_config.yml`, `src/filesystem/`. Also `src/v/datalake/` + `iceberg_*` in redpanda-data/redpanda for the redpanda-iceberg-source references.
+
+Identify user-facing changes: new/changed SQL syntax or keywords, new catalog/connection option keys, new or changed system-table column schemas, new admin gRPC RPCs, new config KEY names, new functions. (New config default VALUES, metric names, and system-table row contents are volatile — do not document.)
+
+STEP 2 - NO-OP GUARD: if there are no user-facing SQL changes in the window (or the only changes are volatile specifics the skills defer), stop and do nothing; do not open a PR. A run with no changes is a success. Also check open and recently-merged skills PRs and skip anything already covered.
+
+STEP 3 - DETERMINE WHAT TO UPDATE: for each change, identify which in-scope skill file(s) are affected. Read them before editing. Use the relevant SOURCES.md for source paths.
+
+STEP 4 - APPLY THE FOUR-STEP PROCESS (README.md / CLAUDE.md): ground each change in the oxla source (get_file_contents / search_code), not the commit message alone; adversarially cross-check every SQL keyword, option key, column name, RPC, and config key against source; enterprise-feature coverage pass; final verification (copy-pasteable, durability preserved — defer config default values / metrics / row contents).
+
+STEP 5 - CREATE THE PR: fresh branch off main named `claude/sync-skills-YYYY-MM-DD` (the `claude/` prefix is REQUIRED). Commit, push, open a PR against main titled:
+  `skills: sync Redpanda SQL changes from oxla (YYYY-MM-DD)`
+In the PR description: list the oxla commits you based changes on (hash + link); each user-facing change and the skill file it touched; the oxla/cloud-docs/redpanda source you verified (cite SOURCES.md rows); out-of-scope hand-off notes; and a TODO for anything you could not confirm. Do not guess.
+```
+
+---
+
+## 5. Connect skills sync (generator)
+
+- **Name:** `Connect skills sync`
+- **Trigger ID:** `trig_01Ms8Dm47LXALNSg4KQumNb4`
+- **Schedule:** `0 7 * * 5` (weekly, Fri ~midnight MT)
+- **Cloned source:** `https://github.com/redpanda-data/skills`
+- **MCP connector:** Redpanda-Github-Read
+- **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
+
+Syncs the 10 Connect skills. **Release-pinned** to the current stable Redpanda Connect release.
+Connect is **three public repos**: `redpanda-data/connect` (components), `redpanda-data/benthos`
+(the engine — CLI verbs + Bloblang, pinned in `connect/go.mod`), and `redpanda-data/rp-connect-docs`
+(the auto-generated component reference). Because connector field lists are auto-generated, the
+generator documents only *structural* changes (new connectors/processors, CLI flags, Bloblang
+capabilities, enterprise gating) — never per-field details.
+
+### Prompt
+
+```
+You are a skills-maintenance agent for the redpanda-data/skills repository. Your task is to sync the Redpanda Connect skills with the latest STABLE release of Redpanda Connect.
+
+SCOPE (HARD RULE): edit ONLY these skill directories: skills/connect/, skills/connect-debugging/, and the CDC connectors skills/connect-cdc-postgres/, connect-cdc-mysql/, connect-cdc-mongodb/, connect-cdc-sqlserver/, connect-cdc-oracle/, connect-cdc-spanner/, connect-cdc-dynamodb/, connect-cdc-salesforce/. If a user-facing change belongs to another product's skill (ADP, Cloud, Core/Streaming, rpk, SQL), do NOT edit that skill — note it in the PR description as out-of-scope for a future routine.
+
+DURABILITY PRINCIPLE (HARD RULE — read the repo CLAUDE.md): stable concepts live in the skill; volatile specifics do NOT. CRITICAL for Connect: the per-field config of every connector/processor is AUTO-GENERATED from each component's Go Spec() into the rp-connect-docs reference (+ docs-data/overrides.json). Do NOT hardcode or 'complete' per-field lists/defaults in a skill — they are deferred to the generated reference and `rpk connect create/list`. Bloblang function/method catalogs are likewise generated. Most releases will NOT require a skill change. Document only structural, user-facing changes: NEW connectors/processors, NEW CLI flags/subcommands, NEW Bloblang capabilities, changed enterprise gating, or license/secrets/connector-list behavior.
+
+RELEASE-PINNED (HARD RULE): Connect ships versioned releases. Sync against the CURRENT STABLE Connect release, not `main`/`dev`. Do NOT document unreleased behavior.
+
+REPO ACCESS (all PUBLIC; read via the Redpanda-Github-Read MCP connector — search_code, get_file_contents, list_commits, get_commit, compare_commits, release/tag reads; do NOT clone):
+- redpanda-data/connect — Redpanda-specific components (internal/impl/<group>/), the redpanda-connect binary, license/secrets/connector-list, Redpanda flags. CDC + AI components live here.
+- redpanda-data/benthos — the ENGINE (dependency, version pinned in redpanda-data/connect `go.mod`): the CLI verbs (run/list/create/lint/streams/blobl), Bloblang (internal/bloblang/), the core config model, and base logger/metrics/tracer/buffer components. CLI/Bloblang claims verify HERE, not in connect.
+- redpanda-data/rp-connect-docs — the AUTO-GENERATED component reference (modules/components/pages/**, partials/fields/**) + docs-data/overrides.json + versioned docs-data/connect-<version>.json.
+
+SOURCE MAPS: read each skill's references/SOURCES.md first (all 10 Connect skills have one). They map each skill file to its connect / benthos / rp-connect-docs source paths and flag the auto-generated, deferred field lists. Use them as your starting point.
+
+STEP 1 - DETERMINE THE CURRENT STABLE RELEASE + WHAT'S NEW (primary trigger first):
+a. Identify the current stable redpanda-data/connect release tag (exclude `-rc`/prerelease). Read its GitHub Release notes for stable releases published in the last ~14 days — the human-curated changelog and primary trigger.
+b. Also check whether the benthos dependency version in redpanda-data/connect `go.mod` changed in the window (engine/Bloblang/CLI changes come from there).
+c. As precise signals at the release tag: new component dirs under connect `internal/impl/<group>/`; new CLI flags in connect `internal/cli/` (and benthos `internal/cli/`); Bloblang additions in benthos `internal/bloblang/query/`; and new/changed connector reference pages in rp-connect-docs `modules/components/pages/**`.
+
+Identify user-facing STRUCTURAL changes only (new connectors/processors, new CLI flags/subcommands, new Bloblang functions/methods, enterprise gating, license/secrets/connector-list behavior). Per-field additions to existing connectors are auto-generated and deferred — not a skill change.
+
+STEP 2 - NO-OP GUARD: if there are no user-facing structural Connect changes in the window (or the only changes are auto-generated field details), stop and do nothing; do not open a PR. A run with no changes is a success. Also check open and recently-merged skills PRs and skip anything already covered.
+
+STEP 3 - DETERMINE WHAT TO UPDATE: for each change, identify which in-scope skill file(s) are affected. Read them before editing. Use the relevant SOURCES.md for source paths, and route each claim to the right repo (connect vs benthos vs rp-connect-docs).
+
+STEP 4 - APPLY THE FOUR-STEP PROCESS (README.md / CLAUDE.md): ground each change in the correct source repo at the release tag; adversarially cross-check every flag, component name, Bloblang function, and behavior against source; enterprise-feature coverage pass; final verification (copy-pasteable, durability preserved — defer auto-generated field lists and Bloblang catalogs to the generated reference).
+
+STEP 5 - CREATE THE PR: fresh branch off main named `claude/sync-skills-YYYY-MM-DD` (the `claude/` prefix is REQUIRED). Commit, push, open a PR against main titled:
+  `skills: sync Redpanda Connect changes from release <tag> (YYYY-MM-DD)`
+In the PR description: the Connect release tag (and benthos version if relevant); each user-facing change and the skill file it touched; the source (connect/benthos/rp-connect-docs) you verified (cite SOURCES.md rows); out-of-scope hand-off notes; and a TODO for anything you could not confirm. Do not guess.
+```
+
+---
+
+## 6. Skills sync critic (read-only)
 
 - **Name:** `Skills sync critic`
 - **Trigger ID:** `trig_01HZY8SRDcuAdK1Hfm9Y725B`
@@ -379,11 +503,19 @@ In the PR description: the release tag(s) you synced; each user-facing change an
 - **MCP connector:** Redpanda-Github-Read
 - **Allowed tools:** Bash, Read, Glob, Grep (no Write or Edit; read-only by design)
 
-A single critic reviews the PRs opened by all three generators AND the drift audit. It
+A single critic reviews the PRs opened by all five generators AND the drift audit. It
 automates the adversarial review step from README.md: it reviews open PRs, verifies each
 claim against the source repo(s) named in that skill's `SOURCES.md` (cloudv2 for ADP/Cloud;
-`redpanda` + `docs` at the current stable release tag for Core), checks scope, and posts
-advisory comments. It cannot approve, merge, or edit.
+`redpanda` + `docs` at the stable tag for Core; `oxla` + `cloud-docs` for SQL;
+`connect` + `benthos` + `rp-connect-docs` for Connect), checks scope, and posts advisory
+comments. It cannot approve, merge, or edit.
+
+> **Note (2026-07-02):** the live critic prompt was extended to select the SQL
+> (`skills: sync Redpanda SQL changes from oxla`) and Connect
+> (`skills: sync Redpanda Connect changes from release`) PR titles and to route source
+> verification per product (SQL→oxla; Connect→connect/benthos/rp-connect-docs). The live
+> routine (trigger ID above) is canonical for exact wording; the prompt block below shows
+> the pre-SQL/Connect structure and may lag that revision.
 
 > **Two caveats (same as the adp-docs critic):**
 > - **Selection isn't airtight.** The critic picks PRs by title + `claude/` branch
@@ -445,7 +577,7 @@ If there are no open automation PRs matching the selection rule, or all are alre
 
 ---
 
-## 5. Skills drift audit (generator, backstop)
+## 7. Skills drift audit (generator, backstop)
 
 - **Name:** `Skills drift audit`
 - **Trigger ID:** `trig_01BMbjQwNvuG39f1akg7RbQg`
@@ -462,10 +594,15 @@ was wrong from the start, or changes lost because a weekly run silently failed (
 no alerting). It is the automated form of the manual periodic re-verification the team
 already does.
 
-Scope: all skills that carry a `SOURCES.md` map — `skills/adp/`, the three `skills/cloud-*`
-skills, and the 12 Redpanda Core skills (`skills/streaming*`, `skills/rpk*`). It is
-multi-source: ADP/Cloud verify against cloudv2; Core verifies against `redpanda` + `docs`
-at the current stable release tag. As more skills gain `SOURCES.md` maps, add them here.
+Scope: **all 26 source-grounded skills** (every skill that carries a `SOURCES.md` map) across
+all five products — ADP, the three Cloud skills, the 12 Core skills, the 4 SQL skills, and the
+10 Connect skills. It is multi-source: ADP/Cloud → cloudv2; Core → `redpanda` + `docs` (stable
+tag); SQL → `oxla` (+ `cloud-docs`); Connect → `connect` + `benthos` + `rp-connect-docs` (stable
+Connect release). As more skills gain `SOURCES.md` maps, add them here.
+
+> **Note (2026-07-02):** the live drift-audit prompt was extended to cover the SQL and Connect
+> skills (multi-source, as above). The live routine (trigger ID above) is canonical for exact
+> wording; the prompt block below shows the pre-SQL/Connect scope and may lag that revision.
 
 ### Prompt
 
