@@ -1,0 +1,41 @@
+# rpk-cluster Skill Source Map
+
+Maps each file in `skills/rpk-cluster/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
+
+The `rpk cluster` CLI is Go source in the **public** repo `redpanda-data/redpanda` under `src/go/rpk/pkg/cli/cluster/`; the user-facing command reference is auto-generated in the **public** repo `redpanda-data/docs` under `modules/reference/pages/rpk/rpk-cluster/`. Both are public — read them via the Redpanda-Github-Read MCP connector (`search_code`, `get_file_contents`), or `gh api .../contents/<path>` for verification; do not guess. `rpk` is versioned: verify against the **current stable release tag** of `redpanda-data/redpanda`, not `dev`/`main` (unreleased commands are not yet user-facing).
+
+Critical scope distinction: the `rpk cluster` **commands** are defined in rpk Go source. The **cluster-config properties** those commands set (`log_retention_ms`, `iceberg_enabled`, `partition_autobalancing_mode`, `cloud_storage_*`, etc.) are **broker config**, defined in `src/v/config/configuration.cc` and surfaced live via the Admin API — rpk only passes them through. For property names, types, defaults, and `is_enterprise` flags, the citation of record is the generated docs partial `modules/reference/partials/properties/cluster-properties.adoc` (and `object-storage-properties.adoc` for `cloud_storage_*`), **not** rpk source. See "Deferred to live introspection."
+
+## File-to-source table
+
+| Skill file | redpanda source paths | docs sources |
+|---|---|---|
+| `SKILL.md` | `src/go/rpk/pkg/cli/cluster/` — `cluster.go`, `health.go`, `info.go`, `logdirs.go`, and subgroup dirs `brokers/`, `config/`, `maintenance/`, `partitions/`, `quotas/`, `selftest/`, `storage/` (+ `storage/recovery/`), `txn/`, `license/`, `connections/`, `loggers/`; plus `src/go/rpk/pkg/cli/generate/license.go`, `src/go/rpk/pkg/cli/redpanda/config.go` (node config / `fips_mode`); enterprise cluster-config keys are broker config in `src/v/config/configuration.cc` | `modules/reference/pages/rpk/rpk-cluster/` (all `rpk-cluster-*.adoc` pages), `modules/reference/partials/properties/cluster-properties.adoc`, `object-storage-properties.adoc` |
+| `references/brokers-maintenance.md` | `src/go/rpk/pkg/cli/cluster/brokers/` (`brokers.go`, `decommission.go`, `decommission_status.go`, `recommission.go`), `src/go/rpk/pkg/cli/cluster/maintenance/` (`maintenance.go`, `enable.go`, `disable.go`, `status.go`) | `modules/reference/pages/rpk/rpk-cluster/rpk-cluster-maintenance*.adoc`. **No `rpk cluster brokers` reference pages exist in the docs repo** — Go source is the sole citation for the broker commands. |
+| `references/config.md` | `src/go/rpk/pkg/cli/cluster/config/` (`config.go`, `get.go`, `set.go`, `edit.go`, `list.go`, `export.go`, `import.go`, `lint.go`, `status.go`, `reset.go` = `force-reset`), `src/go/rpk/pkg/cli/redpanda/config.go` (node-config contrast) | `modules/reference/pages/rpk/rpk-cluster/rpk-cluster-config*.adoc`; property keys/types/defaults → `cluster-properties.adoc`, `object-storage-properties.adoc` |
+| `references/enterprise-features.md` | `src/go/rpk/pkg/cli/cluster/config/set.go`, `cluster/license/` (`license.go`, `info.go`, `set.go`), `src/go/rpk/pkg/cli/generate/license.go`; enterprise **cluster** properties (`is_enterprise: true`) and their defaults/enterprise values are defined in `src/v/config/configuration.cc` — rpk only passes them through; `fips_mode` is a **node** property (`src/go/rpk/pkg/cli/redpanda/config.go`) | `modules/reference/partials/properties/cluster-properties.adoc`, `object-storage-properties.adoc`, `modules/reference/pages/rpk/rpk-cluster/rpk-cluster-license*.adoc`, `rpk-cluster-config-set.adoc` |
+| `references/health-and-selftest.md` | `src/go/rpk/pkg/cli/cluster/health.go`, `info.go`, `logdirs.go`, `cluster/quotas/` (`quotas.go`, `alter.go`, `describe.go`, `import.go`), `cluster/selftest/` (`selftest.go`, `start.go`, `status.go`, `stop.go`). Self-test suite composition (test names, io depths, durations) originates in the **broker** self-test module, not rpk. | `modules/reference/pages/rpk/rpk-cluster/rpk-cluster-health.adoc`, `rpk-cluster-info.adoc`, `rpk-cluster-logdirs*.adoc`, `rpk-cluster-quotas*.adoc`, `rpk-cluster-self-test*.adoc` |
+| `references/partitions.md` | `src/go/rpk/pkg/cli/cluster/partitions/` (`partitions.go`, `list.go`, `balancer_run.go` = `balance`, `status.go` = `balancer-status`, `move.go`, `cancel.go`/`cancel_hidden.go` = `move-cancel`, `move_status.go`, `transfer_leadership.go`, `toggle.go` = `enable`/`disable`, `unsafe_recover.go`, `util.go`); balancer tuning props are broker config in `configuration.cc` | `modules/reference/pages/rpk/rpk-cluster/rpk-cluster-partitions*.adoc`; `partition_autobalancing_*` → `cluster-properties.adoc` |
+| `references/storage.md` | `src/go/rpk/pkg/cli/cluster/storage/` (`storage.go`, `mount.go`, `unmount.go`, `list-mountable.go`, `list-mount.go`, `status-mount.go`, `cancel-mount.go`) and `cluster/storage/recovery/` (`recovery.go`, `start.go`, `status.go` = `restore start`/`restore status`, alias `recovery`) | `modules/reference/pages/rpk/rpk-cluster/rpk-cluster-storage*.adoc`; `cloud_storage_enabled` and Tiered Storage props → `object-storage-properties.adoc` |
+
+## Deferred to live introspection (NOT drift — do not pin or hardcode)
+
+- `rpk cluster <cmd> --help` and the live command tree — introspect rather than trust a static list.
+- **Cluster-config property keys, types, defaults, and `is_enterprise` flags** (`config.md` "Common Cluster Config Properties" table, the enterprise table in `enterprise-features.md`) — these are **broker** config from `src/v/config/configuration.cc`, surfaced live via `rpk cluster config list` / the Admin API. The citation of record is the docs partials (`cluster-properties.adoc`, `object-storage-properties.adoc`), NOT rpk. Do not treat a schema-value change as rpk drift.
+- `rpk cluster config get <key>` / `list` / `status` output — runtime values.
+- `rpk cluster health` field set and JSON shape — Admin API runtime output (fields evolve by broker version).
+- `rpk cluster self-test status` results and the disk/network/cloud test-suite composition — produced by the **broker** self-test subsystem; rpk only displays them.
+- `rpk cluster quotas describe` values and quota-key set — Kafka-protocol runtime values.
+- `rpk cluster license info` fields and violation state — runtime license state.
+
+## TODO / re-verify
+
+- **`rpk node config set fips_mode` is DRIFT.** `SKILL.md` (Enterprise Features) and `enterprise-features.md` ("FIPS Compliance", "Disabling enterprise features") tell users to run `rpk node config set fips_mode disabled`. There is **no `rpk node` command group** in rpk. Node / `redpanda.yaml` properties are set via `rpk redpanda config set redpanda.<key>` (`src/go/rpk/pkg/cli/redpanda/config.go`). Correct these call sites to `rpk redpanda config set`.
+- **No `rpk cluster brokers` reference pages** exist in `redpanda-data/docs`. The Go source (`cluster/brokers/`) is the sole citation for `brokers-maintenance.md` broker content.
+- **Enterprise property defaults / enterprise-vs-sanctioned values** in `enterprise-features.md` and `config.md` were not each line-verified against `configuration.cc`. Re-check individual defaults against the property partials and source schema.
+- `cloud_topics_enabled` is documented as a `deprecated_property` (not `enterprise<>`-wrapped) — re-confirm its schema classification in `configuration.cc` before treating it as enterprise-flagged.
+- `rpk cluster txn`, `connections`, and `loggers` subgroups exist in source but are only named in `SKILL.md`. If they gain coverage, cite `cluster/txn/`, `cluster/connections/`, `cluster/loggers/`.
+
+## Usage
+
+For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. Verify against the current stable release tag of `redpanda-data/redpanda`, and re-confirm exact command paths / flag names before writing any new fact. For any **cluster-config property** claim (name, default, enterprise flag), verify against the docs property partials / live `rpk cluster config list` — not rpk source — because those values are broker config.
