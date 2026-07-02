@@ -37,8 +37,8 @@ input:
     connection_string: ${ORACLE_DSN}
 
     # Snapshot existing rows before streaming live changes.
-    # Set to false to start from the current SCN only.
-    stream_snapshot: true
+    # Use 'none' to start from the current SCN only, or 'snapshot_only' for a one-time backfill.
+    snapshot_mode: snapshot_and_stream
     max_parallel_snapshot_tables: 2
     snapshot_max_batch_size: 1000
 

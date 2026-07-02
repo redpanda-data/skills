@@ -11,8 +11,9 @@ description: >-
   streaming changes; routing per-table CDC events to separate topics with
   Bloblang; using AWS IAM auth for RDS or Aurora PostgreSQL; tuning
   checkpoint_limit, heartbeat_interval, or max_parallel_snapshot_tables;
-  understanding the lsn/operation/table/schema message metadata emitted by the
-  connector; troubleshooting slot growth or WAL accumulation; or asking about
+  understanding the lsn/operation/table/schema/commit_ts_ms/before message
+  metadata emitted by the connector (before carries the pre-change row for
+  updates/deletes, subject to REPLICA IDENTITY); troubleshooting slot growth or WAL accumulation; or asking about
   the Enterprise license requirement for this connector. Also covers the
   enterprise features that apply to the destination CDC topics: Iceberg Topics
   (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/invalid.record.action,
@@ -117,6 +118,8 @@ Every message has these metadata fields (set via `metadata()` in Bloblang):
 | `table` | Table name (unquoted), e.g. `orders` |
 | `operation` | `read`, `insert`, `update`, `delete`, `begin`, `commit` |
 | `lsn` | WAL log sequence number string; not set (absent) for snapshot `read` rows |
+| `commit_ts_ms` | Transaction commit timestamp (Unix milliseconds); set on `insert`/`update`/`delete`. Not set for snapshot `read` rows (since 4.98.0) |
+| `before` | Pre-change row state for `update` and `delete`, in Benthos common schema format. For updates the contents depend on the table's `REPLICA IDENTITY`: the default identity carries only key columns, `REPLICA IDENTITY FULL` carries all columns (since 4.99.0) |
 | `schema` | Column schema in Benthos common format; set on `read`, `insert`, `update`, `delete` messages. Use with `parquet_encode: { schema_metadata: schema }` |
 
 Example payload for an `insert` into `orders`:

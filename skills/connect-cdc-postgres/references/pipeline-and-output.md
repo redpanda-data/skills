@@ -45,6 +45,8 @@ Every message has these metadata fields accessible in Bloblang via `metadata("ke
 | `table` | string | Unquoted table name (e.g. `orders`) |
 | `operation` | string | One of: `read`, `insert`, `update`, `delete`, `begin`, `commit` |
 | `lsn` | string | WAL log sequence number (e.g. `0/16E4D40`). **Absent** (not set) for snapshot `read` messages |
+| `commit_ts_ms` | string | Transaction commit timestamp as Unix milliseconds. Set on `insert`, `update`, and `delete` messages. **Not set** for snapshot `read` messages (since 4.98.0) |
+| `before` | immutable object | Pre-change state of the row, in Benthos common schema format. Set on `update` and `delete` messages. For updates, availability depends on the table's `REPLICA IDENTITY`: with the default identity only key columns are present; with `REPLICA IDENTITY FULL` all columns are present (since 4.99.0) |
 | `schema` | immutable object | Column schema in Benthos common format, compatible with `parquet_encode`. Set on `read`, `insert`, `update`, and `delete` messages (all data-bearing messages; not set on `begin`/`commit`) |
 
 The `schema` metadata is set as an immutable value (not serialized to JSON). Access it with schema-aware processors like `parquet_encode: { schema_metadata: schema }`.
