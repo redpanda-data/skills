@@ -331,6 +331,33 @@ curl -s http://localhost:9644/v1/debug/partition/kafka/my-topic/0 | jq
 curl -s http://localhost:9644/v1/debug/producers/kafka/my-topic/0 | jq
 ```
 
+### Step 6 — Controller (raft0) reconfiguration wedged
+
+If it's the *controller* group that's stuck — a node joined as a raft0 learner
+and died before catching up, so membership changes (decommission, add) hang —
+`/v1/debug/partition/redpanda/controller/0` shows raft0 stuck mid-reconfiguration
+(`is_leader` replica with a non-`simple` group configuration). As of
+**v26.1.12** two Admin API escape hatches target the controller partition
+(`redpanda/controller/0`), routed to the raft0 leader:
+
+```bash
+# Cancel the in-flight controller reconfiguration (clean; run repeatedly to
+# drain a backlog of stuck adds one at a time)
+curl -s -X POST http://localhost:9644/v1/partitions/redpanda/controller/0/cancel_reconfiguration
+
+# Last resort: force raft0 to exactly this replica set, nuking anything wedged
+# or queued behind it (requires evil_mode=true)
+curl -s -X POST \
+  "http://localhost:9644/v1/debug/partitions/redpanda/controller/0/force_replicas?evil_mode=true" \
+  -H "Content-Type: application/json" \
+  -d '[{"node_id": 1, "core": 0}, {"node_id": 2, "core": 0}, {"node_id": 3, "core": 0}]'
+```
+
+Prefer `cancel_reconfiguration`; reach for `force_replicas` only when a clean
+cancel can't clear the wedge. See the streaming-admin-api skill for details. A
+voter dropped by a force reconfiguration lingers in the members table until you
+decommission it.
+
 ---
 
 ## Playbook 6: Slow produce / high produce latency

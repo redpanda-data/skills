@@ -85,6 +85,7 @@ Returns a `risks` object (type `restart_risks`) with four arrays of NTP strings:
 | GET | `/v1/partitions/majority_lost` | `majority_lost` | List partitions with majority loss given dead node IDs |
 | POST | `/v1/partitions/force_recover_from_nodes` | `force_recover_from_nodes` | Force recover partitions from a set of nodes |
 | GET | `/v1/debug/partitions/{topic}/{partition}/offset_for_leader_epoch` | `offset_for_leader_epoch` | Query offset for a specific leader epoch |
+| POST | `/v1/debug/partitions/{namespace}/{topic}/{partition}/force_replicas` | `force_update_partition_replicas` | Force-set a partition's replicas (last resort); controller partition requires `evil_mode=true` (v26.1.12+) |
 
 ### Namespace Convention
 
