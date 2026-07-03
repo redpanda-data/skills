@@ -97,6 +97,15 @@ example against the actual source — fixing hallucinated or outdated details �
 a dedicated **enterprise-feature coverage** pass (the key differentiators, with their
 nested settings) and a final verification pass.
 
+## How these skills stay current
+
+The skills are kept in sync with Redpanda's source by a fleet of scheduled maintenance
+routines — a **generator → critic → human-merge** loop per product, plus a monthly drift
+audit — covering all five products. See **[MAINTAINING.md](./MAINTAINING.md)** for how the
+process works and how to operate it, and **[skills-sync-routine.md](./skills-sync-routine.md)**
+for the exact routine definitions. Each source-grounded skill carries a
+`references/SOURCES.md` that maps its claims to the upstream source.
+
 ## License
 
 Distributed under the Apache 2.0 license. See the [LICENSE](./LICENSE) file.

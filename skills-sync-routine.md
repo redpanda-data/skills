@@ -594,7 +594,7 @@ was wrong from the start, or changes lost because a weekly run silently failed (
 no alerting). It is the automated form of the manual periodic re-verification the team
 already does.
 
-Scope: **all 26 source-grounded skills** (every skill that carries a `SOURCES.md` map) across
+Scope: **all 30 source-grounded skills** (every skill that carries a `SOURCES.md` map) across
 all five products — ADP, the three Cloud skills, the 12 Core skills, the 4 SQL skills, and the
 10 Connect skills. It is multi-source: ADP/Cloud → cloudv2; Core → `redpanda` + `docs` (stable
 tag); SQL → `oxla` (+ `cloud-docs`); Connect → `connect` + `benthos` + `rp-connect-docs` (stable
