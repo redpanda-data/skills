@@ -27,9 +27,16 @@ The blackbox test framework polls `/healthz` until it returns 200 before running
 
 ---
 
+## Services
+
+Two admin services are exposed under package `oxla.admin.v1`:
+
+- **`LoggingService`** (`src/admin/proto/logging.proto`) — get/set the runtime log level.
+- **`DebugService`** (`src/admin/proto/debug.proto`) — read-only diagnostics consumed by `rpk debug bundle`. See [DebugService](#debugservice-read-only-diagnostics) below.
+
 ## LoggingService
 
-The only currently implemented admin service is `oxla.admin.v1.LoggingService`, defined in `src/admin/proto/logging.proto`.
+`oxla.admin.v1.LoggingService` is defined in `src/admin/proto/logging.proto`.
 
 ### Proto definition
 
@@ -129,6 +136,55 @@ The client automatically uses `application/proto` encoding unless `use_json=True
 ### Log level effect on the startup config
 
 The `SetLogLevel` RPC changes the log level **in memory only** — it is not persisted to the config file. After a restart, Oxla reads `logging.level` from the YAML config (or `OXLA__LOGGING__LEVEL` env var) again.
+
+---
+
+## DebugService (read-only diagnostics)
+
+`oxla.admin.v1.DebugService` (`src/admin/proto/debug.proto`) is a read-only
+diagnostics surface consumed by `rpk debug bundle`. All RPCs are unary and read
+internal state directly in-process (never through the SQL stack). Timestamps are
+Unix epoch milliseconds. Same URL pattern as any admin RPC:
+`POST /oxla.admin.v1.DebugService/<MethodName>`.
+
+RPCs (stable method names; request/response fields evolve — verify against
+`debug.proto`):
+
+| RPC | Purpose |
+|-----|---------|
+| `GetVersion` | Build/version, commit SHA, image tag/digest, hostname, node id |
+| `GetConfig` | Node's **effective** config as redacted YAML (see below) |
+| `GetClusterNodes` | Cluster membership, roles, leader, heartbeat state |
+| `GetCatalogHead` | Raw persisted `CatalogHead` proto bytes |
+| `GetRecentQueries` / `GetActiveQueries` | Query history / in-flight queries (SQL text masked by default via `SqlTextMode`) |
+| `GetResourceUsage` | CPU ticks, memory, disk counters (client samples twice to derive %) |
+| `GetOxlaHomeListing` | File listing under the data directory |
+| `GetLogTail` / `GetStartupLog` / `GetCrashReports` | Log tails, startup logs, crash reports |
+| `GetHostProbes` | Host/OS facts (`/proc/*`, `uname`, `df`, `free`, opt-in `vmstat`) |
+| `GetCpuProfile` | gzipped pprof CPU profile (duration clamped server-side) |
+
+### GetConfig — effective configuration
+
+`GetConfig` returns the node's *effective* configuration — the parsed
+`oxla.yaml` after environment-variable overrides — so support can inspect a
+running cluster's config without shell access.
+
+- Request: `GetConfigRequest {}` (empty).
+- Response: `GetConfigResponse { string yaml = 1; }` — the merged config
+  serialized as YAML.
+- **Redaction is server-side**, driven by a maintained non-sensitive allowlist
+  (deny-by-default): only allowlisted scalar paths are emitted verbatim; every
+  other scalar — secrets, sequence-nested values, and unknown/injected keys — is
+  replaced by the placeholder `***`. SSL/TLS entries are file *paths* (not key
+  material), so they stay visible.
+
+```bash
+curl -s -X POST \
+  http://localhost:9090/oxla.admin.v1.DebugService/GetConfig \
+  -H "Content-Type: application/json" \
+  -d '{}'
+# Response: {"yaml":"access_control:\n  initial_password: \"***\"\n..."}
+```
 
 ---
 

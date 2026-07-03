@@ -372,6 +372,21 @@ Data tasks are background jobs (e.g. compaction). `max_capacity: 0` lets Oxla si
 
 ---
 
+## Executor Section
+
+```yaml
+executor:
+  workers: 0   # threads hosting the per-Executor strands; 0 = hardware concurrency
+```
+
+`executor.workers` sizes the thread pool that runs the per-Executor strands,
+independently of the `network.*.workers` pools. Following the same convention as
+`network.*.workers` and `data_tasks.max_capacity`, a value of `0` means "use
+hardware concurrency". This is an **internal** parameter (settable via
+`OXLA__EXECUTOR__WORKERS`).
+
+---
+
 ## Distributed Catalog Section
 
 ```yaml

@@ -171,18 +171,30 @@ Grounded in `src/sqlparser/sql/ColumnType.h` (`enum class DataType`).
 
 ### Integer types
 
-| Type | Alias | Width |
-|------|-------|-------|
-| `INT16` | — | 16-bit signed integer |
-| `INT` / `INT32` | `INTEGER` | 32-bit signed integer |
-| `LONG` | `BIGINT` | 64-bit signed integer |
+| Type | Alias | Width | `pg_typeof` |
+|------|-------|-------|-------------|
+| `INT` / `INTEGER` | — | 32-bit signed integer | `i32` |
+| `LONG` | `BIGINT` | 64-bit signed integer | `i64` |
+| `INT16` | — | 128-bit (16-byte) wide signed integer | `i128` |
+| `INT32` | — | 256-bit (32-byte) wide signed integer | `i256` |
+
+`INT16` and `INT32` are **Oxla-native wide-integer types** — the number is the
+byte width, not the bit width, so `INT16` is a 128-bit integer and `INT32` is a
+256-bit integer (distinct `DataType::INT16` / `DataType::INT32` keywords in the
+grammar, not aliases of `INT`). `pg_typeof()` reports them as `i128` / `i256`.
+Do not confuse `INT32` with `INT`/`INTEGER` (the 32-bit type).
 
 ```sql
 CREATE TABLE example (
-    small_id  INT16,
-    normal_id INT,
-    big_id    LONG
+    normal_id INT,      -- 32-bit  (i32)
+    big_id    LONG,     -- 64-bit  (i64)
+    huge_id   INT16,    -- 128-bit (i128)
+    vast_id   INT32     -- 256-bit (i256)
 );
+
+-- The wide types report their internal names via pg_typeof:
+SELECT pg_typeof(CAST(1 AS int16));   -- i128
+SELECT pg_typeof(CAST(1 AS int32));   -- i256
 ```
 
 ### Floating-point types
@@ -386,6 +398,27 @@ SELECT t0::decimal(10,0) FROM tb1;
 SELECT CAST(point0 AS GEOMETRY) FROM locations;
 SELECT CAST(s0 AS INT) FROM tb1;
 ```
+
+### Casting to/from the wide-integer types (`INT16`/`INT32`)
+
+Casts between the builtin integer/float/text types and the wide-integer types
+`INT16` (i128) and `INT32` (i256) are supported in both directions, including
+`i128 ↔ i256`:
+
+```sql
+SELECT CAST(12345 AS int16);                 -- integer  -> i128
+SELECT CAST(9223372036854775807 AS int32);   -- bigint   -> i256
+SELECT CAST(42.7 AS int16);                   -- float    -> i128 (rounds: 43)
+SELECT CAST(CAST(5 AS int16) AS int32);       -- i128     -> i256
+SELECT CAST(CAST(5 AS int16) AS bigint);      -- i128     -> bigint
+SELECT CAST('170141183460469231731687303715884105727' AS int16);  -- text -> i128
+```
+
+- Widening (e.g. `int -> int16`, `int16 -> int32`) is **implicit**; narrowing
+  and float↔wide casts are **explicit** (require `CAST`/`::`).
+- Narrowing that overflows the target raises an out-of-range error; non-finite
+  or over-range floats are rejected.
+- `bool ↔ INT16`/`INT32` is not allowed, matching the rest of the cast table.
 
 ---
 
