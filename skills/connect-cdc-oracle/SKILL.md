@@ -12,7 +12,8 @@ description: >-
   capturing CLOBs or BLOBs (lob_enabled); configuring a transaction cache for
   large transactions; using Oracle Wallet for TLS/SSL; monitoring a pluggable
   database (pdb_name); troubleshooting missing redo logs or ORA-01291 errors;
-  snapshotting existing rows (stream_snapshot); checkpointing SCN with an
+  snapshotting existing rows (snapshot_mode: none/snapshot_only/snapshot_and_stream,
+  replacing the deprecated stream_snapshot boolean); checkpointing SCN with an
   external cache or the built-in Oracle-backed table; routing per-table to
   separate Redpanda topics; understanding the message metadata fields
   (database_schema, table_name, operation, scn, transaction_id, source_ts_ms,
@@ -82,7 +83,7 @@ GRANT CREATE PROCEDURE TO rpcn;
 input:
   oracledb_cdc:
     connection_string: oracle://rpcn:SecurePassword1@oracle-host:1521/ORCL
-    stream_snapshot: true          # snapshot existing rows first
+    snapshot_mode: snapshot_and_stream   # snapshot existing rows, then stream (use snapshot_only for a one-time backfill)
     max_parallel_snapshot_tables: 2
     snapshot_max_batch_size: 1000
     include:
@@ -177,11 +178,11 @@ Every message emitted by `oracledb_cdc` carries these metadata fields (access wi
 | `database_schema` | Oracle schema (owner) of the source table |
 | `table_name` | Name of the source table |
 | `operation` | `read` (snapshot), `insert`, `update`, or `delete` |
-| `scn` | Oracle System Change Number for this event; absent on snapshot (`read`) messages (snapshot rows carry SCN 0, which is treated as invalid and not emitted) |
+| `scn` | Oracle System Change Number for this event. On snapshot (`read`) messages this is Oracle's current SCN captured at the start of the snapshot — the same value for every snapshot row (since 4.98.0) |
 | `checkpoint_scn` | Checkpoint low-watermark SCN for this event (CDC only; used internally to advance the checkpoint). Absent on snapshot (`read`) messages. |
 | `transaction_id` | Oracle transaction ID in `USN.SLOT.SEQ` format; absent on snapshot (`read`) messages |
 | `source_ts_ms` | Wall-clock time when Oracle wrote the change to redo log (ms since epoch); absent on snapshot messages |
-| `commit_ts_ms` | Commit timestamp of the transaction (ms since epoch); absent on snapshot messages |
+| `commit_ts_ms` | Commit timestamp of the transaction (ms since epoch). On snapshot (`read`) messages this is Oracle's `SYSTIMESTAMP` captured when the snapshot SCN was taken — the same value for every snapshot row (since 4.99.0) |
 | `schema` | Serialised table schema for use with `schema_registry_encode` processor; present when schema resolution succeeds |
 
 ## Enterprise License

@@ -49,20 +49,36 @@ wallet_password: "${ORACLE_WALLET_PASSWORD}"
 
 ---
 
-### `stream_snapshot`
+### `snapshot_mode`
 
-**Type:** `bool` | **Required:** no | **Default:** `false`
+**Type:** `string` (enum) | **Required:** no | **Default:** `none` | **Since:** 4.99.0
 
-When `true`, the connector performs a consistent snapshot of all matching tables before starting LogMiner streaming. Snapshot rows are emitted with `operation = read`. The SCN captured at the start of the snapshot is stored in the checkpoint; LogMiner streaming resumes from that SCN when the snapshot is complete.
+Controls whether and how an initial snapshot of existing rows is taken before streaming begins. This enum field replaces the deprecated boolean `stream_snapshot`. One of:
 
-> **Prerequisite:** Every snapshotted table must have a **primary key**. The connector uses primary-key cursor pagination to batch snapshot reads. A table without a primary key causes the connector to fail at snapshot prepare with `"can't find a primary key for table '%s', does it exist and have one set?"`. Streaming-only mode (`stream_snapshot: false`) has no primary-key requirement.
+- `none` (default) — skip snapshotting; start streaming from the current SCN. Equivalent to the legacy `stream_snapshot: false`.
+- `snapshot_only` — perform a full snapshot, persist the SCN checkpoint, then **stop without streaming**. Use for a one-time backfill of existing rows. When the snapshot completes the input signals end-of-input and the pipeline shuts down.
+- `snapshot_and_stream` — perform a full snapshot, then transition to LogMiner streaming. Equivalent to the legacy `stream_snapshot: true`.
 
-When `false` (default), the connector starts streaming from the current database SCN — no historical rows are delivered.
+Snapshot rows are emitted with `operation = read`. The SCN captured at the start of the snapshot is stored in the checkpoint; LogMiner streaming (in `snapshot_and_stream`) resumes from that SCN when the snapshot is complete.
 
-On restart with a stored checkpoint SCN, snapshotting is **not** re-run even if `stream_snapshot: true`. The connector always resumes from the cached SCN.
+> **Prerequisite:** Every snapshotted table must have a **primary key**. The connector uses primary-key cursor pagination to batch snapshot reads. A table without a primary key causes the connector to fail at snapshot prepare with `"can't find a primary key for table '%s', does it exist and have one set?"`. `snapshot_mode: none` has no primary-key requirement.
+
+On restart with a stored checkpoint SCN, snapshotting is **not** re-run regardless of `snapshot_mode`. The connector always resumes from the cached SCN.
 
 ```yaml
-stream_snapshot: true
+snapshot_mode: snapshot_and_stream
+```
+
+---
+
+### `stream_snapshot` (deprecated)
+
+**Type:** `bool` | **Required:** no | **Default:** `false` | **Deprecated:** since 4.99.0 — use `snapshot_mode`
+
+Deprecated in 4.99.0 in favour of `snapshot_mode`. Retained as a backward-compatible alias: when `snapshot_mode` is **not** set, `stream_snapshot: true` maps to `snapshot_mode: snapshot_and_stream` and `stream_snapshot: false` maps to `snapshot_mode: none`. If `snapshot_mode` is set, it takes precedence and `stream_snapshot` is ignored.
+
+```yaml
+stream_snapshot: true    # equivalent to snapshot_mode: snapshot_and_stream
 ```
 
 ---
@@ -371,7 +387,7 @@ input:
     connection_string: oracle://username:password@host:port/service_name  # required
     wallet_path: /opt/oracle/wallet                                        # optional
     wallet_password: ""                                                    # optional
-    stream_snapshot: false
+    snapshot_mode: none
     max_parallel_snapshot_tables: 1
     snapshot_max_batch_size: 1000
     logminer:

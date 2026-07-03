@@ -70,11 +70,11 @@ Access metadata in Bloblang with `meta("field_name")`.
 | `database_schema` | string | Always | Oracle schema (owner) of the source table |
 | `table_name` | string | Always | Name of the source table |
 | `operation` | string | Always | `read`, `insert`, `update`, or `delete` |
-| `scn` | string | CDC only | Oracle System Change Number for this event. Absent on snapshot (`read`) messages: snapshot rows are constructed with SCN 0, which is treated as invalid (`InvalidSCN`) and therefore not set as metadata. |
+| `scn` | string | CDC + snapshot | Oracle System Change Number for this event. On snapshot (`read`) messages this is Oracle's current SCN captured (from `V$DATABASE`) at the start of the snapshot, so every snapshot row carries the same value (since 4.98.0; before that snapshot rows had no `scn`). |
 | `checkpoint_scn` | string | CDC events with a checkpoint SCN | The SCN used as the checkpoint low-watermark for this event. Present on CDC events where a commit-level checkpoint SCN is available; used internally by the batcher to advance the checkpoint. Absent on snapshot (`read`) messages. |
 | `transaction_id` | string | CDC only | Transaction ID in `USN.SLOT.SEQ` format; absent on snapshot (`read`) messages |
 | `source_ts_ms` | string | CDC only | Milliseconds since Unix epoch when Oracle wrote the change to redo log; absent on snapshot messages |
-| `commit_ts_ms` | string | CDC only | Milliseconds since Unix epoch at transaction commit; absent on snapshot messages |
+| `commit_ts_ms` | string | CDC + snapshot | Milliseconds since Unix epoch at transaction commit (from `V$LOGMNR_CONTENTS.TIMESTAMP` on the COMMIT redo record). On snapshot (`read`) messages this is Oracle's `SYSTIMESTAMP` captured when the snapshot SCN was taken, so every snapshot row carries the same value (since 4.99.0). |
 | `schema` | string | When schema resolution succeeds | Serialised table schema (fingerprinted `schema.Common`) for use with `schema_registry_encode`. Present whenever schema lookup succeeds; absent if schema resolution fails (a warning is logged). |
 
 ---
@@ -86,7 +86,7 @@ Access metadata in Bloblang with `meta("field_name")`.
 input:
   oracledb_cdc:
     connection_string: oracle://rpcn:SecurePassword1@oracle-host:1521/ORCL
-    stream_snapshot: true            # snapshot existing rows, then stream
+    snapshot_mode: snapshot_and_stream   # snapshot existing rows, then stream
     max_parallel_snapshot_tables: 2
     snapshot_max_batch_size: 1000
     include:
@@ -237,7 +237,7 @@ input:
     # Must connect to CDB root service, not a PDB-local service
     connection_string: oracle://C##RPCN:SecurePassword1@oracle-host:1521/CDB_ROOT_SVC
     pdb_name: MYPDB
-    stream_snapshot: false
+    snapshot_mode: none
     include:
       - ^APPSCHEMA\.ORDERS$
     logminer:
@@ -259,15 +259,17 @@ output:
 
 ## Snapshot-Then-Stream Behavior
 
-### When `stream_snapshot: false` (default)
+Snapshot behaviour is controlled by `snapshot_mode` (since 4.99.0), an enum with three values: `none` (default, no snapshot), `snapshot_only` (snapshot then stop), and `snapshot_and_stream` (snapshot then stream). The legacy boolean `stream_snapshot` is deprecated but still honoured as an alias when `snapshot_mode` is not set (`true` → `snapshot_and_stream`, `false` → `none`). The two flows below describe `none` and `snapshot_and_stream`; `snapshot_only` follows the `snapshot_and_stream` steps but stops after step 5 (the SCN checkpoint is persisted and the input ends) instead of starting LogMiner streaming.
+
+### When `snapshot_mode: none` (default, formerly `stream_snapshot: false`)
 
 1. The connector reads the current database SCN from `V$DATABASE`.
 2. LogMiner streaming starts from that SCN — no historical rows are delivered.
 3. The starting SCN is written to the checkpoint.
 
-### When `stream_snapshot: true` (first run)
+### When `snapshot_mode: snapshot_and_stream` (first run, formerly `stream_snapshot: true`)
 
-> **Prerequisite:** Every table included in the snapshot must have a **primary key**. The connector paginates snapshot rows using a primary-key cursor; if a table lacks a primary key, the connector fails at snapshot prepare with `"can't find a primary key for table '%s', does it exist and have one set?"`. Streaming-only mode (`stream_snapshot: false`) does not have this requirement.
+> **Prerequisite:** Every table included in the snapshot must have a **primary key**. The connector paginates snapshot rows using a primary-key cursor; if a table lacks a primary key, the connector fails at snapshot prepare with `"can't find a primary key for table '%s', does it exist and have one set?"`. `snapshot_mode: none` does not have this requirement.
 
 1. The current SCN is captured from `V$DATABASE` before the snapshot begins.
 2. A consistent read-only transaction (`SET TRANSACTION READ ONLY`) is opened per table.
@@ -278,7 +280,7 @@ output:
 
 ### On restart with a stored SCN
 
-Regardless of `stream_snapshot`, if a checkpoint SCN is found, **snapshotting is skipped**. The connector resumes LogMiner streaming from the stored SCN. This prevents re-delivery of the initial snapshot.
+Regardless of `snapshot_mode`, if a checkpoint SCN is found, **snapshotting is skipped**. The connector resumes LogMiner streaming from the stored SCN. This prevents re-delivery of the initial snapshot.
 
 ---
 
@@ -328,8 +330,8 @@ LOB columns are present in the message with an empty value. The `SELECT_LOB_LOCA
 ### Checkpoint lost (no SCN in cache)
 
 The connector logs `"No SCN found in checkpoint cache"` and behaves as if it is a first run:
-- If `stream_snapshot: true`: snapshots all tables and starts streaming from the pre-snapshot SCN.
-- If `stream_snapshot: false`: starts from the current database SCN (all historical changes are missed).
+- If `snapshot_mode: snapshot_and_stream` (or the deprecated `stream_snapshot: true`): snapshots all tables and starts streaming from the pre-snapshot SCN.
+- If `snapshot_mode: none` (default): starts from the current database SCN (all historical changes are missed).
 
 ### ORA-01291: missing logfile
 
@@ -343,7 +345,7 @@ The connector logs a summary similar to the following (paraphrased — see `logm
 - Use faster output (e.g. `drop: {}`) for benchmarking.
 - Reset the checkpoint and restart from the current SCN (note: this results in data loss; a snapshot may be required).
 
-To recover from data loss, clear the checkpoint (delete the Redis key or truncate `RPCN.CDC_CHECKPOINT_CACHE`) and set `stream_snapshot: true` to re-snapshot.
+To recover from data loss, clear the checkpoint (delete the Redis key or truncate `RPCN.CDC_CHECKPOINT_CACHE`) and set `snapshot_mode: snapshot_and_stream` to re-snapshot.
 
 ---
 
