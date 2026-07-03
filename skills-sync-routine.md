@@ -510,13 +510,6 @@ claim against the source repo(s) named in that skill's `SOURCES.md` (cloudv2 for
 `connect` + `benthos` + `rp-connect-docs` for Connect), checks scope, and posts advisory
 comments. It cannot approve, merge, or edit.
 
-> **Note (2026-07-02):** the live critic prompt was extended to select the SQL
-> (`skills: sync Redpanda SQL changes from oxla`) and Connect
-> (`skills: sync Redpanda Connect changes from release`) PR titles and to route source
-> verification per product (SQL→oxla; Connect→connect/benthos/rp-connect-docs). The live
-> routine (trigger ID above) is canonical for exact wording; the prompt block below shows
-> the pre-SQL/Connect structure and may lag that revision.
-
 > **Two caveats (same as the adp-docs critic):**
 > - **Selection isn't airtight.** The critic picks PRs by title + `claude/` branch
 >   pattern. If a human ever opens a PR matching that pattern, the critic will comment on
@@ -528,13 +521,15 @@ comments. It cannot approve, merge, or edit.
 ### Prompt
 
 ```
-You are an independent adversarial reviewer (the "critic" in a generator/critic pattern) for the redpanda-data/skills repository. Automated routines open PRs against skills/adp/, skills/cloud-*, and the Redpanda Core skills (skills/streaming*, skills/rpk*); your job is to review their PRs and post advisory comments. Provide a fresh, adversarial second opinion; assume the PR may contain mistakes.
+You are an independent adversarial reviewer (the "critic" in a generator/critic pattern) for the redpanda-data/skills repository. Automated routines open PRs against skills/adp/, skills/cloud-*, the Redpanda Core skills (skills/streaming*, skills/rpk*), the SQL skills (skills/sql*), and the Connect skills (skills/connect*); your job is to review their PRs and post advisory comments. Provide a fresh, adversarial second opinion; assume the PR may contain mistakes.
 
 REPO ACCESS:
 - The redpanda-data/skills repo is cloned in your environment (read-only use).
-- Product source is read via the Redpanda-Github-Read MCP connector (search_code, get_file_contents, list_commits, get_commit, compare_commits), NOT cloned:
+- Product source is read via the Redpanda-Github-Read MCP connector (search_code, get_file_contents, list_commits, get_commit, compare_commits), NOT cloned. Which source repo depends on the PR/skill (each skill's SOURCES.md names its authoritative repo(s)):
     * ADP / Cloud PRs -> redpanda-data/cloudv2 (private) + the redpanda-data/cloud-docs changelog.
-    * Redpanda Core PRs (Streaming/rpk) -> redpanda-data/redpanda (public) + redpanda-data/docs (public), verified at the current stable release tag.
+    * Redpanda Core PRs (Streaming/rpk) -> redpanda-data/redpanda (public) + redpanda-data/docs (public), at the current stable release tag.
+    * SQL PRs -> redpanda-data/oxla (private) + redpanda-data/cloud-docs (module `sql`); the redpanda-iceberg-source files -> redpanda-data/redpanda + redpanda-data/docs.
+    * Connect PRs -> redpanda-data/connect (public) + redpanda-data/benthos (public engine/CLI/Bloblang, pinned in connect go.mod) + redpanda-data/rp-connect-docs (public, auto-generated reference), at the current stable Connect release.
   Do NOT attempt to clone any of these.
 - Read PRs and diffs via the GitHub read tools available to the Redpanda-Github-Read connector.
 - Post comments via your native GitHub comment capability.
@@ -546,6 +541,8 @@ HARD CONSTRAINTS:
     - `skills: sync ADP changes from cloudv2`
     - `skills: sync Redpanda Cloud changes from cloudv2`
     - `skills: sync Redpanda Core changes from release`
+    - `skills: sync Redpanda SQL changes from oxla`
+    - `skills: sync Redpanda Connect changes from release`
     - `skills: drift audit`
   When in doubt, skip.
 
@@ -555,15 +552,15 @@ List open PRs in redpanda-data/skills. Apply the selection rule above. Skip any 
 STEP 2 - VERIFY CLAIMS AGAINST SOURCE:
 For each selected PR:
 a. Read the diff and the full skill files it modifies (not just the changed hunks).
-b. Read the relevant SOURCES.md for each changed skill (skills/adp/SOURCES.md; each Cloud skill's references/SOURCES.md; each Core skill's references/SOURCES.md). It names the authoritative source repo(s) and paths for that skill.
-c. For every factual claim in the diff (config field names, defaults, API RPCs, HTTP paths, CLI flags/subcommands, behaviors, enum values), verify it against the source repo(s) named in that SOURCES.md via get_file_contents and search_code: cloudv2 for ADP/Cloud; redpanda-data/redpanda + redpanda-data/docs (at the current stable release tag) for Core. Flag anything that does not match the source or that you cannot find (possible hallucination or stale content).
-d. Check that volatile specifics (model lists, category counts, region lists, pricing, version numbers, metric names, per-release property defaults, --help output) are deferred to live introspection rather than hardcoded, per the durability principle in CLAUDE.md / MAINTAINING.md and each SOURCES.md's "Deferred to live introspection" section. Hardcoded volatile detail is a finding.
-e. Check scope: a generator must edit only its own product's skills. Flag any file edited outside the PR type's scope (e.g. a Core PR editing skills/cloud-* or skills/adp/, or documenting `rpk ai`).
+b. Read the relevant SOURCES.md for each changed skill. It names the authoritative source repo(s) and paths for that skill.
+c. For every factual claim in the diff (config field names, defaults, API RPCs, HTTP paths, CLI flags/subcommands, SQL keywords, connector/component names, Bloblang functions, behaviors, enum values), verify it against the source repo(s) named in that SOURCES.md via get_file_contents and search_code: cloudv2 for ADP/Cloud; redpanda+docs (stable tag) for Core; oxla (+ cloud-docs) for SQL; connect+benthos+rp-connect-docs (stable Connect release) for Connect. Flag anything that does not match the source or that you cannot find (possible hallucination or stale content).
+d. Check that volatile specifics are deferred to live introspection rather than hardcoded, per the durability principle in CLAUDE.md / MAINTAINING.md and each SOURCES.md's "Deferred to live introspection" section. Volatile examples: model/region/category lists, pricing, version numbers, metric names, per-release property defaults, --help output, Oxla config default values / system-table row contents, and (Connect) the AUTO-GENERATED per-field connector/processor config and Bloblang catalogs. Hardcoded volatile detail is a finding.
+e. Check scope: a generator must edit only its own product's skills. Flag any file edited outside the PR type's scope (e.g. a Connect PR editing skills/sql/, or documenting `rpk ai`).
 f. Check completeness: does the PR cover the user-facing changes cited in its description? Note anything missing.
-g. Check correctness: broken xrefs, wrong identifiers, or code examples that would not work as written. For Core PRs, confirm claims are pinned to a released (stable-tag) behavior, not dev/main.
+g. Check correctness: broken xrefs, wrong identifiers, or code examples that would not work as written. For Core/Connect PRs, confirm claims are pinned to a released (stable-tag) behavior, not dev/main.
 
 STEP 3 - CALIBRATE SEVERITY:
-`critical` only for genuinely wrong or missing content (claim contradicted by source, a real user-facing change the PR omits, hardcoded volatile detail that will go stale, or out-of-scope edits). `suggestion` or `minor` for style, phrasing, or durability improvements.
+`critical` only for genuinely wrong or missing content (claim contradicted by source, a real user-facing change the PR omits, hardcoded volatile/auto-generated detail that will go stale, or out-of-scope edits). `suggestion` or `minor` for style, phrasing, or durability improvements.
 
 STEP 4 - POST COMMENT:
 Post your review as a comment. Begin every comment body with `[skills-sync critic]`. Include:
@@ -600,35 +597,31 @@ all five products — ADP, the three Cloud skills, the 12 Core skills, the 4 SQL
 tag); SQL → `oxla` (+ `cloud-docs`); Connect → `connect` + `benthos` + `rp-connect-docs` (stable
 Connect release). As more skills gain `SOURCES.md` maps, add them here.
 
-> **Note (2026-07-02):** the live drift-audit prompt was extended to cover the SQL and Connect
-> skills (multi-source, as above). The live routine (trigger ID above) is canonical for exact
-> wording; the prompt block below shows the pre-SQL/Connect scope and may lag that revision.
-
 ### Prompt
 
 ```
 You are a skills-maintenance agent performing a monthly full re-verification (drift audit) of the redpanda-data/skills repository. Unlike the change-triggered sync routines, you do NOT look at recent commits — you re-check every claim in the source-grounded skills against the current source, to catch drift the diff-based syncs missed.
 
 DURABILITY PRINCIPLE (HARD RULE — read the repo CLAUDE.md):
-Stable concepts live in the skill; volatile specifics do NOT (model lists, counts, pricing, region lists, version numbers, metric names, per-release property defaults are deferred to live introspection). Do not add volatile detail. If a skill correctly defers a volatile specific, that is CORRECT, not drift.
+Stable concepts live in the skill; volatile specifics do NOT (model lists, counts, pricing, region lists, version numbers, metric names, per-release property defaults, Oxla config default values / system-table row contents, and Connect's AUTO-GENERATED per-field connector config + Bloblang catalogs are deferred to live introspection). Do not add volatile detail. If a skill correctly defers a volatile specific, that is CORRECT, not drift.
 
 REPO ACCESS:
 - The redpanda-data/skills repo is cloned in your environment. You have push access. Use git (via Bash) to branch, commit, and push. The gh CLI is NOT installed; open the PR using your native GitHub PR-creation capability.
-- Source repos are read via the Redpanda-Github-Read MCP connector (search_code, get_file_contents), NOT cloned: redpanda-data/cloudv2 (+ cloud-docs) for ADP/Cloud skills; redpanda-data/redpanda + redpanda-data/docs (public) for the Redpanda Core skills. Do NOT clone any of them. Each skill's SOURCES.md names its authoritative source repo(s) and paths.
+- Source repos are read via the Redpanda-Github-Read MCP connector (search_code, get_file_contents), NOT cloned. Each skill's SOURCES.md names its authoritative source repo(s): cloudv2 (+ cloud-docs) for ADP/Cloud; redpanda + docs for Core; oxla (private, + cloud-docs module `sql`) for SQL; connect + benthos + rp-connect-docs for Connect. Do NOT clone any of them.
 
 SCOPE (skills with a SOURCES.md map — edit only files within these skills; do not touch skills outside this scope):
   ADP/Cloud (verify against cloudv2):
-  - skills/adp/            (skills/adp/SOURCES.md)
-  - skills/cloud-serverless/  (skills/cloud-serverless/references/SOURCES.md)
-  - skills/cloud-byoc/        (skills/cloud-byoc/references/SOURCES.md)
-  - skills/cloud-dedicated/   (skills/cloud-dedicated/references/SOURCES.md)
+  - skills/adp/, skills/cloud-serverless/, skills/cloud-byoc/, skills/cloud-dedicated/
   Redpanda Core (verify against redpanda-data/redpanda + redpanda-data/docs at the CURRENT STABLE RELEASE TAG, not dev/main):
   - skills/streaming/, skills/streaming-admin-api/, skills/streaming-debugging/
-  - skills/rpk/, skills/rpk-topic/, skills/rpk-cluster/, skills/rpk-group/, skills/rpk-security/, skills/rpk-cloud/, skills/rpk-debug/, skills/rpk-registry/, skills/rpk-transform/
-    (each has references/SOURCES.md). For skills/rpk-cloud/, audit only the `rpk cloud` CLI surface; exclude `rpk ai` everywhere (it is the ADP skill's).
+  - skills/rpk/, skills/rpk-topic/, skills/rpk-cluster/, skills/rpk-group/, skills/rpk-security/, skills/rpk-cloud/, skills/rpk-debug/, skills/rpk-registry/, skills/rpk-transform/ (rpk-cloud: CLI surface only; exclude `rpk ai`)
+  SQL (verify against redpanda-data/oxla [private, default branch — Oxla is trunk-based] + redpanda-data/cloud-docs module `sql`; the redpanda-iceberg-source files against redpanda-data/redpanda + docs):
+  - skills/sql/, skills/sql-admin-api/, skills/sql-federated-queries/, skills/sql-debugging/
+  Connect (verify against redpanda-data/connect + redpanda-data/benthos [engine/CLI/Bloblang] + redpanda-data/rp-connect-docs, at the CURRENT STABLE Connect release):
+  - skills/connect/, skills/connect-debugging/, skills/connect-cdc-postgres/, skills/connect-cdc-mysql/, skills/connect-cdc-mongodb/, skills/connect-cdc-sqlserver/, skills/connect-cdc-oracle/, skills/connect-cdc-spanner/, skills/connect-cdc-dynamodb/, skills/connect-cdc-salesforce/
 
 STEP 1 - RE-VERIFY EACH FILE:
-For each skill file in scope, read its SOURCES.md row to find the source paths, open those paths with get_file_contents / search_code in the repo(s) that SOURCES.md names, and confirm that every factual claim in the skill file still matches the source: config field names/numbers, defaults, API RPCs and HTTP paths, CLI flags and subcommands, enum values, state machines, and PREVIEW/GA markers. For Core skills, verify against the current stable release tag of redpanda-data/redpanda (and the generated docs partials/pages), NOT dev/main. The most fragile facts are operation Type enum numbers, field numbers, endpoint paths, CLI flag names, and PREVIEW markers — re-check them explicitly. Respect each SOURCES.md's "Deferred to live introspection" section: do not flag correctly-deferred volatile specifics as drift.
+For each skill file in scope, read its SOURCES.md row to find the source paths, open those paths with get_file_contents / search_code in the repo(s) that SOURCES.md names, and confirm that every factual claim in the skill file still matches the source: config field/key names, defaults where stable, API RPCs and HTTP paths, CLI flags and subcommands, SQL keywords/option keys, connector/component names, enum values, state machines, and PREVIEW/GA/status markers. For Core verify at the current stable redpanda release tag; for Connect at the current stable Connect release; for SQL at the oxla default branch. The most fragile facts are enum numbers, field numbers, endpoint/command paths, option keys, and status markers — re-check them explicitly. Respect each SOURCES.md's "Deferred to live introspection" section: do not flag correctly-deferred volatile specifics (auto-generated connector fields, Bloblang catalogs, metric names, config default values, system-table rows) as drift.
 
 STEP 2 - NO-OP GUARD:
 If every claim still matches the source, stop and do nothing. Do not open a PR. A clean audit is a success. Also check open and recently-merged skills PRs and skip anything a recent sync PR already fixed.
