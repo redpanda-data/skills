@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Evidence date: 2026-06-29.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. Evidence date: 2026-07-06.
 
 # ADP Agents Reference
 
@@ -81,13 +81,15 @@ There is no `tools` field on `ManagedAgentSpec`. Agents access tools exclusively
 | `system_prompt` | yes | min 1 char, max 16,384 chars |
 | `description` | yes | min 1 char, max 1,024 chars |
 | `mcp_servers` | no | max 32 items; each min 1 char, max 63 chars |
+| `model` | no | max 128 chars; empty = inherit the parent agent's `model` |
+| `llm_provider` | no | max 63 chars, pattern `^[a-z][a-z0-9-]*$`; empty = inherit the parent agent's `llm_provider` |
 
 Two important corrections from earlier documentation:
 
 - **`mcp_servers` is independent, not a subset.** Each subagent runs under its own set of MCP servers, independent of the parent agent's set. There is no subset constraint. Referencing a server the parent does not have is valid (`agent.proto:511–513`; confirmed in `service_test.go:779`).
-- **`skills` is not a field on `Subagent`.** The `Skill` message and the `skills` repeated field live on `ManagedAgentSpec.AgentCard` (`agent.proto:603–664`), not on `Subagent`. `Subagent` has only `system_prompt`, `description`, and `mcp_servers`.
+- **`skills` is not a field on `Subagent`.** The `Skill` message and the `skills` repeated field live on `ManagedAgentSpec.AgentCard` (`agent.proto:603–664`), not on `Subagent`. `Subagent` has only `system_prompt`, `description`, `mcp_servers`, `model`, and `llm_provider`.
 
-Each subagent shares the parent agent's `model` and `llm_provider`.
+**Per-subagent model and provider.** A subagent can override the parent agent's model and provider via its own `model` (field 4) and `llm_provider` (field 5) fields. Both are optional; an empty value means inherit the parent's. A message-level CEL constraint (`subagent.model_required_with_llm_provider`) requires `model` to be set whenever `llm_provider` is set: model names are provider-specific, so switching provider without also naming a model for it would only fail at request time. Overriding `model` alone (same provider — for example, a cheaper model) is allowed.
 
 ## A2A agent card
 

@@ -1,4 +1,4 @@
-Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages). Evidence date: 2026-06-29.
+Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing). Evidence date: 2026-07-06 (`run` subcommand flags re-verified against `claude.go`/`codex.go`).
 
 # rpk ai CLI Reference
 
@@ -228,10 +228,46 @@ adp-docs publishes CRUD subpages. `apply` and `diff` are not yet documented.
 
 ## `run` subcommands
 
-Source: `internal/cmd/run/cmd.go:10`. Routes AI coding tool traffic through the rpai AI Gateway.
+Source: `internal/cmd/run/{cmd,claude,codex}.go`. Routes an AI coding tool's model traffic through the AI Gateway for the active environment: the tool authenticates to the gateway (never directly to the upstream provider) and no upstream key is written to disk. Both subcommands take `-L`/`-m` as command-local flags (not renamed under `rpk ai`) and pass the tool's own flags after a literal `--`.
 
-- `run claude [flags] [-- CLAUDE_ARGS...]` -- routes Claude Code through the AI Gateway
-- `run codex [flags] [-- CODEX_ARGS...]` -- routes Codex through the AI Gateway
+### `run claude [flags] [-- CLAUDE_ARGS...]`
+
+Launches Anthropic's Claude Code with `ANTHROPIC_BASE_URL` pointed at the gateway for the chosen provider. Works against **anthropic and bedrock** LLM providers.
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--llmprovider string` | `-L` | REQUIRED; aigw LLM provider to route through (an `anthropic` or `bedrock` provider) |
+| `--model string` | `-m` | Model id (must be in the provider's allowlist); omit to let Claude Code pick its default. For a bedrock provider pass an inference-profile id (e.g. `us.anthropic.claude-sonnet-4-6`) |
+| `--passthrough` | (none) | Force enterprise/Max-subscription OAuth passthrough mode (anthropic only; a hard error for bedrock). Only needed under invoke-only access where rpai can't read the provider to detect the mode |
+| `--bedrock` | (none) | Force bedrock mode. Only needed under invoke-only access where rpai can't read the provider type |
+| `--claude-config-dir string` | (none) | Run against this `CLAUDE_CONFIG_DIR` instead of your real config home (rpai never writes into it) |
+| `--print-settings` | (none) | Print the generated Claude Code settings.json plus launch env, then exit |
+
+`--passthrough` and `--bedrock` are mutually exclusive. For a **bedrock** provider the gateway signs the upstream call with the provider's AWS credentials (SigV4), so no AWS credentials ever reach your machine; passthrough does not apply (Bedrock has no analog of a Claude subscription).
+
+```bash
+rpk ai run claude -L anthropic -m claude-sonnet-4-6 -- --permission-mode plan
+rpk ai run claude -L bedrock -m us.anthropic.claude-sonnet-4-6 -- -p "hi"
+```
+
+### `run codex [flags] [-- CODEX_ARGS...]`
+
+Launches OpenAI Codex with a throwaway `CODEX_HOME` pointed at the gateway's OpenAI-compatible Responses endpoint. Works against **openai and openai_compatible** providers only.
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--llmprovider string` | `-L` | REQUIRED; aigw LLM provider to route through (`openai`/`openai_compatible`) |
+| `--model string` | `-m` | Model id (must be in the provider's allowlist); omit to let Codex pick its default |
+| `--effort string` | `-e` | Model reasoning effort: `minimal`, `low`, `medium`, `high`; omit for Codex's default |
+| `--codex-home string` | (none) | Persistent `CODEX_HOME` dir (default: a throwaway temp dir; your real `~/.codex` is refused) |
+| `--no-auto-trust` | (none) | Do not pre-trust the launch directory; let Codex show its normal first-run trust prompt |
+| `--print-config` | (none) | Print the generated Codex config.toml and exit |
+
+Under `rpk ai`, `run codex` rejects a static `--token` (its refresh command can't carry the token off-disk); use `rpk ai auth login` instead.
+
+```bash
+rpk ai run codex -L openai -m gpt-5.3-codex -e high -- --ask-for-approval never
+```
 
 Not yet documented in adp-docs.
 
