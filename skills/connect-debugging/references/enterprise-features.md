@@ -231,7 +231,11 @@ reference a configured cache for long-running transactions.
 
 Also present and licensed as enterprise (config skeletons in their respective
 `inputs/*.adoc`): `microsoft_sql_server_cdc`, `aws_dynamodb_cdc`,
-`gcp_spanner_cdc`, `salesforce_cdc`, `tigerbeetle_cdc`. Enterprise impl packages
+`gcp_spanner_cdc`, `salesforce_cdc`. (`tigerbeetle_cdc` is NOT enterprise —
+`internal/plugins/info.csv` marks it `certified`, its source is
+Apache-2.0-headed, and it has no `license.CheckRunningEnterprise` call; it is
+CGO-only and absent from `rpk connect` and the standard Docker image. See the
+`connect-cdc-tigerbeetle` skill.) Enterprise impl packages
 under `connect/internal/impl/` (RCL-licensed) include `snowflake`, `splunk`,
 `gcp` (BigQuery), `salesforce`, `mssqlserver`, `oracledb`, `mongodb`,
 `postgresql`, `mysql`, `iceberg`, `otlp`, and `gateway`.

@@ -211,8 +211,12 @@ Full per-feature config keys (including the `logminer{}` sub-block, the
 
 Enterprise components (CDC inputs: postgres_cdc, mysql_cdc, mongodb_cdc,
 oracledb_cdc, microsoft_sql_server_cdc, aws_dynamodb_cdc, gcp_spanner_cdc,
-salesforce_cdc, tigerbeetle_cdc) require a Redpanda Enterprise license. Without
-one, these components fail at connection time with a license error.
+salesforce_cdc) require a Redpanda Enterprise license. Without one, these
+components fail at connection time with a license error. (tigerbeetle_cdc is
+the exception among CDC inputs: it is a certified community component — no
+license required — but it needs a CGO-enabled Connect build; it is absent
+from `rpk connect` and the standard Docker image, so a "component not found"
+error there is a build issue, not a license issue.)
 
 **Default license path:** `/etc/redpanda/redpanda.license`
 (grounded in `internal/license/service.go`, constant `defaultLicenseFilepath`)

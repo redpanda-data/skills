@@ -65,6 +65,7 @@ Redpanda Connect — declarative stream processing (formerly Benthos).
 - [**connect-cdc-spanner**](./skills/connect-cdc-spanner) — Google Cloud Spanner (`gcp_spanner_cdc`, change streams).
 - [**connect-cdc-dynamodb**](./skills/connect-cdc-dynamodb) — AWS DynamoDB (`aws_dynamodb_cdc`, DynamoDB Streams).
 - [**connect-cdc-salesforce**](./skills/connect-cdc-salesforce) — Salesforce (`salesforce_cdc`, Pub/Sub API).
+- [**connect-cdc-tigerbeetle**](./skills/connect-cdc-tigerbeetle) — TigerBeetle (`tigerbeetle_cdc`, ledger change events; cgo builds only).
 
 ### ☁️ Cloud
 Redpanda Cloud — the managed control plane and per-cluster data plane.
