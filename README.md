@@ -82,6 +82,7 @@ One CLI across every product.
 - [**rpk**](./skills/rpk) — Install rpk, configure connections with profiles and `-X` flags, and target self-hosted or Redpanda Cloud clusters. Start here.
 - [**rpk-topic**](./skills/rpk-topic) — Create, describe, alter, and delete topics; produce and consume records.
 - [**rpk-cluster**](./skills/rpk-cluster) — Health/metadata, brokers, cluster config, partition balancing/movement, maintenance mode, quotas, storage (mountable topics / whole-cluster restore), and self-tests.
+- [**rpk-redpanda**](./skills/rpk-redpanda) — Operate a self-managed broker node: start/stop the process, production/dev/recovery mode, the autotuner and `rpk iotune`, node config bootstrap, and broker decommission/recommission via the admin listener. Self-managed only.
 - [**rpk-group**](./skills/rpk-group) — List/describe consumer groups, inspect lag and members, reset/seek offsets, and delete groups or offsets.
 - [**rpk-security**](./skills/rpk-security) — Manage SASL/SCRAM users, Kafka ACLs, RBAC roles, and secrets.
 - [**rpk-cloud**](./skills/rpk-cloud) — Authenticate to Redpanda Cloud, manage credentials, select clusters, manage resource groups, drive BYOC provisioning, and run the `rpk cloud mcp` server that exposes Redpanda Cloud management to AI agents.
