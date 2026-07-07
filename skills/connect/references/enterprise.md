@@ -32,13 +32,13 @@ License error at startup (when an enterprise component is used without a license
 
 | Feature | Requires Enterprise License | What it gates |
 |---|---|---|
-| Enterprise connectors (CDC inputs, AI/ML processors) | **Yes** — blocked after trial | Additional inputs/outputs/processors |
+| Enterprise connectors (CDC inputs, Snowflake/BigQuery/Iceberg/Splunk/OTLP/Slack/Drive/Salesforce — full list in [connector-catalog.md](connector-catalog.md)) | **Yes** — blocked after trial | Additional inputs/outputs/processors |
 | Allow or deny lists (`connector_list.yaml`) | **No** (works without a valid license) | Restricts which components a pipeline may use |
 | FIPS compliance | **No** (no change on expiry) | FIPS-compliant `rpk`/binary build |
 | Redpanda Connect configuration service (global `redpanda` block: logs/status topics) | **No** (no change on expiry) | Sends Connect logs/status events to a Redpanda topic |
 | Secrets management (remote lookup, `--secrets`) | **No** (no change on expiry) | Resolve secret values from remote systems at runtime |
 
-> Allow/deny lists, FIPS, the configuration service, and secrets management are RCL-licensed enterprise features but are not disabled when a license expires. The hard gate on license expiry is the **enterprise connectors** (CDC and AI/ML components).
+> Allow/deny lists, FIPS, the configuration service, and secrets management are RCL-licensed enterprise features but are not disabled when a license expires. The hard gate on license expiry is the **enterprise connectors** (the enterprise-tier components listed in [connector-catalog.md](connector-catalog.md); AI/ML processors are certified tier and NOT gated).
 
 ---
 
@@ -270,9 +270,15 @@ input:
 
 > CDC inputs that use `checkpoint_cache` reference a named cache resource (`cache_resources`). For durable, restartable CDC use a persistent cache (Redis, SQL, file) rather than `memory`.
 
-### AI/ML processors (enterprise connectors)
+### AI/ML processors (certified — no license gate)
 
-AI/ML inference processors are enterprise connectors. Verified processor names from the component catalog:
+AI/ML inference processors are **certified** tier, not enterprise: at Connect
+v4.99.0 all 16 are marked `certified` in the component catalog
+(`internal/plugins/info.csv`) and their source is Apache-2.0 with no runtime
+license check. (This section previously called them enterprise connectors —
+that was wrong.) They are documented here because they pair with the
+license-gated connectors in AI pipelines. Verified processor names from the
+component catalog:
 
 - OpenAI: `openai_chat_completion`, `openai_embeddings`, `openai_image_generation`, `openai_speech`, `openai_transcription`, `openai_translation`
 - AWS Bedrock: `aws_bedrock_chat`, `aws_bedrock_embeddings`
