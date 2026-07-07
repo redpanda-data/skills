@@ -27,6 +27,17 @@ The `rpk transform` CLI is Go source in the **public** repo `redpanda-data/redpa
 - **Cluster-config defaults** shown as "(varies)" are intentionally not pinned; authoritative values are `configuration.cc` + `cluster-properties.adoc`. Note `configuration.cc` also defines `data_transforms_read_buffer_memory_percentage` and `data_transforms_write_buffer_memory_percentage`, not listed by the skill — confirm whether they belong in the property table.
 - **Enterprise topic-property defaults** (Iceberg `redpanda.iceberg.*`, `redpanda.remote.*`, schema-ID-validation, `redpanda.leaders.preference`) not each line-verified; treat `topic-properties.adoc` / `object-storage-properties.adoc` as citation of record.
 - **Per-command flag tables** (deploy/init/build/list/logs) not each verified against current flag registrations — re-confirm flag names/shorthands before editing.
+- **Cloud pause/resume**: `cloud-docs modules/reference/pages/rpk/rpk-transform/` has no `rpk-transform-pause`/`-resume` pages (the self-managed reference does). Whether pause/resume work on Cloud clusters is unconfirmed — verify on a live Cloud cluster or with the Cloud team.
+- **Azure enablement path**: the docs do not state how to enable transforms on Azure BYOC/Dedicated clusters, where self-service cluster properties are unavailable.
+
+## Redpanda Cloud applicability sources
+
+The "Redpanda Cloud Applicability" section in `SKILL.md` and the Cloud callouts in `references/deploy-and-operate.md` derive from the **private** repo `redpanda-data/cloud-docs` (read via the Redpanda-Github-Read connector; do not clone) plus the cloud-tagged property partial in `redpanda-data/docs`:
+
+- BYOC/Dedicated (Redpanda 24.3+) availability, Serverless not listed: `cloud-docs modules/develop/pages/data-transforms/how-transforms-work.adoc` (NOTE at top).
+- Cloud enablement via `rpk cluster config set` — rpk 25.1.2+ / Redpanda 25.1.2+, `rpk cloud login` first, BYOC/Dedicated on AWS/GCP only (not Azure, not Serverless), `REASON_INVALID_INPUT` on unsupported properties, restart-requiring sets return a long-running-operation ID: `cloud-docs modules/manage/pages/cluster-maintenance/config-cluster.adoc`; the same command appears in the `ifdef::env-cloud` "Enable data transforms" block of `docs modules/develop/pages/data-transforms/build.adoc`.
+- Cloud-settable `data_transforms_*` subset: `// tag::redpanda-cloud[]` boundaries in `docs modules/reference/partials/properties/cluster-properties.adoc` (included by `cloud-docs modules/reference/pages/properties/cluster-properties.adoc`); the non-cloud tuning sections are also `ifndef::env-cloud`-gated in `docs modules/develop/pages/data-transforms/configure.adoc`.
+- Cloud UI can view transform logs and delete transforms: `ifdef::env-cloud` TIPs in `docs modules/develop/pages/data-transforms/deploy.adoc` and `monitor.adoc`.
 
 ## Usage
 

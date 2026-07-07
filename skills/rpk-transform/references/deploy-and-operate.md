@@ -12,6 +12,8 @@ rpk cluster config set data_transforms_enabled true
 
 This requires a rolling restart; it may take several minutes. After the restart, deploy any number of transforms.
 
+> **Redpanda Cloud:** transforms are supported on BYOC and Dedicated clusters (Redpanda 24.3+); Serverless is not listed as supported. The same `rpk cluster config set` command enables the feature on Cloud, routed through the Cloud control plane (`rpk cloud login` first; rpk and Redpanda 25.1.2+; BYOC/Dedicated on AWS/GCP only — cluster properties are unavailable on Azure clusters and on Serverless). See "Redpanda Cloud Applicability" in SKILL.md.
+
 ## rpk transform deploy
 
 ```
@@ -258,6 +260,8 @@ Set with `rpk cluster config set <property> <value>`.
 | `data_transforms_logging_line_max_bytes` | (varies) | Maximum log line length (truncated if exceeded) |
 
 **Sizing guidance**: the maximum number of concurrently running transforms per core equals `data_transforms_per_core_memory_reservation / data_transforms_per_function_memory_limit`. If this limit is exceeded, new VMs cannot be allocated and processors enter an `errored` state.
+
+> **Redpanda Cloud:** only a curated subset of these is settable in Cloud (at verification time: `data_transforms_enabled`, `data_transforms_binary_max_size`, `data_transforms_per_core_memory_reservation`, `data_transforms_per_function_memory_limit`, `data_transforms_logging_line_max_bytes`); the rest are managed by Redpanda, and setting an unsupported property returns `REASON_INVALID_INPUT`. Check the Cloud "Cluster Configuration Properties" reference page for the current list.
 
 ## Monitoring Metrics
 

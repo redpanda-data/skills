@@ -4,6 +4,8 @@
 
 The result is a ZIP-of-ZIPs: a single archive containing one per-broker ZIP file, stored under `<download-root>/<broker-address>/<job-id>.zip`.
 
+> **Redpanda Cloud:** not applicable. Remote bundles require the broker Admin API, which Redpanda Cloud does not expose; the Cloud docs list the Admin API, debug bundles, and `rpk debug` as unsupported — see "Scope: Self-Managed Deployments Only" in SKILL.md.
+
 ---
 
 ## Subcommands

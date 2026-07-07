@@ -6,6 +6,8 @@ The command auto-detects whether it is running inside Kubernetes by checking the
 
 > **Kubernetes note:** You must run `rpk debug bundle` inside the container running the Redpanda broker (not on the host or in a sidecar).
 
+> **Redpanda Cloud:** not applicable. Cloud clusters (Serverless/BYOC/Dedicated) do not support debug bundles or `rpk debug`, and do not expose broker hosts to run this on — see "Scope: Self-Managed Deployments Only" in SKILL.md.
+
 ---
 
 ## Synopsis

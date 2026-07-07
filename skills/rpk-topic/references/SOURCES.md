@@ -41,6 +41,32 @@ them into hardcoded facts:
 - **Command-to-filename mismatches** (verified, noted so a future audit doesn't flag a "missing" file): `trim-prefix` is defined in `trim.go`, `add-partitions` in `add_partitions.go`, and `alter-config` in `config.go` (`Use: "alter-config [TOPICS...] --set key=value --delete key2,key3"`). There is no `trim-prefix.go`/`add-partitions.go`/`alter-config.go`.
 - **Enterprise topic-property accepted values, defaults, and expiration behavior** are broker config, not rpk. Treat `topic-properties.adoc` as the citation of record; upstream is `src/v/config/configuration.cc` (not line-verified per-key here). Confluent-compatible aliases (`confluent.key/value.schema.validation`, `confluent.key/value.subject.name.strategy`) are also broker-side.
 - Individual produce/consume `--format` percent-escape tokens and modifiers were not each re-verified against `produce.go`/`consume.go` in this pass — re-check the token/modifier tables there if editing.
+- **Serverless topic-config allowlist**: cloud-docs does not publish an explicit list of which topic-level configs are settable versus rejected/managed on Serverless — verify specific `alter-config --set` keys against a live Serverless cluster or the Cloud UI before advising them.
+
+## Redpanda Cloud applicability sources
+
+The "Redpanda Cloud notes" section in `SKILL.md` and the Cloud callouts in `references/manage.md`
+derive from the **private** repo `redpanda-data/cloud-docs` (read via the Redpanda-Github-Read
+connector; do not clone):
+
+- `modules/get-started/pages/cloud-overview.adoc` — `rpk topic describe-storage` is the one
+  unsupported `rpk topic` subcommand ("All other rpk topic commands are supported on both Redpanda
+  Cloud and Self Managed"); the Admin API and `rpk cluster license` are unsupported on Cloud;
+  automatic topic creation is disabled, with BYOC/Dedicated opt-in via `auto_create_topics_enabled`.
+- `modules/develop/pages/topics/create-topic.adoc` — minimum replication factor 3 (RF 1 is reset
+  to 3); `max.message.bytes` defaults/caps differ per cluster type; Tiered Storage is enabled and
+  configured by default in Redpanda Cloud.
+- `modules/get-started/pages/cluster-types/serverless.adoc` — "Serverless usage limits" (partition
+  cap, consumer groups, connections, ACLs, producer IDs, message size); the `rpk cloud login` +
+  `rpk topic` workflow; the auto-topic-creation note.
+- `modules/reference/partials/tiers.adoc` (rendered as `modules/reference/pages/tiers/byoc-tiers.adoc`
+  and `dedicated-tiers.adoc`) — per-usage-tier partition maxima (volatile; deferred by page name).
+- `modules/manage/pages/cluster-maintenance/config-cluster.adoc` — cluster properties are
+  unavailable on Serverless and on Azure clusters; a curated subset is settable on BYOC/Dedicated
+  (AWS/GCP).
+
+Numeric limits (partition caps, message-size caps, tier tables) are deliberately **not** hardcoded
+in the skill — durability principle; the pages above are the live reference.
 
 ## Usage
 
