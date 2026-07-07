@@ -1,18 +1,19 @@
 # Skills Sync Routine Definitions
 
-> **STATUS (2026-07-02): all seven routines exist and cover all five products. ADP/Cloud/Core
-> sync, the critic, and the drift audit are LIVE (`enabled: true`); the SQL and Connect skills
-> sync are CREATED but DISABLED — pending PR #16 (their `SOURCES.md`) merging to `main`, then a
-> manual probe run before enabling.** This file is the version-controlled record — if you edit a
-> routine in the dashboard, update this file too, and vice versa.
+> **STATUS (2026-07-07): all seven routines are LIVE (`enabled: true`) and cover all five
+> products.** The SQL and Connect syncs passed their manual probe runs on 2026-07-02 (probe
+> PRs [#18](https://github.com/redpanda-data/skills/pull/18) and
+> [#20](https://github.com/redpanda-data/skills/pull/20), both merged) and were enabled the
+> same day. This file is the version-controlled record — if you edit a routine in the
+> dashboard, update this file too, and vice versa.
 >
 > | Routine | Trigger ID | State |
 > |---------|-----------|-------|
 > | ADP skills sync | `trig_0154oVHsWXAv57ZoHgSYHBXX` | enabled |
 > | Cloud skills sync | `trig_01KTyepdPaeH8wJp5Qa62AMQ` | enabled |
 > | Redpanda Core skills sync | `trig_01Hmpkh7Bvm7pSv3ej1tikSK` | enabled |
-> | SQL skills sync | `trig_01Hgnuo3x5i82dMwYx17PysY` | disabled (probe pending) |
-> | Connect skills sync | `trig_01Ms8Dm47LXALNSg4KQumNb4` | disabled (probe pending) |
+> | SQL skills sync | `trig_01Hgnuo3x5i82dMwYx17PysY` | enabled |
+> | Connect skills sync | `trig_01Ms8Dm47LXALNSg4KQumNb4` | enabled |
 > | Skills sync critic | `trig_01HZY8SRDcuAdK1Hfm9Y725B` | enabled (reviews all 5 products) |
 > | Skills drift audit | `trig_01BMbjQwNvuG39f1akg7RbQg` | enabled (audits all 5 products) |
 >
