@@ -558,10 +558,10 @@ Community (open-source) components are available without a license. Enterprise c
 
 Note: `tigerbeetle_cdc` is also a CDC input but is **not** enterprise — it is a certified community component (Apache-licensed, no license check in its implementation). It requires a CGO-enabled Connect build; the `rpk connect` managed plugin and the standard Docker image do not include it.
 
-**Enterprise-only processors:**
-- AI/ML processors: `openai_chat_completion`, `openai_embeddings`, `openai_image_generation`, `openai_speech`, `openai_transcription`, `openai_translation`, `aws_bedrock_chat`, `aws_bedrock_embeddings`, `cohere_chat`, `cohere_embeddings`, `cohere_rerank`, `gcp_vertex_ai_chat`, `gcp_vertex_ai_embeddings`, `ollama_chat`, `ollama_embeddings`, `ollama_moderation`
+**AI/ML processors (certified — no license gate, despite earlier versions of this file calling them enterprise):**
+`openai_chat_completion`, `openai_embeddings`, `openai_image_generation`, `openai_speech`, `openai_transcription`, `openai_translation`, `aws_bedrock_chat`, `aws_bedrock_embeddings`, `cohere_chat`, `cohere_embeddings`, `cohere_rerank`, `gcp_vertex_ai_chat`, `gcp_vertex_ai_embeddings`, `ollama_chat`, `ollama_embeddings`, `ollama_moderation` — all marked `certified` in the component catalog at v4.99.0, Apache-2.0 source, no runtime license check.
 
-For the full nested config of every enterprise connector (CDC inputs, AI processors), plus allow/deny lists, secrets management, FIPS, and the configuration service, see [Enterprise Features](enterprise.md).
+The complete enterprise-tier list (Snowflake, BigQuery write, Iceberg, Splunk, OTLP, Slack, Google Drive, Salesforce families plus the CDC inputs) with tier caveats is in [Connector Catalog](connector-catalog.md). For the nested config of the CDC inputs, plus allow/deny lists, secrets management, FIPS, and the configuration service, see [Enterprise Features](enterprise.md).
 
 **License supply:**
 ```bash
