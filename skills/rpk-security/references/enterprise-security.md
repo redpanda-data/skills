@@ -182,7 +182,7 @@ On expiration: you can no longer enable `schema_registry_enable_authorization`, 
 
 ## FIPS Compliance (Enterprise)
 
-FIPS 140-3-compliant cipher enforcement using a validated OpenSSL module. FIPS is a **broker (node) property**, not a cluster property, so it is set with `rpk node config set` (or in `redpanda.yaml` under the `redpanda` object).
+FIPS 140-3-compliant cipher enforcement using a validated OpenSSL module. FIPS is a **broker (node) property**, not a cluster property, so it is set with `rpk redpanda config set redpanda.fips_mode <value>` (or in `redpanda.yaml` under the `redpanda` object; rpk has no `node` command group).
 
 ### Broker properties
 
@@ -207,7 +207,7 @@ redpanda:
 
 ```bash
 # Disable FIPS for compliance/troubleshooting
-rpk node config set fips_mode disabled
+rpk redpanda config set redpanda.fips_mode disabled
 ```
 
 Notes: when FIPS mode is `enabled` or `permissive`, SASL/SCRAM passwords must be at least 14 characters. PKCS#12 TLS keys are not supported under FIPS — use PEM. On expiration: no change.

@@ -311,7 +311,7 @@ violations during debugging. Disable actions for compliance:
 
 | Feature | Enable key | Disable for compliance |
 |---|---|---|
-| FIPS Compliance | node config `fips_mode` | `rpk node config set fips_mode disabled` |
+| FIPS Compliance | node config `fips_mode` | `rpk redpanda config set redpanda.fips_mode disabled` |
 | Kerberos (GSSAPI) auth | `sasl_mechanisms` includes `GSSAPI` | remove `GSSAPI` from `sasl_mechanisms` |
 | OAUTHBEARER/OIDC auth | `sasl_mechanisms`/`http_authentication` include `OIDC` | remove `OIDC` from both |
 | RBAC | roles exist | delete roles: `rpk security role delete <role>` |

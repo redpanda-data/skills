@@ -135,10 +135,10 @@ If it is near zero, the recovering broker may be disk- or network-bound.
 
 ```bash
 # Decommission the lost broker (redistributes its partitions)
-rpk cluster brokers decommission <node-id>
+rpk redpanda admin brokers decommission <node-id>
 
 # Monitor decommission progress
-rpk cluster brokers decommission-status <node-id>
+rpk redpanda admin brokers decommission-status <node-id>
 curl -s http://localhost:9644/v1/brokers/<node-id>/decommission | jq
 ```
 

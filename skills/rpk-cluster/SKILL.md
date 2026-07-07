@@ -6,18 +6,21 @@ description: >-
   cluster metadata, broker management, cluster configuration, partition
   balancing and movement, maintenance mode, client quotas, log directories,
   transactions, self-test benchmarks, and license management.
-  Use when: checking cluster health or metadata, listing or decommissioning
-  brokers, getting or setting cluster configuration properties, balancing or
-  moving partitions, enabling or disabling maintenance mode on a node,
-  managing client quotas, viewing log dirs, running cluster self-tests, or
-  managing the Redpanda license from the CLI. Also use when asked about
-  rpk cluster health, rpk cluster info, rpk cluster brokers, rpk cluster
+  Use when: checking cluster health or metadata, listing brokers,
+  decommissioning or recommissioning a broker (via `rpk redpanda admin
+  brokers` — covered here because it pairs with maintenance mode), getting or
+  setting cluster configuration properties, balancing or moving partitions,
+  enabling or disabling maintenance mode on a node, monitoring Kafka client
+  connections, managing client quotas, viewing log dirs, running cluster
+  self-tests, or managing the Redpanda license from the CLI. Also use when
+  asked about rpk cluster health, rpk cluster info, rpk cluster
   config get/set/edit/import/export/lint/status, rpk cluster partitions
   list/balance/move/move-cancel/move-status/balancer-status,
-  rpk cluster maintenance enable/disable/status,
+  rpk cluster maintenance enable/disable/status, rpk cluster connections,
   rpk cluster quotas alter/describe/import, rpk cluster logdirs describe,
-  rpk cluster self-test start/stop/status, rpk cluster txn, or
-  rpk cluster license. Also covers enabling Redpanda Enterprise
+  rpk cluster self-test start/stop/status, rpk cluster txn,
+  rpk cluster license, or broker decommission
+  (rpk redpanda admin brokers decommission/decommission-status/recommission). Also covers enabling Redpanda Enterprise
   differentiators through cluster config and license management: Continuous
   Data Balancing (partition_autobalancing_mode=continuous), Continuous
   Intra-Broker / core balancing (core_balancing_continuous), Tiered Storage
@@ -41,8 +44,10 @@ noted otherwise (`rpk cluster info`, `rpk cluster logdirs`, and
 (default 9092) and Kafka/SASL credentials, not the Admin API port 9644).
 
 The command group has these major subgroups: `health`, `info`, `logdirs`,
-`brokers`, `config`, `maintenance`, `partitions`, `self-test`, `quotas`,
-`storage`, `txn`, `license`, `loggers`, and `connections`.
+`config`, `connections`, `maintenance`, `partitions`, `self-test`, `quotas`,
+`storage`, `txn`, and `license`. (There is no `brokers` subgroup —
+broker decommission/recommission lives at `rpk redpanda admin brokers`,
+covered below because it pairs with maintenance mode.)
 
 ## Quickstart
 
@@ -92,10 +97,10 @@ rpk cluster maintenance enable 1 --wait
 # 15. Check maintenance status across all brokers
 rpk cluster maintenance status
 
-# 16. Decommission broker 4
-rpk cluster brokers decommission 4
+# 16. Decommission broker 4 (note: under rpk redpanda admin, not rpk cluster)
+rpk redpanda admin brokers decommission 4
 # Monitor progress:
-rpk cluster brokers decommission-status 4
+rpk redpanda admin brokers decommission-status 4
 
 # 17. Run a cluster self-test (disk + network + cloud)
 rpk cluster self-test start --no-confirm
@@ -167,24 +172,51 @@ rpk cluster logdirs describe --sort-by-size          # largest first
 
 Aggregate options: `partition` (default), `broker`, `dir`, `topic`.
 
-## Brokers
+### rpk cluster connections list
+
+Displays statistics about active and recently closed Kafka connections in the
+cluster — useful for finding which client applications are producing load.
+Notably available on Redpanda Cloud too (it maps to the Data Plane monitoring
+API there).
 
 ```bash
-# Decommission a broker (removes from cluster, moves partitions to remaining nodes)
-rpk cluster brokers decommission 4
+# All connections (default: subset of columns; --format=json for everything)
+rpk cluster connections list
 
-# Monitor decommission progress
-rpk cluster brokers decommission-status 4         # progress table
-rpk cluster brokers decommission-status 4 -d      # includes bytes moved/remaining
-rpk cluster brokers decommission-status 4 -H      # human-readable sizes
-
-# Abort a decommission that is still in progress (once complete, cannot recommission)
-rpk cluster brokers recommission 4
+# Order by recent produce/fetch throughput or idle time
+rpk cluster connections list --order-by="recent_request_statistics.produce_bytes desc"
+rpk cluster connections list --order-by="recent_request_statistics.fetch_bytes desc"
+rpk cluster connections list --order-by="idle_duration desc"
 ```
 
-On v22.x, a broker in maintenance mode cannot be decommissioned. Use
-`--skip-liveness-check` to bypass that safety check. On v23.x and later,
-decommissioning a node in maintenance mode is supported natively.
+Shorthand filters (e.g. `--client-id`, `--state`) plus raw expressions
+(`--filter-raw`, `--order-by`) are available — see `--help` for the full list;
+the expression syntax follows the Admin API's ListKafkaConnections endpoint.
+
+## Brokers
+
+Broker decommission/recommission commands live under `rpk redpanda admin
+brokers`, not `rpk cluster`. They are covered here because decommission is a
+cluster-shrink operation that pairs with maintenance mode.
+
+```bash
+# List brokers through the Admin API
+rpk redpanda admin brokers list
+
+# Decommission a broker (removes from cluster, moves partitions to remaining nodes)
+rpk redpanda admin brokers decommission 4
+
+# Monitor decommission progress
+rpk redpanda admin brokers decommission-status 4      # progress table
+rpk redpanda admin brokers decommission-status 4 -d   # includes bytes moved/remaining
+rpk redpanda admin brokers decommission-status 4 -H   # human-readable sizes
+
+# Abort a decommission that is still in progress (once complete, cannot recommission)
+rpk redpanda admin brokers recommission 4
+
+# Skip the maintenance-mode liveness check (e.g. broker unreachable)
+rpk redpanda admin brokers decommission 4 --skip-liveness-check
+```
 
 See [brokers-maintenance.md](references/brokers-maintenance.md) for full
 decommission/recommission and maintenance-mode detail.
@@ -453,7 +485,7 @@ The 14 enterprise-flagged cluster properties, their nested sub-settings
 license-free fallback values, and disablement-for-compliance steps are
 documented in [enterprise-features.md](references/enterprise-features.md).
 RBAC/GBAC is managed via `rpk security role`, and FIPS via
-`rpk node config set fips_mode` (both noted in that reference).
+`rpk redpanda config set redpanda.fips_mode` (both noted in that reference).
 
 ## Reference Directory
 
@@ -461,5 +493,5 @@ RBAC/GBAC is managed via `rpk security role`, and FIPS via
 - [config.md](references/config.md): `rpk cluster config` subcommands in depth — get/set/edit/list/import/export/lint/force-reset/status, common property keys, and the cluster-vs-node config distinction.
 - [storage.md](references/storage.md): `rpk cluster storage` subcommands — Whole Cluster Restore / topic recovery (`restore start`/`restore status`) and mountable topics (`mount`/`unmount`/`list-mountable`/`list-mount`/`status-mount`/`cancel-mount`), both Enterprise-licensed and Tiered-Storage-backed.
 - [partitions.md](references/partitions.md): `rpk cluster partitions` subcommands — list, balance, balancer-status, move (format syntax), move-cancel, move-status, enable/disable, and unsafe-recover.
-- [brokers-maintenance.md](references/brokers-maintenance.md): `rpk cluster brokers` (decommission/recommission/decommission-status) and `rpk cluster maintenance` (enable/disable/status) — lifecycle, rolling upgrade playbook, and interaction with replication.
+- [brokers-maintenance.md](references/brokers-maintenance.md): broker decommission/recommission/decommission-status (via `rpk redpanda admin brokers`) and `rpk cluster maintenance` (enable/disable/status) — lifecycle, rolling upgrade playbook, and interaction with replication.
 - [health-and-selftest.md](references/health-and-selftest.md): `rpk cluster health`, `rpk cluster info`, `rpk cluster logdirs describe`, `rpk cluster quotas`, and `rpk cluster self-test` — health fields, metadata sections, log-dir aggregation, quota types, and self-test benchmarks.

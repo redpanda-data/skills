@@ -212,7 +212,7 @@ Profile selection: `RPK_PROFILE=<name>`
 | Command group | What it does | Subskill |
 |---|---|---|
 | `rpk topic` | Create, describe, alter, delete topics; produce and consume records | `rpk-topic` |
-| `rpk cluster` | Cluster health/metadata, brokers, config, partitions, maintenance, quotas, self-test | `rpk-cluster` |
+| `rpk cluster` | Cluster health/metadata, config, partitions, maintenance, connections, quotas, self-test | `rpk-cluster` |
 | `rpk group` | Consumer group list/describe/seek/delete | `rpk-group` |
 | `rpk security` | SASL users, Kafka ACLs, RBAC roles, secrets | `rpk-security` |
 | `rpk cloud` | Log in to Cloud, create profiles, BYOC provisioning | `rpk-cloud` |
@@ -227,7 +227,9 @@ Profile selection: `RPK_PROFILE=<name>`
 | `rpk version` | Print rpk version | — |
 | `rpk container` | Manage local Redpanda containers for dev | — |
 | `rpk plugin` | Manage rpk plugins | — |
-| `rpk benchmark` | Run local produce throughput benchmarks (`produce` subcommand only) | — |
+| `rpk redpanda` | Operate the local broker: start/stop, mode, tune, check, node config, admin (brokers decommission) — self-managed only | `rpk-redpanda` |
+| `rpk iotune` | Benchmark disk I/O and write optimal io properties (Linux-only) | `rpk-redpanda` |
+| `rpk oxla` | Redpanda Oxla SQL engine — "Coming Soon" CLI stub | `sql` skills |
 | `rpk shadow` | Manage Redpanda Shadow Links (create/describe/update/delete/list/failover) | — |
 
 ---

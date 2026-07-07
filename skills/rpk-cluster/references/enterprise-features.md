@@ -323,7 +323,9 @@ the Admin API, then optionally set it back to `true`.
 
 FIPS is a **node** property, not a cluster property, but it is an enterprise
 differentiator commonly checked alongside cluster setup. Disable via
-`rpk node config set fips_mode disabled`. On expiration there is no change.
+`rpk redpanda config set redpanda.fips_mode disabled` (edits the node's
+`redpanda.yaml`; there is no `rpk node` command group). On expiration there
+is no change.
 
 ## RBAC / GBAC (Enterprise) — managed via rpk security
 
@@ -349,7 +351,7 @@ When `rpk cluster license info` shows `Violation: true`, disable features with:
 rpk cluster config set audit_enabled false
 rpk cluster config set partition_autobalancing_mode node_add
 rpk cluster config set core_balancing_continuous false
-rpk node config set fips_mode disabled
+rpk redpanda config set redpanda.fips_mode disabled
 rpk cluster config set sasl_mechanisms <non-enterprise-mechanisms>     # drop GSSAPI/OIDC
 rpk cluster config set http_authentication <non-enterprise-mechanisms> # drop OIDC
 rpk cluster config set default_leaders_preference none

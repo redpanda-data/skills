@@ -379,12 +379,12 @@ Enterprise feature controlling ACLs on Schema Registry resources.
 
 Runs Redpanda (and rpk) with a FIPS-validated crypto module.
 
-**Node config (per broker), set in `redpanda.yaml`.** The licensing docs use the
-`rpk node config set` form; `rpk redpanda config set redpanda.fips_mode ...`
-edits the same `redpanda.yaml` field:
+**Node config (per broker), set in `redpanda.yaml`.** rpk has no `node`
+command group — use `rpk redpanda config set`, which edits the local
+`redpanda.yaml`:
 ```bash
-rpk node config set fips_mode enabled
-rpk node config set fips_mode disabled   # to disable
+rpk redpanda config set redpanda.fips_mode enabled
+rpk redpanda config set redpanda.fips_mode disabled   # to disable
 ```
 
 `fips_mode` values include `disabled`, `enabled`, `permissive`. License behavior:

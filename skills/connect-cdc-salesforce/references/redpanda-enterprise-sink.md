@@ -227,7 +227,7 @@ to them; full details live in the broker docs.
 | Audit Logging | `audit_enabled=true` | `rpk cluster config set audit_enabled false` |
 | OIDC / OAUTHBEARER auth | add `OIDC` to `sasl_mechanisms` / `http_authentication` | remove `OIDC` from those lists |
 | Kerberos (GSSAPI) auth | add `GSSAPI` to `sasl_mechanisms` | remove `GSSAPI` |
-| FIPS compliance | node config `fips_mode` | `rpk node config set fips_mode disabled` |
+| FIPS compliance | node config `fips_mode` | `rpk redpanda config set redpanda.fips_mode disabled` |
 | Continuous Data Balancing | `partition_autobalancing_mode=continuous` | set to `node_add` |
 | Leader Pinning | topic-level leader preference + `default_leaders_preference` | set `default_leaders_preference none` |
 | Remote Read Replicas | `redpanda.remote.readreplica=<bucket>` (topic) | `cloud_storage_enable_remote_read false` |
