@@ -13,7 +13,11 @@ description: >-
   how to discover them; error handling with fallback outputs or catch processors;
   batching records before writing; understanding the difference between mapping
   and mutation processors; choosing between the bloblang and mapping processor
-  names; connecting to Kafka or Redpanda with SASL/TLS from Connect; enterprise
+  names; connecting to Kafka or Redpanda with SASL/TLS from Connect; migrating
+  Kafka clusters to Redpanda with the redpanda_migrator input/output pair
+  (topics, schemas, ACLs, consumer group offsets); running many isolated
+  pipelines in one process with streams mode (rpk connect streams, the /streams
+  REST API); the community tigerbeetle_cdc input; enterprise
   vs community components or license setup; dry-run and lint commands; enterprise
   features and their config keys — enterprise connectors and CDC inputs
   (postgres_cdc, mysql_cdc, mongodb_cdc, oracledb_cdc with its logminer block,
@@ -201,7 +205,7 @@ pipeline:
 | **Buffers** | `memory`, `sqlite`, `system_window`, `none` |
 | **Rate Limits** | `local`, `redis` |
 
-Enterprise-only components (require a Redpanda license) include the CDC inputs (`postgres_cdc`, `mysql_cdc`, `mongodb_cdc`, `microsoft_sql_server_cdc`, `oracledb_cdc`, `gcp_spanner_cdc`, `aws_dynamodb_cdc`, `salesforce_cdc`), along with AI/ML processors. Provide a license via `--redpanda-license` flag, `REDPANDA_LICENSE` env var, `REDPANDA_LICENSE_FILEPATH`, or the file `/etc/redpanda/redpanda.license`.
+Enterprise-only components (require a Redpanda license) include the CDC inputs (`postgres_cdc`, `mysql_cdc`, `mongodb_cdc`, `microsoft_sql_server_cdc`, `oracledb_cdc`, `gcp_spanner_cdc`, `aws_dynamodb_cdc`, `salesforce_cdc`), along with AI/ML processors. Provide a license via `--redpanda-license` flag, `REDPANDA_LICENSE` env var, `REDPANDA_LICENSE_FILEPATH`, or the file `/etc/redpanda/redpanda.license`. One CDC input is *not* enterprise: `tigerbeetle_cdc` is a certified community component (no license needed), but it requires a CGO-enabled Connect build — the `rpk connect` managed plugin and the standard Docker image don't include it.
 
 ## Enterprise Features
 
@@ -221,4 +225,6 @@ Allow/deny lists, secrets management, FIPS, and the configuration service are en
 - [Components](references/components.md): The component model — inputs, processors, outputs, caches, buffers, rate limits — the most-used ones, how to discover and read a component's config schema, enterprise vs community licensing.
 - [Bloblang](references/bloblang.md): Bloblang mapping language essentials: `root`/`this`/`meta`, assignment, deletion, variables, conditionals, array methods, functions, `mapping` vs `mutation` vs `bloblang` processor names, and practical transform examples.
 - [Patterns](references/patterns.md): Canonical pipelines: kafka→kafka with transform, http_server→kafka ingest, batching, fallback/dead-letter outputs, retries, and windowed aggregation. Runnable YAML.
+- [Migration](references/migration.md): Kafka→Redpanda migration with the unified `redpanda_migrator` input/output pair (Connect 4.67.5+): what it migrates (topic data, topic configs, schemas, ACLs, consumer group offsets), unified vs the removed legacy bundle components, the end-to-end workflow (ACLs → run → monitor lag → verify → cut over), label pairing, sync schedules and guarantees, when to use it vs a plain kafka→redpanda pipeline.
+- [Streams Mode](references/streams-mode.md): Running many isolated streams in one Connect process (`rpk connect streams`): per-stream config file layout, the `-o/--observability` and `-r/--resources` flags, shared resources, stream-prefixed HTTP endpoints, the `stream` metrics label, and the full `/streams` REST API (create/read/update/patch/delete streams, `/resources/{type}/{id}`, `?chilled=true`).
 - [Enterprise Features](references/enterprise.md): Enterprise (license-gated) Connect features and their exact config keys — supplying a license (`--redpanda-license`, `REDPANDA_LICENSE`, `/etc/redpanda/redpanda.license`); all CDC inputs with nested blocks (`postgres_cdc`, `mysql_cdc`, `mongodb_cdc`, `oracledb_cdc` `logminer{}`, `microsoft_sql_server_cdc`, `gcp_spanner_cdc`, `aws_dynamodb_cdc`, `salesforce_cdc`); AI/ML processors; allow/deny lists (`connector_list.yaml`); secrets management (`--secrets` URNs); FIPS compliance; and the configuration service (`logs_topic`/`status_topic`). Notes which features require a license vs which survive expiry.
