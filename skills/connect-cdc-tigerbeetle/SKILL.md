@@ -13,7 +13,9 @@ description: >-
   progress cache, filtering settled vs pending two-phase transfers with the
   event_type metadata, routing by ledger, archiving transfer events to S3,
   troubleshooting "component not available" (cgo builds) or duplicate events
-  after restart. Also covers the Redpanda Enterprise features the CDC
+  after restart, or asking whether tigerbeetle_cdc needs an Enterprise license
+  (it does not — it is a certified community connector, unlike the other CDC
+  inputs). Also covers the Redpanda Enterprise features the CDC
   destination topic and cluster can use: Iceberg Topics
   (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/
   invalid.record.action), Tiered Storage (redpanda.remote.read/write) for
@@ -24,7 +26,7 @@ description: >-
 
 # Redpanda Connect CDC: TigerBeetle
 
-The `tigerbeetle_cdc` input streams change events from a [TigerBeetle](https://docs.tigerbeetle.com/operating/cdc/) cluster — the purpose-built financial transactions database — into Redpanda or any Kafka-compatible broker. Every event is a JSON snapshot of a transfer plus its debit and credit accounts at the time of the event. Progress is checkpointed as the last acknowledged event timestamp in a Connect [cache resource](references/config-reference.md#progress_cache), so the pipeline resumes where it left off after a restart. Available in the docs from Redpanda Connect v4.65.0, currently marked **beta** (API subject to change). The connector source carries an Apache-2.0 license header and has no runtime Enterprise license gate.
+The `tigerbeetle_cdc` input streams change events from a [TigerBeetle](https://docs.tigerbeetle.com/operating/cdc/) cluster — the purpose-built financial transactions database — into Redpanda or any Kafka-compatible broker. Every event is a JSON snapshot of a transfer plus its debit and credit accounts at the time of the event. Progress is checkpointed as the last acknowledged event timestamp in a Connect [cache resource](references/config-reference.md#progress_cache), so the pipeline resumes where it left off after a restart. Available in the docs from Redpanda Connect v4.65.0, currently marked **beta** (API subject to change). Unlike every other CDC input, this is a **certified** (community-tier) connector, not an enterprise one: `internal/plugins/info.csv` marks it `certified`, the source carries an Apache-2.0 license header, and there is no runtime Enterprise license check.
 
 Two constraints set this connector apart from the other CDC inputs:
 
@@ -174,11 +176,12 @@ output:
 - **Persistent cache:** the progress cache is the only durable state. Losing it re-streams all available events (safe but duplicative under at-least-once).
 - **Throughput/pacing:** `event_count_max` (default 2730) caps events per request; `idle_interval_ms` (default 1000) is the wait when a poll returns nothing; an optional `rate_limit` resource throttles requests; `timeout_seconds` (default 15) bounds each query.
 - **Version:** verify field names and defaults against the generated reference (`modules/components/partials/fields/inputs/tigerbeetle_cdc.adoc` in rp-connect-docs) or `redpanda-connect create tigerbeetle_cdc` on a cgo-enabled binary — not `rpk connect create`, which lacks the component.
-- **License:** no Connect Enterprise license gate on this input; the source file is Apache-2.0-licensed. Status is beta — the API may change.
+- **Support tier / license:** `certified` in `internal/plugins/info.csv` — the only CDC input that is not `enterprise` there. Apache-2.0 source, no enterprise license check. Status is beta — the API may change.
+- **Redpanda Cloud:** `info.csv` marks the component `cloud: n` ("not yet certified for cloud") — it cannot run as a Redpanda Cloud managed pipeline. Run the self-hosted cgo binary and write to your Cloud cluster over TLS/SASL.
 
 ## Enterprise Features on the Destination Topic
 
-The `tigerbeetle_cdc` input is not Enterprise-gated, but the Redpanda topic and cluster the ledger events land in can use Redpanda Enterprise differentiators (each requires a valid Redpanda Enterprise license on the destination cluster):
+The `tigerbeetle_cdc` input is a certified community connector — no Enterprise license is needed for the input itself — but the Redpanda topic and cluster the ledger events land in can use Redpanda Enterprise differentiators (each requires a valid Redpanda Enterprise license on the destination cluster):
 
 - **Iceberg Topics** — land transfer events directly into an Apache Iceberg table for analytics. Per-topic: `redpanda.iceberg.mode` (`key_value` | `value_schema_id_prefix` | `value_schema_latest` | `disabled`), `redpanda.iceberg.delete`, `redpanda.iceberg.partition.spec`, `redpanda.iceberg.target.lag.ms`, `redpanda.iceberg.invalid.record.action` (`drop` | `dlq_table`); cluster: `iceberg_enabled`.
 - **Tiered Storage** — `redpanda.remote.write` + `redpanda.remote.read` (cluster `cloud_storage_enabled`) give the ledger-event topic effectively unlimited retention for audit and compliance.

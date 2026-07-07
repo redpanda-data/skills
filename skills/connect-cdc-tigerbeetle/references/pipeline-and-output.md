@@ -322,4 +322,4 @@ output:
     topic: tigerbeetle-cdc
 ```
 
-Note the pipeline itself must run on a cgo-enabled self-hosted Connect binary — `tigerbeetle_cdc` is not available in the standard builds used elsewhere.
+Note the pipeline itself must run on a cgo-enabled **self-hosted** Connect binary: `tigerbeetle_cdc` is not available in the standard builds, and `internal/plugins/info.csv` marks it `cloud: n` ("not yet certified for cloud"), so it cannot run as a Redpanda Cloud managed pipeline. Writing **to** a Cloud cluster from a self-hosted pipeline, as above, works normally.

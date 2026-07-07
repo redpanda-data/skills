@@ -4,7 +4,8 @@ Source: `connect/internal/impl/tigerbeetle/input_tigerbeetle.go`
 Docs: `rp-connect-docs/modules/components/pages/inputs/tigerbeetle_cdc.adoc` (fields of record: the auto-generated partial `modules/components/partials/fields/inputs/tigerbeetle_cdc.adoc`)
 Version introduced: **4.65.0** (per docs page)
 Status: **beta** per the docs page (`:status: beta`); the source config spec registers `Stable()` — see the TODO in [SOURCES.md](SOURCES.md).
-License: source file carries an Apache-2.0 header; no runtime Enterprise license gate.
+Support tier: **`certified`** in `connect/internal/plugins/info.csv` — the only CDC input not marked `enterprise` there. The source file carries an Apache-2.0 header and contains no enterprise license check; no Enterprise license is required to run it.
+Cloud: `info.csv` marks it `cloud: n` ("not yet certified for cloud") — not available as a Redpanda Cloud managed pipeline.
 Build: cgo-only (`//go:build cgo`) — absent from `rpk connect` and the standard Docker image.
 
 The field list below is transcribed from the auto-generated partial and cross-checked against the Go source. If this page drifts, the generated partial wins. On a cgo-enabled binary, `redpanda-connect create tigerbeetle_cdc` prints the live spec.
