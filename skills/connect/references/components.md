@@ -556,6 +556,8 @@ Community (open-source) components are available without a license. Enterprise c
 **Enterprise-only inputs (require license):**
 - `postgres_cdc`, `mysql_cdc`, `mongodb_cdc`, `microsoft_sql_server_cdc`, `oracledb_cdc`, `gcp_spanner_cdc`, `aws_dynamodb_cdc`, `salesforce_cdc`
 
+Note: `tigerbeetle_cdc` is also a CDC input but is **not** enterprise — it is a certified community component (Apache-licensed, no license check in its implementation). It requires a CGO-enabled Connect build; the `rpk connect` managed plugin and the standard Docker image do not include it.
+
 **Enterprise-only processors:**
 - AI/ML processors: `openai_chat_completion`, `openai_embeddings`, `openai_image_generation`, `openai_speech`, `openai_transcription`, `openai_translation`, `aws_bedrock_chat`, `aws_bedrock_embeddings`, `cohere_chat`, `cohere_embeddings`, `cohere_rerank`, `gcp_vertex_ai_chat`, `gcp_vertex_ai_embeddings`, `ollama_chat`, `ollama_embeddings`, `ollama_moderation`
 
