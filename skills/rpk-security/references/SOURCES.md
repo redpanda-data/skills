@@ -38,7 +38,7 @@ release tag**, not `dev`/`main`.
 ## TODO / re-verify
 
 - **Enterprise cluster-config keys and their defaults** (`audit_*`, `oidc_*`, `sasl_kerberos_*`, `enable_schema_id_validation`, `schema_registry_enable_authorization`, `nested_group_behavior`, `http_authentication`) are broker config, not rpk. The property defaults listed were **not each line-verified** against `src/v/config/configuration.cc` — re-check; treat the docs property partials as the citation of record.
-- **`fips_mode` and `rpk node config set`**: `fips_mode`/`openssl_*` are broker (`redpanda.yaml`) properties. rpk has **no `node` command** — the correct form is `rpk redpanda config set redpanda.fips_mode` (`src/go/rpk/pkg/cli/redpanda/config.go`); `rpk node config set` is a docs/Admin-API spelling. Correct the skill's call sites.
+- **`fips_mode` and `rpk node config set`**: `fips_mode`/`openssl_*` are broker (`redpanda.yaml`) properties. rpk has **no `node` command** — the correct form is `rpk redpanda config set redpanda.fips_mode` (`src/go/rpk/pkg/cli/redpanda/config.go`); `rpk node config set` is a docs/Admin-API spelling. Call sites corrected on 2026-07-07.
 - **`-X sasl.mechanism=OAUTHBEARER` rpk support and version claims** (v26.1.7 / v25.3.x / v25.2.x): verify against `src/go/rpk/pkg/config/params.go` and the release tag; version pins are unverified.
 - **mTLS / Kerberos principal-mapping rule grammar**: verify against `src/v/security/mtls_rule.cc`, `gssapi_rule.cc`, `gssapi_principal_mapper.cc` rather than paraphrasing.
 

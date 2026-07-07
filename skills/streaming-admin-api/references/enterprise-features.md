@@ -304,7 +304,7 @@ FIPS 140-3 cryptography mode. This is **node config** (`redpanda.yaml`), not clu
 
 | Key | Type | Purpose |
 |-----|------|---------|
-| `fips_mode` | string (node config) | `disabled`, `enabled`, `permissive`. Set via `rpk node config set fips_mode disabled` to disable. |
+| `fips_mode` | string (node config) | `disabled`, `enabled`, `permissive`. Set via `rpk redpanda config set redpanda.fips_mode disabled` to disable. |
 
 A broker's runtime FIPS state is reported in the broker object as `in_fips_mode` (see `broker` response schema in [endpoints-overview.md](endpoints-overview.md)).
 

@@ -372,7 +372,7 @@ Runs Redpanda with a FIPS-validated cryptographic module. Node-level configurati
 
 | Property | Scope | Values |
 |---|---|---|
-| `fips_mode` | Node config | `disabled` \| `enabled` \| `permissive`. Disable via `rpk node config set fips_mode disabled`. |
+| `fips_mode` | Node config | `disabled` \| `enabled` \| `permissive`. Disable via `rpk redpanda config set redpanda.fips_mode disabled`. |
 
 License expiration: no change.
 

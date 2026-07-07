@@ -1,16 +1,24 @@
-# rpk cluster brokers and rpk cluster maintenance
+# Broker decommission and rpk cluster maintenance
 
-## rpk cluster brokers
+## Broker decommission (`rpk redpanda admin brokers`)
 
-The `brokers` subgroup has three commands:
-- `decommission <BROKER-ID>` — start removing a broker from the cluster
-- `decommission-status <BROKER-ID>` — monitor the progress of a decommission
-- `recommission <BROKER-ID>` — abort an in-progress decommission
+Broker decommission/recommission commands live under `rpk redpanda admin
+brokers` (they talk to the Admin API through the `rpk redpanda admin`
+subtree), **not** under `rpk cluster`:
 
-There is no explicit "list brokers" subcommand under `rpk cluster brokers`.
-Use `rpk cluster info -b` (or `rpk cluster info -b --detailed`) to list
-brokers. The Admin API's `Brokers()` call is used internally by `decommission`
-to check the target broker's version and maintenance status.
+- `rpk redpanda admin brokers decommission <BROKER-ID>` — start removing a
+  broker from the cluster
+- `rpk redpanda admin brokers decommission-status <BROKER-ID>` — monitor the
+  progress of a decommission
+- `rpk redpanda admin brokers recommission <BROKER-ID>` — abort an
+  in-progress decommission
+- `rpk redpanda admin brokers list` — list the brokers in the cluster
+
+`rpk cluster info -b` (or `rpk cluster info -b --detailed`) also lists
+brokers, from the Kafka metadata side.
+
+They are documented here because decommission is a cluster-shrink operation
+that pairs with maintenance mode (below) in day-2 ops workflows.
 
 ### decommission
 
@@ -18,23 +26,23 @@ Decommissioning removes a broker from the cluster. Redpanda moves all of its
 partition replicas to the remaining brokers before the node is fully removed.
 
 ```bash
-rpk cluster brokers decommission 4
+rpk redpanda admin brokers decommission 4
 # Output:
 # Success, broker 4 decommission started.
-# Use 'rpk cluster brokers decommission-status 4' to monitor data movement.
+# Use 'rpk redpanda admin brokers decommission-status 4' to monitor data movement.
 ```
 
-**Version interaction:**
-- v22.x: A broker in maintenance mode cannot be decommissioned. You must run
-  `rpk cluster maintenance disable <id>` first, or use `--skip-liveness-check`
-  to bypass the check.
-- v23.x and later: Decommissioning a node currently in maintenance mode is
-  supported directly.
+A dead or unreachable broker can block the pre-decommission checks. To issue
+the decommission request anyway, use the hidden `--force` flag (described in
+the command's long help, not in `--help` flag lists):
 
 ```bash
-# Bypass the maintenance-mode check (use with care on v22.x clusters):
-rpk cluster brokers decommission 4 --skip-liveness-check
+rpk redpanda admin brokers decommission 4 --force
 ```
+
+(The generated docs page mentions a `--skip-liveness-check` flag; current rpk
+releases reject it — `--force` is the flag that exists in source, verified at
+v25.3.6.)
 
 A decommission request is sent to every broker; only the cluster leader
 processes it.
@@ -42,7 +50,7 @@ processes it.
 ### decommission-status
 
 ```bash
-rpk cluster brokers decommission-status 4
+rpk redpanda admin brokers decommission-status 4
 ```
 
 Output sections:
@@ -62,8 +70,8 @@ Output sections:
 
 Flags:
 ```bash
-rpk cluster brokers decommission-status 4 -d    # --detailed: adds BYTES-MOVED, BYTES-REMAINING
-rpk cluster brokers decommission-status 4 -H    # --human-readable: sizes in human units
+rpk redpanda admin brokers decommission-status 4 -d    # --detailed: adds BYTES-MOVED, BYTES-REMAINING
+rpk redpanda admin brokers decommission-status 4 -H    # --human-readable: sizes in human units
 ```
 
 When decommission is complete, rpk exits with a message:
@@ -78,7 +86,7 @@ recommission will not bring it back — the broker must rejoin the cluster as a
 new node.
 
 ```bash
-rpk cluster brokers recommission 4
+rpk redpanda admin brokers recommission 4
 # Output: Success, broker 4 has been recommissioned!
 ```
 

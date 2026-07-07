@@ -229,7 +229,7 @@ For regulated environments, run Redpanda Connect using the FIPS-compliant `rpk` 
 so all cryptography (TLS to MySQL, TLS/SASL to Redpanda) uses FIPS-validated modules.
 This is a Connect enterprise capability surfaced through the FIPS-compliant `rpk`
 binary; the pipeline YAML is unchanged. (Broker-side `fips_mode` node config is a
-separate Redpanda enterprise feature — `rpk node config set fips_mode <enabled|...>`.)
+separate Redpanda enterprise feature — `rpk redpanda config set redpanda.fips_mode <enabled|...>`.)
 
 ---
 

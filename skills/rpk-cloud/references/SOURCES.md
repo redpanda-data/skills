@@ -44,7 +44,7 @@ AI-Gateway (`aigatewayv1mcp.*`) services are all forwarded there.
 
 ## Deferred to live introspection (NOT drift — do not pin or hardcode)
 
-- `rpk cloud <cmd> --help` / `--print-tree` — the live command tree; the skill directs users to introspect.
+- `rpk cloud <cmd> --help` — the live command tree; the skill directs users to introspect.
 - **BYOC `apply` / `destroy` / `validate`** subcommands and their flags — provided by the **downloaded BYOC plugin** (version-pinned per cluster), not defined in `redpanda-data/redpanda`. Confirm with `rpk cloud byoc <aws|gcp|azure> --help` after install.
 - **MCP server tool list / behavior** — the RPC set exposed by `rpk cloud mcp stdio` is generated from the cloud proto (`common-go` `*v1mcp` packages) and evolves; enumerate live rather than trusting a static list. `proxy` tool list is fetched at runtime from the remote server.
 - Cloud cluster / resource-group / auth listings — runtime account state.

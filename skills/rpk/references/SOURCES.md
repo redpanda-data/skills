@@ -31,7 +31,7 @@ The skill deliberately points the agent at live introspection for these; a sync/
 must not "correct" them into hardcoded values:
 
 - `rpk -X list` / `rpk -X help` — dynamic output of `XFlags()`.
-- `rpk --print-tree` / `rpk <cmd> --help` — the live command tree; the skill directs users to introspect rather than trust a static list.
+- `rpk <cmd> --help` — the live command tree; the skill directs users to introspect rather than trust a static list.
 - `rpk --version` output — runtime value.
 - Install versions / `latest` download URLs (`install.md`) — GitHub release state, intentionally not pinned.
 - `rpk connect` subcommands/flags — a managed-plugin passthrough to the external Redpanda Connect binary, not defined in `redpanda-data/redpanda`; the skill flags "confirm with `rpk connect list --help`."

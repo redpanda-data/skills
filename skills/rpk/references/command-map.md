@@ -26,17 +26,17 @@ rpk topic delete my-topic
 ---
 
 ### `rpk cluster`
-Cluster health, metadata, and log dirs; broker list/decommission/recommission;
-cluster-wide configuration (get/set/edit/list/import/export/lint/status);
-partition balancing and movement; maintenance mode; client quotas; storage;
-transactions; self-test (disk/network benchmarks); licensing.
+Cluster health, metadata, and log dirs; cluster-wide configuration
+(get/set/edit/list/import/export/lint/status); partition balancing and
+movement; maintenance mode; Kafka connection monitoring; client quotas;
+storage; transactions; self-test (disk/network benchmarks); licensing.
 
 **Subskill**: `rpk-cluster`
 
 ```bash
 rpk cluster health
-rpk cluster info
-rpk cluster brokers
+rpk cluster info -b                # includes broker list
+rpk cluster connections list       # current Kafka connections
 rpk cluster config get <key>
 rpk cluster config set <key> <value>
 rpk cluster partitions balance
@@ -44,6 +44,10 @@ rpk cluster selftest start
 rpk cluster license info          # check license + Enterprise-feature violations
 rpk cluster license set --path /etc/redpanda/redpanda.license
 ```
+
+> Broker decommission/recommission is NOT under `rpk cluster` — it lives at
+> `rpk redpanda admin brokers` (see `rpk redpanda` below and the
+> `rpk-cluster` skill's brokers-maintenance reference).
 
 > Enterprise features (Tiered Storage, Cloud Topics, Iceberg, Continuous Data
 > Balancing, Audit Logging, Schema ID Validation, Leader Pinning, OIDC/Kerberos)
@@ -257,19 +261,6 @@ rpk plugin uninstall <plugin-name>
 
 ---
 
-### `rpk benchmark`
-Run local performance benchmarks. Currently supports a produce-only throughput
-test.
-
-```bash
-rpk benchmark produce --topic bench-topic
-```
-
-> Note: Only a `produce` subcommand exists. There is no `producer` alias and
-> no `consumer`/`consume` subcommand.
-
----
-
 ### `rpk shadow`
 Manage Redpanda Shadow Links — create, describe, update, delete, list, and
 failover shadow links for cluster-to-cluster replication and migration. Also
@@ -294,9 +285,44 @@ rpk shadow config generate
 
 ---
 
-### `rpk check`
-Perform system checks (hardware tuning recommendations for self-managed
-installations).
+### `rpk redpanda`
+Operate the local broker process and talk to the Admin API — **self-managed
+only**. Subtrees: `start`/`stop`, `mode` (prod/dev tuning presets), `tune`
+(autotuner; `tune list` shows available tuners), `check` (verify system
+requirements), `config` (bootstrap/init/print/set for node config), and
+`admin` (brokers list/decommission/decommission-status/recommission,
+partitions list, config log-level set). Some subcommands (start, stop, tune,
+mode, check) are Linux-only and hidden from `--help` on macOS.
+
+**Subskill**: `rpk-redpanda`
+
+```bash
+rpk redpanda mode prod
+rpk redpanda tune all
+rpk redpanda check
+rpk redpanda admin brokers list
+rpk redpanda admin brokers decommission 4
+rpk redpanda config bootstrap --self <ip> --ips <ip1,ip2,ip3>
+```
+
+---
+
+### `rpk iotune`
+Benchmark the disk I/O of a node and write optimal io properties to
+`io-config.yaml` for the broker to use at startup. Linux-only; part of the
+same node-tuning story as `rpk redpanda tune`.
+
+**Subskill**: `rpk-redpanda`
+
+```bash
+rpk iotune --duration 10m
+```
+
+---
+
+### `rpk oxla`
+Redpanda Oxla (SQL engine) — currently a "Coming Soon" stub in the CLI. The
+SQL product surface is covered by the `sql` skills.
 
 ---
 
@@ -313,10 +339,6 @@ installations).
 `--ignore-profile` and `--profile` are mutually exclusive.
 `--ignore-profile` and `--config` are mutually exclusive.
 
-> **Root-only flag**: `--print-tree` is available only on the root `rpk`
-> command (not inherited by subcommands). Use `rpk --print-tree` to print the
-> full command tree as JSON and exit.
-
 ---
 
 ## Discover commands interactively
@@ -332,9 +354,6 @@ rpk cluster --help
 # Help for a specific subcommand
 rpk topic create --help
 rpk cluster config set --help
-
-# Print the entire command tree as JSON
-rpk --print-tree
 
 # List all -X configuration options
 rpk -X list

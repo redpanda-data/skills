@@ -293,7 +293,7 @@ FIPS-compliant cryptography mode. This is a **node** (broker) config, not cluste
 
 | Key | Notes |
 |---|---|
-| `fips_mode` | Node config: `disabled`, `enabled`, `permissive`. Disable with `rpk node config set fips_mode disabled`. |
+| `fips_mode` | Node config: `disabled`, `enabled`, `permissive`. Disable with `rpk redpanda config set redpanda.fips_mode disabled`. |
 
 ```bash
 # Node config in the bundle (per-node snapshot)

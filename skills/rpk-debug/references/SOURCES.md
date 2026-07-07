@@ -26,7 +26,7 @@ The `rpk debug` command group is Go source in the **public** repo `redpanda-data
 - **Per-flag defaults** (`--logs-since=yesterday`, `--logs-size-limit=100MiB`, `--controller-logs-size-limit=132MB`, `--cpu-profiler-wait=30s`, `--metrics-samples=2`, `--metrics-interval=10s`, `--kafka-connections-limit=256`, `--wait-timeout=5m`) not each line-verified against flag registrations in `bundle/bundle.go` and `remotebundle/start.go` — re-check. Also re-confirm local `bundle` validates `--cpu-profiler-wait>=15s`/`--metrics-samples>=2` while `remote-bundle` passes them through.
 - **rpadmin client method → file mapping** (e.g., `cl.Brokers`→`admin/brokers.json`, `cl.GetLicenseInfo`→`admin/license.json`, per-node `cl.RawNodeConfig`→`admin/node_config_<addr>.json`) not each line-verified against `bundle_all.go`.
 - **Admin API endpoint names** (`CreateDebugBundle`, `GetDebugBundleStatus`, `DownloadDebugBundleFile`, `CancelDebugBundleProcess`) — verify against `src/v/redpanda/admin/debug_bundle.cc`/`.h` and the Go rpadmin client wrapper (`src/go/rpk/pkg/adminapi/`).
-- **Enterprise config keys / topic-property values** (all of `enterprise-triage.md`) are broker config, not rpk. The docs property partials are the citation of record. `fips_mode` is set via the local `redpanda.yaml`; the `rpk node config set` spelling should be corrected to `rpk redpanda config set` (rpk has no `node` group).
+- **Enterprise config keys / topic-property values** (all of `enterprise-triage.md`) are broker config, not rpk. The docs property partials are the citation of record. `fips_mode` is set via the local `redpanda.yaml`; the `rpk node config set` spelling was corrected to `rpk redpanda config set` on 2026-07-07 (rpk has no `node` group).
 
 ## Usage
 
