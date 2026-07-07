@@ -28,6 +28,13 @@ The `rpk debug` command group is Go source in the **public** repo `redpanda-data
 - **Admin API endpoint names** (`CreateDebugBundle`, `GetDebugBundleStatus`, `DownloadDebugBundleFile`, `CancelDebugBundleProcess`) — verify against `src/v/redpanda/admin/debug_bundle.cc`/`.h` and the Go rpadmin client wrapper (`src/go/rpk/pkg/adminapi/`).
 - **Enterprise config keys / topic-property values** (all of `enterprise-triage.md`) are broker config, not rpk. The docs property partials are the citation of record. `fips_mode` is set via the local `redpanda.yaml`; the `rpk node config set` spelling was corrected to `rpk redpanda config set` on 2026-07-07 (rpk has no `node` group).
 
+## Redpanda Cloud applicability sources
+
+The "Scope: Self-Managed Deployments Only" section in `SKILL.md` and the Cloud callouts in `references/bundle.md` / `references/remotebundle.md` derive from the **private** repo `redpanda-data/cloud-docs` (read via the Redpanda-Github-Read connector; do not clone):
+
+- `modules/get-started/pages/cloud-overview.adoc`, "Redpanda Cloud vs Self-Managed feature compatibility": lists the Admin API, Redpanda debug bundles, `rpk debug`, `rpk cluster health`, `rpk cluster license`, `rpk cluster maintenance`, `rpk cluster partitions`, and `rpk cluster self-test` as unsupported in Redpanda Cloud.
+- Supported client-side surface cited as the fallback: cloud-docs `modules/reference/pages/rpk/` documents `rpk-cluster` (info, logdirs-describe, quotas, txn, connections, config, storage), `rpk-group`, `rpk-registry`, `rpk-security`, `rpk-topic`, and `rpk-transform`; it has **no** `rpk-debug` pages.
+
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. Verify against the current stable release tag of `redpanda-data/redpanda`, and re-confirm exact command paths / flag names / defaults / config keys before writing any new fact.

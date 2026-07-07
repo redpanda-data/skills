@@ -25,7 +25,9 @@ description: >-
   schema registry to encode/decode Avro/Protobuf/JSON records with rpk,
   analyzing topic throughput, describing tiered-storage cloud status, or
   enabling enterprise topic features (tiered storage, cloud topics, Iceberg,
-  remote read replicas, leader pinning, schema ID validation).
+  remote read replicas, leader pinning, schema ID validation). Includes
+  Redpanda Cloud notes: auth via rpk cloud login profiles, Serverless and
+  per-tier limits, and describe-storage being unsupported on Cloud.
 ---
 
 # rpk topic: Manage, Produce & Consume
@@ -268,7 +270,8 @@ rpk topic analyze -r '^orders.*' -t -24h:end -s --print-topics
 
 Requires the Admin API endpoint (from your profile or `-X admin.hosts=...`).
 Shows tiered storage cloud vs. local bytes, segment counts, offsets, and sync
-lag per partition.
+lag per partition. Not supported on Redpanda Cloud clusters (the Admin API is
+not exposed there); all other `rpk topic` subcommands are.
 
 ```bash
 rpk topic describe-storage <TOPIC> [flags]
@@ -391,6 +394,19 @@ rpk topic consume orders -o :end
 # Decode values via schema registry
 rpk topic consume orders --use-schema-registry=value
 ```
+
+## Redpanda Cloud notes
+
+`rpk topic` works against Redpanda Cloud clusters (Serverless, BYOC, Dedicated) over the Kafka API. Authenticate with `rpk cloud login` and wire your profile to the cluster (`rpk cloud cluster select`, or `rpk profile create --from-cloud`); plain `rpk topic ...` commands then target the Cloud cluster.
+
+- **All `rpk topic` subcommands are supported on Cloud except `rpk topic describe-storage`**, which needs the Admin API (not exposed by Redpanda Cloud).
+- **Automatic topic creation is disabled** in Redpanda Cloud — create topics explicitly. BYOC/Dedicated clusters can opt in via the `auto_create_topics_enabled` cluster property.
+- **Replication factor**: Redpanda Cloud requires a minimum of 3 replicas; a topic created with `-r 1` is reset to 3.
+- **Message size**: capped per topic by `max.message.bytes`; the default and maximum differ by cluster type (Serverless caps are lower than BYOC/Dedicated). Check the Cloud "Topics Overview" page for current values rather than assuming self-managed defaults.
+- **Partition limits**: Serverless clusters have a per-cluster partition cap (logical partitions, pre-replication) plus other usage limits (consumer groups, connections, ACLs, producer IDs) — see "Serverless usage limits" on the Serverless cluster-type page of the cloud docs. BYOC/Dedicated partition maxima depend on the usage tier — see the "BYOC Tiers and Regions" / "Dedicated Tiers and Regions" reference pages. These numbers change; do not hardcode them.
+- **Managed cluster defaults**: cluster properties (e.g. `default_topic_partitions`) are not user-configurable on Serverless, and on BYOC/Dedicated (AWS/GCP only) only a curated subset is settable.
+- **Tiered Storage on Cloud** is enabled and configured by Redpanda by default. The Enterprise topic properties section below is written for self-managed clusters — note `rpk cluster license` is also unsupported on Cloud.
+- **TODO (unverified)**: the cloud docs do not publish an explicit list of which topic-level configs are settable versus rejected/managed on Serverless. Before advising a specific `alter-config --set` key on Serverless, verify against a live cluster or the Cloud UI.
 
 ## Enterprise topic properties
 

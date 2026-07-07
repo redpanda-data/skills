@@ -21,7 +21,9 @@ description: >-
   Schema ID Validation (enable_schema_id_validation,
   redpanda.value.schema.id.validation), Leadership Pinning
   (redpanda.leaders.preference controls where transform processors run), and
-  RBAC / Audit Logging for transform topics.
+  RBAC / Audit Logging for transform topics. Includes Redpanda Cloud
+  applicability: transforms on BYOC and Dedicated clusters (not Serverless)
+  and how enabling differs on Cloud.
 ---
 
 # rpk transform: Data Transforms (Wasm)
@@ -91,6 +93,15 @@ rpk cluster config set data_transforms_enabled true
 ```
 
 This triggers a rolling restart and may take several minutes.
+
+## Redpanda Cloud Applicability
+
+- **Availability**: the Redpanda Cloud docs state data transforms are supported on **BYOC and Dedicated** clusters running Redpanda 24.3+. **Serverless** is not listed as supported — do not advise deploying transforms to a Serverless cluster.
+- **Enabling**: the command is the same — `rpk cluster config set data_transforms_enabled true` — but on Cloud it goes through the Cloud control plane, not the broker Admin API. Run `rpk cloud login` and select the target cluster first. Self-service cluster properties on Cloud require rpk 25.1.2+ and Redpanda 25.1.2+, and are available only on BYOC/Dedicated clusters on **AWS and GCP** — not on Azure clusters and not on Serverless. Properties that require a restart (this one does) trigger a long-running Cloud operation that can take several minutes; `rpk cluster config set` returns the operation ID.
+- **Managed tuning**: only a curated subset of `data_transforms_*` cluster properties is settable in Cloud (at verification time: `data_transforms_enabled`, `data_transforms_binary_max_size`, `data_transforms_per_core_memory_reservation`, `data_transforms_per_function_memory_limit`, `data_transforms_logging_line_max_bytes`). The rest (for example `data_transforms_commit_interval_ms`, `data_transforms_runtime_limit_ms`) are managed by Redpanda; setting an unsupported property returns `REASON_INVALID_INPUT`. Check the Redpanda Cloud "Cluster Configuration Properties" reference page for the current list.
+- The lifecycle commands (`rpk transform init/build/deploy/list/logs/delete`) work against a Cloud cluster once your rpk profile points at it; the Cloud UI can also view logs and delete transforms.
+- **TODO (unverified)**: the Cloud rpk reference does not document `rpk transform pause`/`resume` (the self-managed reference does). Whether pause/resume work on Cloud clusters is unconfirmed in the docs — verify on a live cluster before advising.
+- **TODO (unverified)**: the docs do not state how to enable transforms on Azure BYOC/Dedicated clusters, where self-service cluster properties are unavailable (possibly via Redpanda Support).
 
 ## Project Layout
 

@@ -14,7 +14,9 @@ description: >-
   DR), Remote Read Replicas, Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/
   Kerberos auth, FIPS mode, Server-side Schema ID Validation, Schema Registry
   Authorization, and Leadership Pinning, plus checking license status and
-  license violations.
+  license violations. Applies to self-managed deployments only (Linux hosts
+  and Kubernetes) — Redpanda Cloud clusters do not support rpk debug or
+  debug bundles.
 ---
 
 # rpk debug: Debug Bundles & Local Diagnostics
@@ -24,6 +26,12 @@ description: >-
 The bundle can be sent directly to the Redpanda support team via `--upload-url`, or inspected locally with standard tools such as `unzip` and `jq`.
 
 There are three subcommands: `bundle`, `remote-bundle`, and `info` (the last is a hidden no-op originally for sending usage stats to Redpanda Data; has a `status` alias; kept for backward compatibility).
+
+## Scope: Self-Managed Deployments Only
+
+`rpk debug` targets **self-managed** deployments: bare-metal/VM Linux hosts (run `bundle` on the broker host) and Kubernetes (run inside the Redpanda container, with `--namespace`). It does **not** work against **Redpanda Cloud** clusters (Serverless, BYOC, or Dedicated): the Cloud docs list Redpanda debug bundles, the Admin API, and `rpk debug` itself as unsupported functionality, and Cloud clusters do not expose broker hosts to run a local bundle on (`remote-bundle` needs the Admin API, which Cloud does not expose). Cluster-side diagnostics for Cloud clusters are handled by Redpanda — open a ticket with Redpanda Support instead of trying to collect a bundle.
+
+The usual live-triage fallbacks are also unsupported on Cloud: `rpk cluster health`, `rpk cluster license`, `rpk cluster maintenance`, `rpk cluster partitions`, and `rpk cluster self-test` do not work there. For client-side triage against a Cloud cluster, use the Kafka-API surface via your cloud profile (`rpk cloud login`, then cluster select): for example `rpk cluster info`, `rpk topic describe`/`consume`, `rpk group describe`, and `rpk cluster logdirs describe`.
 
 ## Quickstart
 

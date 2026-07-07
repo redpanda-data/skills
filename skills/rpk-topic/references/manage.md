@@ -64,6 +64,8 @@ rpk topic create test-topic -p 3 -r 3 -d
 rpk topic create orders --if-not-exists
 ```
 
+> **Redpanda Cloud:** minimum replication factor is 3 (`-r 1` is reset to 3 by the broker), automatic topic creation is disabled, and `max.message.bytes` is capped per cluster type (Serverless lower than BYOC/Dedicated) — check the Cloud "Topics Overview" page for current caps. Serverless clusters also enforce a per-cluster partition cap ("Serverless usage limits" page); BYOC/Dedicated partition maxima are per usage tier ("BYOC/Dedicated Tiers and Regions" pages).
+
 ---
 
 ## list
@@ -206,6 +208,8 @@ rpk topic add-partitions orders -n 4
 rpk topic add-partitions orders events -n 2
 ```
 
+> **Redpanda Cloud:** partition ceilings apply — a per-cluster cap on Serverless ("Serverless usage limits" page) and per-usage-tier maxima on BYOC/Dedicated (tiers reference pages). Check those pages before advising large partition counts.
+
 ---
 
 ## trim-prefix
@@ -330,7 +334,9 @@ rpk topic analyze orders -t -7d:end --timeout 60s -a
 ## describe-storage
 
 Shows tiered storage (cloud) status per partition. Requires the Admin API
-(set via `--api-urls` or `-X admin.hosts=...`).
+(set via `--api-urls` or `-X admin.hosts=...`). Not supported on Redpanda
+Cloud clusters — Cloud does not expose the Admin API, and the Cloud docs list
+`rpk topic describe-storage` as the one unsupported `rpk topic` subcommand.
 
 ```bash
 rpk topic describe-storage <TOPIC> [flags]
