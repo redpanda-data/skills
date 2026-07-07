@@ -27,12 +27,12 @@ product source (and the user-facing changelogs/releases) and open a PR against
 - **`adp-skill-sync`** — keeps `skills/adp/` in sync with the ADP product source (cloudv2).
 - **`cloud-skill-sync`** — keeps the three `skills/cloud-*` skills in sync with the
   Redpanda Cloud control-plane / data-plane API source (cloudv2).
-- **`core-skill-sync`** — keeps the 12 Redpanda Core skills (`skills/streaming*`,
+- **`core-skill-sync`** — keeps the 13 Redpanda Core skills (`skills/streaming*`,
   `skills/rpk*`) in sync with the latest **stable release** of `redpanda-data/redpanda`
   (+ the generated reference in `redpanda-data/docs`).
 - **`sql-skill-sync`** — keeps the 4 SQL skills (`skills/sql*`) in sync with the **Oxla**
   engine source (private `redpanda-data/oxla`, trunk-based; SQL docs in `cloud-docs`).
-- **`connect-skill-sync`** — keeps the 10 Connect skills (`skills/connect*`) in sync with
+- **`connect-skill-sync`** — keeps the 11 Connect skills (`skills/connect*`) in sync with
   the latest **stable release** of Redpanda Connect (`redpanda-data/connect` + the
   `redpanda-data/benthos` engine + the auto-generated `redpanda-data/rp-connect-docs`).
 - **`skills-sync-critic`** — a single read-only critic that reviews the PRs opened by all
@@ -339,7 +339,7 @@ Branch `claude/sync-skills-YYYY-MM-DD` (the `claude/` prefix is REQUIRED). Title
 - **MCP connector:** Redpanda-Github-Read
 - **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
 
-One combined generator for all 12 Redpanda Core skills (Streaming + rpk), which share the
+One combined generator for all 13 Redpanda Core skills (Streaming + rpk), which share the
 `redpanda-data/redpanda` source repo. Unlike the cloudv2 generators, it is **release-pinned**:
 it syncs against the current *stable* release tag (release notes are the primary trigger),
 not `dev`/`main`. `rpk ai` is out of scope (ADP's); `rpk-cloud` covers only the `rpk cloud`
@@ -352,7 +352,7 @@ You are a skills-maintenance agent for the redpanda-data/skills repository. Your
 
 SCOPE (HARD RULE): edit ONLY these skill directories:
   Streaming: skills/streaming/, skills/streaming-admin-api/, skills/streaming-debugging/
-  rpk: skills/rpk/, skills/rpk-topic/, skills/rpk-cluster/, skills/rpk-group/, skills/rpk-security/, skills/rpk-cloud/, skills/rpk-debug/, skills/rpk-registry/, skills/rpk-transform/
+  rpk: skills/rpk/, skills/rpk-topic/, skills/rpk-cluster/, skills/rpk-group/, skills/rpk-security/, skills/rpk-cloud/, skills/rpk-debug/, skills/rpk-redpanda/, skills/rpk-registry/, skills/rpk-transform/
 EXCLUDE `rpk ai` (that belongs to the ADP skill). For skills/rpk-cloud/, edit only the `rpk cloud` CLI surface; Cloud control-plane/data-plane semantics belong to the Cloud skills — do not edit them. If a user-facing change belongs to another product's skill (ADP, Cloud, SQL, Connect), do NOT edit that skill — note it in the PR description as out-of-scope for a future routine.
 
 DURABILITY PRINCIPLE (HARD RULE — read the repo CLAUDE.md): stable concepts live in the skill; volatile specifics do NOT. Never hardcode metric names, model/SDK versions, per-release property defaults, or command --help output — the skills defer those to live introspection (rpk <cmd> --help, /public_metrics, the generated docs). Most releases will NOT require a skill change. If a change is only a volatile-detail update, do nothing.
@@ -363,7 +363,7 @@ REPO ACCESS:
 - redpanda-data/skills is cloned; you have push access. Use git via Bash to branch/commit/push. The gh CLI is NOT installed; open the PR with your native GitHub PR-creation capability.
 - redpanda-data/redpanda and redpanda-data/docs are PUBLIC and NOT cloned. Read them via the Redpanda-Github-Read MCP connector: search_code, get_file_contents, list_commits, get_commit, compare_commits, and the GitHub release/tag read tools. Do NOT clone them.
 
-SOURCE MAPS: read each skill's references/SOURCES.md first (all 12 skills have one). They map each skill file to its redpanda source paths + docs sources. Use them as your starting point.
+SOURCE MAPS: read each skill's references/SOURCES.md first (all 13 skills have one). They map each skill file to its redpanda source paths + docs sources. Use them as your starting point.
 
 STEP 1 - DETERMINE THE CURRENT STABLE RELEASE + WHAT'S NEW (primary trigger first):
 a. List recent releases/tags of redpanda-data/redpanda. Identify the highest STABLE GA release tag (form vX.Y.Z) — EXCLUDE any tag containing `-rc`, `-test`, `-beta`, or flagged prerelease.
@@ -450,7 +450,7 @@ In the PR description: list the oxla commits you based changes on (hash + link);
 - **MCP connector:** Redpanda-Github-Read
 - **Allowed tools:** Bash, Read, Write, Edit, Glob, Grep
 
-Syncs the 10 Connect skills. **Release-pinned** to the current stable Redpanda Connect release.
+Syncs the 11 Connect skills. **Release-pinned** to the current stable Redpanda Connect release.
 Connect is **three public repos**: `redpanda-data/connect` (components), `redpanda-data/benthos`
 (the engine — CLI verbs + Bloblang, pinned in `connect/go.mod`), and `redpanda-data/rp-connect-docs`
 (the auto-generated component reference). Because connector field lists are auto-generated, the
@@ -462,7 +462,7 @@ capabilities, enterprise gating) — never per-field details.
 ```
 You are a skills-maintenance agent for the redpanda-data/skills repository. Your task is to sync the Redpanda Connect skills with the latest STABLE release of Redpanda Connect.
 
-SCOPE (HARD RULE): edit ONLY these skill directories: skills/connect/, skills/connect-debugging/, and the CDC connectors skills/connect-cdc-postgres/, connect-cdc-mysql/, connect-cdc-mongodb/, connect-cdc-sqlserver/, connect-cdc-oracle/, connect-cdc-spanner/, connect-cdc-dynamodb/, connect-cdc-salesforce/. If a user-facing change belongs to another product's skill (ADP, Cloud, Core/Streaming, rpk, SQL), do NOT edit that skill — note it in the PR description as out-of-scope for a future routine.
+SCOPE (HARD RULE): edit ONLY these skill directories: skills/connect/, skills/connect-debugging/, and the CDC connectors skills/connect-cdc-postgres/, connect-cdc-mysql/, connect-cdc-mongodb/, connect-cdc-sqlserver/, connect-cdc-oracle/, connect-cdc-spanner/, connect-cdc-dynamodb/, connect-cdc-salesforce/, connect-cdc-tigerbeetle/. If a user-facing change belongs to another product's skill (ADP, Cloud, Core/Streaming, rpk, SQL), do NOT edit that skill — note it in the PR description as out-of-scope for a future routine.
 
 DURABILITY PRINCIPLE (HARD RULE — read the repo CLAUDE.md): stable concepts live in the skill; volatile specifics do NOT. CRITICAL for Connect: the per-field config of every connector/processor is AUTO-GENERATED from each component's Go Spec() into the rp-connect-docs reference (+ docs-data/overrides.json). Do NOT hardcode or 'complete' per-field lists/defaults in a skill — they are deferred to the generated reference and `rpk connect create/list`. Bloblang function/method catalogs are likewise generated. Most releases will NOT require a skill change. Document only structural, user-facing changes: NEW connectors/processors, NEW CLI flags/subcommands, NEW Bloblang capabilities, changed enterprise gating, or license/secrets/connector-list behavior.
 
@@ -473,7 +473,7 @@ REPO ACCESS (all PUBLIC; read via the Redpanda-Github-Read MCP connector — sea
 - redpanda-data/benthos — the ENGINE (dependency, version pinned in redpanda-data/connect `go.mod`): the CLI verbs (run/list/create/lint/streams/blobl), Bloblang (internal/bloblang/), the core config model, and base logger/metrics/tracer/buffer components. CLI/Bloblang claims verify HERE, not in connect.
 - redpanda-data/rp-connect-docs — the AUTO-GENERATED component reference (modules/components/pages/**, partials/fields/**) + docs-data/overrides.json + versioned docs-data/connect-<version>.json.
 
-SOURCE MAPS: read each skill's references/SOURCES.md first (all 10 Connect skills have one). They map each skill file to its connect / benthos / rp-connect-docs source paths and flag the auto-generated, deferred field lists. Use them as your starting point.
+SOURCE MAPS: read each skill's references/SOURCES.md first (all 11 Connect skills have one). They map each skill file to its connect / benthos / rp-connect-docs source paths and flag the auto-generated, deferred field lists. Use them as your starting point.
 
 STEP 1 - DETERMINE THE CURRENT STABLE RELEASE + WHAT'S NEW (primary trigger first):
 a. Identify the current stable redpanda-data/connect release tag (exclude `-rc`/prerelease). Read its GitHub Release notes for stable releases published in the last ~14 days — the human-curated changelog and primary trigger.
@@ -592,9 +592,9 @@ was wrong from the start, or changes lost because a weekly run silently failed (
 no alerting). It is the automated form of the manual periodic re-verification the team
 already does.
 
-Scope: **all 30 source-grounded skills** (every skill that carries a `SOURCES.md` map) across
-all five products — ADP, the three Cloud skills, the 12 Core skills, the 4 SQL skills, and the
-10 Connect skills. It is multi-source: ADP/Cloud → cloudv2; Core → `redpanda` + `docs` (stable
+Scope: **all 32 source-grounded skills** (every skill that carries a `SOURCES.md` map) across
+all five products — ADP, the three Cloud skills, the 13 Core skills, the 4 SQL skills, and the
+11 Connect skills. It is multi-source: ADP/Cloud → cloudv2; Core → `redpanda` + `docs` (stable
 tag); SQL → `oxla` (+ `cloud-docs`); Connect → `connect` + `benthos` + `rp-connect-docs` (stable
 Connect release). As more skills gain `SOURCES.md` maps, add them here.
 
@@ -615,11 +615,11 @@ SCOPE (skills with a SOURCES.md map — edit only files within these skills; do 
   - skills/adp/, skills/cloud-serverless/, skills/cloud-byoc/, skills/cloud-dedicated/
   Redpanda Core (verify against redpanda-data/redpanda + redpanda-data/docs at the CURRENT STABLE RELEASE TAG, not dev/main):
   - skills/streaming/, skills/streaming-admin-api/, skills/streaming-debugging/
-  - skills/rpk/, skills/rpk-topic/, skills/rpk-cluster/, skills/rpk-group/, skills/rpk-security/, skills/rpk-cloud/, skills/rpk-debug/, skills/rpk-registry/, skills/rpk-transform/ (rpk-cloud: CLI surface only; exclude `rpk ai`)
+  - skills/rpk/, skills/rpk-topic/, skills/rpk-cluster/, skills/rpk-group/, skills/rpk-security/, skills/rpk-cloud/, skills/rpk-debug/, skills/rpk-redpanda/, skills/rpk-registry/, skills/rpk-transform/ (rpk-cloud: CLI surface only; exclude `rpk ai`)
   SQL (verify against redpanda-data/oxla [private, default branch — Oxla is trunk-based] + redpanda-data/cloud-docs module `sql`; the redpanda-iceberg-source files against redpanda-data/redpanda + docs):
   - skills/sql/, skills/sql-admin-api/, skills/sql-federated-queries/, skills/sql-debugging/
   Connect (verify against redpanda-data/connect + redpanda-data/benthos [engine/CLI/Bloblang] + redpanda-data/rp-connect-docs, at the CURRENT STABLE Connect release):
-  - skills/connect/, skills/connect-debugging/, skills/connect-cdc-postgres/, skills/connect-cdc-mysql/, skills/connect-cdc-mongodb/, skills/connect-cdc-sqlserver/, skills/connect-cdc-oracle/, skills/connect-cdc-spanner/, skills/connect-cdc-dynamodb/, skills/connect-cdc-salesforce/
+  - skills/connect/, skills/connect-debugging/, skills/connect-cdc-postgres/, skills/connect-cdc-mysql/, skills/connect-cdc-mongodb/, skills/connect-cdc-sqlserver/, skills/connect-cdc-oracle/, skills/connect-cdc-spanner/, skills/connect-cdc-dynamodb/, skills/connect-cdc-salesforce/, skills/connect-cdc-tigerbeetle/
 
 STEP 1 - RE-VERIFY EACH FILE:
 For each skill file in scope, read its SOURCES.md row to find the source paths, open those paths with get_file_contents / search_code in the repo(s) that SOURCES.md names, and confirm that every factual claim in the skill file still matches the source: config field/key names, defaults where stable, API RPCs and HTTP paths, CLI flags and subcommands, SQL keywords/option keys, connector/component names, enum values, state machines, and PREVIEW/GA/status markers. For Core verify at the current stable redpanda release tag; for Connect at the current stable Connect release; for SQL at the oxla default branch. The most fragile facts are enum numbers, field numbers, endpoint/command paths, option keys, and status markers — re-check them explicitly. Respect each SOURCES.md's "Deferred to live introspection" section: do not flag correctly-deferred volatile specifics (auto-generated connector fields, Bloblang catalogs, metric names, config default values, system-table rows) as drift.
