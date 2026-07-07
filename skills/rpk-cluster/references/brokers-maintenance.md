@@ -32,13 +32,17 @@ rpk redpanda admin brokers decommission 4
 # Use 'rpk redpanda admin brokers decommission-status 4' to monitor data movement.
 ```
 
-A broker that is in maintenance mode (or unreachable) can block the
-pre-decommission liveness check. To issue the decommission request without
-checking whether the broker is in maintenance mode:
+A dead or unreachable broker can block the pre-decommission checks. To issue
+the decommission request anyway, use the hidden `--force` flag (described in
+the command's long help, not in `--help` flag lists):
 
 ```bash
-rpk redpanda admin brokers decommission 4 --skip-liveness-check
+rpk redpanda admin brokers decommission 4 --force
 ```
+
+(The generated docs page mentions a `--skip-liveness-check` flag; current rpk
+releases reject it — `--force` is the flag that exists in source, verified at
+v25.3.6.)
 
 A decommission request is sent to every broker; only the cluster leader
 processes it.

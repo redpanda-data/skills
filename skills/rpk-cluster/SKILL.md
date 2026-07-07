@@ -214,8 +214,9 @@ rpk redpanda admin brokers decommission-status 4 -H   # human-readable sizes
 # Abort a decommission that is still in progress (once complete, cannot recommission)
 rpk redpanda admin brokers recommission 4
 
-# Skip the maintenance-mode liveness check (e.g. broker unreachable)
-rpk redpanda admin brokers decommission 4 --skip-liveness-check
+# Force decommission of a dead/unreachable broker (hidden flag; the docs'
+# --skip-liveness-check spelling is rejected by current rpk releases)
+rpk redpanda admin brokers decommission 4 --force
 ```
 
 See [brokers-maintenance.md](references/brokers-maintenance.md) for full
