@@ -64,6 +64,11 @@ CREATE STORAGE IF NOT EXISTS my_gcs TYPE = GCS WITH (
     service_account_key = '{ ... json ... }'
 );
 
+-- Keyless GCS: the WITH clause is optional. Omit service_account_key to use
+-- Application Default Credentials (ADC) — Workload Identity on GKE, or the
+-- standard GCP credential chain (env vars -> metadata server) elsewhere.
+CREATE STORAGE my_gcs_adc TYPE = GCS;
+
 ALTER STORAGE my_s3 TYPE = S3 WITH (region = 'eu-central-1');
 ALTER STORAGE IF EXISTS my_s3 TYPE = S3 WITH (path_style = 'true');
 
@@ -71,6 +76,13 @@ DESCRIBE STORAGE my_s3;
 DROP STORAGE my_s3;
 DROP STORAGE IF EXISTS my_s3;
 ```
+
+The `WITH (...)` clause is optional in the grammar (`CREATE STORAGE name TYPE =
+gcs`, `ALTER STORAGE ...`, and the `IF [NOT] EXISTS` variants all parse without
+it). Whether a bare form is *accepted* depends on the type: **`gcs`** accepts it
+and falls back to ADC (see below); **`s3`** still requires `region` or
+`endpoint`, so a bare `TYPE = S3` parses but is rejected at validation; **`abs`**
+still requires `account_name`, `tenant_id`, `client_id`, and `client_secret`.
 
 ### Storage connection option keys
 
@@ -88,7 +100,7 @@ redacted from logs/errors (marked **secret**).
 | `session_token` | s3 | **secret** (temporary creds) |
 | `path_style` | s3 | force path-style addressing |
 | `use_http` | s3 | use plain HTTP instead of HTTPS |
-| `service_account_key` | gcs | **secret** |
+| `service_account_key` | gcs | **secret**; optional — omit (or leave empty) to use Application Default Credentials / Workload Identity |
 | `account_name` | azure | storage account name |
 | `tenant_id` | azure | AAD tenant |
 | `client_id` | azure | AAD app client id |

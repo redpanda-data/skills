@@ -420,6 +420,20 @@ SELECT CAST('170141183460469231731687303715884105727' AS int16);  -- text -> i12
   or over-range floats are rejected.
 - `bool ↔ INT16`/`INT32` is not allowed, matching the rest of the cast table.
 
+The six comparison operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work on the
+wide-integer types, returning `boolean`. They cover same-width (`i128`↔`i128`,
+`i256`↔`i256`), mixed-width (`i128`↔`i256`), and wide-vs-narrow (`INT16`/`INT32`
+compared with `INT`/`BIGINT`) — the narrower operand is implicitly widened.
+
+```sql
+SELECT INT16 '1' < INT16 '2';     -- boolean
+SELECT INT16 '1' = INT32 '2';     -- mixed width (i128 vs i256)
+SELECT huge_id >= 5 FROM my_table;-- wide vs narrow integer
+```
+
+Arithmetic on the wide-integer types is **not** supported: `SELECT 1 + INT16 '1'`
+fails with `operator does not exist: integer + i128`.
+
 ---
 
 ## What PostgreSQL features are NOT in Oxla

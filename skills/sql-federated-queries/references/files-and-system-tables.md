@@ -113,8 +113,13 @@ created with the credentials for that provider. Option names are grounded in
 ```sql
 CREATE STORAGE [IF NOT EXISTS] [<schema>.]<connection_name>
 TYPE = <type>
-WITH ( <option> = <value> [, ...] );
+[ WITH ( <option> = <value> [, ...] ) ];   -- WITH clause is optional
 ```
+
+The `WITH (...)` clause is optional in the grammar. Whether a bare `TYPE =
+<type>` is accepted depends on the provider: `GCS` accepts it and falls back to
+Application Default Credentials (see GCS section); `S3` still requires `region`
+or `endpoint`; `ABS` still requires its account/credential options.
 
 ### S3 storage options
 
@@ -167,15 +172,19 @@ Option names grounded in `oxla/src/sqlparser/sql/connection_option_names.h`
 
 | SQL option name | Proto field | Description |
 |-----------------|-------------|-------------|
-| `service_account_key` | `credentials` (string) | Application Default Credentials (ADC) JSON string. The SQL option key is `service_account_key`; it maps to the proto field named `credentials`. |
+| `service_account_key` | `credentials` (string) | Optional service-account JSON key. The SQL option key is `service_account_key`; it maps to the proto field named `credentials`. Omit it (or pass empty) to use Application Default Credentials (ADC) — Workload Identity on GKE, else the GCP credential chain. |
 | `endpoint` | `endpoint` (string) | Optional: override default GCS endpoint |
 
 ```sql
+-- Static service-account key
 CREATE STORAGE my_gcs
 TYPE = GCS
 WITH (
   service_account_key = '{"type":"service_account","project_id":"my-project",...}'
 );
+
+-- Keyless via ADC / Workload Identity (WITH clause omitted entirely)
+CREATE STORAGE my_gcs_adc TYPE = GCS;
 ```
 
 ### Azure storage options
