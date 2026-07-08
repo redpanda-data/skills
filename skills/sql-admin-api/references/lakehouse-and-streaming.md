@@ -20,14 +20,16 @@ A **storage connection** is a named, reusable object that holds the credentials 
 ```sql
 CREATE STORAGE [IF NOT EXISTS] [schema.]connection_name
   TYPE = { S3 | GCS | ABS }
-  WITH ( option = 'value', ... );
+  [ WITH ( option = 'value', ... ) ];   -- WITH clause is optional
 
 ALTER STORAGE [IF EXISTS] [schema.]connection_name
   TYPE = { S3 | GCS | ABS }
-  WITH ( option = 'value', ... );
+  [ WITH ( option = 'value', ... ) ];
 ```
 
 `TYPE` must be one of `s3`, `gcs`, or `abs` (Azure Blob Storage). Any other value is rejected at parse time (`src/sqlparser/bison_parser/bison_parser.y` `storage_type` rule).
+
+The `WITH (...)` clause is optional in the grammar (all four forms — `CREATE`, `CREATE ... IF NOT EXISTS`, `ALTER`, `ALTER ... IF EXISTS` — parse a bare `TYPE = <type>`). Whether a bare form is *accepted* is decided per-type by `parseStorageConnectionOptions`: `GCS` accepts it and falls back to ADC; `S3` still fails validation without `region` or `endpoint`; `ABS` still fails without its required account/credential options.
 
 ### Per-type options (from `src/catalog/storage_parser.cpp`)
 
@@ -53,7 +55,7 @@ When `access_key_id`/`secret_access_key` are omitted, the AWS default credential
 | Option | Required | Notes |
 |--------|----------|-------|
 | `url` | yes | `gs://bucket/prefix` |
-| `service_account_key` | yes | service-account JSON key; sensitive (redacted) |
+| `service_account_key` | — | service-account JSON key; sensitive (redacted). Optional: when omitted or empty, GCS uses Application Default Credentials (ADC) — Workload Identity on GKE, else the GCP credential chain |
 | `endpoint` | — | custom endpoint |
 
 **ABS / Azure Blob** (`k_supported_azure_options`) — expected URL scheme `wasbs://`:
