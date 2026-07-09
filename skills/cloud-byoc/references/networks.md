@@ -373,7 +373,7 @@ BYOC supports a range of private-connectivity options. Most are configured as cl
 | GCP Private Service Connect | cluster `gcp_private_service_connect` (`GCPPrivateServiceConnectSpec`) | `enabled`, `global_access_enabled`, `consumer_accept_list`. |
 | Azure Private Link | cluster `azure_private_link` (`AzurePrivateLinkSpec`) | `enabled`, `allowed_subscriptions`, `connect_console`. |
 | VPC / VNet peering | network `NetworkPeeringService` | See [Network Peering](#network-peering-vpcvnet-peering) above. |
-| Centralized egress | network `egress_spec` (PREVIEW) | AWS Transit Gateway / GCP hub-VPC peering — see below. |
+| Centralized egress | network `egress_spec` (PREVIEW) | AWS Transit Gateway / GCP hub-VPC peering / Azure hub-VNet peering — see below. |
 
 See the [Redpanda Cloud networking docs](https://docs.redpanda.com/cloud-data-platform/networking/) for the full guidance, including **BYOVPC on AWS (GA, March 2026)** as a fully customer-managed networking variant.
 
@@ -384,5 +384,5 @@ See the [Redpanda Cloud networking docs](https://docs.redpanda.com/cloud-data-pl
 | Provider | `egress_spec` field | Key field | Behavior |
 |---|---|---|---|
 | AWS | `aws` | `transit_gateway_id` (req, pattern `^tgw-[0-9a-f]{8,}$`) | **AWS Transit Gateway centralized egress for BYOC (beta, May 2026).** The spoke VPC attaches to your existing TGW; no NAT Gateway / IGW is created and all internet-bound traffic routes through your hub VPC via the TGW. |
-| GCP | `gcp` | `hub_vpc_project`, `hub_vpc_name` (both req) | Peers the Redpanda VPC to your hub/egress VPC; Cloud Router / Cloud NAT creation is skipped. The hub owner must create the mirror peering with `export_custom_routes=true` for the default route to be advertised. |
-| Azure | `azure` | (placeholder) | Not yet specified. |
+| GCP | `gcp` | `hub_vpc_project`, `hub_vpc_name` (both req) | **GCP hub-VPC centralized egress for BYOC (beta, June 2026).** Peers the Redpanda VPC to your hub/egress VPC (with `import_custom_routes=true`); Cloud Router / Cloud NAT creation is skipped. The hub owner must create the mirror peering with `export_custom_routes=true` for the default route (`0.0.0.0/0`) to be advertised. |
+| Azure | `azure` | `hub_vnet_id`, `firewall_private_ip` (both req) | Azure hub-VNet centralized egress (PREVIEW; not yet announced). `hub_vnet_id` is the full Azure resource ID of your customer-managed hub VNet; `firewall_private_ip` is the private IP of the Azure Firewall in that hub VNet (used as the next-hop for the default UDR route). When set, a VNet peering is created from the spoke VNet to the hub VNet, NAT Gateways are skipped, and a UDR routes internet-bound traffic to the hub firewall. Both fields are required together — a partial config is treated as disabled. |
