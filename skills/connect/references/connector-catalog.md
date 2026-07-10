@@ -19,11 +19,13 @@ https://docs.redpanda.com/redpanda-connect/components/catalog/):
 | `community` | Community-maintained, best-effort |
 
 > **Tier vs. runtime gate caveat:** the tier label and the runtime license
-> check don't always agree. Known discrepancies at v4.99.0: `jira`
-> (processor) is tiered `certified` but its source calls the enterprise
-> license check; `aws_dynamodb_cdc` is tiered `enterprise` but has no runtime
-> gate in source. When licensing matters for a decision, verify the specific
-> component (its docs page, or a dry run without a license).
+> check don't always agree. Known discrepancies at v4.100.0: both `jira`
+> components (the `input` and the now-deprecated `processor`) are tiered
+> `certified` but their source calls the enterprise license check
+> (`license.CheckRunningEnterprise`); `aws_dynamodb_cdc` is tiered
+> `enterprise` but has no runtime gate in source. When licensing matters for
+> a decision, verify the specific component (its docs page, or a dry run
+> without a license).
 
 ## Enterprise components (complete at Connect v4.99.0)
 
@@ -125,9 +127,15 @@ from this list. Families worth knowing exist:
   plus the already-covered `azure_blob_storage` family.
 - **Analytics/DB:** `gcp_bigquery_select` (in/processor), `questdb` (out),
   `aws_dynamodb_partiql` (processor), the `sql_*` family (insert/select/raw).
-- **Compute/integration:** `aws_lambda` (processor), `jira` (processor —
-  see the tier-vs-gate caveat above), `git` (input — poll a repo for
-  commits).
+- **Compute/integration:** `aws_lambda` (processor), `git` (input — poll a
+  repo for commits), and the `jira` components. The `jira` **input** (new in
+  Connect v4.100.0) streams issues, comments, or changelog entries via a JQL
+  filter with cursor-based incremental polling; the older `jira`
+  **processor** (enrich/lookup by calling the Jira API) is now
+  **deprecated** in favour of that input. Both are tiered `certified` but
+  require an Enterprise license at runtime (see the tier-vs-gate caveat
+  above); the input has no published reference page yet, so scaffold its
+  config with `rpk connect create jira` rather than a static field list.
 - **Redpanda-native:** `redpanda_data_transform` (processor) — run a
   broker-style Wasm Data Transform inside a Connect pipeline (see the
   `rpk-transform` skill for authoring transforms).
