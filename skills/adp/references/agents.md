@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. Evidence date: 2026-07-06.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. Evidence date: 2026-07-13.
 
 # ADP Agents Reference
 
@@ -56,6 +56,18 @@ ADP supports two agent types through a single service.
 
 There is no separate proto arm for self-managed agents; the explicit oneof variant is future work. The functional capability (omit the oneof) is current.
 
+## Agent metadata and `tags`
+
+Independent of the type-specific spec, every agent carries envelope metadata on the `Agent` message: `name` (immutable resource identity, `agents/<slug>`), `display_name` (max 128 chars), `description` (max 1024 chars), and `tags`. `created_at` / `updated_at` are OUTPUT_ONLY (`agent.proto:296–345`).
+
+`tags` is a `map<string, string>` (max 50 pairs; each value max 256 chars) that serves **three roles at once** — adding or removing a key affects all three:
+
+- **ABAC authorization** — tenant Cedar policies condition on tags via `resource.getTag("k")` / `resource.hasTag("k")` (for example, gate `CreateAgent` on `resource.getTag("team")`; see [governance.md](governance.md)).
+- **`ListAgents` filtering** — AIP-160 map traversal: `tags.env = "prod"` (value match) or `tags:env` (has-key).
+- **Cost grouping** — the gateway stamps the agent's tags onto every LLM call it makes, and `SpendingService` can group and filter spend by them (see the cost-allocation-tags section in [governance.md](governance.md)). Attribution is point-in-time: spend already recorded keeps the tags it had when it was recorded.
+
+Do not put secrets or PII in tag values — they surface in cost reports.
+
 ## `ManagedAgentSpec` fields
 
 These are the fields a builder sets when creating or updating a managed agent (`agent.proto:448–666`).
@@ -65,12 +77,14 @@ These are the fields a builder sets when creating or updating a managed agent (`
 | `model` | yes | min 1 char, max 128 chars |
 | `llm_provider` | yes | min 1 char, max 63 chars, pattern `^[a-z][a-z0-9-]*$` |
 | `system_prompt` | no | max 16,384 chars |
-| `max_iterations` | no | 0 to 200 (inclusive) |
-| `mcp_servers` | no | max 32 items; each min 1 char, max 63 chars, pattern `^[a-z][a-z0-9-]*$` |
+| `max_iterations` | no | 0 to 200; `0` (or omitted) means "use the runtime default" — the server clamps it to a positive cap before persist, so the value read back is never `0`; negatives are rejected |
+| `mcp_servers` | no | max 32 items per list; each min 1 char, max 63 chars, pattern `^[a-z][a-z0-9-]*$` (an aggregate cap also applies — see below) |
 | `subagents` | no | max 16 pairs; key pattern `^[a-z][a-z0-9-]*$` |
 | `agent_card` | no | see A2A agent card section below |
 
 There is no `tools` field on `ManagedAgentSpec`. Agents access tools exclusively through `mcp_servers` references. (The `tools` field exists on `mcp_server.proto`, not on the agent proto.)
+
+**Aggregate MCP-reference cap.** The `max 32 items` bound is *per list*. Beyond it, the server rejects (with `InvalidArgument`) any spec whose *total* MCP references — the root agent's `mcp_servers` plus every subagent's `mcp_servers` — exceed **32 per agent**. The total counts references, not distinct servers: a server named by both the root agent and a subagent counts twice, because the runtime dials one connection per (registry, server) reference (`agent.proto:507–514`). So 16 subagents each referencing 32 servers is per-list-valid but exceeds the aggregate cap and is rejected.
 
 ## Subagents
 
