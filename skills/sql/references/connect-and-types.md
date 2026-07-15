@@ -173,28 +173,30 @@ Grounded in `src/sqlparser/sql/ColumnType.h` (`enum class DataType`).
 
 | Type | Alias | Width | `pg_typeof` |
 |------|-------|-------|-------------|
-| `INT` / `INTEGER` | — | 32-bit signed integer | `i32` |
-| `LONG` | `BIGINT` | 64-bit signed integer | `i64` |
-| `INT16` | — | 128-bit (16-byte) wide signed integer | `i128` |
-| `INT32` | — | 256-bit (32-byte) wide signed integer | `i256` |
+| `INT` / `INTEGER` | — | 32-bit signed integer | `integer` |
+| `LONG` | `BIGINT` | 64-bit signed integer | `bigint` |
+| `INT16` | — | 128-bit (16-byte) wide signed integer | `int16` |
+| `INT32` | — | 256-bit (32-byte) wide signed integer | `int32` |
 
 `INT16` and `INT32` are **Oxla-native wide-integer types** — the number is the
 byte width, not the bit width, so `INT16` is a 128-bit integer and `INT32` is a
 256-bit integer (distinct `DataType::INT16` / `DataType::INT32` keywords in the
-grammar, not aliases of `INT`). `pg_typeof()` reports them as `i128` / `i256`.
-Do not confuse `INT32` with `INT`/`INTEGER` (the 32-bit type).
+grammar, not aliases of `INT`). `pg_typeof()` reports them by their user-facing
+names `int16` / `int32` — the same spelling you use in DDL and `CAST` (earlier
+builds reported the internal names `i128` / `i256`). Do not confuse `INT32` with
+`INT`/`INTEGER` (the 32-bit type).
 
 ```sql
 CREATE TABLE example (
     normal_id INT,      -- 32-bit  (i32)
     big_id    LONG,     -- 64-bit  (i64)
-    huge_id   INT16,    -- 128-bit (i128)
-    vast_id   INT32     -- 256-bit (i256)
+    huge_id   INT16,    -- 128-bit (pg_typeof: int16)
+    vast_id   INT32     -- 256-bit (pg_typeof: int32)
 );
 
--- The wide types report their internal names via pg_typeof:
-SELECT pg_typeof(CAST(1 AS int16));   -- i128
-SELECT pg_typeof(CAST(1 AS int32));   -- i256
+-- The wide types report their user-facing names via pg_typeof:
+SELECT pg_typeof(CAST(1 AS int16));   -- int16
+SELECT pg_typeof(CAST(1 AS int32));   -- int32
 ```
 
 ### Floating-point types
@@ -402,16 +404,16 @@ SELECT CAST(s0 AS INT) FROM tb1;
 ### Casting to/from the wide-integer types (`INT16`/`INT32`)
 
 Casts between the builtin integer/float/text types and the wide-integer types
-`INT16` (i128) and `INT32` (i256) are supported in both directions, including
-`i128 ↔ i256`:
+`INT16` (128-bit) and `INT32` (256-bit) are supported in both directions,
+including `INT16 ↔ INT32`:
 
 ```sql
-SELECT CAST(12345 AS int16);                 -- integer  -> i128
-SELECT CAST(9223372036854775807 AS int32);   -- bigint   -> i256
-SELECT CAST(42.7 AS int16);                   -- float    -> i128 (rounds: 43)
-SELECT CAST(CAST(5 AS int16) AS int32);       -- i128     -> i256
-SELECT CAST(CAST(5 AS int16) AS bigint);      -- i128     -> bigint
-SELECT CAST('170141183460469231731687303715884105727' AS int16);  -- text -> i128
+SELECT CAST(12345 AS int16);                 -- integer -> int16
+SELECT CAST(9223372036854775807 AS int32);   -- bigint  -> int32
+SELECT CAST(42.7 AS int16);                   -- float   -> int16 (rounds: 43)
+SELECT CAST(CAST(5 AS int16) AS int32);       -- int16   -> int32
+SELECT CAST(CAST(5 AS int16) AS bigint);      -- int16   -> bigint
+SELECT CAST('170141183460469231731687303715884105727' AS int16);  -- text -> int16
 ```
 
 - Widening (e.g. `int -> int16`, `int16 -> int32`) is **implicit**; narrowing
@@ -421,18 +423,46 @@ SELECT CAST('170141183460469231731687303715884105727' AS int16);  -- text -> i12
 - `bool ↔ INT16`/`INT32` is not allowed, matching the rest of the cast table.
 
 The six comparison operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work on the
-wide-integer types, returning `boolean`. They cover same-width (`i128`↔`i128`,
-`i256`↔`i256`), mixed-width (`i128`↔`i256`), and wide-vs-narrow (`INT16`/`INT32`
+wide-integer types, returning `boolean`. They cover same-width (`INT16`↔`INT16`,
+`INT32`↔`INT32`), mixed-width (`INT16`↔`INT32`), and wide-vs-narrow (`INT16`/`INT32`
 compared with `INT`/`BIGINT`) — the narrower operand is implicitly widened.
 
 ```sql
 SELECT INT16 '1' < INT16 '2';     -- boolean
-SELECT INT16 '1' = INT32 '2';     -- mixed width (i128 vs i256)
+SELECT INT16 '1' = INT32 '2';     -- mixed width (INT16 vs INT32)
 SELECT huge_id >= 5 FROM my_table;-- wide vs narrow integer
 ```
 
-Arithmetic on the wide-integer types is **not** supported: `SELECT 1 + INT16 '1'`
-fails with `operator does not exist: integer + i128`.
+Arithmetic, unary-sign, and bitwise operators are also defined on the
+wide-integer types — registered same-width (`INT16`⊕`INT16`, `INT32`⊕`INT32`),
+with a narrower integer operand implicitly widened:
+
+- Binary arithmetic: `+`, `-`, `*`, `/`, `%`.
+- Unary `+` / `-`. Negating a type's most-negative value overflows and raises an
+  out-of-range error (matching `INT`/`BIGINT`).
+- Bitwise / shift: `&`, `|`, `#` (XOR), `~`, `<<`, `>>` (the shift amount is an
+  ordinary `INTEGER`).
+
+```sql
+SELECT INT16 '10' + INT16 '5';    -- INT16
+SELECT 1 + INT16 '1';             -- INT16 (INT literal widened to INT16)
+SELECT -INT16 '5';                -- INT16
+SELECT INT16 '12' % INT16 '5';    -- INT16
+SELECT INT16 '6' << 2;            -- INT16
+```
+
+Integer literals that overflow `BIGINT` (64-bit) auto-promote to the narrowest
+wide type that holds them — `INT16` through the 128-bit range, then `INT32`
+through the 256-bit range; a literal beyond `INT32`'s range is rejected as out of
+range:
+
+```sql
+SELECT pg_typeof(9223372036854775808);                      -- int16
+SELECT pg_typeof(170141183460469231731687303715884105728);  -- int32
+```
+
+`ORDER BY` on a wide-integer column is supported, including the
+`ORDER BY ... LIMIT` (top-k) form.
 
 ---
 

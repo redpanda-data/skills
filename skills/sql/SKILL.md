@@ -139,8 +139,8 @@ Types grounded in `src/sqlparser/sql/ColumnType.h` (the `enum class DataType` li
 |-----------|-------|
 | `INT` / `INTEGER` | 32-bit integer (`i32`) |
 | `LONG` / `BIGINT` | 64-bit integer (`i64`) |
-| `INT16` | 128-bit (16-byte) wide integer (`i128`); Oxla-native, **not** 16-bit |
-| `INT32` | 256-bit (32-byte) wide integer (`i256`); Oxla-native, **not** an alias of `INT` |
+| `INT16` | 128-bit (16-byte) wide integer (`pg_typeof`: `int16`); Oxla-native, **not** 16-bit |
+| `INT32` | 256-bit (32-byte) wide integer (`pg_typeof`: `int32`); Oxla-native, **not** an alias of `INT` |
 | `FLOAT` | 32-bit float |
 | `DOUBLE` | 64-bit float |
 | `NUMERIC(p,s)` / `DECIMAL(p,s)` | Fixed-precision |
