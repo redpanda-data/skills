@@ -548,7 +548,7 @@ Serverless, DR is handled by the managed platform — see
 
 **Note on AI Agents, Knowledge Bases, MCP Servers**: `AIAgentService` and
 `KnowledgeBaseService` are **not** present in the public v1 data-plane OpenAPI
-(they are part of the Agentic Data Platform — see the `adp` skill — and out of
+(they are part of the Agentic Data Plane — see the `adp` skill — and out of
 scope here). `MCPServerService` does exist in the data-plane OpenAPI at
-`/v1/redpanda-connect/mcp-servers`, but it is ADP-adjacent rather than a core
+`/v1/redpanda-connect/mcp-servers`, but it is Agentic Data Plane-adjacent rather than a core
 Kafka/Connect data-plane service; see the `adp` skill for MCP server coverage.

@@ -1,10 +1,10 @@
 Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (BudgetService, BudgetCreate, Budget fields), `spending_service.proto` (SpendingService, SpendingFilter, SpendingStats), `guardrail.proto` (GuardrailService, BedrockGuardrailConfig, ContentFilterPolicy), `policy_service.proto` (PolicyService lines 25-62, PolicyTemplateService lines 66-104), `system_policy_service.proto` (SystemPolicyService), `effective_policy_set_service.proto` (EffectivePolicySetService), `cedar_options.proto`, `oauth_client.proto` (OAuthClientService), `oauth_provider.proto` (OAuthProviderService), `oauth_connection.proto` (OAuthConnectionService), `pending_auth_request.proto` (PendingAuthRequestService), `token_vault_admin.proto` (TokenVaultAdminService). Service registrations confirmed at `cloudv2/apps/aigw/internal/server/server.go` and `cloudv2/apps/adp-api/internal/server/server.go`. `SpendingService` cost-allocation tag surface (`GetSpendingTagKeys`, `BREAKDOWN_DIMENSION_TAG`, `tag_key`) re-verified against `spending_service.proto` on 2026-07-13. Evidence date: 2026-07-13.
 
-# ADP Governance Reference
+# Agentic Data Plane Governance Reference
 
-**Maturity:** ADP is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection.
+**Maturity:** Redpanda Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection.
 
-Audience: an AI agent operating ADP governance (budgets, spending analysis, guardrails, access control, OAuth/identity) via the ADP API and `rpk ai`. Optimize for correct programmatic use.
+Audience: an AI agent operating Agentic Data Plane governance (budgets, spending analysis, guardrails, access control, OAuth/identity) via the Agentic Data Plane API and `rpk ai`. Optimize for correct programmatic use.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
@@ -259,14 +259,14 @@ The following services and concepts do **not** exist in the `adp.v1alpha1` publi
 | Absent name | What to use instead |
 |-------------|---------------------|
 | `SpendLimitService` | Use `BudgetService` with `limit_microcents` |
-| `RateLimitService` | Not available; ADP has no per-second/minute/day rate caps. Use `BudgetService` to cap spend. |
+| `RateLimitService` | Not available; the Agentic Data Plane has no per-second/minute/day rate caps. Use `BudgetService` to cap spend. |
 | `RoutingService` / `BackendPoolService` | Not available; see gateway-and-providers.md |
 | `AccessControlService` | Use `PolicyService`, `PolicyTemplateService`, `SystemPolicyService`, `EffectivePolicySetService` |
 | `AuditService` (OCSF) | Not in `adp.v1alpha1`. For request/response accountability, see observability.md (transcripts). |
 | `ValidatePolicy` / `EvaluateAccess` / `ListPolicyVersions` RPCs | These RPCs do not exist on `PolicyService`. |
 | `SSOService` / `OAuth2ClientService` / `OAuth2KeyService` | Use `OAuthClientService`, `OAuthProviderService`, `OAuthConnectionService` |
 
-The names `SpendLimitService`, `RateLimitService`, `AccessControlService`, `AuditService`, `RoutingService`, and `SSOService` do exist in the legacy generated-only tree at `cloudv2/proto/gen/go/redpanda/api/aigateway/v1/` (ratelimit.pb.go, routing.pb.go, spend_limit.pb.go, audit.pb.go, access_control.pb.go, sso.pb.go). That tree has no public source protos and is not the current ADP surface. It is used by the separate `rpk cloud mcp` control-plane path (`aigateway/v1`); see /redpanda:rpk-cloud.
+The names `SpendLimitService`, `RateLimitService`, `AccessControlService`, `AuditService`, `RoutingService`, and `SSOService` do exist in the legacy generated-only tree at `cloudv2/proto/gen/go/redpanda/api/aigateway/v1/` (ratelimit.pb.go, routing.pb.go, spend_limit.pb.go, audit.pb.go, access_control.pb.go, sso.pb.go). That tree has no public source protos and is not the current Agentic Data Plane surface. It is used by the separate `rpk cloud mcp` control-plane path (`aigateway/v1`); see /redpanda:rpk-cloud.
 
 ## Service status summary
 

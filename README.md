@@ -2,7 +2,7 @@
 
 Agent Skills for Redpanda's five products — **Streaming** (the Kafka-compatible engine),
 **SQL** (Oxla), **Connect**, **Cloud** (Serverless, BYOC, Dedicated), and the **Agentic
-Data Plane** (ADP) — unified by the **rpk** command-line experience. Each skill is grounded
+Data Plane** — unified by the **rpk** command-line experience. Each skill is grounded
 in Redpanda's own source code, documentation, and APIs.
 
 ## Installation
@@ -36,7 +36,7 @@ copy-pasteable commands, configs, and code.
 ## Available Skills
 
 Redpanda has five public products — Streaming, SQL, Connect, Cloud, and the Agentic
-Data Plane (ADP) — with `rpk` as the unifying CLI across all of them.
+Data Plane — with `rpk` as the unifying CLI across all of them.
 
 ### 🌊 Streaming
 The Kafka-compatible streaming engine (the Redpanda broker).
@@ -73,9 +73,9 @@ Redpanda Cloud — the managed control plane and per-cluster data plane.
 - [**cloud-byoc**](./skills/cloud-byoc) — BYOC (Bring Your Own Cloud) clusters in your own AWS/GCP/Azure account: networks/VPCs, provider setup, and the `rpk` BYOC agent flow.
 - [**cloud-dedicated**](./skills/cloud-dedicated) — Dedicated clusters (fully Redpanda-managed, single-tenant, in Redpanda's cloud account) via the Control Plane API.
 
-### 🤖 Agentic Data Plane (ADP)
-Redpanda's governance infrastructure for AI agents and MCP servers — its own product surface that runs on Redpanda, provisioning its own ADP environment.
-- [**adp**](./skills/adp) — Build and operate AI on Redpanda: AI agents, MCP servers (managed catalog + code mode), the AI Gateway (LLM providers and models), governance (budgets, guardrails, Cedar policies, OAuth), and observability (transcripts) — driven through the `rpk ai` CLI and the ADP API.
+### 🤖 Agentic Data Plane
+Redpanda's governance infrastructure for AI agents and MCP servers — its own product surface that runs on Redpanda, provisioning its own environment.
+- [**adp**](./skills/adp) — Build and operate AI on Redpanda: AI agents, MCP servers (managed catalog + code mode), the AI Gateway (LLM providers and models), governance (budgets, guardrails, Cedar policies, OAuth), and observability (transcripts) — driven through the `rpk ai` CLI and the Agentic Data Plane API.
 
 ### ⌨️ rpk — the unifying CLI
 One CLI across every product.

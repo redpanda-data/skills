@@ -1,10 +1,10 @@
 Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/transcript.proto` (TranscriptsService lines 21-42, TranscriptSummary lines 172-207, TranscriptTurn lines 135-167, TranscriptToolCall lines 113-132, ListTranscriptsRequest/Filter lines 216-264, GetTranscriptResponse lines 288-298). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:344-348`. Experimental service: `cloudv2/proto/public/cloud/redpanda/api/adp/experimental/v1alpha1/insights_service.proto` (InsightsService lines 13-27, Insights message lines 41-49). InsightsService registration confirmed at `cloudv2/apps/aigw/internal/server/server.go:1225-1229`. Accountability framing from `adp-docs/modules/monitor/pages/concepts.adoc:323-334`. Evidence date: 2026-06-29.
 
-# ADP Observability Reference
+# Agentic Data Plane Observability Reference
 
-**Maturity:** ADP is generally available. `TranscriptsService` is on the `v1alpha1` version path and is non-experimental (package path `redpanda.api.adp.v1alpha1`; the proto carries no `LaunchStage` annotation, so treat field-level details as still evolving and confirm them live). `InsightsService` is Experimental (package path `redpanda.api.adp.experimental.v1alpha1`; the proto header explicitly warns it may change shape without a version bump or be removed entirely). Do not depend on `InsightsService` from stable clients.
+**Maturity:** Redpanda Agentic Data Plane is generally available. `TranscriptsService` is on the `v1alpha1` version path and is non-experimental (package path `redpanda.api.adp.v1alpha1`; the proto carries no `LaunchStage` annotation, so treat field-level details as still evolving and confirm them live). `InsightsService` is Experimental (package path `redpanda.api.adp.experimental.v1alpha1`; the proto header explicitly warns it may change shape without a version bump or be removed entirely). Do not depend on `InsightsService` from stable clients.
 
-Audience: an AI agent using ADP observability via the ADP API and `rpk ai`. Optimize for correct programmatic use.
+Audience: an AI agent using Agentic Data Plane observability via the Agentic Data Plane API and `rpk ai`. Optimize for correct programmatic use.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md).
 
@@ -101,7 +101,7 @@ Each `TranscriptToolCall` (`transcript.proto:113`) corresponds to a child OTel s
 
 ## `InsightsService` (Experimental)
 
-Source: `experimental/v1alpha1/insights_service.proto:13`. Served: `aigw server.go:1225-1229`. **Experimental** -- the proto header (`insights_service.proto:3-6`) explicitly states this package is provisional, backs in-flight surfaces (the ADP home dashboard), may change shape without a version bump, and may be removed entirely.
+Source: `experimental/v1alpha1/insights_service.proto:13`. Served: `aigw server.go:1225-1229`. **Experimental** -- the proto header (`insights_service.proto:3-6`) explicitly states this package is provisional, backs in-flight surfaces (the Agentic Data Plane home dashboard), may change shape without a version bump, and may be removed entirely.
 
 ### `GetInsights` RPC
 
@@ -129,15 +129,15 @@ For the `total_cost_microcents` unit: 1 cent = 1,000,000 microcents; $1.00 = 100
 
 ## Accountability: no OCSF AuditService
 
-There is no `AuditService` in the ADP public API. A search of the full ADP proto tree (`cloudv2/proto/public/cloud/redpanda/api/adp/`) returns zero matches for `AuditService`, `ocsf`, or `OCSF`. There is no `audit.proto` in either `v1alpha1/` or `experimental/v1alpha1/`.
+There is no `AuditService` in the Agentic Data Plane public API. A search of the full Agentic Data Plane proto tree (`cloudv2/proto/public/cloud/redpanda/api/adp/`) returns zero matches for `AuditService`, `ocsf`, or `OCSF`. There is no `audit.proto` in either `v1alpha1/` or `experimental/v1alpha1/`.
 
-The documented "who did what" mechanism for ADP is `TranscriptsService`. The adp-docs observability concepts page (`adp-docs/modules/monitor/pages/concepts.adoc:323-334`) frames this explicitly:
+The documented "who did what" mechanism for the Agentic Data Plane is `TranscriptsService`. The adp-docs observability concepts page (`adp-docs/modules/monitor/pages/concepts.adoc:323-334`) frames this explicitly:
 
 > "Transcripts provide: a complete, immutable record of every execution step, stored on Redpanda's distributed log with no gaps; hierarchical view of request flow through your system (parent-child span relationships); detailed timing information for performance analysis; ability to reconstruct execution paths and identify bottlenecks. Transcripts are optimized for execution-level observability and governance. For user-level accountability tracking ('who initiated what'), use the session and task topics for agents, which provide records of agent conversations and task execution."
 
 For request/response accountability, use `TranscriptsService`. There is no separate audit API to call.
 
-Note: an `AuditService` (OCSF-shaped) does exist in the legacy generated-only tree at `cloudv2/proto/gen/go/redpanda/api/aigateway/v1/audit.pb.go`. That tree has no public source protos and is used by the separate `rpk cloud mcp` control-plane path (`aigateway/v1`), not by the current ADP API surface.
+Note: an `AuditService` (OCSF-shaped) does exist in the legacy generated-only tree at `cloudv2/proto/gen/go/redpanda/api/aigateway/v1/audit.pb.go`. That tree has no public source protos and is used by the separate `rpk cloud mcp` control-plane path (`aigateway/v1`), not by the current Agentic Data Plane API surface.
 
 ## Service status summary
 

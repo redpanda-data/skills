@@ -1,8 +1,8 @@
 Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` (MCPServerService RPCs, MCPServer fields, code-mode comment, tool-naming comment), `cloudv2/proto/public/cloud/redpanda/mcps/v1/auth.proto` (auth mode messages), `cloudv2/apps/aigw/internal/mcp/managed/defaults.go` (managed catalog registrations). Evidence date: 2026-06-29.
 
-# ADP MCP Servers Reference
+# Agentic Data Plane MCP Servers Reference
 
-**Maturity:** ADP is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Individual managed-catalog entries carry their own per-type maturity badges; see the managed catalog section below. Audience: an AI agent operating ADP MCP servers via `rpk ai mcp` and the ADP API.
+**Maturity:** Redpanda Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Individual managed-catalog entries carry their own per-type maturity badges; see the managed catalog section below. Audience: an AI agent operating Agentic Data Plane MCP servers via `rpk ai mcp` and the Agentic Data Plane API.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
@@ -31,10 +31,10 @@ There are two `MCPServerService` definitions in the cloudv2 service tree. Know w
 
 | Layer | Package | Description |
 |-------|---------|-------------|
-| ADP management plane | `redpanda.api.adp.v1alpha1.MCPServerService` | 7 RPCs; the aigw app implements this directly. Use this layer to create, update, and manage MCP server records. |
+| Agentic Data Plane management plane | `redpanda.api.adp.v1alpha1.MCPServerService` | 7 RPCs; the aigw app implements this directly. Use this layer to create, update, and manage MCP server records. |
 | Cloud dataplane (public API) | `redpanda.api.dataplane.v1alpha3.MCPServerService` | 9 RPCs (adds `StartMCPServer`, `StopMCPServer`, `GetMCPServerServiceConfigSchema`, `LintMCPConfig`); exposed via the public Cloud data-plane API and Cloud UI MCP tools. |
 
-The skill operates against the `v1alpha1` ADP management-plane layer unless the context explicitly targets the `v1alpha3` public API.
+The skill operates against the `v1alpha1` Agentic Data Plane management-plane layer unless the context explicitly targets the `v1alpha3` public API.
 
 ## `MCPServerService` RPCs (`adp.v1alpha1`)
 
@@ -85,7 +85,7 @@ Two additional auth message types (`BasicAuth` and `APIKeyAuth`) are defined in 
 
 ## Code mode
 
-When `code_mode = true` on a server, the ADP gateway adds two additional tools:
+When `code_mode = true` on a server, the Agentic Data Plane gateway adds two additional tools:
 
 | Tool name (in full endpoint) | Tool name (in code-mode endpoint) | Description |
 |------------------------------|-----------------------------------|-------------|
@@ -102,7 +102,7 @@ Integration guides report that deferred tool loading (code mode) reduces token u
 
 ### Tool name truncation
 
-The MCP protocol enforces a 64-character limit on tool names. For managed types whose generated names exceed this limit, ADP truncates the prefix and replaces it with a hash (for example, `64ghux5adn_github_read_v1_GitHubReadService_GetAuthenticatedUser`). The version, service, and method suffix is always preserved, so the short tool name an agent sees (for example, `get_authenticated_user`) remains stable across truncations.
+The MCP protocol enforces a 64-character limit on tool names. For managed types whose generated names exceed this limit, the Agentic Data Plane truncates the prefix and replaces it with a hash (for example, `64ghux5adn_github_read_v1_GitHubReadService_GetAuthenticatedUser`). The version, service, and method suffix is always preserved, so the short tool name an agent sees (for example, `get_authenticated_user`) remains stable across truncations.
 
 ## Managed catalog
 
