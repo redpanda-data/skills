@@ -200,10 +200,10 @@ GET    /v1/serverless/clusters/{id}/prometheus/credentials
 
 ### Operations
 
-Create and Delete return an `Operation`. Update also returns an `Operation`,
-but there is no `TYPE_UPDATE_SERVERLESS_CLUSTER` in the `Operation.Type` enum
-(only `TYPE_CREATE_SERVERLESS_CLUSTER` and `TYPE_DELETE_SERVERLESS_CLUSTER`
-exist). Poll at `GET /v1/operations/{id}`.
+Create, Update, and Delete each return an `Operation` whose `type` is
+`TYPE_CREATE_SERVERLESS_CLUSTER`, `TYPE_UPDATE_SERVERLESS_CLUSTER`, or
+`TYPE_DELETE_SERVERLESS_CLUSTER` respectively, so you can filter operations by
+any of the three. Poll at `GET /v1/operations/{id}`.
 
 ```
 GET /v1/operations/{id}

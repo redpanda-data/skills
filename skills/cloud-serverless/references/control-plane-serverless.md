@@ -411,11 +411,10 @@ curl -s -X POST https://api.redpanda.com/v1/serverless/clusters \
 
 ## Operations
 
-Create and Delete return an `Operation` with an `id`. Update also returns an
-`Operation`, but there is no `TYPE_UPDATE_SERVERLESS_CLUSTER` in the
-`Operation.Type` enum — only `TYPE_CREATE_SERVERLESS_CLUSTER` and
-`TYPE_DELETE_SERVERLESS_CLUSTER` exist. You cannot filter operations by an
-update-serverless type.
+Create, Update, and Delete each return an `Operation` with an `id`. Their
+`Operation.Type` values are `TYPE_CREATE_SERVERLESS_CLUSTER` = 6,
+`TYPE_UPDATE_SERVERLESS_CLUSTER` = 19, and `TYPE_DELETE_SERVERLESS_CLUSTER` = 7,
+so you can filter operations by any of the three — including update.
 
 Use the Operations API to poll or list operations.
 
@@ -432,7 +431,7 @@ curl -s "https://api.redpanda.com/v1/operations/${OP_ID}" \
 |---|---|
 | `id` | 20-char opaque ID |
 | `state` | `STATE_IN_PROGRESS`, `STATE_COMPLETED`, or `STATE_FAILED` |
-| `type` | e.g. `TYPE_CREATE_SERVERLESS_CLUSTER`, `TYPE_DELETE_SERVERLESS_CLUSTER` (no update type exists) |
+| `type` | e.g. `TYPE_CREATE_SERVERLESS_CLUSTER`, `TYPE_UPDATE_SERVERLESS_CLUSTER`, `TYPE_DELETE_SERVERLESS_CLUSTER` |
 | `resource_id` | ID of the associated cluster |
 | `error` | Present when `state == STATE_FAILED`; contains `google.rpc.Status` |
 | `response` | Present when `state == STATE_COMPLETED`; contains the created/updated resource |
