@@ -1,10 +1,10 @@
 Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. Evidence date: 2026-07-13.
 
-# ADP Agents Reference
+# Agentic Data Plane Agents Reference
 
-**Maturity:** ADP is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Triggers (Teams, Cron) are newer fast-follow features.
+**Maturity:** The Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Triggers (Teams, Cron) are newer fast-follow features.
 
-Audience: an AI agent operating ADP via `rpk ai` and ADP MCP tools. Optimize for correct programmatic use.
+Audience: an AI agent operating the Agentic Data Plane via `rpk ai` and its MCP tools. Optimize for correct programmatic use.
 
 Related references: [SKILL.md](../SKILL.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
@@ -17,7 +17,7 @@ Before acting, confirm the available operations and fields:
 rpk ai agent --help
 
 # List MCP tool groups served on the cluster
-# (use the ADP MCP tools for the authoritative tool list)
+# (use the Agentic Data Plane MCP tools for the authoritative tool list)
 ```
 
 The sections below document the proto-verified surface. For exact field lists and current limits, confirm live via `--help` and by calling the relevant MCP describe or schema tools.
@@ -48,9 +48,9 @@ Both managed and self-managed agents share this unified service (`agent.proto:15
 
 ## Agent types: managed vs. self-managed
 
-ADP supports two agent types through a single service.
+The Agentic Data Plane supports two agent types through a single service.
 
-**Managed agent** (`agent_type.managed` oneof): ADP runs the agent container. Set the `managed` arm of the `agent_type` oneof on `AgentCreate` to register a managed agent. The agent runtime, scaling, and lifecycle are handled by the platform.
+**Managed agent** (`agent_type.managed` oneof): the Agentic Data Plane runs the agent container. Set the `managed` arm of the `agent_type` oneof on `AgentCreate` to register a managed agent. The agent runtime, scaling, and lifecycle are handled by the platform.
 
 **Self-managed (user-hosted) agent**: leave the `agent_type` oneof unset on `AgentCreate`. The registry creates a metadata-only record that the platform does not run. Use this to track user-hosted agents alongside managed ones in the same registry. Read responses for self-managed agents return a nil (unset) `agent_type` oneof, not a stub `managed` field. Self-managed agents are a first-class feature with a full UI and documentation (`self-managed-agents.adoc`).
 
@@ -117,7 +117,7 @@ https://<agent-url>/.well-known/agent-card.json
 
 `/.well-known/agent.json` is also served as an alias from the same handler (`aigw/internal/server/server.go:988–989`). There is no bare `/agent.json` route registered; use the `.well-known` prefix.
 
-The docs confirm: "ADP agents expose their agent cards at the `/.well-known/agent-card.json` subpath of the agent URL" (`a2a-concepts.adoc:44–46`).
+The docs confirm that agents expose their agent cards at the `/.well-known/agent-card.json` subpath of the agent URL (`a2a-concepts.adoc:44–46`).
 
 The `skills` repeated field on `AgentCard` accepts `Skill` messages with `tags`, `examples`, `input_modes`, and `output_modes` (`agent.proto:618–664`).
 

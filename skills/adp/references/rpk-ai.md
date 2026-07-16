@@ -2,7 +2,7 @@ Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150,
 
 # rpk ai CLI Reference
 
-**Maturity: Beta.** The ADP product is generally available; the `rpk ai` CLI itself is Beta (all `rpk ai` reference pages in adp-docs carry `:page-beta: true`). The binary is in production use.
+**Maturity: Preview.** The Agentic Data Plane product is generally available; the `rpk ai` CLI itself is in Preview (all `rpk ai` reference pages in adp-docs carry `:page-preview: true`). The binary is in production use.
 
 Audience: an AI agent using `rpk ai` to operate the Redpanda AI platform. Optimize for correct command usage.
 
@@ -48,16 +48,16 @@ Platforms: `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`, `window
 
 ## Authentication
 
-`rpk ai` is self-contained: it owns its own credentials and ADP environment selection rather than riding the active `rpk cloud` session. Sign in and pick a target:
+`rpk ai` is self-contained: it owns its own credentials and Agentic Data Plane environment selection rather than riding the active `rpk cloud` session. Sign in and pick a target:
 
 ```bash
 rpk ai auth login              # OAuth device-authorization flow
-rpk ai env list                # list local + live ADP environments
-rpk ai env use <environment>   # select the ADP environment whose AI Gateway becomes the active target
+rpk ai env list                # list local + live Agentic Data Plane environments
+rpk ai env use <environment>   # select the Agentic Data Plane environment whose AI Gateway becomes the active target
 rpk ai auth status             # show the current token state
 ```
 
-`rpk ai auth login` runs the OAuth 2.0 device-authorization grant against Redpanda Cloud and caches the resulting credentials in `~/.rpai/credentials` (mode `0600`). `rpk ai env use <environment>` selects the ADP environment whose AI Gateway URL becomes the active dataplane target (this replaces the old `rpk cloud cluster select` step). `rpk ai env show` prints the resolved environment.
+`rpk ai auth login` runs the OAuth 2.0 device-authorization grant against Redpanda Cloud and caches the resulting credentials in `~/.rpai/credentials` (mode `0600`). `rpk ai env use <environment>` selects the Agentic Data Plane environment whose AI Gateway URL becomes the active dataplane target (this replaces the old `rpk cloud cluster select` step). `rpk ai env show` prints the resolved environment.
 
 Auth modes are `device|rpk|token|none` (default `device`; source `internal/types/types.go:81-90`):
 
@@ -86,7 +86,7 @@ When running as `rpk ai`, the binary uses prefixed flag names. Source: `root.go:
 | `--format` | `-o` | `RPAI_FORMAT` | `table` | output format: `table`, `wide`, `json`, `yaml`, `markdown` |
 | `--no-color` | (none) | `NO_COLOR` | false | disable colored output |
 
-**Important:** `--rpai-endpoint` is intentionally NOT bound to a `RPAI_ENDPOINT` environment variable. The adp-docs pages incorrectly describe it as `(env: RPAI_ENDPOINT)`. The source code comment at `root.go:206-213` states this explicitly: binding it would silently override the ADP environment chosen via `rpk ai env use`. The correct behavior is that `--rpai-endpoint` only takes effect when passed as a flag for a single invocation.
+**Important:** `--rpai-endpoint` is intentionally NOT bound to a `RPAI_ENDPOINT` environment variable. The adp-docs pages incorrectly describe it as `(env: RPAI_ENDPOINT)`. The source code comment at `root.go:206-213` states this explicitly: binding it would silently override the Agentic Data Plane environment chosen via `rpk ai env use`. The correct behavior is that `--rpai-endpoint` only takes effect when passed as a flag for a single invocation.
 
 Config default path: `$HOME/.rpai/config` (production). Non-production environments use `$HOME/.rpai_<env>/config` (for example, `$HOME/.rpai_integration/config`). Source: `apps/rpai/internal/config/cloudenv.go:179-181`.
 
@@ -96,7 +96,7 @@ Source: `root.go:134-150` (AddCommand calls), confirmed against `testdata/comman
 
 | Subcommand | Aliases | Notes |
 |-----------|---------|-------|
-| `agent` | `agents` | Manage ADP agents |
+| `agent` | `agents` | Manage Agentic Data Plane agents |
 | `auth` | (none) | Authentication helpers |
 | `connection` | `connections`, `conn` | Phase 1 stub; both subcommands print "coming soon" and exit 0 |
 | `env` | `environment` | Manage rpai environments (replaces deprecated `profile`) |
@@ -277,6 +277,6 @@ Not yet documented in adp-docs.
 |---------|-------|-----|
 | `no token available (run rpai auth login)` | Not signed in (no cached credentials, no `--token`/`RPAI_TOKEN`) | Run `rpk ai auth login` |
 | `is not a local environment and you are not logged in` | `env use <name>` with no matching local env and no credentials | Run `rpk ai auth login`, then `rpk ai env use <environment>` |
-| ADP environment not ready (no AI Gateway URL) | Selected environment has no AI Gateway endpoint yet | Choose a ready environment with `rpk ai env list` / `rpk ai env use` |
+| Agentic Data Plane environment not ready (no AI Gateway URL) | Selected environment has no AI Gateway endpoint yet | Choose a ready environment with `rpk ai env list` / `rpk ai env use` |
 | `The Redpanda AI CLI is already installed` | `install` without `--force` | Use `rpk ai upgrade` or add `--force` |
 | `found a self-managed Redpanda AI CLI` | Binary outside `~/.local/bin` | Run `rpk ai uninstall && rpk ai install` |

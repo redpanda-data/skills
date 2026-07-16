@@ -66,7 +66,7 @@ The shared `DataPlaneClientSet` in `dataplane.go` (used by Dedicated, BYOC, and 
 
 Topic partition management is also under `TopicService`: `GET/POST /v1/topics/{topic_name}/partitions`. Redpanda Connect component metadata is exposed at `/v1/redpanda-connect/components` and `/v1/redpanda-connect/config-schema`.
 
-The verified `/v1` data-plane OpenAPI does **not** include `AIAgentService` or `KnowledgeBaseService` — those are ADP-only services outside the core data plane (see the `adp` skill). `MCPServerService` exists at `/v1/redpanda-connect/mcp-servers` (Redpanda Connect MCP servers), and is also ADP-adjacent. **`ShadowLinkService` is a control-plane service** under `https://api.redpanda.com` (`/v1/shadow-links`, `/v1/shadow-links/{id}`) — see the [Enterprise Features reference](enterprise-features.md#shadow-linking--cross-cluster-disaster-recovery-enterprise).
+The verified `/v1` data-plane OpenAPI does **not** include `AIAgentService` or `KnowledgeBaseService` — those are Agentic Data Plane-only services outside the core data plane (see the `adp` skill). `MCPServerService` exists at `/v1/redpanda-connect/mcp-servers` (Redpanda Connect MCP servers), and is also Agentic Data Plane-adjacent. **`ShadowLinkService` is a control-plane service** under `https://api.redpanda.com` (`/v1/shadow-links`, `/v1/shadow-links/{id}`) — see the [Enterprise Features reference](enterprise-features.md#shadow-linking--cross-cluster-disaster-recovery-enterprise).
 
 This skill documents Topics, ACLs, Users, Secrets, Security Roles, and Quotas in detail. Other services follow the same Bearer-auth pattern.
 

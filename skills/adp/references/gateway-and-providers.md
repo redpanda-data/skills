@@ -2,9 +2,9 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto
 
 # AI Gateway, LLM Providers, and Models Reference
 
-**Maturity:** ADP is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection.
+**Maturity:** The Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection.
 
-Audience: an AI agent operating the ADP AI Gateway via `rpk ai llm` / `rpk ai model` and the ADP API. Optimize for correct programmatic use.
+Audience: an AI agent operating the Agentic Data Plane AI Gateway via `rpk ai llm` / `rpk ai model` and the Agentic Data Plane API. Optimize for correct programmatic use.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
@@ -133,7 +133,7 @@ What the proxy does:
 
 ## Not in scope
 
-The following capabilities are absent from the ADP AI Gateway. Both the `adp/v1alpha1` proto tree and the ADP AI Gateway product documentation confirm this.
+The following capabilities are absent from the Agentic Data Plane AI Gateway. Both the `adp/v1alpha1` proto tree and the Agentic Data Plane AI Gateway product documentation confirm this.
 
 **Proto evidence:** no `RoutingService`, `BackendPoolService`, `RateLimitService`, or routing/failover/load-balancing messages were found anywhere under `cloudv2/proto/public/cloud/redpanda/api/adp/` (v1alpha1 and experimental). No `requests_per_second`, `requests_per_minute`, or `requests_per_day` fields are defined on any `adp/v1alpha1` message.
 
@@ -147,4 +147,4 @@ Lines 113-119 (`[[out-of-scope]]` Limitations section):
 > "Rate limits. Requests-per-second, per-minute, or per-day caps are not available. To cap spend rather than request rate, use budgets, which enforce a per-agent hard cap."
 > "Managed MCP aggregation at the gateway. Register MCP tool servers separately under MCP Servers in ADP."
 
-Do not attempt to configure routing rules, failover policies, cross-provider load balancing, or request rate limits via `LLMProviderService` or any other ADP API. These features do not exist in the current API surface.
+Do not attempt to configure routing rules, failover policies, cross-provider load balancing, or request rate limits via `LLMProviderService` or any other Agentic Data Plane API. These features do not exist in the current API surface.

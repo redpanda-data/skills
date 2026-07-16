@@ -95,7 +95,7 @@ input, `tigerbeetle_cdc`, is **certified** (no license) and CGO-only; see
 
 - `gateway` (input) and `a2a_message` (processor) are enterprise-tier in
   `info.csv` at v4.99.0 but have **no reference page** in rp-connect-docs.
-  They appear to be ADP/agent-related surfaces; confirm status before
+  They appear to be Agentic Data Plane/agent-related surfaces; confirm status before
   documenting or recommending them.
 
 ## AI/ML processors — certified, NOT license-gated
