@@ -27,7 +27,7 @@ The Agentic Data Plane is Redpanda's governance infrastructure for AI agents and
 
 ## Component overview
 
-Maturity note: the Agentic Data Plane is generally available. Its APIs are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live. The `rpk ai` CLI is in Preview; `InsightsService` is Experimental.
+Maturity note: Redpanda Agentic Data Plane is generally available. Its APIs are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live. The `rpk ai` CLI is in Preview; `InsightsService` is Experimental.
 
 ### AI agents
 

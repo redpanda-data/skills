@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` 
 
 # Agentic Data Plane MCP Servers Reference
 
-**Maturity:** The Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Individual managed-catalog entries carry their own per-type maturity badges; see the managed catalog section below. Audience: an AI agent operating Agentic Data Plane MCP servers via `rpk ai mcp` and the Agentic Data Plane API.
+**Maturity:** Redpanda Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Individual managed-catalog entries carry their own per-type maturity badges; see the managed catalog section below. Audience: an AI agent operating Agentic Data Plane MCP servers via `rpk ai mcp` and the Agentic Data Plane API.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 

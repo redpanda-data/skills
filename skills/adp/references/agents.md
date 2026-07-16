@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (line
 
 # Agentic Data Plane Agents Reference
 
-**Maturity:** The Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Triggers (Teams, Cron) are newer fast-follow features.
+**Maturity:** Redpanda Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Triggers (Teams, Cron) are newer fast-follow features.
 
 Audience: an AI agent operating the Agentic Data Plane via `rpk ai` and its MCP tools. Optimize for correct programmatic use.
 

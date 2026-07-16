@@ -2,7 +2,7 @@ Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/transcript.proto` 
 
 # Agentic Data Plane Observability Reference
 
-**Maturity:** The Agentic Data Plane is generally available. `TranscriptsService` is on the `v1alpha1` version path and is non-experimental (package path `redpanda.api.adp.v1alpha1`; the proto carries no `LaunchStage` annotation, so treat field-level details as still evolving and confirm them live). `InsightsService` is Experimental (package path `redpanda.api.adp.experimental.v1alpha1`; the proto header explicitly warns it may change shape without a version bump or be removed entirely). Do not depend on `InsightsService` from stable clients.
+**Maturity:** Redpanda Agentic Data Plane is generally available. `TranscriptsService` is on the `v1alpha1` version path and is non-experimental (package path `redpanda.api.adp.v1alpha1`; the proto carries no `LaunchStage` annotation, so treat field-level details as still evolving and confirm them live). `InsightsService` is Experimental (package path `redpanda.api.adp.experimental.v1alpha1`; the proto header explicitly warns it may change shape without a version bump or be removed entirely). Do not depend on `InsightsService` from stable clients.
 
 Audience: an AI agent using Agentic Data Plane observability via the Agentic Data Plane API and `rpk ai`. Optimize for correct programmatic use.
 
