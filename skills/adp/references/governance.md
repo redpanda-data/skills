@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (BudgetService, BudgetCreate, Budget fields), `spending_service.proto` (SpendingService, SpendingFilter, SpendingStats), `guardrail.proto` (GuardrailService, BedrockGuardrailConfig, ContentFilterPolicy), `policy_service.proto` (PolicyService lines 25-62, PolicyTemplateService lines 66-104), `system_policy_service.proto` (SystemPolicyService), `effective_policy_set_service.proto` (EffectivePolicySetService), `cedar_options.proto`, `oauth_client.proto` (OAuthClientService), `oauth_provider.proto` (OAuthProviderService), `oauth_connection.proto` (OAuthConnectionService), `pending_auth_request.proto` (PendingAuthRequestService), `token_vault_admin.proto` (TokenVaultAdminService). Service registrations confirmed at `cloudv2/apps/aigw/internal/server/server.go` and `cloudv2/apps/adp-api/internal/server/server.go`. `SpendingService` cost-allocation tag surface (`GetSpendingTagKeys`, `BREAKDOWN_DIMENSION_TAG`, `tag_key`) re-verified against `spending_service.proto` on 2026-07-13. Evidence date: 2026-07-13.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (BudgetService, BudgetCreate, Budget fields), `spending_service.proto` (SpendingService, SpendingFilter, SpendingStats), `guardrail.proto` (GuardrailService, BedrockGuardrailConfig, ContentFilterPolicy, LocalGuardrailConfig, GuardrailProvider), `policy_service.proto` (PolicyService lines 25-62, PolicyTemplateService lines 66-104), `system_policy_service.proto` (SystemPolicyService), `effective_policy_set_service.proto` (EffectivePolicySetService), `cedar_options.proto`, `oauth_client.proto` (OAuthClientService), `oauth_provider.proto` (OAuthProviderService), `oauth_connection.proto` (OAuthConnectionService), `pending_auth_request.proto` (PendingAuthRequestService), `token_vault_admin.proto` (TokenVaultAdminService). Service registrations confirmed at `cloudv2/apps/aigw/internal/server/server.go` and `cloudv2/apps/adp-api/internal/server/server.go`. `SpendingService` cost-allocation tag surface (`GetSpendingTagKeys`, `BREAKDOWN_DIMENSION_TAG`, `tag_key`) re-verified against `spending_service.proto` on 2026-07-13. `GuardrailProvider` / `Guardrail.config` oneof re-verified against `guardrail.proto` on 2026-07-20. Evidence date: 2026-07-20.
 
 # Agentic Data Plane Governance Reference
 
@@ -106,11 +106,14 @@ Source: `guardrail.proto:25`. Served: `aigw server.go:1200`.
 | `blocked_input_message` | REQUIRED; message returned when input is blocked; 1-500 chars (`guardrail.proto:158`) |
 | `blocked_output_message` | REQUIRED; message returned when output is blocked; 1-500 chars (`guardrail.proto:168`) |
 | `enabled` | bool; master on/off switch (`guardrail.proto:173`) |
-| `config` | oneof; only current variant: `bedrock_config BedrockGuardrailConfig` (`guardrail.proto:211`) |
+| `config` | oneof (REQUIRED). Two variants: `bedrock_config BedrockGuardrailConfig` (field 10) and `local_config LocalGuardrailConfig` (field 23). `bedrock_config` is the generally-available variant; `local_config` is an emerging, dataplane-evaluated variant that is not yet GA — see Provider below (`guardrail.proto:237-253`) |
 
 ### Provider
 
-The only supported provider is **AWS Bedrock** (`GUARDRAIL_PROVIDER_BEDROCK = 1`, `guardrail.proto:74-78`).
+`GuardrailProvider` defines two values (`guardrail.proto:96-104`), each mapping 1:1 to a `config` oneof variant:
+
+- `GUARDRAIL_PROVIDER_BEDROCK = 1` — AWS Bedrock Guardrails (`bedrock_config`). This is the **generally-available** provider; author guardrails against it unless you have confirmed otherwise.
+- `GUARDRAIL_PROVIDER_LOCAL = 2` — dataplane-evaluated local guardrails with per-family engine routing (`local_config`): each policy family runs either locally in the gateway (`ENGINE_LOCAL`) or delegates to a companion Bedrock guardrail (`ENGINE_BEDROCK`). This is **not yet generally available** — per-family local engines are gated per deployment (admission rejects `ENGINE_LOCAL` for a family whose local evaluator is not wired on that deployment), and it is not covered by the ADP release notes as of this writing. Confirm availability live via `rpk ai guardrail --help` and the API before relying on it, and treat its nested shape as still evolving — read `LocalGuardrailConfig` in `guardrail.proto` for current field detail rather than assuming the family set here.
 
 ### `BedrockGuardrailConfig` sub-policies
 
