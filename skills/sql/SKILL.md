@@ -5,7 +5,7 @@ description: >-
   columnar analytical database. Covers connecting via psql or any PostgreSQL
   driver (port 5432, password "oxla" by default), the full supported data-type
   set (INT/LONG/INT16/INT32/FLOAT/DOUBLE/CHAR/VARCHAR/STRING/TEXT/DATE/TIME/
-  TIMESTAMP/TIMESTAMPTZ/INTERVAL/BOOL/JSON/JSONB/BYTEA/NUMERIC/ARRAY/GEOMETRY/
+  TIMESTAMP/TIMESTAMPTZ/INTERVAL/BOOL/JSON/JSONB/BYTEA/UUID/NUMERIC/ARRAY/GEOMETRY/
   GEOGRAPHY/POINT), DDL (CREATE/DROP TABLE, CREATE TABLE AS SELECT, CREATE/DROP
   VIEW, CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE/GRANT/REVOKE), DML
   (SELECT/INSERT/UPDATE/DELETE, SELECT INTO table or file), data loading
@@ -152,6 +152,7 @@ Types grounded in `src/sqlparser/sql/ColumnType.h` (the `enum class DataType` li
 | `BOOL` | Boolean |
 | `JSON` / `JSONB` | JSON document |
 | `BYTEA` | Binary data |
+| `UUID` | RFC-4122 UUID (`pg_typeof`: `uuid`); literal `UUID '...'`, casts to/from text only |
 | `ARRAY` | Arrays (`INT[]`, `FLOAT[]`, etc.) |
 | `GEOMETRY` / `GEOGRAPHY` / `POINT` | Geospatial |
 

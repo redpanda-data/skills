@@ -322,6 +322,56 @@ CREATE TABLE blobs (
 );
 ```
 
+### UUID
+
+`UUID` is a native, PostgreSQL-compatible type for RFC-4122 UUIDs. It is stored
+as a 128-bit value and reports its user-facing name via `pg_typeof` as `uuid`.
+It has a PostgreSQL OID and binary wire representation, so standard drivers
+(psycopg2, JDBC, pgx, …) map it to their native UUID type.
+
+```sql
+CREATE TABLE sessions (
+    id        UUID NOT NULL,
+    parent_id UUID,          -- nullable
+    trace_ids UUID[]         -- arrays of UUID are supported
+);
+```
+
+Write a UUID with the typed-literal form `UUID '...'`, or as a bare string that
+is coerced to `UUID` on insert:
+
+```sql
+INSERT INTO sessions VALUES
+    (UUID 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', NULL, ARRAY[UUID '...']),
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', NULL, NULL);   -- bare string coerced
+
+SELECT id FROM sessions;
+INSERT INTO archive SELECT * FROM sessions;                 -- INSERT ... SELECT
+```
+
+**Accepted input formats** (matching PostgreSQL): the canonical
+`8-4-4-4-12` hex form, uppercase, wrapped in braces (`{...}`), with no hyphens,
+or with hyphens on any 4-hex-digit boundary. Invalid input raises
+`invalid input syntax for type uuid: "..."` (SQLSTATE `22P02`). UUIDs are always
+**output** in canonical lowercase form.
+
+**Casts.** `UUID` casts to and from the text types (`TEXT`, `VARCHAR`,
+`VARCHAR(n)`, `CHAR(n)`) in both directions; casts are **explicit**
+(`CAST`/`::`). There is no cast between `UUID` and the integer, wide-integer
+(`INT16`/`INT32`), or `BYTEA` types.
+
+```sql
+SELECT CAST(UUID 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS TEXT);   -- uuid -> text
+SELECT CAST('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS UUID);        -- text -> uuid
+SELECT ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::VARCHAR(36))::uuid; -- via ::
+```
+
+In the current engine, comparison, ordering, and grouping operators are not yet
+defined on `UUID` (e.g. `WHERE id = ...`, `ORDER BY id`, `GROUP BY id`, and
+joins on UUID columns): a `uuid`-vs-`uuid` or `uuid`-vs-integer comparison
+raises `operator does not exist`. To filter or order by a UUID, cast it to text
+first (`WHERE id::text = 'a0eebc99-...'`).
+
 ### Array types
 
 Arrays are supported via the `ARRAY` data type. The element type is specified
