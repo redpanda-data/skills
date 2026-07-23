@@ -104,8 +104,7 @@ nested settings) and a final verification pass.
 The skills are kept in sync with Redpanda's source by a fleet of scheduled maintenance
 routines — a **generator → critic → human-merge** loop per product, plus a monthly drift
 audit — covering all five products. See **[MAINTAINING.md](./MAINTAINING.md)** for how the
-process works and how to operate it, and **[skills-sync-routine.md](./skills-sync-routine.md)**
-for the exact routine definitions. Each source-grounded skill carries a
+process works and how to operate it. Each source-grounded skill carries a
 `references/SOURCES.md` that maps its claims to the upstream source.
 
 ## License

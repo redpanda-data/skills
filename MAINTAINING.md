@@ -4,8 +4,9 @@ This repo has no CI enforcement. Skill accuracy is kept up over time by a **huma
 process**: a fleet of scheduled agents ("routines") watch each product's source, open PRs when a
 user-facing change needs documenting, and a human reviews and merges. This document is the
 **plain-language overview** of that process (read this first); the exact routine definitions,
-prompts, trigger IDs, and schedules live in [`skills-sync-routine.md`](./skills-sync-routine.md),
-and the guardrails every routine inherits live in the repo [`CLAUDE.md`](./CLAUDE.md).
+prompts, trigger IDs, and schedules live in the docs team's private standards repository (see
+[`skills-sync-routine.md`](./skills-sync-routine.md) for the pointer), and the guardrails every
+routine inherits — including the public-surface rule — live in the repo [`CLAUDE.md`](./CLAUDE.md).
 
 ## How the maintenance automation works
 
@@ -17,8 +18,8 @@ human loop**:
    *user-facing* changes since the last run, grounds them in source, and opens a PR against `main`.
    If nothing user-facing changed, the run does nothing (a no-op is a success, not a failure).
 2. **The critic** (read-only, every 6h) reviews each generator PR: it re-verifies every claim
-   against the product source and posts an advisory comment. **It cannot approve, merge, or edit** —
-   it only comments.
+   against the product source and posts its review to a private standing issue in the docs team's
+   standards repo (nothing is posted on the public PR). **It cannot approve, merge, or edit.**
 3. **A human maintainer reviews and merges the PR.** The routines never merge their own work;
    merging (and responding to review comments) is always a human decision.
 4. **The drift audit** (monthly) is the backstop: it re-verifies *every* source-grounded skill
@@ -92,9 +93,12 @@ drift-audit scope.
   standing responsibility is to **check the dashboard ~weekly** for failed or empty runs; each run's
   transcript (in the dashboard) is the source of truth for what it did. The **monthly drift audit**
   is the automated safety net that catches drift a missed weekly run would otherwise leave.
-- **Reviewing generator PRs.** Read the PR description (it lists the source commits/release + what
-  changed and why), read the critic's `[skills-sync critic]` comment, then apply the docs-team review
-  standards and merge. Anything the generator flagged as a TODO needs a human decision — don't guess.
+- **Reviewing generator PRs.** The public PR description is deliberately minimal (public-surface
+  rule in `CLAUDE.md`). The full run record — source commits, verification paths, skipped changes,
+  TODOs — is the generator's provenance report, and the critic's `[skills-sync critic]` review lands
+  beside it; both are comments on private standing issues in the docs team's standards repo,
+  delivered to the docs-team Slack channel. Read both, then apply the docs-team review standards and
+  merge. Anything flagged as a TODO needs a human decision — don't guess.
 - **Kill switch.** To stop a routine immediately, disable it: `RemoteTrigger` `update`
   `{"enabled": false}` on its trigger ID, or toggle it off in the dashboard. This stops future fires;
   it does not interrupt a run already in flight.
