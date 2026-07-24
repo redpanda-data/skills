@@ -62,6 +62,34 @@ If you cannot confirm a fact against source — or you're unsure whether a misma
 drift versus an intentional simplification — flag it as a TODO for human review with the
 reason. Never guess a field name, default, flag, or endpoint.
 
+## HARD RULE: public-surface rule
+
+This repository is PUBLIC (it ships as an installable plugin), while much of the product
+source it documents is PRIVATE (`cloudv2`, `oxla`, `cloud-docs`); operational detail and
+routine output live in the docs team's private `docs-team-standards` repo.
+Nothing that identifies private-repo internals may appear on any public surface of this
+repo — PR titles, PR descriptions, commit messages, branch names, comments, or committed
+files: no private-repo commit SHAs or links, no internal source file paths or proto line
+numbers, no internal ticket or RFC IDs, no feature flag/gate names or rollout/gating
+status, no mentions of unshipped, in-flight, or reverted features, and no session links.
+PR descriptions and commit messages describe only the skill changes themselves, and
+routine-generated surfaces (PR titles, descriptions, commits, branches) additionally avoid
+- **Repo maintenance files** (this file, `MAINTAINING.md`, `SOURCES.md`,
+  `skills-sync-routine.md`) may name the private repos where the process requires it.
+
+Two sanctioned exceptions to the internals ban:
+
+- Citations of PUBLIC source repos (`redpanda`, `docs`, `connect`, `benthos`,
+  `rp-connect-docs`) — tags, paths, commits — are fine anywhere.
+- `SOURCES.md` files may name the private repos and the source file paths a skill is
+  grounded in (the verification process depends on that mapping) — but never commit SHAs,
+  tickets, gate names, rollout status, or unshipped surfaces.
+
+Automated routines post their full provenance and review reports to the docs team's
+private channel, never to this repo. If the private channel is unreachable, fail the run
+loudly and carry the report in the run's final message; never fall back to posting the
+content here.
+
 ## Source maps
 
 Skills grounded in private or versioned source carry a `SOURCES.md` mapping each skill
