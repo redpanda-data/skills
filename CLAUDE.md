@@ -73,8 +73,8 @@ numbers, no internal ticket or RFC IDs, no feature flag/gate names or rollout/ga
 status, no mentions of unshipped, in-flight, or reverted features, and no session links.
 PR descriptions and commit messages describe only the skill changes themselves, and
 routine-generated surfaces (PR titles, descriptions, commits, branches) additionally avoid
-naming the private repos at all. Repo maintenance files (this file, `MAINTAINING.md`,
-`SOURCES.md`) may name the private repos where the process requires it.
+- **Repo maintenance files** (this file, `MAINTAINING.md`, `SOURCES.md`,
+  `skills-sync-routine.md`) may name the private repos where the process requires it.
 
 Two sanctioned exceptions to the internals ban:
 
