@@ -65,7 +65,8 @@ reason. Never guess a field name, default, flag, or endpoint.
 ## HARD RULE: public-surface rule
 
 This repository is PUBLIC (it ships as an installable plugin), while much of the product
-source it documents is PRIVATE (`cloudv2`, `oxla`, `cloud-docs`, `docs-team-standards`).
+source it documents is PRIVATE (`cloudv2`, `oxla`, `cloud-docs`); operational detail and
+routine output live in the docs team's private `docs-team-standards` repo.
 Nothing that identifies private-repo internals may appear on any public surface of this
 repo — PR titles, PR descriptions, commit messages, branch names, comments, or committed
 files: no private-repo commit SHAs or links, no internal source file paths or proto line
