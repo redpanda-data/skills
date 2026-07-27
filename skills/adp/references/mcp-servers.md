@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` (MCPServerService RPCs, MCPServer fields, code-mode comment, tool-naming comment), `cloudv2/proto/public/cloud/redpanda/mcps/v1/auth.proto` (auth mode messages), `cloudv2/apps/aigw/internal/mcp/managed/defaults.go` (managed catalog registrations). Evidence date: 2026-06-29.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` (MCPServerService RPCs, MCPServer fields, code-mode comment, tool-naming comment, `data_policies` field, `PreviewDataPolicies`/`PreviewToolResponse` RPCs), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/data_policy.proto` (DataShaping/DataPolicy), `cloudv2/proto/public/cloud/redpanda/mcps/v1/auth.proto` (auth mode messages), `cloudv2/apps/aigw/internal/mcp/managed/defaults.go` (managed catalog registrations). Evidence date: 2026-07-27 (MCPServerService RPCs and data policies re-verified; managed catalog unchanged since 2026-06-29).
 
 # Agentic Data Plane MCP Servers Reference
 
@@ -31,7 +31,7 @@ There are two `MCPServerService` definitions in the cloudv2 service tree. Know w
 
 | Layer | Package | Description |
 |-------|---------|-------------|
-| Agentic Data Plane management plane | `redpanda.api.adp.v1alpha1.MCPServerService` | 7 RPCs; the aigw app implements this directly. Use this layer to create, update, and manage MCP server records. |
+| Agentic Data Plane management plane | `redpanda.api.adp.v1alpha1.MCPServerService` | 9 RPCs; the aigw app implements this directly. Use this layer to create, update, and manage MCP server records. |
 | Cloud dataplane (public API) | `redpanda.api.dataplane.v1alpha3.MCPServerService` | 9 RPCs (adds `StartMCPServer`, `StopMCPServer`, `GetMCPServerServiceConfigSchema`, `LintMCPConfig`); exposed via the public Cloud data-plane API and Cloud UI MCP tools. |
 
 The skill operates against the `v1alpha1` Agentic Data Plane management-plane layer unless the context explicitly targets the `v1alpha3` public API.
@@ -47,6 +47,8 @@ The skill operates against the `v1alpha1` Agentic Data Plane management-plane la
 | `DeleteMCPServer` | Delete a server record |
 | `ListManagedMCPTypes` | List available managed integration types |
 | `ListMCPServerTools` | List the tools exposed by a server (live call; proxies upstream for remote servers when OAuth connection exists; returns `FAILED_PRECONDITION` with `OAuthConnectionRequired` detail when no OAuth connection is present) |
+| `PreviewDataPolicies` | Preview (data policies, see below): dry-run a server's data policies for a `(server, tool, principal)`; returns the allow/deny effect and the explained composition (per-field winners, composed clamps, row filters, diagnostics). Accepts a `draft_data_policies` overlay for unsaved edits. Requires Cedar authorization enabled; else `UNIMPLEMENTED` |
+| `PreviewToolResponse` | Preview (data policies, see below): dry-run response shaping against a sample response document; returns the shaped result the agent would receive. Requires Cedar authorization enabled; else `UNIMPLEMENTED` |
 
 ## Key `MCPServer` fields
 
@@ -61,6 +63,7 @@ The skill operates against the `v1alpha1` Agentic Data Plane management-plane la
 | `url` | `string` | OUTPUT_ONLY; computed server URL, not persisted |
 | `code_mode_url` | `string` | OUTPUT_ONLY; computed URL for the code-mode endpoint (`-code` suffix convention); not persisted |
 | `tools` | `repeated MCPTool` | OUTPUT_ONLY; populated by a live `tools/list` call |
+| `data_policies` | `repeated DataPolicy` | OPTIONAL; preview. Data-shaping policies for this server's tool calls (mask/redact/hash/drop fields, clamp argument values, filter response rows), composed most-restrictive. Also settable on create/update. Omitted from `ListMCPServers` responses to bound payload size; read via `GetMCPServer`. See Data policies below and [governance.md](governance.md) |
 | `created_at`, `updated_at`, `created_by`, `updated_by` | OUTPUT_ONLY | Audit fields |
 
 `MCPServerType` enum values: `MCP_SERVER_TYPE_UNSPECIFIED` (0), `MCP_SERVER_TYPE_REMOTE` (1), `MCP_SERVER_TYPE_MANAGED` (2).
@@ -103,6 +106,14 @@ Integration guides report that deferred tool loading (code mode) reduces token u
 ### Tool name truncation
 
 The MCP protocol enforces a 64-character limit on tool names. For managed types whose generated names exceed this limit, the Agentic Data Plane truncates the prefix and replaces it with a hash (for example, `64ghux5adn_github_read_v1_GitHubReadService_GetAuthenticatedUser`). The version, service, and method suffix is always preserved, so the short tool name an agent sees (for example, `get_authenticated_user`) remains stable across truncations.
+
+## Data policies (preview)
+
+A server can carry **data policies** that shape its tool traffic before the model sees it: mask, redact, hash, or drop fields; clamp the allowed values of tool-call arguments; and filter whole records out of list responses. They are configured on the server itself through the `data_policies` field (on `MCPServer` and on create/update), and apply to both remote and managed servers. Policies compose **most-restrictive** across every entry whose `tools` and `principals` match, and unenforceable rules fail closed.
+
+Data policies are a distinct control from Cedar authorization: Cedar decides *whether* a tool call runs; data policies decide *how* its data is shaped and *to whom*. This is a preview capability — confirm current availability live before relying on it.
+
+For the full transform vocabulary (field actions, clamps, row filters), the composition semantics, and the `PreviewDataPolicies` / `PreviewToolResponse` dry-run RPCs, see [governance.md](governance.md). `ListMCPServers` omits `data_policies` to bound payload size; read a server's policies via `GetMCPServer`.
 
 ## Managed catalog
 
