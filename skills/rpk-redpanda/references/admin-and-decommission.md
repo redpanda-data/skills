@@ -6,6 +6,15 @@ on every OS build of rpk and can be run from any machine that can reach the
 Admin API — target it with your rpk profile or
 `-X admin.hosts=<host>:9644`.
 
+> **Deprecated since v26.2.** The `brokers` and `config` subtrees below are
+> now hidden, deprecated aliases. Broker decommission/recommission moved to
+> `rpk cluster brokers`, per-node config printing to `rpk cluster config list
+> --node-id <ID>`, and log-level control to `rpk cluster loggers` — all in the
+> **rpk-cluster** skill (see its `brokers-maintenance.md`). The old spellings
+> still run (they forward to the new commands) and the mechanics below still
+> apply, but new automation should use the `rpk cluster ...` forms.
+> `rpk redpanda admin partitions list` is unaffected.
+
 Subtree:
 
 ```
@@ -23,10 +32,11 @@ rpk redpanda admin
         └── set [LOGGERS...]
 ```
 
-Note: there is **no `rpk cluster brokers` group** — broker
-decommission/recommission live here. Cluster-wide partition operations
-(move, balance, enable/disable, unsafe-recover) are
-`rpk cluster partitions` (rpk-cluster skill).
+Note: as of v26.2 broker decommission/recommission live canonically at
+**`rpk cluster brokers`** (rpk-cluster skill); the commands here are
+deprecated aliases that forward there. Cluster-wide partition operations
+(move, balance, enable/disable, unsafe-recover) are `rpk cluster partitions`
+(rpk-cluster skill).
 
 ## rpk redpanda admin brokers list
 
@@ -102,18 +112,18 @@ rpk redpanda admin brokers decommission 4
 ```
 
 Before issuing the request, rpk checks the broker list and node versions
-(and, on old clusters, maintenance-mode state). The hidden `--force` flag
-bypasses these client-side checks — use it when the target broker is **not
-running** (its version is unknown) or the checks cannot be satisfied, e.g.:
+(and, on old clusters, maintenance-mode state). The `--skip-liveness-check`
+flag bypasses these client-side checks — use it when the target broker is
+**not running** (its version is unknown) or the checks cannot be satisfied,
+e.g.:
 
 ```bash
-rpk redpanda admin brokers decommission 4 --force
+rpk cluster brokers decommission 4 --skip-liveness-check
 ```
 
-(`--force` is a hidden flag — described in the command's long help text but
-not listed in its Flags section. Some older docs mention a
-`--skip-liveness-check` flag; current rpk releases reject it — `--force` is
-the bypass flag.)
+(`--skip-liveness-check` is the canonical bypass flag, verified at v26.2.1.
+The older `--force` spelling still works but is now a hidden, deprecated alias
+for `--skip-liveness-check`.)
 
 ### decommission-status
 
@@ -204,6 +214,11 @@ rpk redpanda admin config print --host broker-1     # or a hostname
 Aliases: `print`, `dump`, `list`, `ls`, `display`.
 
 ## rpk redpanda admin config log-level set
+
+> **Deprecated since v26.2 → use `rpk cluster loggers set` (rpk-cluster
+> skill).** The canonical command targets a broker with `--node-id` instead of
+> `--host`, and adds `rpk cluster loggers list` to discover loggers. The
+> command below still works (it forwards to the same implementation).
 
 Temporarily changes a broker's logger levels — the standard way to get
 debug/trace logs without a restart and without the risk of leaving debug

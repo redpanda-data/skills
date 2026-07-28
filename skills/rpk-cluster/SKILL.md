@@ -7,8 +7,8 @@ description: >-
   balancing and movement, maintenance mode, client quotas, log directories,
   transactions, self-test benchmarks, and license management.
   Use when: checking cluster health or metadata, listing brokers,
-  decommissioning or recommissioning a broker (via `rpk redpanda admin
-  brokers` — covered here because it pairs with maintenance mode), getting or
+  decommissioning or recommissioning a broker (`rpk cluster brokers`),
+  managing broker log levels, finalizing deferred cluster upgrades, getting or
   setting cluster configuration properties, balancing or moving partitions,
   enabling or disabling maintenance mode on a node, monitoring Kafka client
   connections, managing client quotas, viewing log dirs, running cluster
@@ -19,8 +19,10 @@ description: >-
   rpk cluster maintenance enable/disable/status, rpk cluster connections,
   rpk cluster quotas alter/describe/import, rpk cluster logdirs describe,
   rpk cluster self-test start/stop/status, rpk cluster txn,
-  rpk cluster license, or broker decommission
-  (rpk redpanda admin brokers decommission/decommission-status/recommission). Also covers enabling Redpanda Enterprise
+  rpk cluster license, broker decommission
+  (rpk cluster brokers decommission/decommission-status/recommission),
+  rpk cluster loggers list/set (broker log levels), or
+  rpk cluster upgrade status/finalize (deferred major-version upgrades). Also covers enabling Redpanda Enterprise
   differentiators through cluster config and license management: Continuous
   Data Balancing (partition_autobalancing_mode=continuous), Continuous
   Intra-Broker / core balancing (core_balancing_continuous), Tiered Storage
@@ -44,10 +46,13 @@ noted otherwise (`rpk cluster info`, `rpk cluster logdirs`, and
 (default 9092) and Kafka/SASL credentials, not the Admin API port 9644).
 
 The command group has these major subgroups: `health`, `info`, `logdirs`,
-`config`, `connections`, `maintenance`, `partitions`, `self-test`, `quotas`,
-`storage`, `txn`, and `license`. (There is no `brokers` subgroup —
-broker decommission/recommission lives at `rpk redpanda admin brokers`,
-covered below because it pairs with maintenance mode.)
+`brokers`, `config`, `connections`, `loggers`, `maintenance`, `partitions`,
+`self-test`, `quotas`, `storage`, `txn`, `upgrade`, and `license`.
+
+`brokers`, `loggers`, and `upgrade` were added in Redpanda v26.2. Broker
+decommission/recommission now lives at `rpk cluster brokers`; the older
+`rpk redpanda admin brokers` commands still work but are hidden and deprecated
+(they forward to `rpk cluster brokers`).
 
 ## Quickstart
 
@@ -97,10 +102,10 @@ rpk cluster maintenance enable 1 --wait
 # 15. Check maintenance status across all brokers
 rpk cluster maintenance status
 
-# 16. Decommission broker 4 (note: under rpk redpanda admin, not rpk cluster)
-rpk redpanda admin brokers decommission 4
+# 16. Decommission broker 4
+rpk cluster brokers decommission 4
 # Monitor progress:
-rpk redpanda admin brokers decommission-status 4
+rpk cluster brokers decommission-status 4
 
 # 17. Run a cluster self-test (disk + network + cloud)
 rpk cluster self-test start --no-confirm
@@ -195,29 +200,33 @@ the expression syntax follows the Admin API's ListKafkaConnections endpoint.
 
 ## Brokers
 
-Broker decommission/recommission commands live under `rpk redpanda admin
-brokers`, not `rpk cluster`. They are covered here because decommission is a
-cluster-shrink operation that pairs with maintenance mode.
+`rpk cluster brokers` manages broker membership through the Admin API:
+`decommission`, `decommission-status`, and `recommission` (added in v26.2).
+There is no `rpk cluster brokers list` — list brokers with
+`rpk cluster info -b --detailed`. The older `rpk redpanda admin brokers`
+commands still work but are hidden and deprecated, forwarding here.
 
 ```bash
-# List brokers through the Admin API
-rpk redpanda admin brokers list
+# List brokers (Admin API detail: cores, membership, liveness, version)
+rpk cluster info -b --detailed
 
 # Decommission a broker (removes from cluster, moves partitions to remaining nodes)
-rpk redpanda admin brokers decommission 4
+rpk cluster brokers decommission 4
 
 # Monitor decommission progress
-rpk redpanda admin brokers decommission-status 4      # progress table
-rpk redpanda admin brokers decommission-status 4 -d   # includes bytes moved/remaining
-rpk redpanda admin brokers decommission-status 4 -H   # human-readable sizes
+rpk cluster brokers decommission-status 4      # progress table
+rpk cluster brokers decommission-status 4 -d   # includes bytes moved/remaining
+rpk cluster brokers decommission-status 4 -H   # human-readable sizes
 
 # Abort a decommission that is still in progress (once complete, cannot recommission)
-rpk redpanda admin brokers recommission 4
+rpk cluster brokers recommission 4
 
-# Force decommission of a dead/unreachable broker (hidden flag; the docs'
-# --skip-liveness-check spelling is rejected by current rpk releases)
-rpk redpanda admin brokers decommission 4 --force
+# Bypass the maintenance-mode/liveness pre-checks for a dead/unreachable broker
+rpk cluster brokers decommission 4 --skip-liveness-check
 ```
+
+`--skip-liveness-check` is the canonical bypass flag; the older `--force`
+spelling is now a hidden, deprecated alias for it.
 
 See [brokers-maintenance.md](references/brokers-maintenance.md) for full
 decommission/recommission and maintenance-mode detail.
@@ -351,6 +360,63 @@ ELIGIBLE, TRANSFERRING, FAILED.
 
 See [brokers-maintenance.md](references/brokers-maintenance.md) for the
 rolling-upgrade playbook.
+
+## Broker Log Levels (`rpk cluster loggers`)
+
+Temporarily raise or lower a broker's per-logger log level through the Admin
+API — the standard way to capture debug/trace logs without a restart, and
+without the risk of leaving debug logging on permanently (overrides expire).
+Added in v26.2; it replaces the now-deprecated
+`rpk redpanda admin config log-level`.
+
+```bash
+# List the loggers available on a broker (defer to this, not a static list)
+rpk cluster loggers list
+rpk cluster loggers list --node-id 1        # query a specific broker
+
+# Raise one logger to debug on broker 1 for the default 300s
+rpk cluster loggers set storage --node-id 1
+
+# Several loggers at trace with a custom expiry; 0 = persist until shutdown
+rpk cluster loggers set raft rpc --node-id 1 -l trace -e 60
+
+# Every logger (the special logger "all")
+rpk cluster loggers set all --node-id 1 -l debug -e 120
+```
+
+`--node-id` is **required** for `set` (it targets one broker). Flags:
+`-l/--level` (`error|warn|info|debug|trace`, default `debug`),
+`-e/--expiry-seconds` (default `300`; `0` persists until shutdown). Unknown
+logger names are accepted (per-logger success/failure is printed), so rpk and
+redpanda can be upgraded independently. The logger set is broker-version
+specific — always discover it with `rpk cluster loggers list`.
+
+## Cluster Upgrade Finalization (`rpk cluster upgrade`)
+
+Redpanda gates new features behind a *logical cluster version* that advances
+only once every broker reports the new binary version. Normally this
+finalization is automatic. When the cluster config `features_auto_finalization`
+is `false`, finalization is **deferred** so you can soak-test on the new version
+and still downgrade; `rpk cluster upgrade` (added in v26.2) inspects and
+completes that deferred step through the Admin API.
+
+```bash
+# Show finalization state, active vs post-finalization logical version,
+# whether auto-finalization is enabled, and per-broker reported versions
+rpk cluster upgrade status
+
+# Commit the cluster to the version all brokers report (irreversible;
+# activates version-gated features and raises the downgrade floor)
+rpk cluster upgrade finalize
+rpk cluster upgrade finalize --no-confirm
+```
+
+`finalize` is **irreversible** — once finalized you can no longer downgrade to
+the previous version. It only runs when the cluster is *ready to finalize* (all
+brokers on the same new version and live) and refuses when
+`features_auto_finalization` is enabled (the cluster finalizes on its own then).
+`status` reports the lifecycle state (`finalized`, `ready to finalize`, or
+`upgrade in progress`).
 
 ## Self-Test
 
@@ -494,5 +560,5 @@ RBAC/GBAC is managed via `rpk security role`, and FIPS via
 - [config.md](references/config.md): `rpk cluster config` subcommands in depth — get/set/edit/list/import/export/lint/force-reset/status, common property keys, and the cluster-vs-node config distinction.
 - [storage.md](references/storage.md): `rpk cluster storage` subcommands — Whole Cluster Restore / topic recovery (`restore start`/`restore status`) and mountable topics (`mount`/`unmount`/`list-mountable`/`list-mount`/`status-mount`/`cancel-mount`), both Enterprise-licensed and Tiered-Storage-backed.
 - [partitions.md](references/partitions.md): `rpk cluster partitions` subcommands — list, balance, balancer-status, move (format syntax), move-cancel, move-status, enable/disable, and unsafe-recover.
-- [brokers-maintenance.md](references/brokers-maintenance.md): broker decommission/recommission/decommission-status (via `rpk redpanda admin brokers`) and `rpk cluster maintenance` (enable/disable/status) — lifecycle, rolling upgrade playbook, and interaction with replication.
+- [brokers-maintenance.md](references/brokers-maintenance.md): broker decommission/recommission/decommission-status (via `rpk cluster brokers`; the legacy `rpk redpanda admin brokers` path is hidden/deprecated) and `rpk cluster maintenance` (enable/disable/status) — lifecycle, rolling upgrade playbook, and interaction with replication.
 - [health-and-selftest.md](references/health-and-selftest.md): `rpk cluster health`, `rpk cluster info`, `rpk cluster logdirs describe`, `rpk cluster quotas`, and `rpk cluster self-test` — health fields, metadata sections, log-dir aggregation, quota types, and self-test benchmarks.
