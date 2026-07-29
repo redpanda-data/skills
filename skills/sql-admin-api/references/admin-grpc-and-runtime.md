@@ -29,10 +29,11 @@ The blackbox test framework polls `/healthz` until it returns 200 before running
 
 ## Services
 
-Two admin services are exposed under package `oxla.admin.v1`:
+Three admin services are exposed under package `oxla.admin.v1`:
 
 - **`LoggingService`** (`src/admin/proto/logging.proto`) — get/set the runtime log level.
 - **`DebugService`** (`src/admin/proto/debug.proto`) — read-only diagnostics consumed by `rpk debug bundle`. See [DebugService](#debugservice-read-only-diagnostics) below.
+- **`DebugBundleService`** (`src/admin/proto/debug_bundle.proto`) — spawns `rpk sql debug bundle` on the node to collect a diagnostics bundle, and manages the single in-flight job. See [DebugBundleService](#debugbundleservice-on-demand-diagnostics-bundle) below.
 
 ## LoggingService
 
@@ -185,6 +186,54 @@ curl -s -X POST \
   -d '{}'
 # Response: {"yaml":"access_control:\n  initial_password: \"***\"\n..."}
 ```
+
+---
+
+## DebugBundleService (on-demand diagnostics bundle)
+
+`oxla.admin.v1.DebugBundleService` (`src/admin/proto/debug_bundle.proto`) lets an
+operator collect a cluster-wide diagnostics bundle in one call, without SSH/kubectl
+access to each node. The service spawns `rpk sql debug bundle` on the node,
+forwarding the authenticated caller's credentials and the node's TLS settings to
+rpk so it can reach every peer's admin API. Same URL pattern as any admin RPC:
+`POST /oxla.admin.v1.DebugBundleService/<MethodName>`.
+
+At most **one bundle per node** is collected at a time; a second `Start` while one
+is running is rejected.
+
+| RPC | Purpose |
+|-----|---------|
+| `Start` | Begin a collection job. Takes a `job_id` (must match `[A-Za-z0-9_-]{1,128}`; used to name the zip) and an optional `DebugBundleConfig`. |
+| `Status` | Current job's `job_id`, `state`, process `exit_code`, `error_output` (on error), bundle `size_bytes` (on success), and `created_at_unix_ms`. |
+| `Cancel` | Cancel the in-flight job. |
+| `Delete` | Delete the completed bundle (by `job_id`). |
+
+Job state (`DebugBundleState` enum): `DEBUG_BUNDLE_STATE_UNSPECIFIED` (none since
+startup / last deleted), `_RUNNING`, `_SUCCESS`, `_ERROR`, `_EXPIRED` (retention
+elapsed after a successful run; the zip was deleted).
+
+`DebugBundleConfig` fields are optional tunables forwarded to `rpk sql debug
+bundle` as flags (an unset field omits the flag and rpk's own default applies);
+the field names track the rpk flag names: `log_since`, `log_size_limit_bytes`,
+`include_sql_text` (`"masked"` or `"raw"`), `cpu_profile_seconds`, `include_vmstat`.
+
+### Downloading the bundle
+
+The completed zip is **not** returned through an RPC (it exceeds the admin
+framework's proto-body size cap). Download it over a separate raw route, which
+enforces the same authentication gate as the RPCs:
+
+```
+GET /v1/debug/bundle/file
+```
+
+### Configuration
+
+The service is controlled by the `admin_api.debug_bundle` config section (all keys
+**internal**, env-settable): `admin_api.debug_bundle.enabled`,
+`admin_api.debug_bundle.rpk_path`, `admin_api.debug_bundle.output_dir`, and
+`admin_api.debug_bundle.retention`. Read the shipped `config/{Release,Debug}/default_config.yml`
+at your deployed ref for current default values — do not assume them.
 
 ---
 

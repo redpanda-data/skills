@@ -241,6 +241,32 @@ SELECT id FROM my_ice=>my.path.partitioned_table
 WHERE val_ts = TIMESTAMP '2024-01-03 12:00:00';
 ```
 
+### Creating and dropping Iceberg tables and namespaces (DDL)
+
+Oxla can also issue DDL against the Iceberg REST catalog itself. A table path
+always needs a namespace (`catalog=>namespace.table`).
+
+```sql
+-- Namespaces
+CREATE NAMESPACE my_ice=>sales;
+DROP NAMESPACE my_ice=>sales;              -- RESTRICT (default); must be empty
+
+-- Tables (explicit column list; optional PARTITION BY and WITH properties)
+CREATE TABLE my_ice=>sales.orders (id INT, amount BIGINT NOT NULL, label TEXT);
+CREATE TABLE my_ice=>sales.events (id INT, d DATE)
+PARTITION BY (day(d), bucket(8, id));
+
+DROP TABLE my_ice=>sales.orders;           -- add PURGE to also delete data files
+```
+
+`NOT NULL` columns become required Iceberg fields; `NUMERIC(p,s)` maps to
+`decimal(p,s)`; types with no Iceberg equivalent (`INTERVAL`, `JSON`/`JSONB`,
+`UUID`, `INT16`/`INT32`, geo types) are rejected. `CREATE TABLE AS SELECT` and
+`DROP NAMESPACE ... CASCADE` parse but are not supported. Iceberg DDL is
+authorized against the catalog's owner. See
+[iceberg.md](references/iceberg.md) for the full grammar, partition transforms,
+and type mapping.
+
 ---
 
 ## File-Based External Data (COPY FROM/TO)
@@ -343,6 +369,6 @@ catalog Redpanda writes to (`iceberg_rest_catalog_endpoint` /
 ## Reference Directory
 
 - [kafka-catalogs.md](references/kafka-catalogs.md): Complete reference for `CREATE KAFKA CATALOG`, `CREATE TABLE catalog=>name`, `ALTER KAFKA CATALOG/TABLE`, `REFRESH`, all options, schema decoding (Avro/Protobuf/JSON), the `redpanda` metadata struct, and transparent Kafka-Iceberg queries.
-- [iceberg.md](references/iceberg.md): Querying Apache Iceberg REST catalogs — `CREATE ICEBERG CATALOG`, the `catalog=>path.table` syntax, partition pruning and range/date/timestamp filters, all auth modes (OAuth2/Basic/SigV4), and multi-file partition scans.
+- [iceberg.md](references/iceberg.md): Querying Apache Iceberg REST catalogs — `CREATE ICEBERG CATALOG`, the `catalog=>path.table` syntax, partition pruning and range/date/timestamp filters, all auth modes (OAuth2/Basic/SigV4), and multi-file partition scans. Also covers **catalog DDL**: `CREATE/DROP TABLE` (with `PARTITION BY` transforms, `PURGE`, and the SQL→Iceberg type mapping) and `CREATE/DROP NAMESPACE`.
 - [files-and-system-tables.md](references/files-and-system-tables.md): `COPY FROM/TO` with parquet and ORC on S3/GCS/Azure, storage path protocols (`s3://`, `gs://`, `az://`/`wasbs://`, `local://`), `CREATE STORAGE` credential configuration, inline per-statement `AWS_CRED`/`GCS_CRED`/`AZURE_CRED` credentials, and the four external-metadata system tables with their column schemas and example queries.
 - [redpanda-iceberg-source-config.md](references/redpanda-iceberg-source-config.md): The Redpanda **Enterprise** features that produce the data Oxla reads — Iceberg Topics (`iceberg_enabled`, the `redpanda.iceberg.mode`/`delete`/`invalid.record.action`/`partition.spec`/`target.lag.ms` topic properties, the four Iceberg modes, DLQ tables), the REST and `object_storage` catalog backing (`iceberg_catalog_type`, all `iceberg_rest_catalog_*` properties) and how to align them with Oxla's `CREATE ICEBERG CATALOG`, Tiered Storage as a prerequisite (`cloud_storage_enabled`), and Server-Side Schema ID Validation (`enable_schema_id_validation`, `redpanda.key/value.schema.id.validation`, subject-name strategies). Notes license requirements and expiration behavior.
