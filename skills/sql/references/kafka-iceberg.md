@@ -160,6 +160,41 @@ Grounded in `connection_option_names.h` (`namespace iceberg`) and
 > Setting an auth-specific option (e.g. `oauth2_client_id`) without `auth_type`
 > raises `"auth option '...' provided without 'auth_type'"`.
 
+### Iceberg table and namespace DDL
+
+Once an Iceberg catalog is attached, Oxla can create and drop **namespaces and
+tables directly in the Iceberg REST catalog** via SQL, using the same
+`catalog=>path` operator. An Iceberg table path always requires a namespace
+(`catalog=>namespace.table`); a bare `catalog=>table` is a syntax error.
+
+```sql
+-- Namespaces (one or more dot-separated segments)
+CREATE NAMESPACE my_iceberg=>sales;
+CREATE NAMESPACE IF NOT EXISTS my_iceberg=>sales.eu;
+DROP NAMESPACE my_iceberg=>sales;              -- RESTRICT (default); must be empty
+DROP NAMESPACE IF EXISTS my_iceberg=>sales;
+
+-- Tables: explicit column list, optional PARTITION BY transforms and WITH props
+CREATE TABLE my_iceberg=>sales.orders (id INT, amount BIGINT NOT NULL, label TEXT);
+CREATE TABLE IF NOT EXISTS my_iceberg=>sales.events (id INT, nm TEXT, d DATE)
+PARTITION BY (day(d), bucket(8, id), truncate(4, nm));
+
+DROP TABLE my_iceberg=>sales.orders;           -- PURGE also deletes data files
+DROP TABLE my_iceberg=>sales.orders PURGE;
+DROP TABLE IF EXISTS my_iceberg=>sales.orders;
+```
+
+`PARTITION BY` accepts the Iceberg transforms `col` (identity), `bucket(N, col)`,
+`truncate(W, col)`, and `year`/`month`/`day`/`hour(col)` (`N`/`W` in
+`[1, 2147483647]`). `NOT NULL` columns become required Iceberg fields;
+`NUMERIC(p,s)` → `decimal(p,s)`; arrays → `list`; composite types → `struct`.
+Types with no Iceberg equivalent (`INTERVAL`, `JSON`, `JSONB`, `UUID`,
+`INT16`/`INT32`, `GEOMETRY`, `GEOGRAPHY`, `POINT`) are rejected. `CREATE TABLE AS
+SELECT` and `DROP NAMESPACE ... CASCADE` parse but are not supported. DDL is
+authorized against the **catalog's owner**. (This is distinct from the Kafka
+options-only `CREATE TABLE cat=>tbl WITH (...)` form below, which binds a topic;
+on an Iceberg catalog that form is rejected — a column list is required.)
+
 ---
 
 ## Redpanda/Kafka catalogs (`CREATE REDPANDA CATALOG`)
@@ -274,7 +309,7 @@ ALTER TABLE IF EXISTS my_rp=>orders WITH (
 ### Drop a topic table
 
 ```sql
-DROP TABLE my_rp=>orders;          -- DROP_KAFKA_TABLE (external source present)
+DROP TABLE my_rp=>orders;          -- external-source form (catalog=>name)
 DROP TABLE IF EXISTS my_rp=>orders;
 ```
 

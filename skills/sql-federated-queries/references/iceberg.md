@@ -9,7 +9,11 @@ Sources grounded in: `oxla/src/sqlparser/sql/CreateCatalogStatement.h`,
 `oxla/src/catalog/iceberg_catalog_parser.cpp`,
 `oxla/src/iceberg_client/rest_catalog_config.h`,
 `oxla/src/iceberg_client/apache_iceberg_client/apache_iceberg_client.h`,
-`oxla/tests/MT/query_planner/cases/predefined_iceberg_*/`.
+`oxla/tests/MT/query_planner/cases/predefined_iceberg_*/`. Table/namespace DDL
+grounded in `oxla/src/sqlparser/bison_parser/bison_parser.y`,
+`oxla/src/sqlparser/sql/{CreateStatement.h,DropStatement.h,PartitionTerm.h}`,
+`oxla/src/external_schema/iceberg/iceberg_schema_builder.cpp`, and
+`oxla/tests/blackbox/pit/iceberg/test_iceberg_ddl.py`.
 
 ---
 
@@ -151,6 +155,133 @@ WITH (
   ssl_verify = 'false'
 );
 ```
+
+---
+
+## Creating and dropping Iceberg tables and namespaces (DDL)
+
+Beyond querying, Oxla can issue DDL **against an Iceberg REST catalog** through
+SQL: create and drop namespaces, and create and drop tables (including their
+partition spec). The catalog is addressed with the same `catalog=>path` operator
+used for queries. These statements act on the external catalog directly — the
+created table/namespace shows up for any Iceberg client, not just Oxla.
+
+An Iceberg **table path always requires a namespace**: use
+`catalog=>namespace.table`. A bare `catalog=>table` is a syntax error
+(`iceberg table paths require a namespace; use "catalog=>namespace.table"`).
+
+### Namespaces
+
+```sql
+-- Create a namespace (one or more dot-separated segments after =>)
+CREATE NAMESPACE my_ice=>sales;
+CREATE NAMESPACE IF NOT EXISTS my_ice=>sales;
+CREATE NAMESPACE my_ice=>sales.eu WITH (key = 'value');   -- properties forwarded to the catalog
+
+-- Drop a namespace. RESTRICT (the default) requires it to be empty.
+DROP NAMESPACE my_ice=>sales;              -- RESTRICT (default)
+DROP NAMESPACE my_ice=>sales RESTRICT;
+DROP NAMESPACE IF EXISTS my_ice=>sales;
+```
+
+`CREATE NAMESPACE` without `IF NOT EXISTS` on an existing namespace fails
+(duplicate schema); with `IF NOT EXISTS` it is a no-op. `DROP NAMESPACE ...
+CASCADE` **parses but is rejected** (`DROP NAMESPACE CASCADE is not supported on
+this catalog`) — drop the namespace's tables first, then drop it with the
+default `RESTRICT` behavior.
+
+### Tables
+
+```sql
+-- Create a table with an explicit column list (namespace required)
+CREATE TABLE my_ice=>sales.orders (
+    id      INT,
+    amount  BIGINT NOT NULL,
+    label   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS my_ice=>sales.orders (id INT);
+
+-- Partitioned table: PARTITION BY takes Iceberg partition transforms
+CREATE TABLE my_ice=>sales.events (id INT, nm TEXT, d DATE)
+PARTITION BY (day(d), bucket(8, id), truncate(4, nm));
+
+-- Optional WITH (...) carries table properties forwarded to the catalog
+CREATE TABLE my_ice=>sales.t (id INT) WITH (key = 'value');
+
+-- Drop a table. Plain DROP removes only the catalog entry; PURGE also deletes
+-- the table's data/metadata files from object storage.
+DROP TABLE my_ice=>sales.orders;
+DROP TABLE my_ice=>sales.orders PURGE;
+DROP TABLE IF EXISTS my_ice=>sales.orders;
+```
+
+`CREATE TABLE ... AS SELECT` (CTAS) against an Iceberg catalog **parses but is
+rejected** (`CREATE TABLE AS SELECT is not supported`). The options-only form
+`CREATE TABLE cat=>tbl WITH (...)` (no column list) is the *Kafka* topic-binding
+form; on an **Iceberg** catalog it is rejected (`... is an iceberg catalog;
+creating a table on it requires a column definition list`).
+
+### `PARTITION BY` transforms
+
+`PARTITION BY (...)` accepts a comma-separated list of Iceberg partition
+transforms over the table's columns. A column reference may be dot-separated to
+descend into a struct field.
+
+| Transform | Meaning |
+|-----------|---------|
+| `col` | identity — partition by the column value |
+| `bucket(N, col)` | hash into `N` buckets |
+| `truncate(W, col)` | truncate to width `W` |
+| `year(col)` / `month(col)` / `day(col)` / `hour(col)` | date/time truncation |
+
+`N` and `W` must be in `[1, 2147483647]` (Iceberg's signed 32-bit int range); an
+out-of-range value is a parse error.
+
+### SQL → Iceberg type mapping
+
+Column types are translated to Iceberg types when the table is created (grounded
+in `iceberg_schema_builder.cpp` and `test_iceberg_ddl.py`):
+
+| SQL column type | Iceberg type |
+|-----------------|--------------|
+| `BOOL` | `boolean` |
+| `INT` | `int` |
+| `BIGINT` | `long` |
+| `REAL` | `float` |
+| `DOUBLE PRECISION` | `double` |
+| `DATE` | `date` |
+| `TIME` | `time` |
+| `TIMESTAMP` | `timestamp` |
+| `TIMESTAMPTZ` | `timestamptz` |
+| `TEXT` | `string` |
+| `BYTEA` | `binary` |
+| `NUMERIC` (no params) | `decimal(18, 0)` |
+| `NUMERIC(p, s)` | `decimal(p, s)` |
+| `T[]` (array) | `list` of the element type |
+| composite type (`CREATE TYPE ... AS (...)`) | `struct` of the fields |
+
+- `NOT NULL` columns become **required** Iceberg fields; a plain or `NULL`
+  column is optional. Array elements and composite/struct fields are always
+  optional (SQL has no syntax for their nullability).
+- Composite type names resolve through the session search path; qualify the name
+  (`schema.type`) to reference a type in a schema off the search path.
+- Types with no Iceberg equivalent are **rejected** with
+  `column "<name>" has a type that cannot be represented in Iceberg`:
+  `INTERVAL`, `JSON`, `JSONB`, `UUID`, `INT16`/`INT32` (the 128-/256-bit wide
+  integers, wider than Iceberg's `long`), and the geo types `GEOMETRY`,
+  `GEOGRAPHY`, `POINT`. The same applies when one of these is nested inside a
+  composite or array; the error names the full column path (e.g. `c.span`,
+  `c[]`).
+
+### Authorization
+
+Iceberg DDL is authorized against the **catalog's owner**: a role that can see a
+catalog but does not own it cannot run `CREATE`/`DROP` against it (`permission
+denied: must be owner of table <catalog>`). A schema-qualified reference
+`schema.catalog=>...` additionally requires `USAGE` on that schema — denied
+identically whether or not the catalog exists, so catalog names in a schema are
+not discoverable without `USAGE`.
 
 ---
 
