@@ -60,14 +60,23 @@ everywhere.
 | `rpk redpanda config set <key> <value>` | Set node config values in `redpanda.yaml` |
 | `rpk redpanda config print` | Display the node configuration (alias: `dump`) |
 | `rpk redpanda config init` | (Deprecated) Set the node UUID after install |
-| `rpk redpanda admin brokers list` | List brokers via the admin listener (alias: `ls`) |
-| `rpk redpanda admin brokers decommission <ID>` | Remove a broker from the cluster (moves its replicas away) |
-| `rpk redpanda admin brokers decommission-status <ID>` | Monitor decommission progress |
-| `rpk redpanda admin brokers recommission <ID>` | Abort an in-progress decommission |
+| `rpk redpanda admin brokers list` | (Deprecated → `rpk cluster info -b --detailed`) List brokers via the admin listener |
+| `rpk redpanda admin brokers decommission <ID>` | (Deprecated → `rpk cluster brokers decommission`) Remove a broker from the cluster |
+| `rpk redpanda admin brokers decommission-status <ID>` | (Deprecated → `rpk cluster brokers decommission-status`) Monitor decommission progress |
+| `rpk redpanda admin brokers recommission <ID>` | (Deprecated → `rpk cluster brokers recommission`) Abort an in-progress decommission |
 | `rpk redpanda admin partitions list [ID]` | List the partitions hosted on one broker |
-| `rpk redpanda admin config print` | Display a broker's effective configuration |
-| `rpk redpanda admin config log-level set` | Temporarily change a broker's logger levels |
+| `rpk redpanda admin config print` | (Deprecated → `rpk cluster config list --node-id <ID>`) Display a broker's effective configuration |
+| `rpk redpanda admin config log-level set` | (Deprecated → `rpk cluster loggers set`) Temporarily change a broker's logger levels |
 | `rpk iotune` | Benchmark disk I/O and write `io-config.yaml` for the broker to read at startup |
+
+> **v26.2 relocation.** The `rpk redpanda admin brokers` and `rpk redpanda
+> admin config` commands are now **hidden and deprecated**. Broker
+> decommission/recommission moved to `rpk cluster brokers`, log-level control
+> to `rpk cluster loggers`, and per-node config printing to `rpk cluster config
+> list --node-id <ID>` (all in the **rpk-cluster** skill). The old spellings
+> still run — they forward to the new commands — but new automation should use
+> the `rpk cluster ...` forms. `rpk redpanda admin partitions list` is
+> unaffected.
 
 ## Quickstart
 
@@ -102,16 +111,16 @@ rpk redpanda config set redpanda.empty_seed_starts_cluster false
 rpk redpanda config set rpk.tune_aio_events true
 rpk redpanda config print
 
-# --- Broker decommission (works from any machine; talks to the Admin API) ---
-rpk redpanda admin brokers list
-rpk redpanda admin brokers decommission 4
-rpk redpanda admin brokers decommission-status 4 -d -H   # monitor
-rpk redpanda admin brokers recommission 4                # abort (only while in progress)
+# --- Broker decommission (canonical since v26.2; rpk-cluster skill) ---
+rpk cluster info -b --detailed                     # list brokers
+rpk cluster brokers decommission 4
+rpk cluster brokers decommission-status 4 -d -H    # monitor
+rpk cluster brokers recommission 4                 # abort (only while in progress)
 
 # --- Per-broker diagnostics via the admin listener ---
 rpk redpanda admin partitions list 1 --leader-only
-rpk redpanda admin config print --host 0
-rpk redpanda admin config log-level set storage -l debug -e 300
+rpk cluster config list --node-id 0                # a broker's effective config
+rpk cluster loggers set storage --node-id 0 -l debug -e 300
 ```
 
 ## Decision Rules
@@ -121,9 +130,10 @@ rpk redpanda admin config log-level set storage -l debug -e 300
   `rpk cluster` is cluster-wide (cluster config, health, partition
   balancing/movement, maintenance mode, self-test) — see the **rpk-cluster**
   skill.
-- **Broker decommission lives here.** There is no `rpk cluster brokers`
-  command group — decommission/recommission are
-  `rpk redpanda admin brokers ...`.
+- **Broker decommission moved in v26.2.** The canonical commands are now
+  `rpk cluster brokers decommission/decommission-status/recommission`
+  (rpk-cluster skill). The `rpk redpanda admin brokers ...` spellings still
+  work but are hidden, deprecated aliases that forward there.
 - **Maintenance mode is NOT here.** Draining leadership for a rolling
   restart is `rpk cluster maintenance enable/disable/status` (rpk-cluster
   skill). Entering maintenance mode before decommissioning is **optional** —
@@ -153,29 +163,33 @@ all of its partition replicas to the remaining brokers, then removes it
 from the cluster. **A decommissioned broker cannot rejoin**, and its node ID
 must never be reused.
 
+Since v26.2 the canonical commands are `rpk cluster brokers ...` (rpk-cluster
+skill); the `rpk redpanda admin brokers ...` aliases still work but are hidden
+and deprecated.
+
 ```bash
 # 1. Pre-check: cluster healthy, and remaining brokers can absorb the data
 rpk cluster health
-rpk redpanda admin brokers list
+rpk cluster info -b --detailed
 
 # 2. Start the decommission
-rpk redpanda admin brokers decommission 4
+rpk cluster brokers decommission 4
 
 # 3. Monitor until every partition reaches 100% (add -d for bytes moved/remaining)
-rpk redpanda admin brokers decommission-status 4 -d -H
+rpk cluster brokers decommission-status 4 -d -H
 
 # 4. Changed your mind while it is still moving data? Abort:
-rpk redpanda admin brokers recommission 4
+rpk cluster brokers recommission 4
 
 # 5. When complete, verify removal, then shut the node's process down
-rpk redpanda admin brokers list --include-decommissioned
+rpk cluster info -b --include-decommissioned
 ```
 
 Before decommissioning, confirm the remaining broker count still satisfies
 the highest topic replication factor, rack-awareness spread, disk capacity,
 and partition-per-core limits. If progress stalls, check for leaderless
 partitions and consider raising `raft_learner_recovery_rate`. Full
-pre-checks, failure modes, `--force` semantics, and the
+pre-checks, failure modes, `--skip-liveness-check` semantics, and the
 maintenance-mode interaction are in
 [admin-and-decommission.md](references/admin-and-decommission.md).
 

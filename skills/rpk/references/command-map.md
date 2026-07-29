@@ -26,28 +26,34 @@ rpk topic delete my-topic
 ---
 
 ### `rpk cluster`
-Cluster health, metadata, and log dirs; cluster-wide configuration
-(get/set/edit/list/import/export/lint/status); partition balancing and
-movement; maintenance mode; Kafka connection monitoring; client quotas;
-storage; transactions; self-test (disk/network benchmarks); licensing.
+Cluster health, metadata, and log dirs; broker decommission (`brokers`);
+cluster-wide configuration (get/set/edit/list/import/export/lint/status);
+broker log levels (`loggers`); deferred upgrade finalization (`upgrade`);
+partition balancing and movement; maintenance mode; Kafka connection
+monitoring; client quotas; storage; transactions; self-test (disk/network
+benchmarks); licensing.
 
 **Subskill**: `rpk-cluster`
 
 ```bash
 rpk cluster health
 rpk cluster info -b                # includes broker list
+rpk cluster brokers decommission <id>   # decommission a broker (v26.2+)
 rpk cluster connections list       # current Kafka connections
 rpk cluster config get <key>
 rpk cluster config set <key> <value>
+rpk cluster loggers set <logger> --node-id <id>  # temp broker log level (v26.2+)
+rpk cluster upgrade status         # deferred major-version upgrade state (v26.2+)
 rpk cluster partitions balance
 rpk cluster selftest start
 rpk cluster license info          # check license + Enterprise-feature violations
 rpk cluster license set --path /etc/redpanda/redpanda.license
 ```
 
-> Broker decommission/recommission is NOT under `rpk cluster` — it lives at
-> `rpk redpanda admin brokers` (see `rpk redpanda` below and the
-> `rpk-cluster` skill's brokers-maintenance reference).
+> Broker decommission/recommission moved to `rpk cluster brokers` in v26.2.
+> The `rpk redpanda admin brokers` spellings still work but are hidden,
+> deprecated aliases (see `rpk redpanda` below and the `rpk-cluster` skill's
+> brokers-maintenance reference).
 
 > Enterprise features (Tiered Storage, Cloud Topics, Iceberg, Continuous Data
 > Balancing, Audit Logging, Schema ID Validation, Leader Pinning, OIDC/Kerberos)
@@ -290,9 +296,11 @@ Operate the local broker process and talk to the Admin API — **self-managed
 only**. Subtrees: `start`/`stop`, `mode` (prod/dev tuning presets), `tune`
 (autotuner; `tune list` shows available tuners), `check` (verify system
 requirements), `config` (bootstrap/init/print/set for node config), and
-`admin` (brokers list/decommission/decommission-status/recommission,
-partitions list, config log-level set). Some subcommands (start, stop, tune,
-mode, check) are Linux-only and hidden from `--help` on macOS.
+`admin` (`partitions list`, plus the now-deprecated `brokers *` and `config
+log-level`/`print` — hidden aliases that forward to `rpk cluster brokers` /
+`rpk cluster loggers` / `rpk cluster config` as of v26.2). Some subcommands
+(start, stop, tune, mode, check) are Linux-only and hidden from `--help` on
+macOS.
 
 **Subskill**: `rpk-redpanda`
 
@@ -300,8 +308,8 @@ mode, check) are Linux-only and hidden from `--help` on macOS.
 rpk redpanda mode prod
 rpk redpanda tune all
 rpk redpanda check
-rpk redpanda admin brokers list
-rpk redpanda admin brokers decommission 4
+rpk redpanda admin partitions list 1        # per-broker partition list
+rpk cluster brokers decommission 4          # decommission (moved from rpk redpanda admin in v26.2)
 rpk redpanda config bootstrap --self <ip> --ips <ip1,ip2,ip3>
 ```
 
