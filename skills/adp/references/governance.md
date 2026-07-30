@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (BudgetService, BudgetCreate, Budget fields), `spending_service.proto` (SpendingService, SpendingFilter, SpendingStats), `guardrail.proto` (GuardrailService, BedrockGuardrailConfig, ContentFilterPolicy, LocalGuardrailConfig, GuardrailProvider), `policy_service.proto` (PolicyService lines 25-62, PolicyTemplateService lines 66-104), `system_policy_service.proto` (SystemPolicyService), `effective_policy_set_service.proto` (EffectivePolicySetService), `cedar_options.proto`, `oauth_client.proto` (OAuthClientService), `oauth_provider.proto` (OAuthProviderService), `oauth_connection.proto` (OAuthConnectionService), `pending_auth_request.proto` (PendingAuthRequestService), `token_vault_admin.proto` (TokenVaultAdminService). Service registrations confirmed at `cloudv2/apps/aigw/internal/server/server.go` and `cloudv2/apps/adp-api/internal/server/server.go`. `SpendingService` cost-allocation tag surface (`GetSpendingTagKeys`, `BREAKDOWN_DIMENSION_TAG`, `tag_key`) re-verified against `spending_service.proto` on 2026-07-13. `GuardrailProvider` / `Guardrail.config` oneof re-verified against `guardrail.proto` on 2026-07-20. Evidence date: 2026-07-20.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (BudgetService, BudgetCreate, Budget fields), `spending_service.proto` (SpendingService, SpendingFilter, SpendingStats), `guardrail.proto` (GuardrailService, BedrockGuardrailConfig, ContentFilterPolicy, LocalGuardrailConfig, GuardrailProvider), `policy_service.proto` (PolicyService lines 25-62, PolicyTemplateService lines 66-104), `system_policy_service.proto` (SystemPolicyService), `effective_policy_set_service.proto` (EffectivePolicySetService), `cedar_options.proto`, `oauth_client.proto` (OAuthClientService), `oauth_provider.proto` (OAuthProviderService), `oauth_connection.proto` (OAuthConnectionService), `pending_auth_request.proto` (PendingAuthRequestService), `token_vault_admin.proto` (TokenVaultAdminService). Service registrations confirmed at `cloudv2/apps/aigw/internal/server/server.go` and `cloudv2/apps/adp-api/internal/server/server.go`. `SpendingService` cost-allocation tag surface (`GetSpendingTagKeys`, `BREAKDOWN_DIMENSION_TAG`, `tag_key`) re-verified against `spending_service.proto` on 2026-07-13. `GuardrailProvider` / `Guardrail.config` oneof re-verified against `guardrail.proto` on 2026-07-20. The MCP data-policy surface (`data_policy.proto` `DataShaping`/`DataPolicy`; the `PreviewDataPolicies` and `PreviewToolResponse` RPCs on `MCPServerService` in `mcp_server.proto`) verified on 2026-07-27. Evidence date: 2026-07-27.
 
 # Agentic Data Plane Governance Reference
 
@@ -198,6 +198,49 @@ Source: `effective_policy_set_service.proto:20`. Served: `adp-api server.go:407`
 | `GetEffectivePolicySet` | Fetch the current effective set |
 
 The singleton resource name is `effectivePolicySets/default`. The `cedar_text` field (OUTPUT_ONLY) is the evaluable Cedar text the dataplane runs. The `etag` changes whenever the compiled set changes.
+
+## Data policies (MCP data shaping)
+
+**Preview.** Data policies are a preview capability — confirm current availability in the ADP release notes and live via the API before relying on them. They are configured on an MCP server resource, not through a standalone service; the field and the preview RPCs live in [mcp-servers.md](mcp-servers.md). This section documents what they express and how they compose.
+
+A **data policy** shapes the data an MCP server exposes: it transforms tool-call arguments on the way upstream and tool responses on the way back to the model. It is a distinct control from Cedar authorization: a Cedar policy (see Access control above) decides **whether** a tool call runs; a server's data policies decide **how** the call's data is shaped and **to whom**. Data policies are embedded on the MCP server (`MCPServer.data_policies`); there is no org-scoped or standalone data-policy resource.
+
+### Binding
+
+Each `DataPolicy` binds one reusable transform bundle (`DataShaping`) to:
+
+- `tools` — the tools on this server the policy shapes; empty means every tool.
+- `principals` — who the policy applies to, in the same `<Type>:<id>` vocabulary Cedar targets (for example `User:alice`, `Group:support`); empty means every principal.
+- `shaping` — the `DataShaping` bundle (REQUIRED).
+
+A server can carry several data policies. They compose as a **most-restrictive meet**: adding a policy can only ever narrow what a caller sees, never widen it.
+
+### What a `DataShaping` bundle can do
+
+A bundle has an optional request side (arguments sent upstream) and an optional response side (results returned to the model).
+
+**Field actions** (both request and response). A list of rules, each a JSONPath-style `selector` plus one treatment:
+
+- `keep` — mark a field as surviving allowlist mode.
+- `drop` — remove the field entirely.
+- `mask` — replace the value while preserving the field's presence, via one method: `redact` (fixed placeholder), `partial` (keep the first/last N characters), `hash` (salted digest, so equal inputs stay correlatable without exposing the plaintext), or `pattern` (RE2 substitution).
+
+`default_drop` on a field-action set switches it between denylist mode (unmatched fields pass through; the default) and allowlist mode (only explicitly kept fields survive). A selector marked `absence_safe = false` that matches nothing is an enforcement error and the call **fails closed** — protection against a renamed field silently leaking.
+
+**Request clamps** (request side). Tighten the allowed *values* of a single tool-call argument addressed by path: numeric bounds, string length, item counts, an RE2 pattern, a string format, or an allowed-value enum. The gateway both validates the argument on each call and deep-merges the tightened contract into the tool's advertised input schema on `tools/list`, so the model sees the clamped shape up front. Clamps compose as conjunction — adding one can only tighten.
+
+**Response row filters** (response side). Drop whole records from a list-shaped response: name the record array by path, and give a per-record predicate a record must satisfy to survive (for example `@.priority >= 8`). A record missing the compared field never survives (fail-closed). Predicates on the same path conjoin across filters and policies.
+
+The exact JSONPath grammar subset, clamp keyword set, and per-treatment options are still evolving; read the current `DataShaping` field detail live rather than assuming this list is complete.
+
+### Previewing a policy
+
+Two RPCs on `MCPServerService` dry-run a policy before you save it. Each accepts a `draft_data_policies` overlay so an editor can preview unsaved edits without persisting anything:
+
+- `PreviewDataPolicies` — for a `(server, tool, principal)`, returns the allow/deny effect plus the explained composition: per-field winners with their ordered contributions, composed clamps and row filters, and diagnostics (for example an unenforceable bundle or a contradictory clamp conjunction).
+- `PreviewToolResponse` — runs the response-side shaping against a sample response document and returns the shaped "after" the agent would receive.
+
+Both require Cedar authorization to be enabled; they return `UNIMPLEMENTED` otherwise.
 
 ## OAuth and identity services
 
