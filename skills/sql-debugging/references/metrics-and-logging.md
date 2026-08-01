@@ -306,8 +306,9 @@ Source: `src/monitoring/metrics/tasks_ongoing.h`
 Logs are written in parallel to stdout and to files under `$TMPDIR/oxla/` (defaults to `/tmp/oxla/` when `$TMPDIR` is unset):
 
 ```
-$TMPDIR/oxla/server.<DATETIME>.<PID>.log
-# Example (default): /tmp/oxla/server.20241015-093012.48291.log
+$TMPDIR/oxla/server.<DATETIME>.log
+# Example (default): /tmp/oxla/server.20241015-093012.log
+# (The <PID> appears only on the separate startup tee file, startup.<DATETIME>.<PID>.log.)
 ```
 
 Source: `src/util/plog.h` — `initPlog(plog::Severity max_severity)`

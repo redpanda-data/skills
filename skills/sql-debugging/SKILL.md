@@ -110,7 +110,7 @@ Oxla uses the `plog` library. Log levels in ascending verbosity order:
 
 `FATAL` → `ERROR` → `WARNING` → `INFO` → `DEBUG` → `VERBOSE`
 
-Default is `INFO`. Logs are written to stdout (with colors in TTY mode) and to files under `$TMPDIR/oxla/` (defaults to `/tmp/oxla/` when `$TMPDIR` is unset) with the path pattern `server.<DATETIME>.<PID>.log`.
+Default is `INFO`. Logs are written to stdout (with colors in TTY mode) and to files under `$TMPDIR/oxla/` (defaults to `/tmp/oxla/` when `$TMPDIR` is unset) with the path pattern `server.<DATETIME>.log` (no PID; the `<PID>` appears only on the separate `startup.<DATETIME>.<PID>.log` tee file).
 
 ### Set log level in config (requires restart)
 

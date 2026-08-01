@@ -45,7 +45,7 @@ All option names are grounded in `hsql::option_names::iceberg`
 | Option | Description |
 |--------|-------------|
 | `warehouse` | Warehouse path or identifier (catalog-specific) |
-| `auth_type` | Authentication mode: `'oauth2'`, `'basic'`, or `'aws_sigv4'`. Omit for unauthenticated. |
+| `auth_type` | Authentication mode: `'oauth2'`, `'basic'`, `'aws_sigv4'`, or `'gcp'`. Omit for unauthenticated. |
 
 **OAuth2 options** (when `auth_type = 'oauth2'`):
 
@@ -72,6 +72,12 @@ All option names are grounded in `hsql::option_names::iceberg`
 | `aws_access_key_id` | No* | AWS access key. Omit to use the default credential chain (env vars → shared config → STS web identity → IMDSv2/ECS). Both `aws_access_key_id` and `aws_secret_access_key` must either both be set or both be omitted. |
 | `aws_secret_access_key` | No* | AWS secret access key |
 | `aws_service_name` | No | SigV4 service segment. Default: `'glue'`. Use `'s3tables'` for S3 Tables REST catalog, `'execute-api'` for API Gateway-fronted catalogs. |
+
+**GCP options** (when `auth_type = 'gcp'`):
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `gcp_project_id` | Yes | GCP project ID. Authenticates via GCP Application Default Credentials (ADC). |
 
 **TLS options:**
 
@@ -390,7 +396,7 @@ Columns:
 | `name` | TEXT | Catalog name |
 | `uri` | TEXT | REST catalog URI |
 | `warehouse` | TEXT | Warehouse path (empty if not set) |
-| `auth_type` | TEXT | Authentication type: `'oauth2'`, `'basic'`, `'aws_sigv4'`, or `''` |
+| `auth_type` | TEXT | Authentication type: `'oauth2'`, `'basic'`, `'aws_sigv4'`, `'gcp'`, or `''` |
 | `namespace_name` | TEXT | Oxla schema (namespace) containing this catalog |
 | `database_name` | TEXT | Oxla database containing this catalog |
 

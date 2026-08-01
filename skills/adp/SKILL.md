@@ -14,7 +14,7 @@ description: >-
   budgets, guardrails, or Cedar access-control policies via the governance APIs
   (BudgetService, GuardrailService, PolicyService); reading agent transcripts or
   spending insights via TranscriptsService or InsightsService; running rpk ai
-  (install, upgrade, agent, auth, mcp, llm, model, oauth-client, oauth-provider, run);
+  (install, upgrade, agent, auth, mcp, llm, model, oauth-client, oauth-provider, policy, run);
   wiring OAuth clients or providers to the aigw Authorization Server; or
   understanding what the platform does and does not provide (routing/rate limits
   are out of scope). For the separate rpk cloud mcp control-plane MCP server, see
@@ -37,7 +37,7 @@ See [references/agents.md](references/agents.md).
 
 ### MCP servers
 
-Each MCP server is either `REMOTE` (you own the upstream) or `MANAGED` (a pre-integrated catalog entry). The managed catalog covers 7 categories (AI, AWS, Communication, Database, Google, Streaming, Utility) with ~50 managed types; the exact set is gated per cluster, so use `ListManagedMCPTypes` for the live list. Enabling `code_mode` on a server adds `{name}_search` and `{name}_execute` tools, reducing token usage by 80-90% for large tool sets. Two API layers exist: `adp.v1alpha1.MCPServerService` (management plane, 7 RPCs) and `dataplane.v1alpha3.MCPServerService` (public Cloud API, 9 RPCs including Start/Stop/Lint). Knowledge bases are a separate `v1alpha3` resource, not a sub-resource of MCP servers.
+Each MCP server is either `REMOTE` (you own the upstream) or `MANAGED` (a pre-integrated catalog entry). The managed catalog covers 7 categories (AI, AWS, Communication, Database, Google, Streaming, Utility) with ~50 managed types; the exact set is gated per cluster, so use `ListManagedMCPTypes` for the live list. Enabling `code_mode` on a server adds `{name}_search` and `{name}_execute` tools, reducing token usage by 80-90% for large tool sets. Two API layers exist: `adp.v1alpha1.MCPServerService` (management plane, 9 RPCs) and `dataplane.v1alpha3.MCPServerService` (public Cloud API, 9 RPCs including Start/Stop/Lint). Knowledge bases are a separate `v1alpha3` resource, not a sub-resource of MCP servers.
 
 See [references/mcp-servers.md](references/mcp-servers.md).
 
@@ -75,7 +75,7 @@ See [references/observability.md](references/observability.md).
 
 The primary CLI is `rpk ai`, delivered as an rpk managed plugin: rpk downloads and manages the `rpai` binary (install path `~/.local/bin/.rpk.managed-rpai`), so `rpk ai install`, `rpk ai upgrade`, and `rpk ai uninstall` manage that binary's lifecycle. You invoke it as `rpk ai`. There is no FIPS build of `rpai`.
 
-Top-level subcommands: `agent`, `auth`, `connection` (stub), `env`, `llm`, `mcp`, `model`, `oauth-client`, `oauth-provider`, `run`, `version`.
+Top-level subcommands: `agent`, `auth`, `connection` (stub), `env`, `llm`, `mcp`, `model`, `oauth-client`, `oauth-provider`, `policy`, `run`, `version`.
 
 Programmatic access uses the Agentic Data Plane API directly (gRPC/Connect) or via the MCP tools exposed on the cluster.
 

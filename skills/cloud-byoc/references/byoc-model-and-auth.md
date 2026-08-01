@@ -12,7 +12,7 @@ BYOC (Bring Your Own Cloud) is a Redpanda Cloud deployment model where the Kafka
 | IAM/Security Groups | You create and own them | Redpanda manages |
 | Data residency | Fully in your account | Redpanda's account |
 | Agent | Required — Terraform-provisioned | None |
-| Cluster type string | `TYPE_BYOC` | `TYPE_SERVERLESS` |
+| Cluster type string | `TYPE_BYOC` | N/A (separate `ServerlessCluster` resource) |
 | Network resource | Must be created first | Not needed |
 | `throughput_tier` | BYOC tiers (e.g. `tier-1-aws-v2-arm`, `tier-1-gcp-v2-x86`). Tier names are version-dependent; authoritative list at https://docs.redpanda.com/redpanda-cloud/reference/tiers/byoc-tiers/ | Serverless tiers |
 

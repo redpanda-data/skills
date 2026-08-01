@@ -182,7 +182,7 @@ Kafka topics use namespace `kafka`. Internal Redpanda topics use namespace `redp
 }
 ```
 
-Balancer `status` values: `off`, `ready`, `in_progress`, `stalled`.
+Balancer `status` values: `off`, `starting`, `ready`, `in_progress`, `stalled`.
 
 ---
 

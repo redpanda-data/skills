@@ -39,7 +39,7 @@ Source: `llm_provider.proto:16-66`. Service name: `redpanda.api.adp.v1alpha1.LLM
 | `ListLLMProviders` | `dataplane_adp_llmprovider_list` |
 | `UpdateLLMProvider` | `dataplane_adp_llmprovider_update` |
 | `DeleteLLMProvider` | `dataplane_adp_llmprovider_delete` |
-| `ListLLMProviderTypes` | `dataplane_adp_llmprovider_list` |
+| `ListLLMProviderTypes` | none — `skip: true` (read-only static catalog; any authenticated caller) |
 | `CheckConnection` | `dataplane_adp_llmprovider_get` |
 
 `CheckConnection` (`llm_provider.proto:59-65`) fires a live upstream probe to the configured provider endpoint and returns `latency_ms` plus a `google.rpc.Status` indicating reachability.
@@ -83,8 +83,10 @@ Source: `model.proto:10-23`. Service name: `redpanda.api.adp.v1alpha1.ModelServi
 
 | RPC | IAM permission |
 |-----|----------------|
-| `ListModels` | `dataplane_aigateway_model_list` |
-| `GetModel` | `dataplane_aigateway_model_get` |
+| `ListModels` | none — `skip: true` (read-only static catalog; any authenticated caller) |
+| `GetModel` | none — `skip: true` (read-only static catalog; any authenticated caller) |
+
+Both `ModelService` RPCs bypass authorization (`skip: true`): the catalog is build-time static and identical for every caller, so `skip` bypasses authorization only — authentication still applies. Model *invocation* stays separately enforced via `dataplane_adp_llmprovider_invoke` at the LLM proxy, so catalog visibility does not imply the right to invoke.
 
 `Model` is discovery-catalog metadata only (`model.proto:39`): "This is metadata only -- it does not affect runtime proxy behavior." There are no Create, Update, Delete, Enable, or Disable RPCs on `ModelService`. (Those RPCs existed only in the deprecated `aigateway/v1` `ModelsService`, which has no source proto in the current tree and is not registered in the aigw server.)
 

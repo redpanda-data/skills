@@ -20,7 +20,7 @@ description: >-
 
 # Redpanda Connect CDC: AWS DynamoDB
 
-The `aws_dynamodb_cdc` input reads change events from DynamoDB Streams into Redpanda or any Kafka-compatible broker. It manages shard lifecycle automatically, writes checkpoints to a dedicated DynamoDB table, and supports an optional initial Scan snapshot before switching to streaming. Available from Redpanda Connect v4.79.0 with status Stable. Its source code is distributed under the Redpanda Community License; no runtime Enterprise license is required or enforced.
+The `aws_dynamodb_cdc` input reads change events from DynamoDB Streams into Redpanda or any Kafka-compatible broker. It manages shard lifecycle automatically, writes checkpoints to a dedicated DynamoDB table, and supports an optional initial Scan snapshot before switching to streaming. Available from Redpanda Connect v4.79.0 with status Stable. It is classified as an **enterprise**-tier connector, and its source is an Enterprise-licensed file under the Redpanda Community License. Unlike the other enterprise `*_cdc` inputs, however, the connector's source currently enforces **no runtime Enterprise license gate**.
 
 Three table-discovery modes cover single-table, explicit-list, and tag-based multi-table scenarios. The 24-hour DynamoDB Streams retention window is the key operational constraint: the connector must remain running or resume within that window or it re-runs a snapshot to avoid data loss.
 
@@ -228,11 +228,11 @@ output:
 - **Stream retention:** DynamoDB Streams retain records for 24 hours. If the connector is down longer than that, it re-runs a snapshot on next start (in `snapshot_and_cdc` mode).
 - **Checkpoint table:** Created automatically with pay-per-request billing. Uses `(StreamArn, ShardID)` as the primary key.
 - **Kinesis alternative:** For up to 1-year retention, enable Kinesis Data Streams for DynamoDB and use the `aws_kinesis` input instead.
-- **License:** The component source is distributed under the Redpanda Community License. No runtime Enterprise license is required or enforced; the component is registered as Stable with no license gate.
+- **License and tier:** `aws_dynamodb_cdc` is an **enterprise**-tier connector whose source is an Enterprise-licensed file under the Redpanda Community License. Unlike the other enterprise `*_cdc` inputs, its source currently enforces no runtime Enterprise license gate (it is registered as Stable) — but treat it as enterprise-tier, since that classification (not the currently-absent gate) is authoritative.
 
 ## Enterprise Features on the Destination Topic
 
-The `aws_dynamodb_cdc` input is Community-licensed, but the Redpanda topic and cluster the CDC events land in can use Redpanda Enterprise differentiators (each requires a valid Redpanda Enterprise license on the destination cluster):
+The `aws_dynamodb_cdc` input is an enterprise-tier connector (its source currently enforces no runtime license gate). Separately, the Redpanda topic and cluster the CDC events land in can use Redpanda Enterprise differentiators (each requires a valid Redpanda Enterprise license on the destination cluster):
 
 - **Iceberg Topics** — land CDC events directly into an Apache Iceberg table for analytics. Per-topic: `redpanda.iceberg.mode` (`key_value` | `value_schema_id_prefix` | `value_schema_latest` | `disabled`), `redpanda.iceberg.delete`, `redpanda.iceberg.partition.spec`, `redpanda.iceberg.target.lag.ms`, `redpanda.iceberg.invalid.record.action` (`drop` | `dlq_table`); cluster: `iceberg_enabled`.
 - **Tiered Storage** — `redpanda.remote.write` + `redpanda.remote.read` (cluster `cloud_storage_enabled`) extend CDC retention far beyond DynamoDB Streams' 24h window.

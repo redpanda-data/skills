@@ -13,11 +13,12 @@ Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-server
 Before acting, confirm available operations and current state:
 
 ```bash
-# See all rpk ai transcript subcommands and flags
-rpk ai transcript --help
+# Transcripts are a subcommand of `agent`, not a top-level command.
+# See all subcommands and flags:
+rpk ai agent transcript --help
 
 # List recent transcripts for a specific agent
-rpk ai transcript list --agent-id <agent-id>
+rpk ai agent transcript list <agent>
 ```
 
 The sections below document the proto-verified surface. For exact field lists and current limits, confirm live via `--help` and by calling the relevant list or describe operations.

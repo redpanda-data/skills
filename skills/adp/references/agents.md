@@ -43,6 +43,9 @@ Both managed and self-managed agents share this unified service (`agent.proto:15
 | `ListTriggers` | `dataplane_adp_agent_trigger_list` |
 | `UpdateTrigger` | `dataplane_adp_agent_trigger_update` |
 | `DeleteTrigger` | `dataplane_adp_agent_trigger_delete` |
+| `ListTriggerRuns` | `dataplane_adp_agent_trigger_run_list` |
+
+`ListTriggerRuns` lists the recorded runs of a cron trigger (newest first); its parent is `agents/{agent}/triggers/{trigger}`.
 
 `TriggerInternalService` (`ReportTriggerHealth`, permission `dataplane_adp_agent_trigger_report_health`) is registered on an internal-listener only and is never a public API.
 

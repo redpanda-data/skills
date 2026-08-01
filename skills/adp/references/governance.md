@@ -13,14 +13,15 @@ Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-server
 Before acting, confirm available operations and current state:
 
 ```bash
-# Budgets and spending
-rpk ai budget --help
-rpk ai budget list
-
-# Guardrails
-rpk ai guardrail --help
-rpk ai guardrail list
+# Access-control policies (Cedar) are exposed on the CLI:
+rpk ai policy --help
+rpk ai policy list
 ```
+
+There is **no** `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail` subcommand:
+budgets, spending analysis, and guardrails are API-only surfaces
+(`BudgetService`, `SpendingService`, `GuardrailService`). Reach them via the
+Agentic Data Plane API directly or via the MCP tools exposed on the cluster.
 
 The sections below document the proto-verified surface. For exact field lists and current limits, confirm live via `--help` and by calling the relevant list or describe operations.
 

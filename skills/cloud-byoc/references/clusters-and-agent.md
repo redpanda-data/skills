@@ -344,7 +344,7 @@ These are **control-plane** paths under `api.redpanda.com` (not the per-cluster 
 | `security_sync_options` | No | ACL / security-settings replication. |
 | `schema_registry_sync_options` | No | Schema Registry replication. |
 
-`PATCH` uses an `UpdateShadowLinkRequest` with a required `update_mask` and a `shadow_link` (`ShadowLinkUpdate`) body; updatable fields are the five sync-options groups plus `client_options`.
+`PATCH` uses an `UpdateShadowLinkRequest` with a required `update_mask` and a `shadow_link` (`ShadowLinkUpdate`) body; updatable fields are the four sync-options groups (`topic_metadata_sync_options`, `consumer_offset_sync_options`, `security_sync_options`, `schema_registry_sync_options`) plus `client_options`.
 
 ```bash
 # Create a shadow link from a known source cluster (control plane)

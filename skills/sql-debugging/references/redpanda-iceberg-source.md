@@ -61,7 +61,7 @@ must line up. Nested REST catalog keys:
 | Property | Purpose |
 |---|---|
 | `iceberg_rest_catalog_endpoint` | Catalog endpoint URL. Required when `iceberg_catalog_type=rest` (set both together). |
-| `iceberg_rest_catalog_authentication_mode` | `oauth2`, `aws_sigv4`, `bearer`, or `none` (default). Use `aws_sigv4` for AWS Glue. |
+| `iceberg_rest_catalog_authentication_mode` | `oauth2`, `aws_sigv4`, `gcp`, `bearer`, or `none` (default). Use `aws_sigv4` for AWS Glue. |
 | `iceberg_rest_catalog_oauth2_server_uri` | OAuth token endpoint URI (for `oauth2`). |
 | `iceberg_rest_catalog_client_id` | OAuth client ID (for `oauth2`). |
 | `iceberg_rest_catalog_client_secret` | OAuth client secret (for `oauth2`; store as a secret). |
