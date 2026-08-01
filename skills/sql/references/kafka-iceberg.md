@@ -142,7 +142,7 @@ Grounded in `connection_option_names.h` (`namespace iceberg`) and
 |-----|-------|
 | `uri` | REST catalog endpoint |
 | `warehouse` | warehouse location/identifier |
-| `auth_type` | one of `oauth2`, `basic`, `aws_sigv4` (validated; others rejected) |
+| `auth_type` | one of `oauth2`, `basic`, `aws_sigv4`, `gcp` (validated; others rejected) |
 | `oauth2_client_id` | OAuth2 client id (`auth_type = 'oauth2'`) |
 | `oauth2_client_secret` | **secret** |
 | `oauth2_scope` | OAuth2 scope |
@@ -154,6 +154,7 @@ Grounded in `connection_option_names.h` (`namespace iceberg`) and
 | `aws_access_key_id` | **secret** (SigV4) |
 | `aws_secret_access_key` | **secret** (SigV4) |
 | `aws_service_name` | SigV4 service segment (defaults to `glue`) |
+| `gcp_project_id` | GCP project (required for `auth_type = 'gcp'`; uses GCP Application Default Credentials) |
 | `ssl_verify` | TLS verification toggle |
 | `ssl_ca_info` / `ssl_ca_path` / `ssl_crl_file` | TLS trust material |
 
@@ -237,7 +238,7 @@ Grounded in `connection_option_names.h` (`namespace kafka`) and the
 | `truststore` | no | string | CA truststore |
 | `key_store_key` | no | string | **secret** (client key, mTLS) |
 | `key_store_cert` | no | string | client cert (mTLS) |
-| `sasl_mechanism` | no | string | e.g. `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512` |
+| `sasl_mechanism` | no | string | `SCRAM-SHA-256` or `SCRAM-SHA-512` (only these two are accepted; any other value is rejected with `"unknown SASL mechanism"`) |
 | `sasl_user` | no | string | SASL username |
 | `sasl_password` | no | string | **secret** |
 | `pandaproxy_url` | no | string | Pandaproxy (REST proxy) URL |

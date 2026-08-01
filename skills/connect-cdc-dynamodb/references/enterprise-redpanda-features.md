@@ -1,6 +1,6 @@
 # Enterprise Redpanda Features for DynamoDB CDC Pipelines
 
-The `aws_dynamodb_cdc` input itself is **Community-licensed** — its source is distributed under the Redpanda Community License and there is no runtime Enterprise license gate on the connector (it is registered as Stable). See [config-reference.md](config-reference.md).
+The `aws_dynamodb_cdc` input itself is classified **enterprise**-tier, and its source is an Enterprise-licensed file under the Redpanda Community License. Unlike the other enterprise `*_cdc` inputs, its source currently enforces **no runtime Enterprise license gate** on the connector (it is registered as Stable). See [config-reference.md](config-reference.md).
 
 However, once DynamoDB CDC events land in a Redpanda topic, the **destination topic and cluster** can use Redpanda Enterprise features. These are Redpanda's key differentiators for a CDC sink. **Each feature below requires a valid Redpanda Enterprise license** on the destination cluster (not on Connect). Without a valid license, topics cannot be created or modified to enable these features, and on license expiration the behaviors noted apply.
 
@@ -192,7 +192,7 @@ Distinct from the Redpanda cluster license. These apply to the Connect process r
 
 | Feature | Doc | Notes |
 |---|---|---|
-| Enterprise connectors | `connect:components:catalog` (support=enterprise) | `aws_dynamodb_cdc` is NOT enterprise-gated — it is Community/Stable. Other inputs/outputs/processors in the same pipeline may be. |
+| Enterprise connectors | `connect:components:catalog` (support=enterprise) | `aws_dynamodb_cdc` is itself enterprise-tier (though its source currently enforces no runtime license gate). Other inputs/outputs/processors in the same pipeline may also be enterprise. |
 | Secrets management | `connect:configuration:secrets.adoc` | Look up secrets (e.g., AWS keys, Kafka SASL password) from a remote secret manager at runtime instead of env vars. |
 | Redpanda Connect configuration service | `connect:components:redpanda/about.adoc` | The `redpanda:` config block streams Connect logs and status events to a topic on the Redpanda cluster. |
 | Allow / deny lists | `connect:configuration:allow_and_deny_lists.adoc` | Restrict which components a pipeline may run. |
@@ -206,7 +206,7 @@ Apply a Connect license with `rpk connect` / environment as described in `connec
 
 | Where the data is | Feature | License-gated? |
 |---|---|---|
-| Connect input (`aws_dynamodb_cdc`) | the connector itself | No — Community / Stable |
+| Connect input (`aws_dynamodb_cdc`) | the connector itself | Enterprise-tier; no runtime license gate currently enforced in source |
 | Connect pipeline | enterprise connectors, secrets mgmt, config service, allow/deny lists | Connect Enterprise |
 | Redpanda topic | Iceberg, Tiered Storage, Remote Read Replicas, Schema ID Validation | Redpanda Enterprise |
 | Redpanda cluster | Shadow Linking (DR), RBAC, Audit Logging, OIDC/Kerberos, FIPS | Redpanda Enterprise |

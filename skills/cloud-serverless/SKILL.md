@@ -291,7 +291,7 @@ key tables, accepted values, defaults, mode semantics, and self-managed mappings
 |---|---|---|
 | Infra ownership | Redpanda manages everything | Customer's cloud account |
 | Network resources | Not required | Requires creating a `Network` resource |
-| Cluster type | Serverless (shared infrastructure) | Dedicated (`TYPE_DEDICATED`) |
+| Cluster type | Serverless (separate `ServerlessCluster` resource; no `Cluster.Type`) | BYOC (`Cluster.Type` = `TYPE_BYOC`) |
 | Provisioning agent | None | `rpk cloud byoc apply` runs Terraform |
 | Billing | Redpanda bills per-use | Customer pays cloud provider directly |
 

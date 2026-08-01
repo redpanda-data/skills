@@ -78,7 +78,7 @@ When running as `rpk ai`, the binary uses prefixed flag names. Source: `root.go:
 
 | Flag | Short | Env var | Default | Description |
 |------|-------|---------|---------|-------------|
-| `--rpai-profile` | `-p` | `RPAI_PROFILE` | (empty) | rpai profile name |
+| `--rpai-environment` | (none) | (not bound to any env var) | (empty) | select a manual environment for this invocation; switch environments with `rpk ai env use` |
 | `--rpai-config` | `-c` | `RPAI_CONFIG` | `$HOME/.rpai/config` | path to rpai config file |
 | `--rpai-verbose` | `-v` | `RPAI_VERBOSE` | false | verbose debug logging to stderr |
 | `--rpai-endpoint` | `-s` | **not bound to any env var** | `""` | override the selected environment's AI Gateway URL for this invocation |
@@ -105,6 +105,7 @@ Source: `root.go:134-150` (AddCommand calls), confirmed against `testdata/comman
 | `model` | `models`, `m` | List available models |
 | `oauth-client` | `oauth-clients`, `oc` | Manage OAuth clients |
 | `oauth-provider` | `oauth`, `op` | Manage OAuth providers (canonical name is `oauth-provider`; `oauth` is an alias) |
+| `policy` | `policies`, `pol` | Manage Cedar authorization policies: `create`, `get`, `list`, `update`, `delete`, plus `apply`/`diff` for GitOps-style manifest management |
 | `run` | (none) | Run AI coding tools (Claude Code, Codex) through the AI Gateway |
 | `version` | (none) | Print rpai version and commit |
 

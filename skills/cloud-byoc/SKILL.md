@@ -107,7 +107,7 @@ CLUSTER_OP=$(curl -s -X POST "${BASE}/v1/clusters" \
   }" | jq .)
 
 # Note: tier names are version-dependent. Authoritative list:
-#   GET /v1/regions?cloud_provider=CLOUD_PROVIDER_AWS  (or GCP/AZURE)
+#   GET /v1/regions/CLOUD_PROVIDER_AWS  (or CLOUD_PROVIDER_GCP/CLOUD_PROVIDER_AZURE; cloud_provider is a path segment)
 #   or see https://docs.redpanda.com/redpanda-cloud/reference/tiers/byoc-tiers/
 # Real AWS examples: tier-1-aws-v2-arm, tier-1-aws-v2-x86, tier-1-aws-v3-arm
 # Real GCP examples: tier-1-gcp-v2-x86, tier-1-gcp-um4g
@@ -155,7 +155,7 @@ echo "Cluster is READY"
 | Cloud bill | Customer pays AWS/GCP/Azure directly | Redpanda charges per usage |
 | Network isolation | Fully isolated VPC | Shared multi-tenant |
 | Agent required | Yes — `rpk cloud byoc apply` | No |
-| Cluster type | `TYPE_BYOC` | `TYPE_SERVERLESS` |
+| Cluster type | `TYPE_BYOC` | N/A (separate `ServerlessCluster` resource) |
 | Network resource | Required | Not required |
 | Customer-managed IAM | Optional (`customer_managed_resources`) | Not supported |
 | Throughput tiers | Dedicated tiers | Serverless tiers |
@@ -180,7 +180,7 @@ All mutating operations (CreateNetwork, CreateCluster, DeleteCluster, DeleteNetw
 | Operations | `GET /v1/operations/{id}`, `GET /v1/operations` |
 | Scheduled Operations (PREVIEW) | `GET /v1/scheduled-operations` (list only) |
 | Resource Groups | `POST /v1/resource-groups`, `GET /v1/resource-groups/{id}`, `GET /v1/resource-groups` |
-| Regions | `GET /v1/regions`, `GET /v1/regions/{id}` |
+| Regions | `GET /v1/regions/{cloud_provider}`, `GET /v1/regions/{cloud_provider}/{name}` |
 
 ## Cluster State Machine
 

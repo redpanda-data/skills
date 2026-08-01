@@ -265,7 +265,7 @@ Enterprise features operated via rpk, with their primary control:
 | RBAC / GBAC | `rpk security role ...`; `rpk security acl create --allow-principal Group:...` |
 | OIDC / Kerberos auth | cluster `sasl_mechanisms` (`OAUTHBEARER`/`GSSAPI`), `http_authentication` |
 | Schema ID Validation | `enable_schema_id_validation`; topic `redpanda.{key,value}.schema.id.validation` |
-| FIPS | node `fips_mode` (`rpk redpanda config set fips_mode enabled`) |
+| FIPS | node `fips_mode` (`rpk redpanda config set redpanda.fips_mode enabled`) |
 
 Full nested config keys, topic properties, accepted values, and the
 disable-to-exit-violation commands for each feature are in

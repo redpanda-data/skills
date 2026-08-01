@@ -365,8 +365,8 @@ Supported URN schemes (from the secrets resolver):
 |---|---|---|
 | `env:` | Environment variables | Default; the only entry unless overridden |
 | `redis://` | Redis | e.g. `redis://host:port` |
-| `aws://` | AWS Secrets Manager | `?role=` for assume-role; `?trim_prefix=` to strip a key prefix |
-| `gcp://` | GCP Secret Manager | `?audience=`; `?trim_prefix=` |
+| `aws://` | AWS Secrets Manager | `?role=` for assume-role; `?trimPrefix=` to strip a key prefix |
+| `gcp://` | GCP Secret Manager | `?audience=`; `?trimPrefix=` |
 | `az://` | Azure Key Vault | host is the vault name (`https://<host>`) |
 | `none:` | Disabled | Returns no secrets |
 
