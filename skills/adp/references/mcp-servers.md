@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` (MCPServerService RPCs, MCPServer fields, code-mode comment, tool-naming comment, `data_policies` field, `PreviewDataPolicies`/`PreviewToolResponse` RPCs), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/data_policy.proto` (DataShaping/DataPolicy), `cloudv2/proto/public/cloud/redpanda/mcps/v1/auth.proto` (auth mode messages), `cloudv2/apps/aigw/internal/mcp/managed/defaults.go` (managed catalog registrations). Evidence date: 2026-07-27 (MCPServerService RPCs and data policies re-verified; managed catalog unchanged since 2026-06-29).
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` (MCPServerService RPCs, MCPServer fields, code-mode comment, tool-naming comment, `data_policies` field, `response_format` field and `MCPResponseFormat` enum, `PreviewDataPolicies`/`PreviewToolResponse` RPCs), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/data_policy.proto` (DataShaping/DataPolicy), `cloudv2/proto/public/cloud/redpanda/mcps/v1/auth.proto` (auth mode messages), `cloudv2/apps/aigw/internal/mcp/managed/defaults.go` (managed catalog registrations). Evidence date: 2026-08-03 (`response_format`/`MCPResponseFormat` added and verified against `mcp_server.proto`; MCPServerService RPCs and data policies unchanged; managed catalog unchanged since 2026-06-29).
 
 # Agentic Data Plane MCP Servers Reference
 
@@ -64,6 +64,7 @@ The skill operates against the `v1alpha1` Agentic Data Plane management-plane la
 | `code_mode_url` | `string` | OUTPUT_ONLY; computed URL for the code-mode endpoint (`-code` suffix convention); not persisted |
 | `tools` | `repeated MCPTool` | OUTPUT_ONLY; populated by a live `tools/list` call |
 | `data_policies` | `repeated DataPolicy` | OPTIONAL; preview. Data-shaping policies for this server's tool calls (mask/redact/hash/drop fields, clamp argument values, filter response rows), composed most-restrictive. Also settable on create/update. Omitted from `ListMCPServers` responses to bound payload size; read via `GetMCPServer`. See Data policies below and [governance.md](governance.md) |
+| `response_format` | `MCPResponseFormat` | OPTIONAL; output encoding for this server's tool results on the MCP→agent leg (token optimization). `UNSPECIFIED` = JSON passthrough (the default). Also settable on create/update. See Output format below |
 | `created_at`, `updated_at`, `created_by`, `updated_by` | OUTPUT_ONLY | Audit fields |
 
 `MCPServerType` enum values: `MCP_SERVER_TYPE_UNSPECIFIED` (0), `MCP_SERVER_TYPE_REMOTE` (1), `MCP_SERVER_TYPE_MANAGED` (2).
@@ -106,6 +107,18 @@ Integration guides report that deferred tool loading (code mode) reduces token u
 ### Tool name truncation
 
 The MCP protocol enforces a 64-character limit on tool names. For managed types whose generated names exceed this limit, the Agentic Data Plane truncates the prefix and replaces it with a hash (for example, `64ghux5adn_github_read_v1_GitHubReadService_GetAuthenticatedUser`). The version, service, and method suffix is always preserved, so the short tool name an agent sees (for example, `get_authenticated_user`) remains stable across truncations.
+
+## Output format (token optimization)
+
+A server's `response_format` selects how its tool results are encoded on the MCP→agent leg, before the model reads them. It is a field on the server (`response_format` on `MCPServer`, and on create/update) and defaults to JSON passthrough. It shapes only the *encoding*; it never changes which data a result contains.
+
+| `MCPResponseFormat` value | Encoding | Notes |
+|---|---|---|
+| `MCP_RESPONSE_FORMAT_UNSPECIFIED` (0) | JSON passthrough | Default and current behavior; results forwarded untouched |
+| `MCP_RESPONSE_FORMAT_JTON` (1) | JTON (JSON Tabular Object Notation) | Re-encodes tabular JSON in `content[].text` into a denser grid form and strips the duplicate `structuredContent`. A strict JSON superset; only arrays of homogeneous objects compress — other shapes pass through |
+| `MCP_RESPONSE_FORMAT_TOON` (2) | TOON (Token-Oriented Object Notation) | A leaner indentation-based encoding that also trims nested objects, not only arrays-of-objects. Same strip-`structuredContent` + lossless-round-trip contract as JTON |
+
+Both JTON and TOON are optimizations only — they preserve a lossless round-trip and never alter the result's data. This is a newer capability; confirm it is active in your environment (and the encoded output is what you expect) via live introspection before relying on it.
 
 ## Data policies (preview)
 

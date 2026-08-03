@@ -1,4 +1,4 @@
-Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing). Evidence date: 2026-07-06 (`run` subcommand flags re-verified against `claude.go`/`codex.go`).
+Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing). Evidence date: 2026-08-03 (`connection` subcommands re-verified against `connection/cmd.go` — now implemented, previously a stub; `run` subcommand flags last verified 2026-07-06).
 
 # rpk ai CLI Reference
 
@@ -98,7 +98,7 @@ Source: `root.go:134-150` (AddCommand calls), confirmed against `testdata/comman
 |-----------|---------|-------|
 | `agent` | `agents` | Manage Agentic Data Plane agents |
 | `auth` | (none) | Authentication helpers |
-| `connection` | `connections`, `conn` | Phase 1 stub; both subcommands print "coming soon" and exit 0 |
+| `connection` | `connections`, `conn` | Manage your own OAuth connections: `list`, `revoke <provider-name>` |
 | `env` | `environment` | Manage rpai environments (replaces deprecated `profile`) |
 | `llm` | `llm-provider`, `provider`, `lp` | Manage LLM provider configurations |
 | `mcp` | `mcp-server` | Manage MCP servers |
@@ -150,11 +150,18 @@ Source: `internal/cmd/auth/cmd.go:18`. Subcommands: `login`, `logout`, `token`, 
 
 Not yet documented in adp-docs.
 
-## `connection` subcommands (stub)
+## `connection` subcommands
 
-Source: `internal/cmd/connection/cmd.go:12`. Subcommands: `list`, `revoke`.
+Source: `internal/cmd/connection/cmd.go`. Subcommands: `list`, `revoke <provider-name>`.
 
-Both print "rpai connection: coming soon" and exit 0. This is a confirmed Phase 1 stub.
+A *connection* is your personal OAuth grant to a third-party provider — created by signing in through the browser consent flow (the **Connect** action in the UI) — that lets `user_oauth` MCP servers act on your behalf. These commands manage the connections you already hold; they do not create them (sign-in happens through the consent flow). They bring **My Connections** to the terminal.
+
+| Command | Purpose |
+|---------|---------|
+| `rpk ai connection list` | List your OAuth connections and their status. `-o wide` / `-o yaml` add connected-at, token-expiry, and refresh-token detail |
+| `rpk ai connection revoke <provider-name>` | Revoke your own connection to the named provider: invalidates your stored tokens and calls the provider's revocation endpoint best-effort. Affects only your connection, not other users' |
+
+Backed by the `ListConnections` / `RevokeConnection` RPCs. Not yet documented in adp-docs.
 
 ## `env` subcommands
 

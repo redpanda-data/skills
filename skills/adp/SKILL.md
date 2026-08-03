@@ -75,7 +75,7 @@ See [references/observability.md](references/observability.md).
 
 The primary CLI is `rpk ai`, delivered as an rpk managed plugin: rpk downloads and manages the `rpai` binary (install path `~/.local/bin/.rpk.managed-rpai`), so `rpk ai install`, `rpk ai upgrade`, and `rpk ai uninstall` manage that binary's lifecycle. You invoke it as `rpk ai`. There is no FIPS build of `rpai`.
 
-Top-level subcommands: `agent`, `auth`, `connection` (stub), `env`, `llm`, `mcp`, `model`, `oauth-client`, `oauth-provider`, `policy`, `run`, `version`.
+Top-level subcommands: `agent`, `auth`, `connection`, `env`, `llm`, `mcp`, `model`, `oauth-client`, `oauth-provider`, `policy`, `run`, `version`.
 
 Programmatic access uses the Agentic Data Plane API directly (gRPC/Connect) or via the MCP tools exposed on the cluster.
 
@@ -137,7 +137,7 @@ For **what changed / which release introduced a feature**, read the user-facing 
 - **`tools` field does not exist on `ManagedAgentSpec`.** Agents access tools through `mcp_servers` references only. The `tools` field is on `mcp_server.proto`.
 - **MCP tool name truncation.** The MCP protocol enforces a 64-character limit on tool names. The Agentic Data Plane truncates long managed-catalog names with a hash prefix while preserving the method suffix.
 - **No `RPAI_ENDPOINT` env var.** `--rpai-endpoint` is flag-only and applies to one invocation only. Binding it to an env var would silently override the selected Agentic Data Plane environment.
-- **`connection` subcommand is a stub.** `rpk ai connection list` and `rpk ai connection revoke` print "coming soon" and exit 0.
+- **`connection` manages your own OAuth grants.** `rpk ai connection list` lists your personal OAuth connections to third-party providers and `rpk ai connection revoke <provider>` revokes one. Connections are created through the browser consent flow, not by these commands.
 
 ## Control-plane MCP server
 
