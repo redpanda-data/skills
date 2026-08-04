@@ -3,21 +3,15 @@ name: streaming-debugging
 description: >-
   Diagnoses a Redpanda broker or cluster using debug bundles, metrics endpoints,
   logs, CPU profiling, partition and raft health checks, and triage playbooks.
-  Use when: a Redpanda broker is unhealthy, crashing, lagging, under-replicated,
-  slow, or out of disk; when collecting a debug bundle for Redpanda support;
-  when reading /public_metrics or /metrics; when triaging cluster health,
-  partition movement, or raft recovery issues; when a broker won't start or
-  keeps crashing; when consumer lag is growing unexpectedly; when disk pressure
-  or a leadership imbalance is suspected; when running rpk debug bundle or
-  rpk debug remote-bundle; when interpreting prometheus metrics from a Redpanda
-  cluster; when debugging enterprise features and their health signals —
-  Tiered Storage / shadow indexing, Continuous Data Balancing
-  (partition_autobalancing_mode=continuous) and intra-broker core_balancing,
-  Cloud Topics, Iceberg Topics (redpanda.iceberg.mode and the DLQ), Shadow
-  Linking cross-cluster DR (rpk shadow), Remote Read Replicas, Leadership
-  Pinning, and Audit Logging; when checking enterprise license status or a
-  license violation (rpk cluster license info). Most of these features require
-  an Enterprise license.
+  Use when a broker is unhealthy, crashing/lagging/under-replicated, or out of
+  disk; when collecting a debug bundle for Redpanda support; when reading
+  /public_metrics or /metrics; when triaging cluster health/partition movement
+  or raft recovery issues; when consumer lag is growing unexpectedly; or when
+  running rpk debug bundle or rpk debug remote-bundle. Also covers debugging
+  Enterprise features and their health signals — Tiered Storage/Continuous Data
+  Balancing, Cloud Topics/Iceberg Topics, Shadow Linking/Remote Read Replicas,
+  Leadership Pinning, and Audit Logging — and checking license status via rpk
+  cluster license info.
 ---
 
 # Redpanda Streaming: Debugging & Diagnostics

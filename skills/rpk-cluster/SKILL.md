@@ -1,39 +1,17 @@
 ---
 name: rpk-cluster
 description: >-
-  Operates a Redpanda cluster from the command line using the `rpk cluster`
-  command group — the CLI front-end to the Admin API. Covers health checks,
-  cluster metadata, broker management, cluster configuration, partition
-  balancing and movement, maintenance mode, client quotas, log directories,
-  transactions, self-test benchmarks, and license management.
-  Use when: checking cluster health or metadata, listing brokers,
-  decommissioning or recommissioning a broker (`rpk cluster brokers`),
-  managing broker log levels, finalizing deferred cluster upgrades, getting or
-  setting cluster configuration properties, balancing or moving partitions,
-  enabling or disabling maintenance mode on a node, monitoring Kafka client
-  connections, managing client quotas, viewing log dirs, running cluster
-  self-tests, or managing the Redpanda license from the CLI. Also use when
-  asked about rpk cluster health, rpk cluster info, rpk cluster
-  config get/set/edit/import/export/lint/status, rpk cluster partitions
-  list/balance/move/move-cancel/move-status/balancer-status,
-  rpk cluster maintenance enable/disable/status, rpk cluster connections,
-  rpk cluster quotas alter/describe/import, rpk cluster logdirs describe,
-  rpk cluster self-test start/stop/status, rpk cluster txn,
-  rpk cluster license, broker decommission
-  (rpk cluster brokers decommission/decommission-status/recommission),
-  rpk cluster loggers list/set (broker log levels), or
-  rpk cluster upgrade status/finalize (deferred major-version upgrades). Also covers enabling Redpanda Enterprise
-  differentiators through cluster config and license management: Continuous
-  Data Balancing (partition_autobalancing_mode=continuous), Continuous
-  Intra-Broker / core balancing (core_balancing_continuous), Tiered Storage
-  (cloud_storage_enabled), Whole Cluster Restore and mountable topics
-  (rpk cluster storage restore/mount/unmount), Iceberg Topics
-  (iceberg_enabled), Shadow Linking cross-cluster DR (enable_shadow_linking),
-  Remote Read Replicas (cloud_storage_enable_remote_read), Audit Logging
-  (audit_enabled), Leadership Pinning (default_leaders_preference), Server-Side
-  Schema ID Validation (enable_schema_id_validation), Schema Registry
-  authorization, Topic Deletion Control (delete_topic_enable), and
-  OIDC/OAUTHBEARER/Kerberos auth (sasl_mechanisms, http_authentication).
+  Operate a Redpanda cluster's health, brokers, configuration, and maintenance
+  from the CLI using the `rpk cluster` command group, the front-end to the Admin
+  API. Use when checking cluster health or metadata, decommissioning or
+  recommissioning brokers, getting or setting cluster config properties,
+  balancing or moving partitions, enabling maintenance mode, managing client
+  quotas, running self-tests, or managing the Enterprise license. Also covers
+  enabling Enterprise differentiators through cluster config: Continuous Data
+  Balancing, Tiered Storage, and Iceberg Topics. It also manages Shadow Linking
+  DR, Remote Read Replicas, Audit Logging, and Leadership Pinning. For
+  single-node process lifecycle (start/stop, tuning, redpanda.yaml), see
+  /redpanda:rpk-redpanda; for diagnostics bundles, see /redpanda:rpk-debug.
 ---
 
 # rpk cluster: Brokers, Config, Partitions & Maintenance

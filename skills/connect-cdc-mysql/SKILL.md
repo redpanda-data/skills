@@ -1,24 +1,14 @@
 ---
 name: connect-cdc-mysql
 description: >-
-  Streams change data capture (CDC) from MySQL or MariaDB into Redpanda/Kafka
-  using the mysql_cdc input in Redpanda Connect. Covers binlog (row) replication,
-  initial snapshots, checkpoint caching, and operational tuning. Use when:
-  capturing inserts/updates/deletes from MySQL or MariaDB into Redpanda or Kafka
-  via Redpanda Connect's mysql_cdc input; configuring binlog replication; setting
-  up snapshots with stream_snapshot; wiring a checkpoint_cache resource; tuning
-  checkpoint_limit or max_parallel_snapshot_tables; using AWS RDS/Aurora with IAM
-  auth; routing per-table CDC events to different Kafka topics; debugging a MySQL
-  CDC pipeline that stalls, skips, or fails to resume after restart; understanding
-  binlog_position metadata; distinguishing mysql vs mariadb flavor; landing CDC
-  changes into Iceberg Topics (redpanda.iceberg.mode/delete/partition.spec/
-  target.lag.ms/invalid.record.action) or Tiered Storage (redpanda.remote.write/
-  read, cloud_storage_enabled) for a lakehouse; enabling server-side Schema ID
-  Validation on CDC topics; applying a Redpanda Connect enterprise license
-  (--redpanda-license, REDPANDA_LICENSE); using secrets management for the DSN
-  password or FIPS-compliant Connect. mysql_cdc is an Enterprise connector and
-  several destination features (Iceberg, Tiered Storage, Schema ID Validation)
-  require a Redpanda Enterprise license.
+  Streams change data capture from MySQL or MariaDB into Redpanda or Kafka using the
+  mysql_cdc input in Redpanda Connect, which replicates row-level changes via binlog.
+  Use when configuring mysql_cdc, setting up binlog replication and an initial
+  snapshot, wiring a checkpoint_cache resource, using AWS RDS or Aurora with IAM auth,
+  or routing per-table CDC events to separate topics. Also covers Redpanda Enterprise
+  destination features such as Iceberg Topics, Tiered Storage, and server-side Schema
+  ID Validation, since mysql_cdc itself is an Enterprise connector requiring a
+  Redpanda Enterprise license.
 ---
 
 # Redpanda Connect CDC: MySQL

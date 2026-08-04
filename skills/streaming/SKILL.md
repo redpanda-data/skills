@@ -1,26 +1,18 @@
 ---
 name: streaming
 description: >-
-  Teaches how to use the Redpanda broker through its Kafka-compatible API.
-  Covers producing data, consuming data, consumer groups, idempotent producers,
-  exactly-once semantics, transactions, topic creation and configuration, Kafka
-  client compatibility, and tiered storage. Use when: producing to or consuming
-  from Redpanda; creating or configuring topics via the Kafka API; working with
-  consumer groups, offsets, or __consumer_offsets; enabling exactly-once
-  semantics or transactions; choosing a Kafka client library (Java, Go
-  franz-go, librdkafka, kafka-python-ng, Rust, Node.js KafkaJS); understanding
-  Kafka protocol compatibility; enabling tiered/shadow storage on a topic;
-  troubleshooting idempotent producers, acks, compression, or batching;
-  configuring follower fetching or rack awareness; understanding how Redpanda
-  differs from Apache Kafka (no ZooKeeper, no JVM, thread-per-core, Raft).
-  Also covers Redpanda enterprise differentiators at the topic/broker level
-  (license required): Iceberg Topics (redpanda.iceberg.mode/delete/partition.spec/
-  target.lag.ms/invalid.record.action), Cloud Topics (object-storage-native,
-  cloud_topics_enabled, redpanda.storage.mode=cloud), Continuous Data Balancing
-  (partition_autobalancing_mode=continuous, core_balancing_continuous), Shadowing /
-  Shadow Links for cross-cluster disaster recovery (rpk shadow create/status/failover),
-  Remote Read Replicas, Leader Pinning, and server-side Schema ID Validation. Use
-  when enabling or troubleshooting any of these enterprise features on a topic.
+  Teaches how to use the Redpanda broker through its Kafka-compatible API:
+  producing and consuming data, consumer groups, idempotent producers,
+  exactly-once semantics and transactions, topic creation and configuration,
+  Kafka client compatibility, and tiered storage. Use when producing to or
+  consuming from Redpanda, creating or configuring topics, working with consumer
+  groups or offsets, choosing a Kafka client library (any Kafka client),
+  understanding Kafka protocol compatibility, or troubleshooting acks,
+  compression, batching, follower fetching, or rack awareness. Also covers
+  Redpanda Enterprise topic/broker features requiring a license: Iceberg Topics,
+  Cloud Topics, Continuous Data Balancing, Shadow Linking for cross-cluster
+  disaster recovery, Remote Read Replicas, Leader Pinning, and Schema ID
+  Validation.
 ---
 
 # Redpanda Streaming

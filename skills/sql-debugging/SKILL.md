@@ -1,22 +1,17 @@
 ---
 name: sql-debugging
 description: >-
-  Diagnose and observe an Oxla distributed analytical database: query system
-  catalog tables (system_nodes, system_queries, system_transactions,
-  system_storage, system_execs), scrape Prometheus metrics from port 8080,
-  change log levels at runtime via the admin gRPC service or config, monitor
-  memory/OOM pressure, and follow troubleshooting workflows for slow queries
-  and node health issues. Also covers debugging Oxla's external data sources:
-  the Redpanda/Kafka ingestion path and the Apache Iceberg catalog Oxla reads
-  (correlating stale-data or missing-row symptoms with the upstream Redpanda
-  Iceberg Topics integration and its redpanda.iceberg.* / iceberg_* settings —
-  an Enterprise-licensed Redpanda feature).
-  Use when: troubleshooting Oxla, inspecting running queries or node health via
-  system tables, scraping Prometheus metrics, changing log levels, diagnosing
-  memory/OOM pressure, investigating slow or failed queries, checking cluster
-  state, auditing storage connections and active transactions, or diagnosing
-  Kafka/Redpanda ingestion stalls and stale or missing rows in Iceberg tables
-  fed by Redpanda Iceberg Topics.
+  Diagnose and observe an Oxla distributed analytical database using system
+  catalog tables
+  (system_nodes/system_queries/system_transactions/system_storage/system_execs),
+  Prometheus metrics, runtime log-level changes, and troubleshooting workflows
+  for slow queries, node health, and memory/OOM pressure. Also covers debugging
+  Oxla's external data sources — the Redpanda/Kafka ingestion path and the
+  Apache Iceberg catalog Oxla reads — including correlating stale-data or
+  missing-row symptoms with the upstream Redpanda Iceberg Topics integration.
+  Use when troubleshooting Oxla query performance or node health, auditing
+  storage connections and active transactions, or diagnosing Kafka/Redpanda
+  ingestion stalls and stale or missing rows in Iceberg tables.
 ---
 
 # Redpanda SQL: Debugging & Observability

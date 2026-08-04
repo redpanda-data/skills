@@ -1,26 +1,18 @@
 ---
 name: streaming-admin-api
 description: >-
-  Operate a Redpanda cluster via its HTTP Admin API on port 9644 (base path /v1).
-  Covers authentication (Basic, Bearer, mTLS), all major endpoint groups (brokers,
-  partitions, cluster config, cluster health, features, licensing, transactions,
-  cloud_storage, security/RBAC, debug, debug_bundle), and ConnectRPC endpoints added
-  in v25.3. Also covers configuring and operating Redpanda's Enterprise features
-  through the Admin API: Tiered Storage / shadow indexing, Cloud Topics, Iceberg
-  Topics, Continuous Data Balancing (partition_autobalancing_mode=continuous), Shadow
-  Linking cross-cluster disaster recovery (ShadowLinkService ConnectRPC), Remote Read
-  Replicas, Topic Recovery / Whole Cluster Restore, Audit Logging, Role-Based Access
-  Control (RBAC), OIDC/OAuthBearer/Kerberos authentication, FIPS mode, Server-Side
-  Schema ID Validation, and Leadership Pinning (most require an Enterprise license).
-  Use when: calling the Redpanda Admin API directly over HTTP, decommissioning or
-  recommissioning brokers, reading or altering cluster configuration, moving or
-  recovering partitions, checking cluster health, managing feature flags or
-  licensing (including enterprise-feature violation checks), managing security users
-  and roles (RBAC), inspecting transactions, querying or configuring tiered storage
-  (cloud_storage), enabling Iceberg/Cloud Topics/Audit Logging/Continuous Data
-  Balancing, setting up shadow links for disaster recovery, running self-test or cpu
-  profiling via the debug endpoints, starting a debug bundle via HTTP, or scripting
-  cluster operations without rpk. Port 9644, base path /v1.
+  Operate a Redpanda cluster via its HTTP Admin API on port 9644 (base path /v1)
+  using Basic, Bearer, or mTLS authentication. Covers endpoint groups for
+  brokers/partitions, cluster config/health, features/licensing/transactions,
+  cloud storage, security/RBAC, and debug bundles, plus ConnectRPC endpoints.
+  Also covers configuring Redpanda's Enterprise features through the Admin API:
+  Tiered Storage/Cloud Topics, Iceberg Topics/Continuous Data Balancing, Shadow
+  Linking for cross-cluster disaster recovery, Remote Read Replicas/Topic
+  Recovery/Audit Logging/RBAC, OIDC/OAuthBearer/Kerberos authentication, FIPS
+  mode/Schema ID Validation, and Leadership Pinning (most require an Enterprise
+  license). Use when calling the Admin API directly over HTTP, decommissioning
+  or recovering brokers/partitions, checking cluster health, managing licensing
+  or security, or scripting cluster operations without rpk.
 ---
 
 # Redpanda Streaming: Admin API

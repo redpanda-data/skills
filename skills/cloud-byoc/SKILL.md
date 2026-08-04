@@ -1,35 +1,17 @@
 ---
 name: cloud-byoc
 description: >-
-  Provision and manage Redpanda Cloud BYOC (Bring Your Own Cloud) clusters via
-  the Control Plane API (https://api.redpanda.com) and the rpk cloud byoc agent
-  plugin. Covers OAuth2 client-credentials auth, creating Network resources per
-  cloud provider (AWS VPC/subnets/IAM, GCP network/project/bucket, Azure
-  VNet/subnets/identities), creating TYPE_BYOC clusters (network_id,
-  throughput_tier, cloud_provider_tags, customer_managed_resources), polling
-  long-running Operations until READY, and running the Terraform-backed rpk
-  cloud byoc apply/destroy/validate flow with --redpanda-id. Use when: creating
-  BYOC clusters in AWS/GCP/Azure via the public API; provisioning or tearing
-  down BYOC networks; wiring customer-managed IAM roles/buckets/subnets into a
-  Redpanda cluster; setting up private connectivity (AWS PrivateLink, GCP Private
-  Service Connect, Azure Private Link, VPC/network peering via NetworkPeeringService,
-  and AWS Transit Gateway centralized egress); registering cross-account AWS access
-  (CloudProviderAccessService, cloud_provider_access_id); managing Shadow Link
-  cross-cluster DR via the control-plane ShadowLinkService; running `rpk cloud byoc
-  apply`; understanding BYOC vs Serverless; or scripting the full BYOC provisioning
-  lifecycle end-to-end.
-  Also covers enabling Redpanda Enterprise features on a BYOC cluster (the
-  enterprise license is included with the Cloud subscription) via
-  cluster_configuration.custom_properties and topic properties: Tiered Storage
-  (redpanda.remote.*), Cloud Topics (redpanda.cloud_topic.enabled /
-  redpanda.storage.mode), Iceberg Topics (iceberg_enabled,
-  redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/invalid.record.action),
-  Continuous Data Balancing (partition_autobalancing_mode=continuous and
-  disk/availability thresholds), Shadow Linking cross-cluster DR (rpk shadow
-  create/status/failover --for-cloud), Remote Read Replicas, Audit Logging
-  (audit_enabled and audit_* keys), RBAC/GBAC, OIDC/OAuthBearer/Kerberos auth,
-  FIPS, Server-Side Schema ID Validation, and Leadership Pinning
-  (default_leaders_preference / redpanda.leaders.preference).
+  Provisions and manages Redpanda Cloud BYOC (Bring Your Own Cloud) clusters via the
+  Control Plane API (api.redpanda.com) and the `rpk cloud byoc` plugin, where your VPC,
+  IAM roles, and storage stay in your own AWS, GCP, or Azure account. Use when creating or
+  tearing down BYOC clusters and Networks; wiring customer-managed IAM roles, buckets, or
+  subnets into a cluster; setting up private connectivity (AWS PrivateLink, GCP Private
+  Service Connect, Azure Private Link, VPC peering, or Transit Gateway egress);
+  registering cross-account AWS access; managing Shadow Link cross-cluster DR; running
+  `rpk cloud byoc apply`; or enabling Enterprise features (Tiered Storage, Cloud Topics,
+  Iceberg Topics, Continuous Data Balancing, RBAC, and more) on a BYOC cluster. For
+  Serverless clusters, see `/redpanda:cloud-serverless`; for fully Redpanda-managed
+  Dedicated clusters, see `/redpanda:cloud-dedicated`.
 ---
 
 # Redpanda Cloud API: BYOC Clusters

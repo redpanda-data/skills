@@ -1,28 +1,14 @@
 ---
 name: connect-cdc-mongodb
 description: >-
-  Streams change data capture (CDC) from MongoDB into Redpanda or Kafka using
-  Redpanda Connect's mongodb_cdc input — Change Streams over a replica set or
-  sharded cluster, resume-token checkpointing, optional initial snapshot, and
-  three document modes (update_lookup, pre_and_post_images, partial_update).
-  Use when: capturing inserts/updates/deletes/replaces from MongoDB into
-  Redpanda or Kafka; configuring the mongodb_cdc input; setting up MongoDB
-  Change Streams (requires replica set or sharded cluster); enabling
-  stream_snapshot to back-fill existing documents before streaming live changes;
-  routing per-collection CDC events to separate Redpanda topics with Bloblang;
-  configuring a cache resource for resume-token checkpointing; choosing between
-  update_lookup and pre_and_post_images document modes; tuning snapshot_parallelism
-  or snapshot_auto_bucket_sharding for Atlas environments; understanding the
-  operation/collection/operation_time/schema message metadata emitted by the
-  connector; resuming after restarts with resume tokens; troubleshooting oplog
-  window expiry; landing CDC events as Iceberg Topics (redpanda.iceberg.mode/
-  delete/invalid.record.action/partition.spec/target.lag.ms); enabling server-side
-  Schema ID Validation (enable_schema_id_validation, redpanda.value.schema.id.validation);
-  long-term CDC retention via Tiered Storage (redpanda.remote.read/write,
-  retention.local.target.*); securing the Redpanda sink with TLS and SASL
-  (SCRAM/OAUTHBEARER/Kerberos); RBAC, Connect secrets management, FIPS, and
-  allow/deny component lists; or asking about the Enterprise license requirement
-  for this connector and the surrounding enterprise features.
+  Streams change data capture from MongoDB into Redpanda or Kafka using Redpanda
+  Connect's mongodb_cdc input, built on MongoDB Change Streams over a replica set or
+  sharded cluster. Use when configuring mongodb_cdc, setting up Change Streams,
+  enabling an initial snapshot before live streaming, choosing between update_lookup
+  and pre_and_post_images document modes, or checkpointing with resume tokens in a
+  cache resource. Also covers Redpanda Enterprise destination features like Iceberg
+  Topics, Tiered Storage, and server-side Schema ID Validation, all of which require a
+  Redpanda Enterprise license.
 ---
 
 # Redpanda Connect CDC: MongoDB

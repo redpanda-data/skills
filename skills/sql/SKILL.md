@@ -1,35 +1,16 @@
 ---
 name: sql
 description: >-
-  Write and run SQL against Oxla, a PostgreSQL-wire-compatible distributed
-  columnar analytical database. Covers connecting via psql or any PostgreSQL
-  driver (port 5432, password "oxla" by default), the full supported data-type
-  set (INT/LONG/INT16/INT32/FLOAT/DOUBLE/CHAR/VARCHAR/STRING/TEXT/DATE/TIME/
-  TIMESTAMP/TIMESTAMPTZ/INTERVAL/BOOL/JSON/JSONB/BYTEA/UUID/NUMERIC/ARRAY/GEOMETRY/
-  GEOGRAPHY/POINT), DDL (CREATE/DROP TABLE, CREATE TABLE AS SELECT, CREATE/DROP
-  VIEW, CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE/GRANT/REVOKE), DML
-  (SELECT/INSERT/UPDATE/DELETE, SELECT INTO table or file), data loading
-  (COPY FROM/TO with CSV/Parquet/ORC formats, S3 credentials), aggregate and
-  window functions (SUM/AVG/COUNT/MIN/MAX/percentile_disc/percentile_cont/mode,
-  ROW_NUMBER/RANK/DENSE_RANK/LAG/LEAD/FIRST_VALUE/LAST_VALUE/NTH_VALUE/NTILE/
-  CUME_DIST), CTEs (WITH), UNION/INTERSECT/EXCEPT (with optional ALL),
-  PREPARE/EXECUTE, and analytic query patterns (GROUP BY, ORDER BY,
-  LIMIT/OFFSET, multi-table joins, star-schema aggregations). Also covers Oxla's
-  external-source integration — the key Oxla + Redpanda enterprise
-  differentiator — for querying Redpanda/Kafka topics and Apache Iceberg tables
-  directly with SQL: CREATE REDPANDA/KAFKA CATALOG, CREATE ICEBERG CATALOG,
-  CREATE STORAGE (s3/gcs/abs), CREATE TABLE catalog=>topic WITH
-  (topic/schema_lookup_policy/error_handling_policy/struct_mapping_policy/
-  confluent_wire_protocol), ALTER TABLE IF EXISTS catalog=>table WITH (...)
-  rebind, REFRESH, GRANT ON EXTERNAL SOURCE, and the related Redpanda Enterprise
-  Iceberg-topic properties (redpanda.iceberg.mode/delete/partition.spec/
-  target.lag.ms/invalid.record.action). Use when: writing
-  SQL for Oxla, connecting to Oxla with psql or a JDBC/Python/Go PostgreSQL
-  driver, creating tables and loading data with COPY, running analytical queries
-  with joins/aggregations/window functions/CTEs, attaching or querying Redpanda
-  topics or Iceberg/lakehouse tables from Oxla, mapping PostgreSQL SQL features
-  to what Oxla supports, or debugging SQL that works in PostgreSQL but needs
-  adjustment for Oxla's columnar execution model.
+  Redpanda SQL (Oxla), the distributed PostgreSQL-wire-compatible columnar
+  analytical database, for writing and running SQL queries. Use when connecting
+  via psql or a PostgreSQL driver, creating tables and schemas, loading data
+  with COPY (CSV/Parquet/ORC, S3), running analytical queries with joins,
+  aggregate and window functions, CTEs, or set operations, or working with
+  Oxla's data types and role-based grants. Also covers Oxla's external-source
+  integration for querying Redpanda/Kafka topics and Apache Iceberg tables
+  directly with SQL, including CREATE REDPANDA/KAFKA CATALOG, CREATE ICEBERG
+  CATALOG, CREATE STORAGE, and mapping PostgreSQL SQL features to what Oxla
+  supports.
 ---
 
 # Redpanda SQL (Oxla)

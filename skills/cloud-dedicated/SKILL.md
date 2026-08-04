@@ -1,33 +1,16 @@
 ---
 name: cloud-dedicated
 description: >-
-  Provision and manage Redpanda Cloud Dedicated clusters via the Control Plane
-  API (https://api.redpanda.com). Covers OAuth2 client-credentials auth
-  (Auth0, audience cloudv2-production.redpanda.cloud), creating a Network
-  resource (cluster_type TYPE_DEDICATED, Redpanda-managed VPC, cidr_block),
-  creating a TYPE_DEDICATED cluster (cloud_provider, region, zones,
-  throughput_tier, connection_type, redpanda_version, tags), polling
-  long-running Operations (STATE_IN_PROGRESS -> STATE_COMPLETED), and using
-  the per-cluster Data Plane API URL returned by GetCluster for Topic/ACL/User/
-  Secret management. Use when: creating, listing, updating, or deleting
-  Redpanda Cloud Dedicated clusters via the public API; choosing a region,
-  zones, or throughput tier for a Dedicated cluster; configuring connectivity
-  (CONNECTION_TYPE_PUBLIC, CONNECTION_TYPE_PRIVATE, PrivateLink on AWS/GCP/Azure,
-  GCP Private Service Connect, or VPC/network peering via NetworkPeeringService);
-  comparing Dedicated vs BYOC vs Serverless; scripting the full
-  provisioning lifecycle end-to-end with curl; or using rpk cloud with a
-  Dedicated cluster (rpk cloud login, rpk cloud cluster select). Also covers
-  the Enterprise differentiators included on Dedicated and their nested config
-  keys: Tiered Storage (redpanda.storage.mode, redpanda.remote.read/write/
-  recovery), Cloud Topics (cloud_topics_enabled), Iceberg Topics
-  (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms, iceberg_enabled),
-  Continuous Data Balancing (partition_autobalancing_mode=continuous + disk/
-  availability thresholds), Shadow Linking cross-cluster DR (rpk shadow,
-  ShadowLinkConfig, /v1/shadow-links, failover), Remote Read Replicas
-  (redpanda.remote.readreplica), Mountable Topics, Leadership Pinning
-  (redpanda.leaders.preference, default_leaders_preference), Server-side Schema
-  ID Validation (enable_schema_id_validation), Audit Logging (audit_* keys),
-  RBAC/GBAC, OIDC/OAuthBearer/Kerberos auth, and FIPS mode.
+  Provisions and manages Redpanda Cloud Dedicated clusters via the Control Plane API
+  (api.redpanda.com): fully Redpanda-managed single-tenant clusters that run in
+  Redpanda's own AWS, GCP or Azure account. Use when creating, updating or deleting
+  Dedicated clusters or Networks; choosing a region or throughput tier; configuring
+  public or private connectivity such as PrivateLink; scripting the provisioning
+  lifecycle with curl and OAuth2 client-credentials auth; or using `rpk cloud` against a
+  Dedicated cluster. Also covers Enterprise features included on Dedicated such as
+  Tiered Storage, Iceberg Topics and RBAC. For Serverless clusters, see
+  `/redpanda:cloud-serverless`; for customer-cloud-account BYOC clusters, see
+  `/redpanda:cloud-byoc`.
 ---
 
 # Redpanda Cloud API: Dedicated Clusters

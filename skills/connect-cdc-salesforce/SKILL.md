@@ -1,30 +1,15 @@
 ---
 name: connect-cdc-salesforce
 description: >-
-  Streams change data capture (CDC) and platform events from Salesforce into
-  Redpanda or Kafka using Redpanda Connect's salesforce_cdc input — the
-  Salesforce Pub/Sub gRPC API (api.pubsub.salesforce.com:443), OAuth Client
-  Credentials flow, optional REST snapshot of sObjects, and per-topic replay-ID
-  checkpointing in a cache resource.
-  Use when: capturing Salesforce change events (Account, Contact, Opportunity,
-  or any CDC-enabled sObject) into Redpanda/Kafka; subscribing to the CDC
-  firehose (/data/ChangeEvents); streaming custom or standard Platform Events
-  (/event/Order__e, /event/LoginEventStream); configuring a Salesforce Connected
-  App for OAuth client_credentials; enabling Change Data Capture for sObjects in
-  Salesforce Setup; setting up a durable Connect cache_resource (e.g. Redis, Postgres, DynamoDB)
-  for replay-ID persistence across restarts; tuning stream_snapshot,
-  replay_preset, stream_batch_size, or snapshot_max_batch_size; understanding
-  the topic/replay_id/operation/sobject/record_ids/event_uuid metadata emitted
-  per message; mixing CDC topics and Platform Event topics in a single pipeline;
-  or asking about the Enterprise license requirement for this connector.
-  Also covers the Redpanda Enterprise features the destination CDC topics can
-  use: Iceberg Topics (redpanda.iceberg.mode/delete/invalid.record.action/
-  partition.spec/target.lag.ms), Tiered Storage (redpanda.remote.read/write,
-  retention.local.target.*), Cloud Topics (cloud_topics_enabled,
-  redpanda.storage.mode=cloud), Server-side Schema ID Validation
-  (enable_schema_id_validation, redpanda.value.schema.id.validation,
-  subject.name.strategy), and pointers to RBAC, Audit Logging, OIDC/Kerberos,
-  FIPS, and Shadowing — all of which require a Redpanda Enterprise license.
+  Streams change data capture and platform events from Salesforce into Redpanda or
+  Kafka using Redpanda Connect's salesforce_cdc input, built on the Salesforce
+  Pub/Sub gRPC API with OAuth Client Credentials auth. Use when configuring
+  salesforce_cdc, subscribing to the CDC firehose or custom Platform Events, setting
+  up a Connected App, enabling Change Data Capture for sObjects, or persisting
+  replay-ID checkpoints in a durable cache resource. Also covers Redpanda Enterprise
+  destination features such as Iceberg Topics, Tiered Storage, Cloud Topics, and
+  server-side Schema ID Validation, since salesforce_cdc itself requires a Redpanda
+  Enterprise license.
 ---
 
 # Redpanda Connect CDC: Salesforce

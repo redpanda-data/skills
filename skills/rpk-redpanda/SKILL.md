@@ -1,31 +1,17 @@
 ---
 name: rpk-redpanda
 description: >-
-  Operates a self-managed Redpanda broker process and node from the command
-  line using the `rpk redpanda` command family and `rpk iotune` — node
-  lifecycle (start/stop), production vs development mode, kernel autotuning,
-  system checks, node configuration (redpanda.yaml), and per-node Admin API
-  operations including broker decommission/recommission. SELF-MANAGED ONLY:
-  these commands operate the broker process on the node itself and do not
-  apply to Redpanda Cloud clusters.
-  Use when: starting or stopping a Redpanda broker process, bootstrapping a
-  node's redpanda.yaml before first start, setting node (not cluster)
-  configuration, switching a node between production/development/recovery
-  mode, running the autotuner or checking kernel tuning, benchmarking disk
-  I/O with iotune, decommissioning or recommissioning a broker, monitoring
-  decommission progress, listing brokers or a broker's partitions through
-  the admin listener, temporarily changing a broker's log level, or printing
-  a broker's effective configuration. Also use when asked about
-  rpk redpanda start, rpk redpanda stop, rpk redpanda mode prod/dev/recovery,
-  rpk redpanda check, rpk redpanda tune / the autotuner /
-  rpk redpanda tune list, rpk iotune / io-config.yaml,
-  rpk redpanda config bootstrap/set/print,
-  rpk redpanda admin brokers list/decommission/decommission-status/
-  recommission, rpk redpanda admin partitions list,
-  rpk redpanda admin config log-level set, or
-  rpk redpanda admin config print. Cluster-wide operations (cluster config,
-  partition movement, maintenance mode, cluster health) are `rpk cluster`
-  — see the rpk-cluster skill.
+  Operate a self-managed Redpanda broker process and node from the CLI using the
+  `rpk redpanda` command family and `rpk iotune`: node lifecycle (start/stop),
+  production vs. development mode, kernel autotuning, node configuration
+  (redpanda.yaml), and per-node Admin API operations including broker
+  decommission/recommission. Self-managed only — these commands operate the
+  broker process on the node itself and don't apply to Redpanda Cloud clusters.
+  Use when starting or stopping a broker, bootstrapping redpanda.yaml, switching
+  node mode, running the autotuner, benchmarking disk I/O with iotune, or
+  decommissioning a broker via the admin listener. For cluster-wide operations
+  (cluster config, partition movement, maintenance mode, cluster health), see
+  /redpanda:rpk-cluster.
 ---
 
 # rpk redpanda: Node Lifecycle, Tuning & Broker Decommission

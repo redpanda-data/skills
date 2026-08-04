@@ -1,27 +1,15 @@
 ---
 name: connect-cdc-tigerbeetle
 description: >-
-  Guides setup and operation of the tigerbeetle_cdc Redpanda Connect input for
-  streaming change data capture from a TigerBeetle financial transactions
-  database into Redpanda or Kafka. Covers the cgo-enabled binary requirement,
-  connecting to a TigerBeetle cluster (cluster_id, replica addresses), the
-  progress_cache checkpointing model, resuming from a timestamp
-  (timestamp_initial), the JSON change-event shape (transfer + debit/credit
-  account snapshots), and per-event-type or per-ledger routing. Use when:
-  capturing TigerBeetle ledger events (transfers, account updates) into
-  Redpanda or Kafka, configuring tigerbeetle_cdc, choosing a persistent
-  progress cache, filtering settled vs pending two-phase transfers with the
-  event_type metadata, routing by ledger, archiving transfer events to S3,
-  troubleshooting "component not available" (cgo builds) or duplicate events
-  after restart, or asking whether tigerbeetle_cdc needs an Enterprise license
-  (it does not — it is a certified community connector, unlike the other CDC
-  inputs). Also covers the Redpanda Enterprise features the CDC
-  destination topic and cluster can use: Iceberg Topics
-  (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/
-  invalid.record.action), Tiered Storage (redpanda.remote.read/write) for
-  long-term ledger-event retention, Remote Read Replicas, Shadow Linking (rpk
-  shadow cross-cluster DR), server-side Schema ID Validation, RBAC, Audit
-  Logging, and OIDC/Kerberos auth on the landed topic.
+  Guides setup and operation of the tigerbeetle_cdc input in Redpanda Connect, which
+  streams change data capture from a TigerBeetle financial transactions database into
+  Redpanda or Kafka. Use when configuring tigerbeetle_cdc, connecting to a
+  TigerBeetle cluster, choosing a persistent progress_cache for checkpointing,
+  filtering settled vs pending transfers, routing by ledger, or resolving cgo-build or
+  duplicate-event issues. Unlike the other CDC inputs, tigerbeetle_cdc is a certified
+  community connector and does not require an Enterprise license, though it can still
+  land data on Enterprise destination features like Iceberg Topics and Tiered
+  Storage.
 ---
 
 # Redpanda Connect CDC: TigerBeetle
