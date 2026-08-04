@@ -1,7 +1,7 @@
 ---
 name: adp
 description: >-
-  Redpanda's Agentic Data Plane (ADP): governance infrastructure for building, running,
+  Redpanda's Agentic Data Plane: governance infrastructure for building, running,
   and governing AI agents and MCP servers, plus a proxying AI Gateway for LLM providers,
   operated via `rpk ai` and the ADP API. Use when creating or managing AI agents (managed
   or self-managed) via `rpk ai agent` or `AgentRegistryService`; configuring MCP servers
