@@ -1,25 +1,16 @@
 ---
 name: rpk-registry
 description: >-
-  Manages schemas, subjects, compatibility levels, modes, and contexts in the
-  Redpanda Schema Registry via the rpk registry CLI (alias: rpk sr). Covers
-  registering Avro/Protobuf/JSON schemas, fetching schemas by version or ID,
-  listing/deleting subjects and schemas, setting BACKWARD/FORWARD/FULL/NONE
-  compatibility levels, controlling registry mode (READONLY/READWRITE/IMPORT),
-  and using schema contexts for namespace isolation. Also covers the
-  Enterprise-licensed registry features: Schema Registry Authorization
-  (schema_registry_enable_authorization, registry/subject ACLs via
-  rpk security acl with --registry-global/--registry-subject) and
-  Server-Side Schema ID Validation (enable_schema_id_validation,
-  redpanda.key/value.schema.id.validation, subject name strategies), plus
-  registry authentication (HTTP Basic, OIDC/OAUTHBEARER, mTLS).
-  Use when: registering or fetching schemas, managing schema subjects and
-  versions, setting or checking compatibility levels, checking schema
-  compatibility before registration, administering Schema Registry mode,
-  working with schema contexts (--schema-context flag), securing the registry
-  with ACLs/RBAC, enabling schema ID validation, authenticating to the
-  registry, or using rpk topic produce/consume with schema registry
-  encoding/decoding.
+  Manage schemas, subjects, compatibility levels, modes, and contexts in the
+  Redpanda Schema Registry via the `rpk registry` CLI (alias `rpk sr`). Use when
+  registering or fetching Avro/Protobuf/JSON schemas, listing or deleting
+  subjects and schema versions, setting BACKWARD/FORWARD/FULL/NONE compatibility
+  levels, changing registry mode (READONLY/READWRITE/IMPORT), or working with
+  schema contexts for namespace isolation. Also covers Enterprise-licensed
+  registry features: Schema Registry Authorization and server-side Schema ID
+  Validation. For granting ACLs or RBAC on registry resources, see
+  /redpanda:rpk-security; for producing or consuming records with schema
+  encoding/decoding, see /redpanda:rpk-topic.
 ---
 
 # rpk registry: Schema Registry

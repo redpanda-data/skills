@@ -2,31 +2,13 @@
 name: connect
 description: >-
   Teaches how to build streaming data pipelines with Redpanda Connect (formerly
-  Benthos) — declarative YAML config, the input/pipeline/output model, Bloblang
-  mapping language, error handling, and canonical pipeline patterns. Use when:
-  building or running a Redpanda Connect pipeline; wiring an input to an output
-  with processors; writing Bloblang mappings or mutations; choosing connectors
-  (kafka, redpanda, http_server, file, generate, sql_*, aws_*, gcp_*); running
-  pipelines with rpk connect run or redpanda-connect; configuring buffers,
-  caches, metrics, rate limits, or the global redpanda block; writing
-  config.yaml for redpanda-connect; asking what Connect components exist and
-  how to discover them; error handling with fallback outputs or catch processors;
-  batching records before writing; understanding the difference between mapping
-  and mutation processors; choosing between the bloblang and mapping processor
-  names; connecting to Kafka or Redpanda with SASL/TLS from Connect; migrating
-  Kafka clusters to Redpanda with the redpanda_migrator input/output pair
-  (topics, schemas, ACLs, consumer group offsets); running many isolated
-  pipelines in one process with streams mode (rpk connect streams, the /streams
-  REST API); the community tigerbeetle_cdc input; enterprise
-  vs community components or license setup; dry-run and lint commands; enterprise
-  features and their config keys — enterprise connectors and CDC inputs
-  (postgres_cdc, mysql_cdc, mongodb_cdc, oracledb_cdc with its logminer block,
-  microsoft_sql_server_cdc, gcp_spanner_cdc, aws_dynamodb_cdc, salesforce_cdc),
-  AI/ML processors (openai_*, aws_bedrock_*, cohere_*, gcp_vertex_ai_*, ollama_*),
-  allow/deny lists (connector_list.yaml), secrets management (--secrets URNs:
-  env/redis/aws/gcp/az/none), FIPS compliance, and the Redpanda Connect
-  configuration service (logs_topic/status_topic); supplying a Redpanda Enterprise
-  license (--redpanda-license, REDPANDA_LICENSE, /etc/redpanda/redpanda.license).
+  Benthos): declarative YAML configs with the input/pipeline/output model, processors,
+  and Bloblang mappings for transforming messages. Use when creating or editing a
+  Connect pipeline config, wiring inputs and outputs (Kafka topics, S3, HTTP,
+  databases), writing or debugging Bloblang, or running pipelines with `rpk connect
+  run`. For diagnosing a failing pipeline (lint errors, metrics, tracing, dry runs),
+  see `/redpanda:connect-debugging`; for change-data-capture connectors, see the
+  per-database `/redpanda:connect-cdc-*` skills.
 ---
 
 # Redpanda Connect

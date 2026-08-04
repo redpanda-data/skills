@@ -1,21 +1,14 @@
 ---
 name: connect-cdc-dynamodb
 description: >-
-  Guides setup and operation of the aws_dynamodb_cdc Redpanda Connect input
-  for streaming change data capture from AWS DynamoDB into Redpanda or Kafka
-  using DynamoDB Streams. Covers enabling DynamoDB Streams, IAM policy setup,
-  checkpointing, snapshot modes, multi-table discovery, and the full pipeline
-  YAML. Use when: capturing INSERT/MODIFY/REMOVE changes from DynamoDB into
-  Redpanda or Kafka, configuring aws_dynamodb_cdc, enabling DynamoDB Streams,
-  setting up the checkpoint table, using snapshot_and_cdc or snapshot_only,
-  auto-discovering tables by tag, routing DynamoDB CDC events per table,
-  troubleshooting DynamoDB stream retention or shard handling. Also covers the
-  Redpanda Enterprise features the CDC destination topic and cluster can use:
-  Iceberg Topics (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/
-  invalid.record.action), Tiered Storage (redpanda.remote.read/write) to outlive
-  the 24h stream window, Remote Read Replicas, Shadow Linking (rpk shadow
-  cross-cluster DR), server-side Schema ID Validation, RBAC, Audit Logging,
-  and OIDC/Kerberos auth on the landed topic.
+  Guides setup and operation of the aws_dynamodb_cdc input in Redpanda Connect, which
+  streams change data capture from AWS DynamoDB into Redpanda or Kafka using DynamoDB
+  Streams. Use when configuring aws_dynamodb_cdc, enabling DynamoDB Streams, setting up
+  IAM policies and the checkpoint table, choosing snapshot_and_cdc or snapshot_only,
+  auto-discovering tables by tag, or handling the 24-hour stream retention window. Also
+  covers Redpanda Enterprise features that pair with the destination topic, such as
+  Iceberg Topics, Tiered Storage, Remote Read Replicas, Shadow Linking, and server-side
+  Schema ID Validation.
 ---
 
 # Redpanda Connect CDC: AWS DynamoDB

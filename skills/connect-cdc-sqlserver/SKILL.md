@@ -1,35 +1,14 @@
 ---
 name: connect-cdc-sqlserver
 description: >-
-  Stream change data capture from Microsoft SQL Server into Redpanda or Kafka
-  using the Redpanda Connect `microsoft_sql_server_cdc` input — CDC capture
-  instances, LSN-based change tables, initial snapshots, and LSN checkpointing.
-  Covers every config field (connection_string, include/exclude regexp filters,
-  stream_snapshot, max_parallel_snapshot_tables, snapshot_max_batch_size,
-  checkpoint_cache, checkpoint_cache_table_name, checkpoint_cache_connection_string,
-  checkpoint_cache_key, checkpoint_limit, stream_backoff_interval, batching),
-  the emitted metadata fields (database_schema, schema, table, operation, lsn),
-  operation types (read, insert, update_before, update_after, delete), the
-  built-in SQL Server checkpoint cache (rpcn schema, auto-created table and
-  stored procedure), and using an external Connect cache instead.
-  Use when: capturing inserts/updates/deletes from Microsoft SQL Server into
-  Redpanda or Kafka; enabling SQL Server CDC capture instances with
-  sys.sp_cdc_enable_db and sys.sp_cdc_enable_table; configuring the
-  microsoft_sql_server_cdc input in a Redpanda Connect pipeline; setting up
-  an initial snapshot alongside live CDC streaming; tuning LSN checkpoint
-  storage; routing per-table CDC events to separate Kafka topics; or
-  troubleshooting a SQL Server CDC pipeline (LSN gaps, missing Agent jobs,
-  permission errors, checkpoint failures).
-  Also covers the Redpanda Enterprise features that pair with the destination:
-  applying a Connect Enterprise license (REDPANDA_LICENSE, REDPANDA_LICENSE_FILEPATH,
-  --redpanda-license, /etc/redpanda/redpanda.license), landing CDC events in a
-  lakehouse via Iceberg Topics (iceberg_enabled, redpanda.iceberg.mode/delete/
-  partition.spec/target.lag.ms/invalid.record.action), enforcing destination
-  schema integrity with server-side Schema ID Validation (enable_schema_id_validation,
-  redpanda.value.schema.id.validation, subject name strategy), and long-term
-  retention via Tiered Storage (cloud_storage_enabled, redpanda.remote.write/read)
-  and Cloud Topics (redpanda.cloud_topic.enabled). All of these require a valid
-  Redpanda Enterprise license.
+  Streams change data capture from Microsoft SQL Server into Redpanda or Kafka using
+  Redpanda Connect's microsoft_sql_server_cdc input, which reads native CDC change
+  tables in LSN order. Use when enabling SQL Server CDC capture instances,
+  configuring microsoft_sql_server_cdc, setting up an initial snapshot alongside live
+  streaming, tuning LSN checkpoint storage, or troubleshooting LSN gaps and missing
+  Agent jobs. Also covers Redpanda Enterprise destination features such as Iceberg
+  Topics, Tiered Storage, and server-side Schema ID Validation, since
+  microsoft_sql_server_cdc itself requires a Redpanda Enterprise license.
 ---
 
 # Redpanda Connect CDC: Microsoft SQL Server

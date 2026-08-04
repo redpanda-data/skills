@@ -1,26 +1,17 @@
 ---
 name: rpk-security
 description: >-
-  Manages Redpanda authentication and authorization from the CLI using the
-  `rpk security` command group (user, acl, role, secret subcommands). Use when:
-  creating or deleting SASL/SCRAM users; changing user passwords; listing SASL
-  users; granting or revoking Kafka ACLs (topics, consumer groups, cluster,
-  transactional IDs, Schema Registry subjects); listing or deleting ACLs;
-  creating or deleting RBAC roles (Enterprise); assigning or unassigning roles
-  to principals; describing a role's members and ACL bindings; managing secrets
-  for Redpanda Cloud clusters; setting up authentication on a self-hosted or
-  cloud cluster; configuring SASL/SCRAM, SASL/PLAIN, OAUTHBEARER/OIDC
-  (Enterprise), GSSAPI/Kerberos (Enterprise), mTLS principal mapping, or HTTP
-  Basic/OIDC auth; configuring enterprise security features and their config
-  keys — Audit Logging (`audit_enabled`), GBAC with OIDC `Group:` principals
-  (`oidc_group_claim_path`), server-side Schema ID Validation
-  (`enable_schema_id_validation`), Schema Registry Authorization
-  (`schema_registry_enable_authorization`), FIPS mode (`fips_mode`); managing
-  the Enterprise license (`rpk cluster license info/set`, `rpk generate
-  license`); bootstrapping a new cluster with a superuser; understanding the
-  relationship between SASL users (authn) and ACLs (authz); using prefixed
-  resource patterns; using `RedpandaRole:` and `Group:` principals in ACLs;
-  `rpk acl` (deprecated alias).
+  Manage Redpanda authentication and authorization from the CLI using the `rpk
+  security` command group (`user`, `acl`, `role`, `secret` subcommands; `rpk
+  acl` is a deprecated alias). Use when creating or deleting SASL/SCRAM users,
+  granting or revoking Kafka ACLs on topics, groups, the cluster, or
+  transactional IDs, creating or assigning RBAC roles (Enterprise), managing
+  secrets for Redpanda Cloud clusters, or configuring SASL/PLAIN,
+  OAUTHBEARER/OIDC, GSSAPI/Kerberos, or mTLS principal mapping. Also covers
+  Enterprise security config keys like Audit Logging, GBAC, Schema ID
+  Validation, and FIPS mode, plus bootstrapping a new cluster with a superuser.
+  For Schema Registry-specific ACL patterns, see /redpanda:rpk-registry; for the
+  Enterprise license itself, see /redpanda:rpk-cluster.
 ---
 
 # rpk security: ACLs, Users, Roles & Secrets

@@ -1,28 +1,14 @@
 ---
 name: connect-cdc-postgres
 description: >-
-  Streams change data capture (CDC) from PostgreSQL into Redpanda or Kafka using
-  Redpanda Connect's postgres_cdc input — logical replication via the WAL
-  (pgoutput), optional initial snapshot, replication slots, and publications.
-  Use when: capturing inserts/updates/deletes from PostgreSQL into Redpanda or
-  Kafka; configuring the postgres_cdc input (formerly pg_stream); setting up
-  PostgreSQL logical replication (wal_level=logical); creating replication slots
-  or publications; enabling stream_snapshot to back-fill existing rows before
-  streaming changes; routing per-table CDC events to separate topics with
-  Bloblang; using AWS IAM auth for RDS or Aurora PostgreSQL; tuning
-  checkpoint_limit, heartbeat_interval, or max_parallel_snapshot_tables;
-  understanding the lsn/operation/table/schema/commit_ts_ms/before message
-  metadata emitted by the connector (before carries the pre-change row for
-  updates/deletes, subject to REPLICA IDENTITY); troubleshooting slot growth or WAL accumulation; or asking about
-  the Enterprise license requirement for this connector. Also covers the
-  enterprise features that apply to the destination CDC topics: Iceberg Topics
-  (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/invalid.record.action,
-  iceberg_enabled) for landing CDC events in an Apache Iceberg lakehouse; Tiered
-  Storage (redpanda.remote.read/write, retention.local.target.ms) for long-term
-  CDC retention; and server-side Schema ID Validation
-  (enable_schema_id_validation, redpanda.value.schema.id.validation) for
-  governing CDC event schemas — all of which require a Redpanda Enterprise
-  license.
+  Streams change data capture from PostgreSQL into Redpanda or Kafka using Redpanda
+  Connect's postgres_cdc input, which reads the WAL through logical replication
+  (pgoutput). Use when configuring postgres_cdc (formerly pg_stream), setting up
+  wal_level=logical, replication slots, and publications, enabling an initial
+  snapshot before streaming, or troubleshooting slot growth and WAL accumulation.
+  Also covers Redpanda Enterprise destination features such as Iceberg Topics,
+  Tiered Storage, and server-side Schema ID Validation, since postgres_cdc itself
+  requires a Redpanda Enterprise license.
 ---
 
 # Redpanda Connect CDC: PostgreSQL

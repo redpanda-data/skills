@@ -1,32 +1,14 @@
 ---
 name: connect-cdc-oracle
 description: >-
-  Streams change data capture from Oracle Database into Redpanda or Kafka using
-  the oracledb_cdc input in Redpanda Connect (LogMiner-based, available since
-  version 4.83.0). Covers ARCHIVELOG mode, supplemental logging, LogMiner
-  privileges, SCN windows, snapshot mode, LOB handling, Oracle Wallet/SSL,
-  pluggable database (CDB/PDB) monitoring, and checkpointing. Use when: setting
-  up Oracle CDC with Redpanda Connect; configuring the oracledb_cdc input;
-  enabling ARCHIVELOG mode or supplemental logging on Oracle; granting LogMiner
-  privileges; tuning scn_window_size, backoff_interval, or mining_interval;
-  capturing CLOBs or BLOBs (lob_enabled); configuring a transaction cache for
-  large transactions; using Oracle Wallet for TLS/SSL; monitoring a pluggable
-  database (pdb_name); troubleshooting missing redo logs or ORA-01291 errors;
-  snapshotting existing rows (snapshot_mode: none/snapshot_only/snapshot_and_stream,
-  replacing the deprecated stream_snapshot boolean); checkpointing SCN with an
-  external cache or the built-in Oracle-backed table; routing per-table to
-  separate Redpanda topics; understanding the message metadata fields
-  (database_schema, table_name, operation, scn, transaction_id, source_ts_ms,
-  commit_ts_ms, schema); comparing CDB vs PDB connection modes. Also covers the
-  Redpanda Enterprise features that apply to a CDC pipeline and their nested
-  config keys: landing CDC into Iceberg Topics (redpanda.iceberg.mode,
-  redpanda.iceberg.target.lag.ms, redpanda.iceberg.partition.spec,
-  redpanda.iceberg.invalid.record.action, iceberg_enabled); server-side Schema
-  ID Validation (enable_schema_id_validation, redpanda.value.schema.id.validation)
-  with schema_registry_encode; Tiered Storage for CDC history (cloud_storage_enabled,
-  redpanda.remote.write/read); and Connect enterprise capabilities (secrets
-  management, the redpanda{} config service block, allow/deny lists, FIPS) — all
-  requiring a valid Redpanda Enterprise license.
+  Streams change data capture from Oracle Database into Redpanda or Kafka using the
+  oracledb_cdc input in Redpanda Connect, which reads redo logs via LogMiner. Use when
+  configuring oracledb_cdc, enabling ARCHIVELOG mode and supplemental logging,
+  granting LogMiner privileges, tuning SCN checkpointing, capturing LOBs, monitoring a
+  pluggable database (CDB/PDB), or choosing a snapshot_mode. Also covers Redpanda
+  Enterprise destination features such as Iceberg Topics, Tiered Storage, and
+  server-side Schema ID Validation, all of which require a Redpanda Enterprise
+  license.
 ---
 
 # Redpanda Connect CDC: Oracle

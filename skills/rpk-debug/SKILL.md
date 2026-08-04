@@ -1,22 +1,16 @@
 ---
 name: rpk-debug
 description: >-
-  Collects local and remote Redpanda diagnostics bundles and gathers broker
-  process info using the `rpk debug` command group. Use when: collecting a
-  debug bundle for Redpanda support or self-triage, generating a
-  remote (cluster-wide) bundle via the Admin API, gathering local broker
-  process or diagnostic info from the CLI, using rpk debug bundle or rpk debug
-  remote-bundle, troubleshooting a Redpanda cluster and needing to capture
-  logs/metrics/profiles, passing a debug bundle to the support team, or
-  running rpk debug on Linux or Kubernetes. Also covers triaging enterprise
-  (license-gated) features from a bundle — Tiered Storage, Cloud Topics,
-  Iceberg Topics, Continuous Data Balancing, Shadow Linking (cross-cluster
-  DR), Remote Read Replicas, Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/
-  Kerberos auth, FIPS mode, Server-side Schema ID Validation, Schema Registry
-  Authorization, and Leadership Pinning, plus checking license status and
-  license violations. Applies to self-managed deployments only (Linux hosts
-  and Kubernetes) — Redpanda Cloud clusters do not support rpk debug or
-  debug bundles.
+  Collect local and remote Redpanda diagnostics bundles and gather broker
+  process info using the `rpk debug` command group. Use when collecting a debug
+  bundle for Redpanda support or self-triage, generating a cluster-wide bundle
+  via the Admin API with `rpk debug remote-bundle`, or troubleshooting a cluster
+  that needs captured logs, metrics, and profiles. Also covers triaging
+  Enterprise features from a bundle, such as Tiered Storage, RBAC, and Schema ID
+  Validation, plus checking license status. Applies to self-managed deployments
+  only (Linux hosts and Kubernetes); Redpanda Cloud clusters don't support debug
+  bundles — for client-side triage there, see /redpanda:rpk-cluster and
+  /redpanda:rpk-topic instead.
 ---
 
 # rpk debug: Debug Bundles & Local Diagnostics

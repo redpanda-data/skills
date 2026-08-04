@@ -1,29 +1,15 @@
 ---
 name: cloud-serverless
 description: >-
-  Provision and manage Redpanda Cloud Serverless clusters via the public Control
-  Plane API (https://api.redpanda.com). Covers OAuth2 client-credentials
-  authentication, ResourceGroup management, ServerlessRegion discovery,
-  ServerlessCluster lifecycle (create/get/list/update/delete), the async
-  Operation state machine (STATE_PLACING → STATE_CREATING → STATE_READY), and
-  calling the per-cluster Data Plane API for topics, ACLs, users, secrets, and
-  pipelines. Also covers the Enterprise differentiators configurable on
-  Serverless via topic configs and roles: Iceberg Topics
-  (redpanda.iceberg.mode/target.lag.ms/partition.spec/invalid.record.action/delete),
-  Server-Side Schema ID Validation (redpanda.key|value.schema.id.validation,
-  subject.name.strategy), Leadership Pinning (redpanda.leaders.preference), and
-  Role-Based Access Control (/v1/roles) — all Enterprise-licensed (license
-  included on Cloud). Also covers AWS PrivateLink for private connectivity to a
-  Serverless cluster (ServerlessPrivateLinkService and the private_link_id field).
-  Use when: creating, listing, updating, or deleting Redpanda Cloud Serverless
-  clusters via the public API; authenticating with OAuth client credentials for
-  api.redpanda.com; choosing a serverless region; tracking a create/delete
-  Operation until it completes; calling the data-plane URL returned by
-  GetServerlessCluster to manage topics, ACLs, users, or secrets; enabling
-  Iceberg Topics, schema ID validation, leader pinning, or RBAC on a Serverless
-  cluster; setting up AWS PrivateLink / private networking
-  (ServerlessPrivateLinkService, private_link_id); or distinguishing Serverless
-  from BYOC provisioning.
+  Provisions and manages Redpanda Cloud Serverless clusters via the public Control Plane
+  API (api.redpanda.com): fully managed Kafka-compatible clusters in Redpanda's own
+  account reached through a per-cluster Data Plane API. Use when creating or deleting
+  Serverless clusters; authenticating with OAuth2 client credentials; picking a
+  ServerlessRegion; polling the create/delete Operation state machine; managing topics,
+  ACLs or secrets on the data-plane URL; or enabling Iceberg Topics, schema ID
+  validation or RBAC. For BYOC clusters, see `/redpanda:cloud-byoc`; for Dedicated
+  clusters, see `/redpanda:cloud-dedicated`; for the rpk CLI equivalent, see
+  `/redpanda:rpk-cloud`.
 ---
 
 # Redpanda Cloud API: Serverless Clusters

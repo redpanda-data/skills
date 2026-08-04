@@ -74,8 +74,9 @@ numbers, no internal ticket or RFC IDs, no feature flag/gate names or rollout/ga
 status, no mentions of unshipped, in-flight, or reverted features, and no session links.
 PR descriptions and commit messages describe only the skill changes themselves, and
 routine-generated surfaces (PR titles, descriptions, commits, branches) additionally avoid
-- **Repo maintenance files** (this file, `MAINTAINING.md`, `SOURCES.md`,
-  `skills-sync-routine.md`) may name the private repos where the process requires it.
+naming the private repos at all. **Repo maintenance files** (this file, `MAINTAINING.md`,
+`SOURCES.md`, `skills-sync-routine.md`) may name the private repos where the process
+requires it.
 
 Two sanctioned exceptions to the internals ban:
 
@@ -106,6 +107,23 @@ before editing or verifying any file**, and open the cited paths first.
   Cloud changelog is `cloud-docs/modules/get-started/pages/whats-new-cloud.adoc`).
 
 When adding a source-grounded skill, add a `SOURCES.md` beside it and list it here.
+
+## Frontmatter and size standards (CI-enforced)
+
+`.github/workflows/validate-skills.yml` runs on every PR that touches `skills/**`;
+errors block merge, warnings surface in the check summary. Follow the
+[Agent Skills spec](https://agentskills.io/specification):
+
+- `name` matches the skill's directory name exactly: lowercase letters, numbers, and
+  single hyphens only; 1–64 characters.
+- `description` is 1–1,024 characters of prose: one sentence on what the skill does, a
+  "Use when …" sentence carrying the strongest trigger keywords, and any "For X, see
+  `/redpanda:Y`" negative-routing pointers. No comma-separated keyword lists — the
+  validator flags them as keyword stuffing.
+- Keep `SKILL.md` under 500 lines; move detail into `references/` files and link them
+  from the Reference Directory section.
+- Every skill ships a `SOURCES.md` (under `references/`, or at the skill root like
+  `adp`); CI fails without one.
 
 ## Maturity and PREVIEW markers
 

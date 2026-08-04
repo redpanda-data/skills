@@ -1,34 +1,14 @@
 ---
 name: connect-cdc-spanner
 description: >-
-  Streams change data capture (CDC) from Google Cloud Spanner into Redpanda or
-  Kafka using Redpanda Connect's gcp_spanner_cdc input — Spanner change streams,
-  partition-aware watermarked delivery, and metadata persistence. Use when:
-  capturing INSERT/UPDATE/DELETE changes from a Google Cloud Spanner database
-  into Redpanda or Kafka; configuring the gcp_spanner_cdc input; creating a
-  Spanner change stream with CREATE CHANGE STREAM; setting up GCP service-account
-  credentials or Application Default Credentials for the connector; configuring
-  project_id, instance_id, database_id, and stream_id; using start_timestamp or
-  end_timestamp to bound the stream window; understanding the metadata_table the
-  connector creates in Spanner for partition watermarking; filtering mod types
-  with allowed_mod_types (INSERT, UPDATE, DELETE); tuning heartbeat_interval or
-  min_watermark_cache_ttl; understanding the message payload (Mod JSON with keys,
-  new_values, old_values) and message metadata (table_name, mod_type,
-  commit_timestamp, record_sequence, server_transaction_id, transaction_tag);
-  using the batching policy for throughput tuning; the Enterprise license
-  requirement for this connector; routing per-table CDC events to separate Kafka
-  topics with Bloblang; or landing CDC history into Redpanda Enterprise
-  destination features — Iceberg Topics (redpanda.iceberg.mode/delete/
-  target.lag.ms/partition.spec/invalid.record.action), Tiered Storage
-  (redpanda.remote.write/read, cloud_storage_enabled), Cloud Topics
-  (redpanda.cloud_topic.enabled / redpanda.storage.mode=cloud,
-  cloud_topics_enabled), Remote Read Replicas
-  (redpanda.remote.readreplica), Shadowing for cross-cluster disaster recovery
-  (rpk shadow), and the Redpanda Connect enterprise capabilities (secrets
-  management, the redpanda config-service block, allow/deny lists, FIPS, plus
-  RBAC, OIDC/OAUTHBEARER, Kerberos, Audit Logging, and server-side Schema ID
-  Validation on the destination cluster). All of these require a Redpanda
-  Enterprise license.
+  Streams change data capture from Google Cloud Spanner into Redpanda or Kafka using
+  Redpanda Connect's gcp_spanner_cdc input, built on Spanner change streams with
+  partition-aware watermarked delivery. Use when configuring gcp_spanner_cdc,
+  creating a Spanner change stream, setting up GCP service-account credentials,
+  filtering mod types, or tuning watermark and heartbeat settings. Also covers
+  Redpanda Enterprise destination features such as Iceberg Topics, Tiered Storage,
+  Cloud Topics, Remote Read Replicas, and Shadowing, since gcp_spanner_cdc itself
+  requires a Redpanda Enterprise license.
 ---
 
 # Redpanda Connect CDC: Google Cloud Spanner

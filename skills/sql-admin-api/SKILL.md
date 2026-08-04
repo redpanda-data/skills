@@ -1,27 +1,17 @@
 ---
 name: sql-admin-api
 description: >-
-  Configures and operates an Oxla cluster: YAML config (default_config.yml),
-  OXLA__ environment-variable overrides, node ports and roles, leader election,
-  storage backends (local/S3/GCS/Azure), memory limits, access control, TLS,
-  OIDC, and the HTTP-based ConnectRPC admin service (port 9090) with its
-  LoggingService (GetLogLevel/SetLogLevel). Also covers the Prometheus metrics
-  endpoint (port 8080) and Docker/Compose deployment patterns. Covers Oxla's
-  lakehouse and streaming differentiators: Apache Iceberg REST catalogs
-  (CREATE ICEBERG CATALOG, oauth2/basic/aws_sigv4 auth, feature_flags.allow_iceberg_queries),
-  transparent Redpanda/Kafka integration (CREATE REDPANDA CATALOG, topic-backed
-  tables, schema_lookup_policy/error_handling_policy), object-storage connections
-  (CREATE STORAGE TYPE S3/GCS/ABS), plus security: OIDC/JWT auth, SCRAM passwords,
-  centralized access control, and AES-256-GCM secret encryption (OXLA_ENCRYPTION_KEY).
-  Use when: configuring an Oxla cluster; setting ports or node names; enabling
-  TLS or OIDC authentication; choosing a storage backend (S3/GCS/Azure);
-  setting up Iceberg catalogs or a lakehouse; querying Redpanda/Kafka topics as
-  tables; creating storage connections; encrypting connection secrets; tuning
-  memory limits; running Oxla via Docker; changing log levels at runtime
-  via the admin API; checking cluster health via /healthz; scraping Prometheus
-  metrics on port 8080; deploying a single-node or multi-node Oxla cluster;
-  overriding config values with OXLA__ env vars; or any Oxla operations or
-  administration task.
+  Configures and operates an Oxla cluster: YAML config and OXLA__
+  environment-variable overrides, node ports, roles, and leader election;
+  storage backends (local/S3/GCS/Azure); memory limits; access control; and
+  TLS/OIDC, plus the HTTP-based ConnectRPC admin service and Prometheus metrics
+  endpoint. Also covers Oxla's lakehouse and streaming differentiators: Apache
+  Iceberg REST catalogs, transparent Redpanda/Kafka integration (CREATE REDPANDA
+  CATALOG), object-storage connections, and security features such as SCRAM
+  passwords and secret encryption. Use when configuring an Oxla cluster,
+  choosing a storage backend, setting up Iceberg catalogs or querying
+  Redpanda/Kafka topics as tables, enabling TLS/OIDC, changing log levels via
+  the admin API, or deploying Oxla with Docker.
 ---
 
 # Redpanda SQL: Administration & Operations

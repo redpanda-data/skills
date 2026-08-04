@@ -187,4 +187,3 @@ From `get-started:licensing/overview.adoc`:
 
 Existing data continues to operate without loss; only the creation/modification of enterprise
 configuration is restricted.
-```

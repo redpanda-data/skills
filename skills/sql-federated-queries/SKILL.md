@@ -2,23 +2,15 @@
 name: sql-federated-queries
 description: >-
   Query external data from Oxla — Kafka topics via catalogs, Apache Iceberg
-  tables, and S3/GCS/Azure parquet/ORC files — alongside native Oxla tables.
-  Use when: querying Kafka topics with CREATE KAFKA CATALOG or CREATE REDPANDA
-  CATALOG; reading Apache Iceberg tables using the catalog=>path.table syntax;
-  loading or exporting parquet/ORC files from S3/GCS/Azure (COPY FROM/TO);
-  joining external data with native tables; or inspecting external metadata via
+  tables, and S3/GCS/Azure parquet/ORC files — alongside native Oxla tables. Use
+  when querying Kafka topics with CREATE KAFKA CATALOG or CREATE REDPANDA
+  CATALOG, reading Apache Iceberg tables with the catalog=>path.table syntax,
+  loading or exporting parquet/ORC files with COPY FROM/TO, joining external
+  data with native tables, or inspecting external metadata via
   system.kafka_connections, system.kafka_sources, system.iceberg_catalogs, and
   system.iceberg_tables. Also covers the Redpanda Enterprise features that
-  produce the data Oxla reads — Iceberg Topics (redpanda.iceberg.mode and the
-  redpanda.iceberg.* topic properties; iceberg_enabled and iceberg_rest_catalog_*
-  cluster properties), Tiered Storage (cloud_storage_enabled), and Server-Side
-  Schema ID Validation (enable_schema_id_validation, redpanda.value.schema.id.validation)
-  — all of which require a Redpanda Enterprise license. Trigger phrases: "query Kafka
-  topic from Oxla", "CREATE KAFKA CATALOG", "CREATE ICEBERG CATALOG", "federated
-  query Oxla", "read parquet from S3 in Oxla", "iceberg catalog arrow operator",
-  "catalog=>table syntax", "REFRESH kafka source", "ALTER KAFKA TABLE", "external
-  schema Oxla", "redpanda.iceberg.mode", "enable Iceberg topic for Oxla",
-  "iceberg_rest_catalog_endpoint", "schema ID validation".
+  produce the data Oxla reads — Iceberg Topics, Tiered Storage, and Server-Side
+  Schema ID Validation.
 ---
 
 # Redpanda SQL: Federated & External Queries

@@ -1,24 +1,16 @@
 ---
 name: adp
 description: >-
-  Expert guide for Redpanda's Agentic Data Plane (ADP): Redpanda's governance
-  infrastructure for building, running, and governing AI agents and MCP servers.
-  It is its own product surface that runs on Redpanda; it provisions its own
-  environment.
-  Use when: creating or managing AI agents (managed or self-managed) via
-  rpk ai agent or the AgentRegistryService API; configuring MCP servers
-  (remote or managed catalog types, code mode, auth variants); setting up LLM
-  providers or querying available models via rpk ai llm / rpk ai model or the
-  LLMProviderService / ModelService API; working with the AI Gateway proxy
-  (provider config, per-provider URLs, credential injection); configuring
-  budgets, guardrails, or Cedar access-control policies via the governance APIs
-  (BudgetService, GuardrailService, PolicyService); reading agent transcripts or
-  spending insights via TranscriptsService or InsightsService; running rpk ai
-  (install, upgrade, agent, auth, mcp, llm, model, oauth-client, oauth-provider, policy, run);
-  wiring OAuth clients or providers to the aigw Authorization Server; or
-  understanding what the platform does and does not provide (routing/rate limits
-  are out of scope). For the separate rpk cloud mcp control-plane MCP server, see
-  /redpanda:rpk-cloud.
+  Redpanda's Agentic Data Plane: governance infrastructure for building, running,
+  and governing AI agents and MCP servers, plus a proxying AI Gateway for LLM providers,
+  operated via `rpk ai` and the ADP API. Use when creating or managing AI agents (managed
+  or self-managed) via `rpk ai agent` or `AgentRegistryService`; configuring MCP servers
+  (remote or managed catalog, code mode, auth); setting up LLM providers or querying
+  models via `rpk ai llm`/`rpk ai model` or the AI Gateway proxy; or configuring budgets,
+  guardrails, or Cedar access-control policies through the governance APIs. Also covers
+  reading agent transcripts and spending insights, and wiring OAuth clients or providers
+  to the aigw Authorization Server. For the separate rpk cloud mcp control-plane MCP
+  server, see `/redpanda:rpk-cloud`.
 ---
 
 # Agentic Data Plane
