@@ -107,6 +107,23 @@ before editing or verifying any file**, and open the cited paths first.
 
 When adding a source-grounded skill, add a `SOURCES.md` beside it and list it here.
 
+## Frontmatter and size standards (CI-enforced)
+
+`.github/workflows/validate-skills.yml` runs on every PR that touches `skills/**`;
+errors block merge, warnings surface in the check summary. Follow the
+[Agent Skills spec](https://agentskills.io/specification):
+
+- `name` matches the skill's directory name exactly: lowercase letters, numbers, and
+  single hyphens only; 1–64 characters.
+- `description` is 1–1,024 characters of prose: one sentence on what the skill does, a
+  "Use when …" sentence carrying the strongest trigger keywords, and any "For X, see
+  `/redpanda:Y`" negative-routing pointers. No comma-separated keyword lists — the
+  validator flags them as keyword stuffing.
+- Keep `SKILL.md` under 500 lines; move detail into `references/` files and link them
+  from the Reference Directory section.
+- Every skill ships a `SOURCES.md` (under `references/`, or at the skill root like
+  `adp`); CI fails without one.
+
 ## Maturity and PREVIEW markers
 
 Do not invent maturity labels. In the Cloud/ADP protos, a feature gated by
