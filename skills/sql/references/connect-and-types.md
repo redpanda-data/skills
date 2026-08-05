@@ -372,6 +372,54 @@ joins on UUID columns): a `uuid`-vs-`uuid` or `uuid`-vs-integer comparison
 raises `operator does not exist`. To filter or order by a UUID, cast it to text
 first (`WHERE id::text = 'a0eebc99-...'`).
 
+### OID
+
+`OID` is the PostgreSQL object-identifier type, provided for compatibility with
+tools and drivers (psql `\d`, pgx, ORMs, BI tools) that introspect the system
+catalogs and key off type OID **26**. It is a 32-bit-backed scalar that reports
+its user-facing name via `pg_typeof` as `oid`, is advertised by `pg_type`, and
+is sent and received on the wire in both text and binary (4-byte big-endian)
+formats, so binary-format bind parameters round-trip.
+
+`oid` is a **non-reserved** datatype keyword: `x::oid`, `CAST(x AS oid)`, and
+`col oid` in DDL all parse, while `oid` remains usable as an ordinary identifier
+or column name (it is itself a `pg_catalog` column name).
+
+```sql
+CREATE TABLE catalog_ref (
+    type_oid oid
+);
+```
+
+**Text input** follows PostgreSQL's `oidin`: it accepts the signed-`int4` or
+unsigned-`uint32` range and reinterprets a negative literal into the unsigned
+space, so `'-1'::oid` = `4294967295` and `'-2147483648'::oid` = `2147483648`;
+values outside `[INT32_MIN, UINT32_MAX]` are rejected. Output is always unsigned
+decimal text.
+
+**Equality, grouping, and joins.** `oid` is equality-comparable — `=`, `!=` /
+`<>`, and `IS DISTINCT FROM` are defined — so `GROUP BY`, `SELECT DISTINCT`,
+`UNION`, window `PARTITION BY`, and equi-joins all work on `oid` columns. An
+integer literal can meet an `oid` in a predicate via an implicit `int4 → oid`,
+so `WHERE type_oid = 26` works without an explicit cast.
+
+**No ordering.** `oid` has no order: `ORDER BY`, window `ORDER BY`, `<`, `<=`,
+`>`, `>=`, `min`, `max`, and `greatest`/`least` on an `oid` raise
+`operator does not exist` rather than comparing incorrectly. (PostgreSQL orders
+`oid`; this is a deliberate Oxla divergence.) To order by an `oid`, cast it to
+`int4` first.
+
+**Casts.** `int4 → oid` is **implicit**; `oid → int4`, `oid → text`, and
+`text → oid` are **explicit** (`CAST`/`::`). There is no cast between `oid` and
+the `bigint`, `boolean`, `numeric`, wide-integer (`INT16`/`INT32`), `bytea`, or
+`uuid` types.
+
+```sql
+SELECT CAST(26 AS oid);           -- int4 -> oid (also implicit in predicates)
+SELECT CAST(type_oid AS int) FROM catalog_ref;   -- oid -> int4 (explicit)
+SELECT '2147483648'::oid;         -- text -> oid (unsigned range)
+```
+
 ### Array types
 
 Arrays are supported via the `ARRAY` data type. The element type is specified

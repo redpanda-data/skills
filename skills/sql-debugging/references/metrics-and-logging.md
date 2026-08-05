@@ -342,9 +342,15 @@ grpcurl -plaintext \
   <host>:9090 \
   oxla.admin.v1.LoggingService/GetLogLevel
 
-# Set to DEBUG
+# Set to DEBUG (reverts to the configured startup level after 1 hour by default)
 grpcurl -plaintext \
   -d '{"level": "LOG_LEVEL_DEBUG"}' \
+  <host>:9090 \
+  oxla.admin.v1.LoggingService/SetLogLevel
+
+# Set to DEBUG for a bounded window, then auto-revert (duration is optional)
+grpcurl -plaintext \
+  -d '{"level": "LOG_LEVEL_DEBUG", "duration": "600s"}' \
   <host>:9090 \
   oxla.admin.v1.LoggingService/SetLogLevel
 
@@ -354,6 +360,13 @@ grpcurl -plaintext \
   <host>:9090 \
   oxla.admin.v1.LoggingService/SetLogLevel
 ```
+
+> **`SetLogLevel` is always temporary.** The optional `duration` defaults to
+> **1 hour** when unset; when it elapses the node reverts to the
+> configured startup level (`logging.level`), so a debugging bump never stays
+> elevated indefinitely. `duration` must be positive and at most 365 days.
+> While a revert is pending, `GetLogLevel` also returns the revert deadline
+> (`reverts_at`) and the `configured_level` it will restore.
 
 **Using curl with ConnectRPC JSON encoding:**
 
