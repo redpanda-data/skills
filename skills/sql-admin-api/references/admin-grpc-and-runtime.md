@@ -45,6 +45,9 @@ Three admin services are exposed under package `oxla.admin.v1`:
 syntax = "proto3";
 package oxla.admin.v1;
 
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
 enum LogLevel {
   LOG_LEVEL_NONE    = 0;
   LOG_LEVEL_FATAL   = 1;
@@ -56,10 +59,25 @@ enum LogLevel {
 }
 
 message GetLogLevelRequest {}
-message GetLogLevelResponse { LogLevel level = 1; }
+message GetLogLevelResponse {
+  LogLevel level = 1;
+  // Set while a revert is pending: when the level returns to configured_level.
+  google.protobuf.Timestamp reverts_at = 2;
+  // The startup-configured level a pending revert restores.
+  LogLevel configured_level = 3;
+}
 
-message SetLogLevelRequest  { LogLevel level = 1; }
-message SetLogLevelResponse { LogLevel level = 1; }
+message SetLogLevelRequest {
+  LogLevel level = 1;
+  // Optional; defaults to 1 hour when unset. Must be positive. The level
+  // reverts to the configured startup level after this duration elapses.
+  google.protobuf.Duration duration = 2;
+}
+message SetLogLevelResponse {
+  LogLevel level = 1;
+  // The effective revert duration that was armed (the default when omitted).
+  google.protobuf.Duration duration = 2;
+}
 
 service LoggingService {
   rpc GetLogLevel(GetLogLevelRequest) returns (GetLogLevelResponse);
@@ -67,12 +85,28 @@ service LoggingService {
 }
 ```
 
+### Temporary-by-design log levels
+
+`SetLogLevel` changes are **always temporary**. The request takes an optional
+`duration`; when it elapses, the node reverts to the startup-configured level
+(`logging.level`). When `duration` is omitted it defaults to **1 hour**, so a
+level bumped for debugging can no longer stay elevated indefinitely — a
+permanent change through the API is not possible. Consecutive `SetLogLevel`
+calls cancel and replace the pending revert. `duration` must be positive and at
+most 365 days; `0` and negative values are rejected as `invalid_argument`
+(HTTP 400).
+
+The pending revert is observable: `SetLogLevelResponse` echoes the effective
+`duration` that was armed, and while a revert is pending `GetLogLevelResponse`
+reports both the revert deadline (`reverts_at`) and the `configured_level` it
+will restore.
+
 ### RPC endpoints
 
 | RPC | HTTP path | Request body | Response |
 |-----|-----------|-------------|---------|
-| `GetLogLevel` | `POST /oxla.admin.v1.LoggingService/GetLogLevel` | Empty (`{}` or empty proto) | `{"level": "LOG_LEVEL_INFO"}` |
-| `SetLogLevel` | `POST /oxla.admin.v1.LoggingService/SetLogLevel` | `{"level": "LOG_LEVEL_DEBUG"}` | `{"level": "LOG_LEVEL_DEBUG"}` |
+| `GetLogLevel` | `POST /oxla.admin.v1.LoggingService/GetLogLevel` | Empty (`{}` or empty proto) | `{"level": "LOG_LEVEL_INFO"}` (plus `reverts_at`/`configured_level` while a revert is pending) |
+| `SetLogLevel` | `POST /oxla.admin.v1.LoggingService/SetLogLevel` | `{"level": "LOG_LEVEL_DEBUG"}` — optional `"duration": "600s"` | `{"level": "LOG_LEVEL_DEBUG", "duration": "3600s"}` (echoes the armed duration) |
 
 ### Get current log level (JSON)
 
@@ -114,7 +148,17 @@ curl -s -X POST \
   http://localhost:9090/oxla.admin.v1.LoggingService/SetLogLevel \
   -H "Content-Type: application/json" \
   -d '{"level":"LOG_LEVEL_FATAL"}'
+
+# Set to DEBUG for 10 minutes, then auto-revert to the configured level
+curl -s -X POST \
+  http://localhost:9090/oxla.admin.v1.LoggingService/SetLogLevel \
+  -H "Content-Type: application/json" \
+  -d '{"level":"LOG_LEVEL_DEBUG","duration":"600s"}'
 ```
+
+Omitting `duration` still changes the level, but it reverts to the configured
+startup level after the 1-hour default (see [Temporary-by-design log
+levels](#temporary-by-design-log-levels) above).
 
 ### Using binary protobuf encoding
 

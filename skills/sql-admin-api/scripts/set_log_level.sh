@@ -13,6 +13,12 @@
 #
 # The script saves the current level, sets the new level, waits for you to press
 # Enter, then restores the original level.
+#
+# Note: SetLogLevel changes are temporary server-side — the node auto-reverts to
+# its configured startup level (logging.level) after a default of 1 hour. So even
+# if you Ctrl+C instead of pressing Enter, the level will not stay changed
+# indefinitely. Pass an explicit duration in the request body to bound it
+# yourself (e.g. '{"level":"...","duration":"600s"}').
 
 set -euo pipefail
 
@@ -52,7 +58,7 @@ echo "Setting log level to: ${LEVEL}"
 rpc SetLogLevel "{\"level\":\"${LEVEL}\"}" > /dev/null
 echo "Log level is now: ${LEVEL}"
 echo ""
-echo ">>> Press Enter to restore the original level (${CURRENT}), or Ctrl+C to leave it changed <<<"
+echo ">>> Press Enter to restore the original level (${CURRENT}) now, or Ctrl+C to leave it (auto-reverts after ~1h) <<<"
 read -r
 
 # 3. Restore original level
