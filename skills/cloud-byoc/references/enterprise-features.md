@@ -116,6 +116,7 @@ Iceberg integration writes topic data as Apache Iceberg (Parquet) tables in your
 | `redpanda.iceberg.invalid.record.action` | string (enum) | `drop` or `dlq_table` (default). Where invalid records go (DLQ table `<topic>~dlq`). |
 | `redpanda.iceberg.partition.spec` | string | Iceberg partitioning spec. Default `(hour(redpanda.timestamp))`. |
 | `redpanda.iceberg.target.lag.ms` | integer (ms) | How often the Iceberg table is refreshed from the topic. |
+| `redpanda.schema.registry.context` | string | Schema Registry context used to resolve this topic's schemas (for example when decoding keys/values for Iceberg). Context name must start with `.` (e.g. `.staging`); default is the default context `.`. |
 
 ```bash
 # 1. Enable at the cluster level (Control Plane API)
@@ -130,6 +131,29 @@ rpk topic alter-config my-iceberg-topic --set redpanda.iceberg.mode=value_schema
 ```
 
 `value_schema_id_prefix` and `value_schema_latest` require a registered schema in the Schema Registry.
+
+### Independent key, value, and header translation
+
+Beyond the shorthand modes above, `redpanda.iceberg.mode` also accepts a **section-based syntax** that independently controls how the record key, value, and headers are each translated into the Iceberg table:
+
+```
+<section>:<option>=<value>,<option>=<value>;<section>:<option>=<value>
+```
+
+- Sections are `key`, `value`, and `headers`. Separate sections with `;` and options within a section with `,`. Any omitted section uses its defaults; order does not matter.
+- `key` and `value` accept `mode` (`binary` default, `schema_id_prefix`, `schema_latest`, or `string`), plus `subject=` and `protobuf_name=` (both require `mode=schema_latest`). `value` also accepts `layout` (`flat` default, or `nested` to wrap decoded value fields under a single `value` struct column; requires a schema `mode`).
+- `mode=string` stores the field as a UTF-8 string (invalid bytes become `U+FFFD`); `schema_id_prefix`/`schema_latest` decode it into a struct.
+- `headers` accepts one option, `value_type` (`binary` default, or `string`). Header keys are always stored as strings.
+
+The shorthand modes are equivalents: `key_value` = every section `binary`; `value_schema_id_prefix` = `value:mode=schema_id_prefix`; `value_schema_latest[:subject=…,protobuf_name=…]` = `value:mode=schema_latest[,subject=…,protobuf_name=…]`.
+
+```bash
+# Decode the key with its embedded schema ID and store header values as UTF-8 strings
+rpk topic alter-config orders --set \
+  redpanda.iceberg.mode="key:mode=schema_id_prefix;headers:value_type=string"
+```
+
+Redpanda rejects unknown or duplicate sections, duplicate options, empty option values, `subject`/`protobuf_name` without `mode=schema_latest`, `layout` in the `key` section, and `layout=nested` without a schema `mode`. To resolve schemas from a non-default Schema Registry context, set `redpanda.schema.registry.context` on the topic (see the property table above).
 
 ---
 
