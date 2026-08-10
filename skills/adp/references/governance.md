@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (BudgetService, BudgetCreate, Budget fields), `spending_service.proto` (SpendingService, SpendingFilter, SpendingStats), `guardrail.proto` (GuardrailService, BedrockGuardrailConfig, ContentFilterPolicy, LocalGuardrailConfig, GuardrailProvider), `policy_service.proto` (PolicyService lines 25-62, PolicyTemplateService lines 66-104), `system_policy_service.proto` (SystemPolicyService), `effective_policy_set_service.proto` (EffectivePolicySetService), `cedar_options.proto`, `oauth_client.proto` (OAuthClientService), `oauth_provider.proto` (OAuthProviderService), `oauth_connection.proto` (OAuthConnectionService), `pending_auth_request.proto` (PendingAuthRequestService), `token_vault_admin.proto` (TokenVaultAdminService). Service registrations confirmed at `cloudv2/apps/aigw/internal/server/server.go` and `cloudv2/apps/adp-api/internal/server/server.go`. `SpendingService` cost-allocation tag surface (`GetSpendingTagKeys`, `BREAKDOWN_DIMENSION_TAG`, `tag_key`) re-verified against `spending_service.proto` on 2026-07-13. `GuardrailProvider` / `Guardrail.config` oneof re-verified against `guardrail.proto` on 2026-07-20. The MCP data-policy surface (`data_policy.proto` `DataShaping`/`DataPolicy`; the `PreviewDataPolicies` and `PreviewToolResponse` RPCs on `MCPServerService` in `mcp_server.proto`) verified on 2026-07-27. Evidence date: 2026-07-27.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (BudgetService, BudgetCreate, Budget fields), `spending_service.proto` (SpendingService, SpendingFilter, SpendingStats), `guardrail.proto` (GuardrailService, BedrockGuardrailConfig, ContentFilterPolicy, LocalGuardrailConfig, GuardrailProvider), `policy_service.proto` (PolicyService lines 25-62, PolicyTemplateService lines 66-104), `system_policy_service.proto` (SystemPolicyService), `effective_policy_set_service.proto` (EffectivePolicySetService), `cedar_options.proto`, `oauth_client.proto` (OAuthClientService), `oauth_provider.proto` (OAuthProviderService), `oauth_connection.proto` (OAuthConnectionService), `pending_auth_request.proto` (PendingAuthRequestService), `token_vault_admin.proto` (TokenVaultAdminService). Service registrations confirmed at `cloudv2/apps/aigw/internal/server/server.go` and `cloudv2/apps/adp-api/internal/server/server.go`. `SpendingService` cost-allocation tag surface (`GetSpendingTagKeys`, `BREAKDOWN_DIMENSION_TAG`, `tag_key`) re-verified against `spending_service.proto` on 2026-07-13. `GuardrailProvider` / `Guardrail.config` oneof re-verified against `guardrail.proto` on 2026-07-20. The MCP data-policy surface (`data_policy.proto` `DataShaping`/`DataPolicy`; the `PreviewDataPolicies` and `PreviewToolResponse` RPCs on `MCPServerService` in `mcp_server.proto`) verified on 2026-07-27. The CIMD inbound-registration surface (`GetCIMDSettings`/`UpdateCIMDSettings` RPCs on `OAuthClientService`, the `CIMDSettings` message, and the `CIMDTrustPolicy` enum in `oauth_client.proto`) verified on 2026-08-10. Evidence date: 2026-08-10.
 
 # Agentic Data Plane Governance Reference
 
@@ -253,7 +253,7 @@ Manages OAuth clients (external tools such as Claude.ai or ChatGPT) that request
 
 Core CRUD: `CreateOAuthClient`, `GetOAuthClient`, `ListOAuthClients`, `UpdateOAuthClient`, `DeleteOAuthClient`.
 
-Additional operations: `RevokeAllTokens`, `ListWellKnownClients`, `GetDCRSettings`, `UpdateDCRSettings`, `MintInitialAccessToken`, `ListInitialAccessTokens`, `RevokeInitialAccessToken`.
+Additional operations: `RevokeAllTokens`, `ListWellKnownClients`, `GetDCRSettings`, `UpdateDCRSettings`, `GetCIMDSettings`, `UpdateCIMDSettings`, `MintInitialAccessToken`, `ListInitialAccessTokens`, `RevokeInitialAccessToken`.
 
 Key `OAuthClient` fields:
 
@@ -268,6 +268,43 @@ Key `OAuthClient` fields:
 | `enabled` | bool |
 | `dcr_issued` | OUTPUT_ONLY; bool; set when issued via Dynamic Client Registration |
 | `client_secret` | Returned once on create only; not retrievable after that |
+
+#### Inbound client registration: DCR and CIMD
+
+An external MCP client can be admitted to the aigw Authorization Server without an
+admin creating an `OAuthClient` by hand, through two independent self-service
+mechanisms. Both are configured as **tenant-singleton** settings on
+`OAuthClientService` (no per-instance resource name), and either can be enabled
+without the other:
+
+- **Dynamic Client Registration (DCR)** — the RFC 7591 flow, configured via
+  `GetDCRSettings` / `UpdateDCRSettings`. The client registers itself and the
+  gateway persists a real `OAuthClient` (its `dcr_issued` field is set).
+- **Client ID Metadata Documents (CIMD)** — configured via `GetCIMDSettings` /
+  `UpdateCIMDSettings`. The client's `client_id` is an `https` URL at which it
+  hosts a JSON metadata document about itself; the gateway resolves that document
+  on demand at `/authorize`. There is no registration step and no persisted client
+  — the resolved client is ephemeral. The MCP authorization spec treats CIMD as
+  the successor to DCR.
+
+##### `CIMDSettings` (singleton)
+
+`GetCIMDSettings` returns the settings plus an output-only `resolution_available`
+signal; `UpdateCIMDSettings` takes a required `cimd_settings` and is admin-only
+(`CIMDSettings` is a distinct authorization entity from `OAuthClient`, so granting
+CIMD-config access does not grant per-client CRUD).
+
+| Field | Notes |
+|-------|-------|
+| `enabled` | bool. When false, URL-shaped `client_id`s are rejected at `/authorize` and the authorization-server metadata does not advertise `client_id_metadata_document_supported`, so conformant clients fall back to DCR or pre-registration. |
+| `trust_policy` | `CIMDTrustPolicy`: `CIMD_TRUST_POLICY_UNSPECIFIED` (0, treated as all-domains at the boundary), `CIMD_TRUST_POLICY_ALL_DOMAINS` (1, any host serving a valid document), `CIMD_TRUST_POLICY_ALLOWED_DOMAINS` (2, only `allowed_domains`). |
+| `allowed_domains` | Repeated string; the trusted document-hosting domains when `trust_policy` is `ALLOWED_DOMAINS`. An entry matches the `client_id` host exactly or as a parent domain (`example.com` admits `app.example.com`); bare public suffixes (`com`, `co.uk`) are rejected. |
+| `allowed_resources` | Repeated string; the MCP resource (RFC 8707) allowlist applied to every CIMD-resolved client. `"*"` (must be the only entry) permits any MCP on this gateway; otherwise each entry is a concrete `https://` URL. Unlike the DCR equivalent this is **not** required, and an empty list means no MCP is reachable — the fail-closed default for clients no admin reviews. |
+| `resolution_available` | OUTPUT_ONLY on the get response. Whether the gateway can actually resolve documents right now — a deployment-level prerequisite distinct from the tenant's desired `enabled` state. With `enabled = true` but `resolution_available = false`, CIMD does not take effect. |
+
+Because a CIMD client is admitted with no admin ever seeing it, the trust policy and
+resource allowlist are the enforcement surface: restrict `trust_policy` to
+`ALLOWED_DOMAINS` and keep `allowed_resources` as narrow as the clients require.
 
 ### `OAuthProviderService` RPCs
 
