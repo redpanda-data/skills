@@ -356,14 +356,17 @@ or with hyphens on any 4-hex-digit boundary. Invalid input raises
 **output** in canonical lowercase form.
 
 **Casts.** `UUID` casts to and from the text types (`TEXT`, `VARCHAR`,
-`VARCHAR(n)`, `CHAR(n)`) in both directions; casts are **explicit**
-(`CAST`/`::`). There is no cast between `UUID` and the integer, wide-integer
-(`INT16`/`INT32`), or `BYTEA` types.
+`VARCHAR(n)`, `CHAR(n)`) and to and from `BYTEA` (the RFC-4122 big-endian
+16-byte serialization) in both directions; all of these casts are **explicit**
+(`CAST`/`::`). There is no cast between `UUID` and the integer or wide-integer
+(`INT16`/`INT32`) types.
 
 ```sql
 SELECT CAST(UUID 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS TEXT);   -- uuid -> text
 SELECT CAST('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS UUID);        -- text -> uuid
 SELECT ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::VARCHAR(36))::uuid; -- via ::
+SELECT CAST(UUID 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS BYTEA);  -- uuid -> bytea (16 bytes)
+SELECT CAST(data AS UUID) FROM blobs;                               -- bytea column -> uuid
 ```
 
 In the current engine, comparison, ordering, and grouping operators are not yet

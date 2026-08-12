@@ -371,6 +371,28 @@ SELECT random(), random();
 
 ---
 
+## UUID Functions
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gen_random_uuid()` | `uuid` | Generate a random (version-4) UUID; PostgreSQL-compatible |
+| `uuidv4()` | `uuid` | Alias that generates a random (version-4) UUID |
+
+Both take no arguments and return the `uuid` type. They are **volatile** —
+evaluated independently at each call site and once per row — so a query that
+calls them per row produces a distinct UUID for every row.
+
+```sql
+SELECT gen_random_uuid();
+INSERT INTO sessions (id) SELECT gen_random_uuid() FROM generate_series(1, 100);
+SELECT uuidv4(), uuidv4();   -- two distinct values
+```
+
+See the `UUID` type in [connect-and-types.md](connect-and-types.md) for literal
+syntax, accepted input formats, and cast rules.
+
+---
+
 ## Date and Time Functions
 
 ### EXTRACT
@@ -635,6 +657,7 @@ FROM generate_series(0, 30) AS gs;
 | Window offset | `LAG`, `LEAD`, `FIRST_VALUE`, `LAST_VALUE`, `NTH_VALUE` |
 | String | `UPPER`, `LOWER`, `LENGTH`, `CONCAT`, `SUBSTR`, `STARTS_WITH`, `ENDS_WITH`, `STRPOS`, `REPLACE`, `REGEXP_MATCH`, `REGEXP_REPLACE` |
 | Math | `ABS`, `CEIL`, `FLOOR`, `ROUND`, `SIGN`, `SQRT`, `EXP`, `LN`, `LOG10`, `PI`, `SIN`, `COS`, `TAN`, `TAND`, `COT`, `COTD`, `ATAN2`, `DEGREES`, `RADIANS`, `RANDOM` |
+| UUID | `gen_random_uuid`, `uuidv4` |
 | Date/time | `EXTRACT`, `TIMESTAMP_TRUNC`, `MAKE_DATE`, `MAKE_TIME`, `MAKE_TIMESTAMP`, `MAKE_TIMESTAMPTZ`, `MAKE_INTERVAL`, `DATE`, `CURRENT_TIMESTAMP`, `UNIX_MICROS`, `UNIX_MILLIS`, `UNIX_SECONDS`, `TIMESTAMP_MICROS`, `TIMESTAMP_MILLIS`, `TIMESTAMP_SECONDS` |
 | Array | `ARRAY_APPEND`, `ARRAY_PREPEND`, `ARRAY_UPPER`, `PG_TYPEOF` |
 | Geospatial | `ST_ASEWKT`, `ST_DISTANCE` |
