@@ -295,7 +295,7 @@ enum class SchemaType : int32_t { Avro = 0, Protobuf = 1, Json = 2 };
 | time-millis / time-micros | TIME |
 | timestamp-millis / timestamp-micros | TIMESTAMP |
 | decimal (logical) | NUMERIC |
-| uuid (logical) | TEXT |
+| uuid (logical) | UUID (either `string`- or `fixed(16)`-backed) |
 
 ### Protobuf type mappings
 

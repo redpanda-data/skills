@@ -143,11 +143,12 @@ ALTER ROLE analyst WITH PASSWORD 'new_secret';
 -- Drop a role
 DROP ROLE analyst;
 
--- Grant privileges (supported: SELECT, INSERT, UPDATE, DELETE, CREATE, CONNECT, USAGE, ALL PRIVILEGES)
+-- Grant privileges (supported: SELECT, INSERT, UPDATE, DELETE, CREATE, CONNECT, USAGE, ALL [PRIVILEGES])
 GRANT SELECT ON orders TO analyst;          -- bare table name
 GRANT SELECT ON TABLE orders TO analyst;    -- explicit TABLE keyword
 GRANT INSERT, UPDATE ON TABLE orders TO analyst;
-GRANT ALL PRIVILEGES ON TABLE orders TO analyst;  -- 'ALL PRIVILEGES' required; bare 'ALL' is not valid
+GRANT ALL PRIVILEGES ON TABLE orders TO analyst;  -- all privileges valid at this level
+GRANT ALL ON TABLE orders TO analyst;             -- 'PRIVILEGES' is optional; bare 'ALL' is equivalent
 
 -- Schema- and database-level grants
 GRANT USAGE ON SCHEMA analytics TO analyst;
@@ -156,7 +157,13 @@ GRANT CONNECT ON DATABASE oxla TO analyst;
 -- Revoke privileges
 REVOKE SELECT ON TABLE orders FROM analyst;
 REVOKE GRANT OPTION FOR SELECT ON TABLE orders FROM analyst;
+REVOKE ALL ON TABLE orders FROM analyst;    -- bare 'ALL' is accepted here too
 ```
+
+`ALL` (with or without the trailing `PRIVILEGES` keyword) expands to every
+privilege defined at that level: `SELECT`/`INSERT`/`UPDATE`/`DELETE` for a
+table, `CREATE`/`USAGE` for a schema, and `CONNECT` for a database. Both `ALL`
+and `ALL PRIVILEGES` produce the identical grant, matching PostgreSQL.
 
 ### Valid GRANT/REVOKE targets
 

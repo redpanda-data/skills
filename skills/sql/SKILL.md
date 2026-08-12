@@ -133,7 +133,7 @@ Types grounded in `src/sqlparser/sql/ColumnType.h` (the `enum class DataType` li
 | `BOOL` | Boolean |
 | `JSON` / `JSONB` | JSON document |
 | `BYTEA` | Binary data |
-| `UUID` | RFC-4122 UUID (`pg_typeof`: `uuid`); literal `UUID '...'`, casts to/from text only |
+| `UUID` | RFC-4122 UUID (`pg_typeof`: `uuid`); literal `UUID '...'`, casts to/from text and `BYTEA` |
 | `OID` | PostgreSQL object identifier (`pg_typeof`: `oid`, type 26); equality/grouping/joins only, no ordering; implicit `int4`→`oid`, explicit `oid`↔`int4`/`text` |
 | `ARRAY` | Arrays (`INT[]`, `FLOAT[]`, etc.) |
 | `GEOMETRY` / `GEOGRAPHY` / `POINT` | Geospatial |
