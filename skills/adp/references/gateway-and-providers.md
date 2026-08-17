@@ -114,6 +114,8 @@ Pricing overrides are set per model on the `LLMProvider` resource. There is no s
 
 Comment (`llm_provider.proto:469-472`): this mechanism handles negotiated contract rates and pricing for fine-tuned or private models not in the public catalog. Field 6 (`cache_creation_unknown_ttl_per_million`) is reserved and always uses the catalog rate.
 
+From the CLI, set these overrides with the repeatable `--pricing` flag on `rpk ai llm create` / `rpk ai llm update`, which takes rates in **US dollars per million tokens** and converts to the stored microcent unit for you; hand-written `--provider-models` protojson carrying a `custom_pricing` object (in microcents) also works. See [rpk-ai.md](rpk-ai.md).
+
 ## What the AI Gateway proxy does
 
 Source: `adp-docs/modules/gateway/pages/overview.adoc:10-52`.

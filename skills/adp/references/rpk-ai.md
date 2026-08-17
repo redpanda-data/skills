@@ -1,4 +1,4 @@
-Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing). Evidence date: 2026-08-03 (`connection` subcommands re-verified against `connection/cmd.go` — now implemented, previously a stub; `run` subcommand flags last verified 2026-07-06).
+Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing), `cloudv2/apps/rpai/internal/cmd/llm/pricing.go` (`--pricing` flag: keys, USD-per-million units, merge-into-`provider-models` behavior) and `cloudv2/apps/rpai/internal/cmd/generated.go` (`AddPricingSugar` wiring — `llm create`/`update` only). Evidence date: 2026-08-17 (`--pricing` flag on `llm create`/`update` verified against `pricing.go`/`generated.go`; `connection` subcommands re-verified 2026-08-03; `run` subcommand flags last verified 2026-07-06).
 
 # rpk ai CLI Reference
 
@@ -191,8 +191,18 @@ Key flags for `llm create`:
 | `--authorization-passthrough bool` | no | Anthropic enterprise/Max OAuth passthrough |
 | `--bedrock-region string` | no | AWS region (Bedrock only) |
 | `--bedrock-access-key-id-ref string` | no | Secret reference for AWS access key (Bedrock only) |
+| `--pricing []string` | no | Per-model pricing override in USD per million tokens; repeatable. Also available on `llm update`. See below |
 
-adp-docs publishes: `rpk-ai-llm.adoc` and CRUD subpages. `check`, `apply`, `diff` are not yet documented.
+**`--pricing` (per-model pricing overrides).** Available on both `rpk ai llm create` and `rpk ai llm update`, repeatable once per model. Each value is a comma-separated key list — `model=<name>,input=<usd>,output=<usd>,cached=<usd>,cache_write_5m=<usd>,cache_write_1h=<usd>` — where `model` is required and at least one rate key must be set. Rates are **US dollars per million tokens** (for example `input=2.50`); an omitted rate keeps the catalog default, and an explicit `0` sets a free rate. Naming the same model twice is rejected.
+
+The flag is convenience sugar over `--provider-models`: it folds each rate card onto the matching model's `custom_pricing` by name (appending the model if it is not already in the list), so on `update` it follows the same replace-the-whole-list semantics as `--provider-models`. Hand-written `--provider-models` protojson that carries a `custom_pricing` object keeps working unchanged. The underlying API field is `ProviderModelPricing`, stored in microcents per million (the CLI converts from USD); the five rate keys `input`, `output`, `cached`, `cache_write_5m`, and `cache_write_1h` map to `input_per_million`, `output_per_million`, `cached_input_per_million`, `cache_creation_5m_per_million`, and `cache_creation_1h_per_million` respectively. See [gateway-and-providers.md](gateway-and-providers.md).
+
+```bash
+rpk ai llm create --name openai-prod --type openai --api-key-ref OPENAI_KEY \
+  --pricing model=gpt-4o,input=2.50,output=10.00,cached=1.25
+```
+
+adp-docs publishes: `rpk-ai-llm.adoc` and CRUD subpages. `check`, `apply`, `diff`, and `--pricing` are not yet documented.
 
 ## `mcp` subcommands
 
