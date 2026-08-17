@@ -139,6 +139,51 @@ Tables being snapshot **must have a primary key** — the connector uses the pri
 - **Slot name validation**: `slot_name` must match `[A-Za-z0-9_]+` — alphanumeric and underscores only.
 - **Publication naming**: The connector auto-creates (and manages) a publication named `pglog_stream_<slot_name>`. Pre-create it with exactly that name to avoid needing `CREATE PUBLICATION` privilege.
 
+## Control Signals (since 4.105.0)
+
+Set `signal_table_name` to have the connector watch a dedicated **signal table** for control signals. Rows inserted into that table are both acted on as signals *and* forwarded downstream as ordinary CDC messages. This gives you an in-band, transactionally-ordered channel to send instructions to a running pipeline by writing a row to PostgreSQL.
+
+The signal table must live in the schema set by `schema`, and it must **not** also appear in `tables` — the connector implicitly adds it to the publication and excludes it from snapshot scans, so listing it in both places is rejected at startup. It needs three columns (startup validation checks the column *names* only; a wrong column type is caught later, at runtime on the first signal row):
+
+- `id` — any type representable as a string (`SERIAL`, `BIGSERIAL`, `UUID`, `VARCHAR`, …)
+- `type` — a string type; the signal type (see below)
+- `data` — `TEXT`; a JSON object carrying the signal's parameters
+
+```sql
+CREATE TABLE <schema>.<signal_table_name> (
+    id   SERIAL PRIMARY KEY,
+    type VARCHAR(32),
+    data TEXT
+);
+```
+
+```yaml
+input:
+  postgres_cdc:
+    dsn: postgres://cdc_user:secret@localhost:5432/mydb?sslmode=disable
+    schema: public
+    tables:
+      - orders
+    slot_name: my_slot
+    signal_table_name: rpcn_signal_table
+```
+
+Signal rows are published like any other insert (`operation: insert`, `table: <signal_table_name>`). To keep them out of downstream processing, filter on the `table` metadata field:
+
+```yaml
+pipeline:
+  processors:
+    - mapping: |
+        root = if @table == "rpcn_signal_table" { deleted() } else { this }
+```
+
+**Supported signal types** are recognized from the row's `type` column; an unrecognized type is forwarded downstream but only logged as a warning. The `log` signal is currently recognized — its `data` must be a JSON object with a `message` key, whose value is written to the connector's log output. The recognized set may grow across releases; confirm it against the generated `postgres_cdc` reference (or `rpk connect create postgres_cdc`) rather than assuming this list is exhaustive.
+
+```sql
+INSERT INTO <schema>.<signal_table_name> (type, data)
+VALUES ('log', '{"message": "Signal message"}');
+```
+
 ## Enterprise Features for CDC Sink Topics
 
 `postgres_cdc` is itself a Redpanda Connect **Enterprise connector** (blocked after the 30-day trial without a license). Beyond the connector, the Redpanda topics that receive CDC events unlock additional **Enterprise** differentiators — each requires a valid license on the **cluster**:
