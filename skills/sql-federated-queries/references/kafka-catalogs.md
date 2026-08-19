@@ -104,6 +104,18 @@ WITH ( <option> = <value> [, ...] );
 | `output_schema_message_full_name` | String | — | For Protobuf: fully qualified message name (e.g., `com.example.Order`). Selects the top-level message when the descriptor has multiple messages. |
 | `confluent_wire_protocol` | String | `true` | `'true'` or `'false'`. Controls whether records have the 5-byte Confluent wire-format header (magic byte + 4-byte schema ID). Only meaningful with `schema_lookup_policy = 'LATEST'`. |
 
+All of the options above configure how the record **value** is decoded. The
+following options control how the record **key** and **header values** are
+decoded (both default to raw bytes, matching the historical behaviour):
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `key_decode_mode` | String | `binary` | How to decode the record key: `binary` (raw key bytes, exposed as `BYTEA`), `string` (key decoded as UTF-8 text; ill-formed bytes become U+FFFD, a NULL key stays NULL), `schema_latest` (decode with the latest registered key schema), or `schema_id_prefix` (decode per-record from the Confluent wire-format schema-ID prefix). |
+| `key_schema_subject` | String | — | Schema Registry subject for the key schema (used with the `schema_*` key modes). |
+| `key_confluent_wire_protocol` | String | `false` | `'true'` or `'false'`. Whether schema-decoded keys carry the 5-byte Confluent wire-format header. **Only valid when `key_decode_mode = 'schema_latest'`** (`schema_id_prefix` is always framed; other modes have a fixed format). Note the default is `false` for keys, unlike `confluent_wire_protocol` for values. |
+| `key_schema_message_full_name` | String | — | For Protobuf keys: fully qualified message name within the key schema. Absent selects the first message. Applies only to the `schema_*` key modes. |
+| `header_value_type` | String | `binary` | How to decode record header values: `binary` (opaque bytes, exposed as `BYTEA`) or `string` (decoded as UTF-8 text; ill-formed bytes become U+FFFD). |
+
 ### Examples
 
 ```sql
@@ -159,7 +171,10 @@ ALTER TABLE [IF EXISTS] [<schema>.]<catalog_name>=><table_name>
 WITH ( <option> = <value> [, ...] );
 ```
 
-Any option accepted by `CREATE TABLE ... WITH` can be altered. The options not
+Any option accepted by `CREATE TABLE ... WITH` can be altered, **except**
+`key_decode_mode` and `header_value_type` — both are fixed for the topic's
+lifetime and `ALTER` rejects a change to either (each decides the source's
+metadata shape at `REFRESH`, which `ALTER` does not re-run). The options not
 specified are preserved.
 
 ```sql
@@ -241,6 +256,14 @@ message metadata. It is not returned by `SELECT *` but can be accessed explicitl
 
 `headers` is an array of structs with two fields: `key` (TEXT) and `value` (BYTEA).
 Header keys are UTF-8 strings; header values are opaque bytes per the Kafka wire protocol.
+
+The `key` and header `value` fields follow the source's decode options: by
+default (`key_decode_mode = 'binary'`, `header_value_type = 'binary'`) the key
+is raw `BYTEA` and header values are `BYTEA`, as shown above. Setting
+`key_decode_mode = 'string'` exposes the key as decoded `TEXT`, the `schema_*`
+key modes expose it as the decoded struct/scalar of the key schema, and
+`header_value_type = 'string'` exposes header values as decoded `TEXT`. Match
+these options to how the producer wrote the topic.
 
 There is also a `redpanda_raw` column with only `key` (BYTEA) and `value` (BYTEA)
 for accessing the raw un-decoded message bytes.

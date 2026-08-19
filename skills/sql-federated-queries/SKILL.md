@@ -136,6 +136,13 @@ and `CREATE REDPANDA CATALOG` are accepted (synonyms).
 | `struct_mapping_policy` | No | `COMPOUND` | `COMPOUND` (nested struct) or `JSON` (collapse nested to SQL JSON) |
 | `output_schema_message_full_name` | No | — | Protobuf message full name (e.g. `com.example.Order`) |
 | `confluent_wire_protocol` | No | `true` | `true` or `false`; only for `LATEST` policy |
+| `key_decode_mode` | No | `binary` | Decode the record key: `binary`, `string`, `schema_latest`, or `schema_id_prefix` |
+| `key_schema_subject` | No | — | Schema Registry subject for the key schema (`schema_*` key modes) |
+| `key_confluent_wire_protocol` | No | `false` | `true`/`false`; only when `key_decode_mode = 'schema_latest'` |
+| `key_schema_message_full_name` | No | — | Protobuf key message full name (`schema_*` key modes) |
+| `header_value_type` | No | `binary` | Decode header values as `binary` (`BYTEA`) or `string` (`TEXT`) |
+
+`key_decode_mode` and `header_value_type` are fixed once set — `ALTER` rejects changing them (see `references/kafka-catalogs.md`).
 
 ### Querying
 
