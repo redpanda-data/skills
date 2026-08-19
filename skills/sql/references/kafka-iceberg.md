@@ -292,6 +292,18 @@ Grounded in `KafkaSourceOptions::k_option_definitions`
 | `error_handling_policy` | no | `FAIL` (default), `FILL_NULL`, `DROP_RECORD` | bad-record behavior |
 | `struct_mapping_policy` | no | `COMPOUND` (default), `JSON`, `FLATTEN`, `VARIANT` | only `JSON` and `COMPOUND` are accepted in the current version |
 | `confluent_wire_protocol` | no | `true`, `false` | **only valid when `schema_lookup_policy = 'LATEST'`** |
+| `key_decode_mode` | no | `binary` (default), `string`, `schema_latest`, `schema_id_prefix` | how to decode the record key: raw `BYTEA`, UTF-8 `TEXT`, latest key schema, or per-record schema-ID prefix |
+| `key_schema_subject` | no | string | Schema Registry subject for the key schema (`schema_*` key modes) |
+| `key_confluent_wire_protocol` | no | `true`, `false` (default `false`) | Confluent wire-format framing for schema-decoded keys; **only valid when `key_decode_mode = 'schema_latest'`** |
+| `key_schema_message_full_name` | no | string | Protobuf key message full name (`schema_*` key modes; absent selects the first message) |
+| `header_value_type` | no | `binary` (default), `string` | decode record header values as opaque `BYTEA` or UTF-8 `TEXT` |
+
+The value-side options (`schema_*`, `error_handling_policy`,
+`struct_mapping_policy`, `confluent_wire_protocol`) decode the record value; the
+`key_*` and `header_value_type` options decode the record key and header values.
+The decoded key and header values are exposed through the `redpanda` metadata
+struct (`(redpanda).key`, `(redpanda).headers`). Set them to match how the topic
+was written so the decoded key and header values are queryable with SQL.
 
 ### Re-bind / re-configure a topic table (`ALTER TABLE IF EXISTS ... WITH`)
 
@@ -306,6 +318,11 @@ ALTER TABLE IF EXISTS my_rp=>orders WITH (
     error_handling_policy = 'DROP_RECORD'
 );
 ```
+
+`key_decode_mode` and `header_value_type` are the exception: both are fixed for
+the topic's lifetime and `ALTER` rejects a change to either (each decides the
+source's metadata shape at `REFRESH`, which `ALTER` does not re-run). Drop and
+recreate the table to change them.
 
 ### Drop a topic table
 
