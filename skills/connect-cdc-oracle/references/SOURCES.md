@@ -45,6 +45,17 @@ docs paths on `redpanda-data/rp-connect-docs@main`.
 - **`enterprise-features.md` broker-side properties** (Iceberg, Schema ID Validation, Tiered Storage cluster/topic properties, license-expiry behavior) not pinned to exact `redpanda-data/docs` paths this pass. Broker config generated from `src/v/config/configuration.cc`; treat docs property partials + licensing overview as citation of record; verify exact paths before editing.
 - **`docs-data/overrides.json`** confirmed to exist; the specific `oracledb_cdc` override keys were not individually enumerated — grep when reconciling a field description.
 
+## Sync log
+
+- **Verified against Connect v4.106.0 (2026-08-21 sync).** No config fields changed in this release; a new Performance section was added to the connector's doc strings (`internal/impl/oracledb/input_oracledb_cdc.go`, rendered into `modules/components/pages/inputs/oracledb_cdc.adoc`) and it carries durable constraints the skill lacked:
+  - **Single synchronous LogMiner reader per pipeline** — throughput does not scale with CPU. Scale out by running multiple pipelines over disjoint `include` sets, each with its own reader.
+  - **Driver fetch size** — 25 rows per round trip by default, which makes large committed transactions appear minutes late while everything looks idle. Raise it with the `PREFETCH_ROWS` query parameter on `connection_string`.
+  - **Redo retention must cover idle periods** — the SCN checkpoint only advances on delivery, so an idle table set leaves the checkpoint stationary while logs age out, ending in repeated **ORA-01292** on resume. Alert on a stagnant checkpoint SCN.
+- **Backfilled in the same pass** (structural fields present in the generated reference but missing from the skill, from releases earlier than v4.106.0):
+  - `logminer.min_scn_window_size` (default `1000`) and `logminer.max_scn_window_size` (default `100000`) — with the adaptive-window behavior they imply: the window grows by `scn_window_size` per capped cycle with backlog and shrinks by the same step per caught-up cycle. `config-reference.md` previously described `scn_window_size` as a fixed window, which was wrong.
+  - `logminer.max_session_age` (default `0s`, added in v4.104.0) — forces a periodic LogMiner session restart independent of log switches, to bound the server-side PGA growth that ends in **ORA-04036** on databases with infrequent switches.
+  - `snapshot_filters` — per-table snapshot query overrides, with the hard requirement that every primary-key column be projected (a missing key column fails the snapshot after the first batch).
+
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim

@@ -177,6 +177,29 @@ snapshot_parallelism: 4
 snapshot_auto_bucket_sharding: true
 ```
 
+### AWS IAM authentication (Connect 4.106.0+)
+
+Atlas database users can be created with the **AWS IAM** authentication type, and
+`mongodb_cdc` can authenticate against them with the driver-native `MONGODB-AWS`
+mechanism instead of a password:
+
+```yaml
+url: "mongodb+srv://cluster0.abc123.mongodb.net/?retryWrites=true&w=majority"
+aws:
+  enabled: true
+```
+
+- TLS is required, and the Atlas user must have been created with the AWS IAM auth
+  type — not SCRAM.
+- Leave `username`/`password` empty and keep credentials out of the `url`: combining
+  either with `aws.enabled: true` is a startup error.
+- With no static keys or roles set, the ambient AWS credential chain (environment,
+  EC2 instance profile, EKS pod role) is used and refreshed automatically — the right
+  default for a long-running pipeline.
+- Role assumption is available (`aws.role` / `aws.roles`, with `aws.region` and
+  `aws.session_duration`) but a snapshot must finish inside one STS session; see
+  [Config Reference](config-reference.md#aws).
+
 ### Built-in Atlas roles
 
 | Atlas role | Sufficient for CDC? |

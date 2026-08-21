@@ -57,7 +57,7 @@ The connector works with any view type, but `NEW_AND_OLD_IMAGES` provides the mo
 DynamoDB Streams retain records for **exactly 24 hours**. If the connector is down for longer than this:
 
 - In `snapshot_and_cdc` mode, the connector detects stale checkpoints on restart by attempting to get a shard iterator at the checkpointed sequence number. If this fails, it re-runs the full snapshot automatically.
-- In `none` mode (CDC-only), stale shards are silently skipped; data written during the outage is permanently lost unless `start_from: trim_horizon` is set and the gap is under 24 hours.
+- In `none` mode (CDC-only), records that aged out of the 24-hour window are gone — no snapshot exists to recover them. Records still inside the window are not skipped: from Connect 4.106.0, any checkpoint-less shard seen after a restart is read from `trim_horizon` regardless of `start_from`, so a shard's retained backlog is always replayed. (Before 4.106.0, `start_from: latest` was applied to those shards too and their backlog was silently lost.)
 
 For longer retention (up to 1 year), enable Kinesis Data Streams for DynamoDB and use the `aws_kinesis` Connect input instead.
 

@@ -257,8 +257,14 @@ output:
 1. Connector records the current oplog tip.
 2. For each collection, reads all existing documents (operation = `"read"`),
    respecting `snapshot_parallelism`.
-3. Opens change stream starting just after the recorded tip. Events that
+3. As soon as the snapshot completes and every snapshot message is acknowledged,
+   the recorded position is checkpointed (bounded by `checkpoint_write_timeout`).
+   A restart from here resumes the stream instead of re-running the snapshot.
+4. Opens change stream starting just after the recorded tip. Events that
    arrived during snapshot are emitted from the live stream.
+
+A crash *during* the snapshot still costs a full re-snapshot — snapshot progress
+itself is not checkpointed, only its completion.
 
 ### Subsequent runs (token in cache)
 
@@ -274,19 +280,34 @@ may be up to `checkpoint_interval` (default 5s) behind the last acknowledged
 message. On restart, the connector replays those messages. Downstream must be
 idempotent or at-least-once tolerant.
 
-### Expired resume token
+### Expired / unresumable resume token
 
-If the oplog has been trimmed past the stored token, MongoDB returns an error
-when `ResumeAfter` is applied. The connector surfaces this as an error and
-stops. Recovery steps:
+If the oplog has been trimmed past the stored token (or the stream hits another
+non-resumable condition), the connector recovers on its own rather than retrying a
+dead position — the manual "delete the token and restart" dance is no longer the
+first response.
+
+**With `stream_snapshot: true`** it clears the checkpoint and re-runs the snapshot,
+which loses nothing. That path is bounded: after **3 consecutive recoveries** with no
+change-stream advance in between — the signature of a snapshot that takes longer than
+the oplog window — the connector keeps the checkpoint and fails on every reconnect
+with an actionable error rather than re-snapshotting forever. Fix the cause first
+(grow the oplog, shrink the snapshot, raise `snapshot_parallelism`), then:
 
 ```bash
-# 1. Delete the stale token from Redis
+# Restart to resume recovery; or clear the checkpoint explicitly
 redis-cli DEL mydb_cdc_checkpoint
-
-# 2. Restart the pipeline with stream_snapshot=true in the config
 rpk connect run mongodb-cdc-production.yaml
 ```
+
+**With `stream_snapshot: false`** there is no snapshot to re-run, so recovery would
+have to skip the changes between the lost position and now. That is gated behind
+`on_unresumable_position`:
+
+| Value | Behavior |
+|---|---|
+| `fail` (default) | Error on every reconnect, checkpoint preserved for inspection. No data is skipped. |
+| `reset` | Clear the checkpoint and stream from the current oplog position — **skips the gap**. |
 
 ---
 

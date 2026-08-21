@@ -35,6 +35,13 @@ Connector version at verification: page shows `:status: beta`, "Introduced in ve
 - **Per-field defaults** (`checkpoint_limit: 1024`, `snapshot_max_batch_size: 1000`, `max_parallel_snapshot_tables: 1`, `stream_backoff_interval: 5s`, `auto_replay_nacks: true`, `stream_snapshot: false`, `checkpoint_cache_table_name: rpcn.CdcCheckpointCache`, `checkpoint_cache_key: microsoft_sql_server_cdc`) matched the generated partial as of verification — re-confirm each sync.
 - **Checkpoint internals** (stored-proc-first ordering, `cache_key varchar(7)`, `cache_val varchar(100)`, fixed `max_lsn` key ignoring `checkpoint_cache_key` for the built-in cache): re-verify against `checkpoint_cache.go`.
 
+## Sync log
+
+- **Verified against Connect v4.106.0 (2026-08-21 sync).** No config fields changed; the connector's own doc strings did, and they carry durable behavior the skill had wrong or missing. Source: `internal/impl/mssqlserver/input_mssqlserver_cdc.go`, rendered into `modules/components/pages/inputs/microsoft_sql_server_cdc.adoc`:
+  - **`stream_snapshot: false` corrected.** It does *not* start from the current LSN: with no snapshot and no checkpoint, streaming begins at the start of each table's existing change table, replaying everything the CDC capture and cleanup jobs still retain (three days by default). The documented way to start from the present is to disable and re-enable CDC on the table immediately before starting the pipeline.
+  - **`stream_backoff_interval` semantics + tuning direction corrected.** Each pass drains up to the max LSN observed as the pass began, then sleeps the full interval. On high-traffic tables the default `5s` directly costs throughput; upstream now suggests lowering toward `500ms` there. The skill previously called `5s` "good for high-traffic tables" — that was backwards.
+  - **New Performance section** (capture job as the shared upstream ceiling, inherently bursty delivery, storage bandwidth rather than CPU as the practical limit) and the operational rules: `TRUNCATE TABLE` rejected on a CDC-enabled table; AWS RDS requires `msdb.dbo.rds_cdc_enable_db` because `sys.sp_cdc_enable_db` needs sysadmin; a stopped `cdc.<database>_capture` job silently starves the input with no error.
+
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For any config field type/default, treat the auto-generated fields partial in rp-connect-docs as authoritative and regenerate rather than hand-editing. Verify Go behavior against the current released `redpanda-data/connect`, and treat all SQL Server / Azure setup as external Microsoft documentation.

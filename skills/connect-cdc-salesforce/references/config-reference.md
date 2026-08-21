@@ -263,6 +263,12 @@ Maximum delay for gRPC reconnection backoff.
 
 Maximum number of gRPC reconnection attempts. `0` means unlimited.
 
+Since Connect 4.106.0 this budget **also** governs transient schema-fetch failures: an event whose schema fetch keeps failing at the same replay position is retried this many times — by reconnect-and-redeliver, or inline before the first event is delivered — before the topic fails permanently.
+
+Deterministic schema failures (missing, inaccessible, or non-compiling schema) and payloads that repeatedly fail to decode give up after a small fixed number of attempts regardless of this setting, since retrying cannot change the outcome; the exact bound lives in the connector source and is not a config surface. Terminal verdicts surface on the health check rather than retrying forever, and are never treated as a stale `replay_id` even when wrapped in a gRPC `INVALID_ARGUMENT`, so the checkpoint is preserved instead of resubscribing from `replay_preset` and skipping the gap.
+
+Under the default `0` (unlimited), transient schema-fetch retries are correspondingly unbounded — set a finite value if you want a topic to fail fast instead.
+
 ### `grpc.shutdown_timeout`
 
 **Type**: `duration` | **Default**: `"10s"`
@@ -273,7 +279,7 @@ Timeout for graceful gRPC client shutdown on pipeline close.
 
 **Type**: `int` | **Default**: `1000`
 
-Size of the internal gRPC event receive buffer (per subscription). Larger buffers smooth over receive bursts but use more memory.
+Size of the internal gRPC event receive buffer (per subscription). Larger buffers smooth over receive bursts but use more memory. From Connect 4.106.0, a full buffer applies backpressure rather than dropping events, so this bounds memory rather than trading events for it.
 
 ```yaml
 grpc:

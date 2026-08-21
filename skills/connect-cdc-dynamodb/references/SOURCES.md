@@ -37,6 +37,25 @@ Read both via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `g
 - **Enterprise Redpanda topic/cluster properties** (`redpanda.iceberg.*`, `redpanda.remote.*`, `iceberg_enabled`, `cloud_storage_enabled`, etc.) live in `redpanda-data/docs` auto-generated property partials, upstreamed from `src/v/config/configuration.cc` — out of the connect/rp-connect-docs scope; verify there.
 - **`rpk shadow` command family** in `enterprise-redpanda-features.md` belongs to rpk/redpanda source — cross-check the `rpk` skill's SOURCES map, not this connector.
 
+## Sync log
+
+- **Verified against Connect v4.106.0 (2026-08-21 sync).** Sources for this release's changes:
+  - `internal/impl/aws/dynamodb/input_cdc.go` — `service.NewAutoRetryNacksToggleField()` + `service.AutoRetryNacksBatchedToggled` (the new `auto_replay_nacks` field, default `true`); the `honorStartFrom atomic.Bool` on both the single-table and multi-table (`tableStream`) paths and the `checkpointer.HasAnyState` probe in `connectSingleTable`, which together implement "`start_from` applies only to a genuinely fresh pipeline; later-discovered and checkpoint-less shards always start at `TRIM_HORIZON`".
+  - `internal/impl/aws/dynamodb/snapshot_ack.go` (new) + `snapshot.go`, `checkpoint.go` — snapshot checkpoint persistence gated on downstream acknowledgment, so a rejected snapshot batch is redelivered rather than skipped.
+- **Backfilled from v4.101.0 in the same pass:** `checkpoint_namespace` was absent from the skill. Added because the new `start_from` wording is defined relative to it ("no checkpoint state under this `checkpoint_namespace`"). Grounded in the generated page's `checkpoint_namespace` field and Checkpointing section (isolates, does not coordinate; must not contain `#`).
+
+## TODO — unresolved contradiction (flagged, not guessed)
+
+- **`auto_replay_nacks: false` on the CDC shard path: does a nack pin or advance the shard checkpoint?** Two upstream statements disagree at v4.106.0:
+  - the v4.106.0 release notes say nacks **advance** checkpoints when `auto_replay_nacks` is disabled, and the snapshot ack function in `internal/impl/aws/dynamodb/input_cdc.go` matches that (the ack error is deliberately ignored so "the segment's checkpoint must advance past them rather than pin the tracker");
+  - the comment at the input's registration in the same file says that with the toggle off "a nack **pins** the shard's checkpoint frontier and redelivery happens on restart".
+  These may describe genuinely different paths (snapshot vs CDC shard) or one comment may be stale. The skill asserts only the snapshot behavior and names the conflict for the CDC path. **Needs Connect-team confirmation** — do not resolve it by picking the more plausible reading.
+
+## Known gaps (not yet documented — for a future sync)
+
+- **`global_table` / `global_table_replicas`** (multi-region checkpoint replication as a DynamoDB Global Table v2, including the reconcile-vs-fail-fast behavior on a pre-existing non-global table and the extra IAM actions required) are in the generated reference but absent from this skill.
+- **`dynamodb_cdc_failover_skipped`** metric and the **`dynamodb_approximate_creation_time`** metadata field are likewise undocumented here.
+
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For any field/default/enum fact, read the generated `partial$fields/inputs/aws_dynamodb_cdc.adoc` + `docs-data/overrides.json` rather than trusting the transcribed table. Verify Go behavior against `internal/impl/aws/dynamodb/*.go` at the current release tag. Enterprise cluster/topic properties and `rpk` commands are external — cite their own repos.

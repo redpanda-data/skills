@@ -109,7 +109,7 @@ rpk topic consume mongo.cdc.orders --num 5 --brokers localhost:9092
 
 ### Change Streams and Resume Tokens
 
-`mongodb_cdc` opens a MongoDB Change Stream over the target database, filtered to the configured collections. MongoDB tracks position via an opaque **resume token** (not an integer offset). The connector stores the latest acknowledged token in the configured cache resource every `checkpoint_interval` (default `5s`), and also writes one final token on clean shutdown.
+`mongodb_cdc` opens a MongoDB Change Stream over the target database, filtered to the configured collections. MongoDB tracks position via an opaque **resume token** (not an integer offset). The connector stores the latest acknowledged token in the configured cache resource every `checkpoint_interval` (default `5s`), writes one final token on clean shutdown, and — as of Connect 4.106.0 — writes a checkpoint as soon as the initial snapshot completes and is fully acknowledged, so a restart after the snapshot resumes the stream instead of re-snapshotting.
 
 On startup, if no cached token is found, the connector:
 1. Records the current oplog position.
@@ -149,6 +149,31 @@ The connector uses a two-tier strategy to populate the `schema` metadata:
 The schema is re-inferred when the top-level field set of a document changes. Type changes within existing fields and nested subdocument structural changes are not auto-detected — restart to force a full schema refresh.
 
 **Recommendation**: for schema-registry targets with compatibility modes, configure a `$jsonSchema` validator on each watched collection to stabilize the schema.
+
+### AWS IAM Authentication (MongoDB Atlas)
+
+Since Connect 4.106.0, `mongodb_cdc` (and the `mongodb` input, output, processor and cache) can authenticate with the driver-native **`MONGODB-AWS`** mechanism instead of a static username and password, via an `aws` config block:
+
+```yaml
+input:
+  mongodb_cdc:
+    url: "mongodb+srv://cluster0.abc123.mongodb.net/"
+    database: mydb
+    aws:
+      enabled: true          # default false
+    collections: [orders]
+    checkpoint_cache: mongo_checkpoint
+```
+
+Rules that matter when choosing this path:
+
+- The Atlas database user must be created with the **AWS IAM** authentication type, and connections require TLS.
+- `aws.enabled: true` is mutually exclusive with `username`/`password` **and** with credentials embedded in `url` — either combination is a startup error.
+- With no static keys or roles configured, the **ambient AWS credential chain** (environment variables, EC2 instance profile, EKS pod role) is used and expiring credentials are refreshed automatically. Prefer this for long-running pipelines.
+- Role assumption (`aws.role`, `aws.roles`, or session tokens) is **rejected for the `mongodb` processor and cache**, which establish their client once at creation and cannot refresh expiring session credentials. Use the ambient chain or long-lived access keys there.
+- With role assumption on `mongodb_cdc`, credentials are re-resolved after the initial snapshot completes, so streaming starts with a full session — but the snapshot itself must finish inside one session, because snapshot progress is not checkpointed. For very large snapshots, prefer the ambient chain.
+
+Per-field detail (`region`, `session_duration`, `id`/`secret`/`token`, `role`/`role_external_id`, `roles[]`) is in [Config Reference](references/config-reference.md) and the generated connector reference.
 
 ### Snapshot Phase
 
@@ -200,11 +225,24 @@ This requires **MongoDB 6.0+** — `changeStreamPreAndPostImages` was introduced
 
 ### Oplog Window
 
-The resume token references a position in the oplog. If the pipeline is stopped for longer than the oplog retention window (default 24 hours on Atlas; configurable with `--oplogMinRetentionHours` on self-managed clusters), the token becomes invalid and the connector will error. In this case, delete the cached token and restart with `stream_snapshot: true` to re-snapshot.
+The resume token references a position in the oplog. If the pipeline falls behind or is stopped for longer than the oplog retention window (default 24 hours on Atlas; configurable with `--oplogMinRetentionHours` on self-managed clusters), MongoDB can no longer resume from the stored token. Size the oplog so the window comfortably exceeds the longest expected lag or downtime under peak write load.
+
+### Unresumable Position Recovery
+
+When a stored position can no longer be resumed from (aged out of the oplog, or another non-resumable change-stream condition), the connector no longer just errors out — it recovers rather than retrying a dead position:
+
+- **With `stream_snapshot: true`** — it clears the checkpoint and re-runs the snapshot, which loses nothing. A breaker bounds this: after 3 consecutive recoveries with no change-stream advance in between (usually a snapshot that takes longer than the oplog window), it keeps the checkpoint and fails on every reconnect with an actionable error instead of re-snapshotting forever. Fix the underlying cause — grow the oplog, speed the snapshot up — then restart the pipeline (or delete the checkpoint cache entry) to resume recovery.
+- **With `stream_snapshot: false`** — there is no snapshot to re-run, so recovery would mean skipping the changes between the lost position and now. The connector refuses to do that silently: `on_unresumable_position` (default `fail`) preserves the checkpoint and errors on every reconnect; skipping the gap must be opted into with `on_unresumable_position: reset`.
+
+`checkpoint_write_timeout` (default `10s`, advanced) bounds the two checkpoint writes that run outside the read loop — storing the position a completed snapshot reached, and clearing an unresumable one — so a slow cache cannot extend shutdown indefinitely. Raise it for slow remote caches (`redis`, `dynamodb`), where losing the post-snapshot write costs a full re-snapshot on the next start.
 
 ### Restart Behavior
 
-On restart with a valid cached token, the connector immediately opens the change stream at the stored position — no snapshot is performed regardless of `stream_snapshot` setting. The snapshot only runs when no cached token exists.
+On restart with a valid cached token, the connector immediately opens the change stream at the stored position — no snapshot is performed regardless of the `stream_snapshot` setting. The snapshot only runs when no checkpoint exists; because the completed snapshot's position is now checkpointed once fully acknowledged, a restart after a finished snapshot resumes the stream rather than snapshotting again.
+
+### Scaling
+
+All configured collections are consumed through a **single database-level change stream** — the collection list is a server-side filter on that one stream, not a set of independent streams. A change stream is one totally-ordered cursor over the replica set's oplog, so throughput does not grow with more collections, and the input does not use CPU beyond roughly two cores. This is a property of MongoDB change streams, not of the connector. To scale past that ceiling, shard the cluster: a change stream against a sharded cluster merges parallel per-shard cursors server-side.
 
 ### Atlas / Restricted Environments
 

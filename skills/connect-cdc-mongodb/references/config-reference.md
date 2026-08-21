@@ -23,6 +23,18 @@ input:
     password: ""                       # default "" (secret)
     app_name: "benthos"                # default "benthos" (advanced)
 
+    # --- AWS IAM auth (MONGODB-AWS), advanced; alternative to username/password ---
+    aws:
+      enabled: false                   # default
+      region: ""                       # optional, no default
+      session_duration: "1h"           # default
+      id: ""                           # optional, no default
+      secret: ""                       # optional, no default (secret)
+      token: ""                        # optional, no default
+      role: ""                         # optional, no default
+      role_external_id: ""             # optional, no default
+      roles: []                        # optional, no default
+
     # --- Collections ---
     collections: []                    # required; at least one entry
 
@@ -31,6 +43,8 @@ input:
     checkpoint_key: "mongodb_cdc_checkpoint"  # default
     checkpoint_interval: "5s"         # default
     checkpoint_limit: 1000            # default
+    checkpoint_write_timeout: "10s"   # default (advanced)
+    on_unresumable_position: "fail"   # default (advanced); fail | reset
 
     # --- Streaming ---
     read_batch_size: 1000             # default
@@ -114,6 +128,50 @@ The MongoDB client application name sent in the `hello` handshake. Visible in
 
 ---
 
+### `aws`
+
+**Type**: `object` | **Required**: no | **Advanced** | **Requires Connect 4.106.0+**
+
+AWS IAM authentication using the driver-native **`MONGODB-AWS`** mechanism, for
+example against MongoDB Atlas. When enabled, IAM credentials are used instead of a
+static username and password. Shared by the `mongodb` input, output, processor and
+cache as well as `mongodb_cdc`.
+
+Mutual exclusions (both are startup errors):
+
+- `aws.enabled: true` with a non-empty `username`/`password`.
+- `aws.enabled: true` with credentials embedded in the `url` userinfo.
+
+| Sub-field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Turns on `MONGODB-AWS`. The Atlas database user must be created with the AWS IAM auth type, and connections require TLS. |
+| `region` | `string` | none | Region used for STS calls. **Only** read when `role`/`roles` are set; the ambient and static-key paths ignore it. Falls back to the environment default. |
+| `session_duration` | `string` (duration) | `"1h"` | STS session length requested when assuming roles. AWS requires ≥ 15 minutes and caps role-chained sessions at 1 hour. Only used with `role`/`roles`. |
+| `id` | `string` | none | Static access key ID. |
+| `secret` | `string` (secret) | none | Static secret key. |
+| `token` | `string` | none | Session token; required with short-term credentials. |
+| `role` | `string` | none | Role ARN to assume. Cannot be combined with `roles`. |
+| `role_external_id` | `string` | none | External ID for the `role` assumption. |
+| `roles` | `array of object` | none | Role chain (`roles[].role`, `roles[].role_external_id`) for e.g. cross-account access. Cannot be combined with `role`. |
+
+Credential-lifetime rules:
+
+- With **no** static credentials and **no** roles, the ambient AWS credential chain
+  (environment, EC2 instance profile, EKS pod role) is used and the driver refreshes
+  expiring credentials automatically. Prefer this for long-running pipelines.
+- Role-derived session credentials are resolved when the component connects and
+  re-resolved on every reconnect.
+- **The `mongodb` processor and cache reject `role`, `roles` and session tokens**:
+  they build their client once at creation and have no refresh path. Use the ambient
+  chain or long-lived access keys with those components.
+- On `mongodb_cdc` with role assumption, credentials are re-resolved once the initial
+  snapshot completes, so the streaming phase starts on a full session. The snapshot
+  itself must complete within a single session: snapshot progress is not checkpointed,
+  so a mid-snapshot credential expiry restarts the snapshot from scratch after
+  reconnecting. For very large snapshots, prefer the ambient chain.
+
+---
+
 ### `collections`
 
 **Type**: `array of string` | **Required**: yes | **Default**: none
@@ -192,7 +250,47 @@ Set to `"0s"` to write the token synchronously on every acknowledged batch
 Maximum number of in-flight (unacknowledged) messages before the connector
 pauses reading from the change stream. This bounds memory usage. When all
 `checkpoint_limit` slots are occupied, the connector blocks until downstream
-acknowledges some messages.
+acknowledges some messages. Raising it enables more parallel processing and
+batching at the output level; the stream's resume position is only checkpointed
+once every message before it has been delivered, which is what preserves the
+at-least-once guarantee.
+
+---
+
+### `checkpoint_write_timeout`
+
+**Type**: `string` (duration) | **Required**: no | **Default**: `"10s"` | **Advanced** | **Requires Connect 4.106.0+**
+
+Bounds the two checkpoint writes that run on a context detached from the read
+loop — storing the position a completed snapshot reached, and clearing a position
+that can no longer be resumed from — so a shutdown racing either write is not
+extended indefinitely by a slow cache.
+
+Raise this for slow remote caches (`redis`, `dynamodb`): losing the post-snapshot
+write costs a full re-snapshot on the next start. A non-positive value is rejected
+at startup (it would mean "already expired", silently dropping both writes).
+
+---
+
+### `on_unresumable_position`
+
+**Type**: `string` enum | **Required**: no | **Default**: `"fail"` | **Options**: `fail`, `reset` | **Advanced** | **Requires Connect 4.106.0+**
+
+What to do when the stored stream position can no longer be resumed from (for
+example it has aged out of the oplog) **and `stream_snapshot` is disabled**, so
+there is no snapshot to recover with:
+
+- `fail` (default) — stop the input with an error, preserving the checkpoint for
+  inspection.
+- `reset` — clear the checkpoint and restart streaming from the current oplog
+  position, **skipping the changes between the lost position and now**. This is the
+  lossy option and must be opted into explicitly.
+
+When `stream_snapshot` is enabled this field has no effect: recovery re-runs the
+snapshot, which loses nothing. That re-snapshot path is bounded by a breaker — after
+3 consecutive recoveries without the change stream advancing in between, the
+connector keeps the checkpoint and fails on every reconnect instead of
+re-snapshotting forever.
 
 ---
 

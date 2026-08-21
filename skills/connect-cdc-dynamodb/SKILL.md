@@ -219,7 +219,9 @@ output:
 ## Operational Notes
 
 - **Stream retention:** DynamoDB Streams retain records for 24 hours. If the connector is down longer than that, it re-runs a snapshot on next start (in `snapshot_and_cdc` mode).
-- **Checkpoint table:** Created automatically with pay-per-request billing. Uses `(StreamArn, ShardID)` as the primary key.
+- **Checkpoint table:** Created automatically with pay-per-request billing. Uses `(StreamArn, ShardID)` as the primary key. Give each pipeline sharing one table a distinct `checkpoint_namespace`; namespaces isolate positions but do not coordinate consumers, so two pipelines in the *same* namespace still overwrite each other.
+- **`start_from` applies to a fresh pipeline only:** `latest` is honoured on the first shard discovery when no checkpoint state exists under the namespace. Once state exists, later-discovered and checkpoint-less shards (rotation children, shards seen after a restart) always start at `trim_horizon` so their backlog is never skipped — at-least-once wins over the configured start position.
+- **Delivery on rejection (`auto_replay_nacks`, new in 4.106.0, default `true`):** rejected messages are retried in-process, so a transient downstream failure needs no restart to recover. Setting it to `false` **deletes** rejected messages — an explicit opt-in to dropping data, not a tuning knob. Snapshot checkpoints are persisted only after a batch and everything before it is acked, so under the default a rejected snapshot batch is redelivered rather than skipped.
 - **Kinesis alternative:** For up to 1-year retention, enable Kinesis Data Streams for DynamoDB and use the `aws_kinesis` input instead.
 - **License and tier:** `aws_dynamodb_cdc` is an **enterprise**-tier connector whose source is an Enterprise-licensed file under the Redpanda Community License. Unlike the other enterprise `*_cdc` inputs, its source currently enforces no runtime Enterprise license gate (it is registered as Stable) — but treat it as enterprise-tier, since that classification (not the currently-absent gate) is authoritative.
 
