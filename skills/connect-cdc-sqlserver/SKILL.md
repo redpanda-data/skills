@@ -120,7 +120,7 @@ All fields are under `input.microsoft_sql_server_cdc`.
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
 | `connection_string` | string | — | yes | ADO.NET / go-mssqldb DSN. Format: `sqlserver://user:pass@host/instance?database=DB` |
-| `stream_snapshot` | bool | `false` | no | When `true`, snapshot all existing rows before streaming changes |
+| `stream_snapshot` | bool | `false` | no | When `true`, snapshot all existing rows before streaming changes. When `false`, streaming still starts at the beginning of each retained change table, not at the current LSN |
 | `max_parallel_snapshot_tables` | int | `1` | no | Number of tables snapshotted concurrently |
 | `snapshot_max_batch_size` | int | `1000` | no | Max rows per batch during snapshot |
 | `include` | array of strings | — | yes | **Unanchored** regular expressions matched against `schema.tablename`. Use `^...$` to match exactly one table (e.g. `^dbo\.orders$`); without anchors, `dbo\.orders` also matches `dbo.orders_archive`. |
@@ -130,7 +130,7 @@ All fields are under `input.microsoft_sql_server_cdc`.
 | `checkpoint_cache_connection_string` | string | — | no | Optional separate DSN for the checkpoint cache table (useful when writing checkpoints to a read replica or separate DB) |
 | `checkpoint_cache_key` | string | `microsoft_sql_server_cdc` | no | Cache key used only with an **external** `checkpoint_cache` resource. Ignored by the built-in SQL Server cache (which always uses the fixed key `max_lsn`). |
 | `checkpoint_limit` | int | `1024` | no | Max in-flight messages. Higher values allow more output parallelism; LSN is not committed until all messages under it are acked |
-| `stream_backoff_interval` | duration | `5s` | no | How long to wait between change-table polls when no new data is found |
+| `stream_backoff_interval` | duration | `5s` | no | Wait between change-table passes. Costs throughput on high-traffic tables — consider `500ms` there |
 | `auto_replay_nacks` | bool | `true` | no | Automatically replay rejected messages. Set `false` to drop nacked messages and improve memory efficiency on high-throughput pipelines |
 | `batching` | object | — | no | Batching policy: `count`, `byte_size`, `period`, `check`, `processors`. If all fields are zero/unset (a no-op policy), the input defaults to `count: 1` (one message per batch). Set `count` or `period` to actually batch. |
 
@@ -194,6 +194,23 @@ When `stream_snapshot: true` and no prior LSN checkpoint exists, the pipeline:
 5. Begins streaming from that LSN in the change tables.
 
 If a checkpoint already exists (restart), the snapshot phase is skipped regardless of `stream_snapshot`.
+
+**`stream_snapshot: false` is not "start from now."** With no snapshot and no checkpoint, the first run starts at the beginning of each table's existing **change table** — every change SQL Server's CDC capture and cleanup jobs still retain (three days by default) is replayed. To truly start from the present on a table that already holds change history, disable and re-enable CDC on that table immediately before starting the pipeline so its change table starts empty.
+
+## Performance and Throughput
+
+This input does **not** read the transaction log directly. SQL Server's CDC capture job scans the log asynchronously and publishes rows into per-table change tables, which this input polls. Consequences worth designing around:
+
+- **The capture job is the ceiling**, shared by every CDC consumer on that database. Tuning the pipeline cannot exceed it.
+- **Delivery is inherently bursty.** Short idle periods followed by large batches are normal under heavy write load — that is the capture job's publication cadence, not a fault in the input.
+- **Storage bandwidth, not CPU, is usually the limit.** CDC multiplies physical write volume several times over (base table, transaction log, change tables, checkpoints). The input itself needs very little CPU to keep pace with the capture job.
+- **`stream_backoff_interval` (default `5s`) costs throughput on busy tables**, since the input idles for the full interval between passes. Lower it toward `500ms` for high-traffic tables; raise it for low-traffic ones to cut query load.
+
+Operational rules:
+
+- `TRUNCATE TABLE` is **rejected** on a CDC-enabled table. To clear one: disable CDC on the table, truncate, re-enable.
+- On **AWS RDS**, enable CDC with `msdb.dbo.rds_cdc_enable_db` — `sys.sp_cdc_enable_db` requires sysadmin, which RDS does not grant.
+- **Never stop the CDC capture job** (`cdc.<database>_capture`). While it is stopped, nothing is published to the change tables, so this input reads nothing **and reports no error** — a silent stall, not a visible failure.
 
 ## Checkpointing
 

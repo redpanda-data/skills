@@ -28,6 +28,15 @@ The `salesforce_cdc` input is Go source in the **public** repo `redpanda-data/co
 - **`salesforce_cdc` is versioned** ("Introduced in 4.90.3", stable). Verify field defaults against the current stable Connect release, not `main`.
 - Broker enterprise property values in `redpanda-enterprise-sink.md` (Cloud Topics `rpk`/version gates, `redpanda.storage.mode` "introduced in v26.1.1") not re-verified against `cloud-topics.adoc`/`configuration.cc` line-by-line.
 
+## Sync log
+
+- **Verified against Connect v4.106.0 (2026-08-21 sync).** Sources for this release's changes:
+  - `internal/impl/salesforce/config.go` — the `grpc.reconnect_max_attempts` description now states that the budget also governs **transient** schema-fetch retries, and that deterministic schema failures (missing / inaccessible / non-compiling) and repeatedly-undecodable payloads give up after a small fixed number of attempts regardless of the setting.
+  - `internal/impl/salesforce/input_salesforce_cdc.go` — `handleStreamErr` now returns early on `salesforcegrpc.TerminalStreamError`, so a terminal verdict is never treated as a stale `replay_id` even when wrapped in a gRPC `InvalidArgument`; this is what prevents a resubscribe-from-preset that would silently skip the gap.
+  - `internal/impl/salesforce/salesforcegrpc/subscription.go` — full-buffer backpressure instead of event drops; schema/decode failure reconnects that do not lose batches; the terminal-verdict classification surfaced to the health check.
+- **Deliberately not documented:** the exact fixed attempt bound for deterministic schema/decode failures. It lives in the connector source, is not a config surface, and would be a volatile specific in the skill. The skill says "a small fixed number of attempts" and points at the behavior instead.
+- **Not restated as a Salesforce-specific rule:** the ack functions in `emitSnapshot`/`flushTopic` deliberately ignore ack errors so the checkpoint advances past messages dropped when `auto_replay_nacks` is disabled. That is the framework-wide opt-in-to-drop contract, already covered by the `auto_replay_nacks` entry in `config-reference.md`.
+
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For connector fields, treat the generated rp-connect-docs partial + `docs-data/overrides.json` as authoritative and re-derive rather than hand-edit. For Salesforce-side setup, verify against Salesforce's own documentation. Verify against the current stable release tags of `redpanda-data/connect` and `redpanda-data/redpanda` before writing any new fact.

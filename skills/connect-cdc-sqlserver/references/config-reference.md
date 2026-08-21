@@ -88,6 +88,14 @@ If a checkpoint already exists in the cache (pipeline restart), the snapshot
 is **skipped** regardless of this setting, and streaming resumes from the
 saved LSN.
 
+**`false` does not mean "start from now."** With no snapshot and no checkpoint,
+the first run begins at the start of each table's existing **change table** — every
+change still retained by SQL Server's CDC capture and cleanup jobs (three days by
+default) is replayed, not just changes from the current LSN onward. To genuinely
+begin from the present on a table that already holds change history, disable and
+re-enable CDC on that table immediately before starting the pipeline, so its change
+table starts empty.
+
 ```yaml
 stream_snapshot: true
 ```
@@ -330,14 +338,23 @@ checkpoint_limit: 256    # lower memory usage
 - **Required:** no
 - **Default:** `5s`
 
-How long the connector waits before re-polling the change tables after
-exhausting all available changes. Reducing this decreases latency; increasing
-it reduces SQL Server load for low-traffic tables.
+How long the connector waits before re-polling the change tables after a pass
+completes. Each pass drains changes up to the maximum LSN observed as the pass
+began, then sleeps for this interval while SQL Server's capture job keeps
+publishing.
+
+The trade-off is asymmetric, and the default is **not** tuned for busy tables:
+
+- On **low-traffic** tables, raising it reduces query load on the server.
+- On **high-traffic** tables, it directly reduces throughput — the input sits
+  idle for the full interval between passes. Consider lowering it toward
+  `500ms`, which matches the default poll interval of comparable CDC systems.
 
 ```yaml
-stream_backoff_interval: 5s   # default — good for high-traffic tables
-stream_backoff_interval: 30s  # lower SQL Server load for infrequent tables
-stream_backoff_interval: 1m   # minimal polling for near-static tables
+stream_backoff_interval: 500ms # high-traffic tables — minimise idle time between passes
+stream_backoff_interval: 5s    # default
+stream_backoff_interval: 30s   # lower SQL Server load for infrequent tables
+stream_backoff_interval: 1m    # minimal polling for near-static tables
 ```
 
 ---

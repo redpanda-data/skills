@@ -51,6 +51,15 @@ they belong to other skills' domains and are cited here only as pairing context.
 - **Cache resource fields** cited in `pipeline-and-output.md` come from the respective cache component sources/pages — not verified this session.
 - **Individual defaults/enums** in `config-reference.md` (e.g. `app_name: "benthos"`, `checkpoint_limit: 1000`, `read_max_wait: 1s`, `document_mode`/`json_marshal_mode` enums, `snapshot_parallelism >= 1` lint) not each line-verified against `cdc/input.go` this session.
 
+## Sync log
+
+- **Verified against Connect v4.106.0 (2026-08-21 sync).** New sources for this release:
+  - `internal/impl/mongodb/common.go` — `AWSIAMAuthField()` (the shared `aws` block spec: `enabled`, `region`, `session_duration`, `id`/`secret`/`token`, `role`/`role_external_id`, `roles[]`), plus the startup errors rejecting `username`/`password` and url-embedded credentials when `aws.enabled` is true, and the note that the processor and cache reject role/session credentials (no refresh path).
+  - `internal/impl/mongodb/aws/aws.go` — the `MONGODB-AWS` credential builder; registered in `public/components/aws/package.go`.
+  - `internal/impl/mongodb/cdc/input.go` — `checkpoint_write_timeout` (`defaultCheckpointWriteTimeout = 10 * time.Second`, rejected when ≤ 0) and `on_unresumable_position` (`fail`/`reset`, default `fail`); the post-snapshot checkpoint write; the token-epoch guard that discards late acks from a superseded checkpoint generation; and `maxConsecutiveUnresumableRecoveries = 3`, the breaker behind the "3 consecutive recoveries" claim in `SKILL.md` and `pipeline-and-output.md`.
+  - Generated page `modules/components/pages/inputs/mongodb_cdc.adoc` — the new `Scaling` section (single database-level change stream; ~2-core ceiling; shard to scale) sourced the `SKILL.md` Scaling section.
+- The per-sub-field `aws` table in `config-reference.md` is a convenience transcription; the generated page plus `docs-data/overrides.json` remain the field-list source of record.
+
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm

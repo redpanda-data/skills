@@ -20,6 +20,7 @@ input:
 
     # --- Checkpointing ---
     checkpoint_table: redpanda_dynamodb_checkpoints
+    checkpoint_namespace: ""             # isolate pipelines sharing one checkpoint table
     checkpoint_limit: 1000
 
     # --- Stream polling ---
@@ -27,6 +28,7 @@ input:
     poll_interval: 1s                    # wait between polls when no records available
     start_from: trim_horizon             # trim_horizon | latest
     max_tracked_shards: 10000
+    auto_replay_nacks: true
     throttle_backoff: 100ms
 
     # --- Snapshot ---
@@ -167,6 +169,21 @@ Snapshot progress is also stored in this table using `ShardID` values like `snap
 
 ---
 
+### `checkpoint_namespace`
+
+| Attribute | Value |
+|---|---|
+| Type | `string` |
+| Default | `""` |
+| Available | Connect 4.101.0+ |
+
+An optional namespace that lets multiple independent pipelines share one `checkpoint_table` without overwriting each other's positions — for example one namespace per developer or per environment. Must not contain `#`.
+
+- Checkpoints written under one namespace are **invisible** to a pipeline using a different namespace (or none), so changing or clearing this value makes the pipeline fresh and it restarts from `start_from`.
+- Namespaces **isolate**, they do not **coordinate**: two pipelines sharing the *same* namespace still overwrite each other's checkpoints. There is no consumer-group-style partition assignment here.
+
+---
+
 ### `checkpoint_limit`
 
 | Attribute | Value |
@@ -211,12 +228,16 @@ Time to wait between polling attempts when a `GetRecords` call returns zero reco
 | Default | `"trim_horizon"` |
 | Options | `trim_horizon`, `latest` |
 
-Where to begin reading on a shard that has no existing checkpoint.
+Where to begin reading on a **genuinely fresh** pipeline — one with no checkpoint state at all under this `checkpoint_namespace` for the stream.
 
 - `trim_horizon` — start from the oldest available record in the stream (up to 24 hours back).
 - `latest` — start from records written after the connector starts; existing stream data is skipped.
 
 Once a checkpoint exists (from a previous run), `start_from` is ignored for that shard — reading resumes from the checkpointed sequence number.
+
+**`latest` is honoured only on that very first shard discovery.** Once any checkpoint state exists, shards discovered later — rotation children found by the periodic refresh, and any checkpoint-less shard seen after a restart — always start at `trim_horizon`, so their backlog is never skipped. In practice a restart under `start_from: latest` therefore replays from each shard's oldest retained record rather than only new records: at-least-once delivery takes precedence over the configured start position. Before Connect 4.106.0, `latest` was applied to those later-discovered shards too, silently losing their backlog.
+
+Changing or clearing `checkpoint_namespace` makes the pipeline fresh again, so `start_from` applies once more.
 
 ---
 
@@ -229,6 +250,27 @@ Once a checkpoint exists (from a previous run), `start_from` is ignored for that
 | Advanced | yes |
 
 Upper bound on the number of shards tracked simultaneously. Prevents unbounded memory growth for very large tables. Typical DynamoDB tables have far fewer shards; increase only if needed.
+
+---
+
+### `auto_replay_nacks`
+
+| Attribute | Value |
+|---|---|
+| Type | `bool` |
+| Default | `true` |
+| Available | Connect 4.106.0+ |
+
+Whether messages rejected (nacked) downstream are automatically replayed in-process, indefinitely — eventually applying back pressure if the cause of the rejections is persistent.
+
+- `true` (default) — transient downstream failures are retried in-process, so a rejection does not lose data and does not need a restart to recover.
+- `false` — rejected messages are **deleted**. This is the framework's documented opt-in-to-drop contract; it trades data for memory efficiency on high-throughput streams, since the original shape of the data can be discarded immediately on consumption.
+
+Treat `false` as an explicit acceptance of loss on rejection, not a performance knob to reach for by default.
+
+**Snapshot path (verified):** the snapshot scan position is persisted only once a batch *and everything before it* has been acked, so with the default `true` a rejected snapshot batch is redelivered rather than skipped. With `false`, the segment's checkpoint advances past dropped batches instead of pinning the tracker.
+
+**CDC shard path:** the release notes describe nacks as advancing checkpoints when `auto_replay_nacks` is disabled, while a comment at the input's registration describes a nack as pinning the shard's checkpoint frontier with redelivery on restart. These two readings differ and the skill does not assert either — see the TODO in `SOURCES.md`. Either way, leaving the field at its default `true` avoids the question entirely.
 
 ---
 

@@ -167,6 +167,24 @@ Every message emitted by `oracledb_cdc` carries these metadata fields (access wi
 | `commit_ts_ms` | Commit timestamp of the transaction (ms since epoch). On snapshot (`read`) messages this is Oracle's `SYSTIMESTAMP` captured when the snapshot SCN was taken — the same value for every snapshot row (since 4.99.0) |
 | `schema` | Serialised table schema for use with `schema_registry_encode` processor; present when schema resolution succeeds |
 
+## Performance and Scaling
+
+Three constraints shape every `oracledb_cdc` deployment:
+
+**Throughput is bounded by the LogMiner session, not by CPU.** Each pipeline mines the redo stream through a **single synchronous LogMiner reader**, so giving Redpanda Connect more cores does not raise the capture rate. To capture more aggregate change volume from one database, run **multiple pipelines whose `include` patterns cover disjoint sets of tables** — each pipeline gets its own LogMiner reader.
+
+**Large transactions can look like a stall.** The Oracle driver fetches 25 rows per network round trip by default, so a large committed transaction can arrive minutes late while the database, network, and connector all look idle — each round trip is a full network exchange, and thousands of them are needed. Raise the fetch size with the `PREFETCH_ROWS` query parameter on `connection_string`:
+
+```yaml
+connection_string: oracle://user:pass@host:1521/service?PREFETCH_ROWS=1000
+```
+
+**Redo log retention must cover idle periods, not just outages.** The SCN checkpoint only advances when messages are delivered, so a monitored table set that goes quiet leaves the checkpoint stationary while Oracle ages out redo/archive logs. If the checkpointed SCN is gone when activity resumes or the pipeline restarts, the input cannot resume and fails repeatedly with **ORA-01292**. Therefore:
+
+- Size archive log retention to exceed the longest plausible **idle** period for the monitored tables — not just the longest expected downtime.
+- Alert on a **stagnant checkpoint SCN** and on repeated ORA errors; a stationary checkpoint under a quiet workload is indistinguishable from a healthy one until the logs age out.
+- On databases with infrequent log switches, watch for **ORA-04036** (LogMiner PGA growth) and bound it with `logminer.max_session_age`.
+
 ## Enterprise License
 
 `oracledb_cdc` is an enterprise connector licensed under the Redpanda Community License. You need a valid Redpanda Enterprise license. Without it the connector refuses to start with a license error ("all enterprise connectors are blocked"). Set your license via the environment variable or contact Redpanda for a 30-day trial key.

@@ -107,6 +107,22 @@ snapshot_max_batch_size: 5000
 
 ---
 
+### `snapshot_filters`
+
+**Type:** `object` (map of `SCHEMA.TABLE` → SQL `SELECT`) | **Required:** no | **Default:** none
+
+Overrides the default snapshot query on a per-table basis — use it to snapshot a subset of rows or columns rather than the whole table.
+
+**Hard requirement:** each query must project **every** column of the table's primary key — all of them for a composite key — even if it otherwise selects a subset of columns. Snapshotting pages through rows by filtering and sorting on the full primary key against the query's own result set, so a missing key column fails the snapshot part-way through, *after* the first batch has already been read.
+
+```yaml
+snapshot_filters:
+  TESTDB.PRODUCTS: SELECT * FROM TESTDB.PRODUCTS WHERE ID > 1000
+  TESTDB.USERS: SELECT * FROM TESTDB.USERS
+```
+
+---
+
 ### `include`
 
 **Type:** `array[string]` | **Required:** yes
@@ -256,14 +272,44 @@ All fields nested under `logminer:`.
 
 **Type:** `int` | **Required:** no | **Default:** `20000`
 
-The SCN range per mining cycle. Each cycle queries `V$LOGMNR_CONTENTS` for changes between `current_scn` and `current_scn + scn_window_size`. Must be greater than 0.
+The **starting** SCN range per mining cycle. Each cycle queries `V$LOGMNR_CONTENTS` for changes between `current_scn` and `current_scn + <window>`. Must be greater than 0.
 
 - **Smaller values** (e.g., 1000–5000): lower memory per cycle, higher query frequency, better for low-throughput tables.
 - **Larger values** (e.g., 50000–100000): fewer queries, higher throughput, higher memory per cycle.
 
+The window is **adaptive**, not fixed: it grows by `scn_window_size` on each cycle that ends at the cap with a backlog still present, up to `max_scn_window_size`, and shrinks by the same step on each cycle that catches up to the database. So this field sets the steady-state window and the growth step, while `max_scn_window_size` bounds how large a backlog burst may go.
+
 ```yaml
 logminer:
   scn_window_size: 50000
+```
+
+---
+
+### `logminer.min_scn_window_size`
+
+**Type:** `int` | **Required:** no | **Default:** `1000`
+
+The minimum SCN gap required before a new LogMiner session is started. When the gap between the connector's position and the database's current SCN is smaller than this, the mining cycle is **skipped** and the connector backs off instead.
+
+This exists because Oracle background activity advances the SCN without producing any relevant events; without a floor, a low-traffic database would drive constant LogMiner start/stop churn. Set to `0` to disable the floor.
+
+```yaml
+logminer:
+  min_scn_window_size: 1000
+```
+
+---
+
+### `logminer.max_scn_window_size`
+
+**Type:** `int` | **Required:** no | **Default:** `100000`
+
+Upper bound on the adaptive mining window described under `scn_window_size`. Raising it lets the connector burn through a large backlog in fewer, bigger cycles at the cost of memory per cycle; lowering it caps per-cycle memory.
+
+```yaml
+logminer:
+  max_scn_window_size: 100000
 ```
 
 ---
@@ -307,6 +353,23 @@ The connector also always sets `DBMS_LOGMNR.NO_ROWID_IN_STMT` and `DBMS_LOGMNR.C
 logminer:
   strategy: online_catalog
 ```
+
+---
+
+### `logminer.max_session_age`
+
+**Type:** `duration string` | **Required:** no | **Default:** `0s` (disabled)
+
+Maximum duration a single LogMiner session may stay open before being forcibly ended and restarted, **even if no redo log switch has occurred**.
+
+By default a session is only restarted on a detected log switch. On databases where switches are infrequent, a session can stay open a long time, and LogMiner has been observed to accumulate server-side PGA memory (particularly around online-catalog dictionary lookups) until Oracle kills the session with **ORA-04036**. Setting this forces a periodic restart independent of log switches.
+
+```yaml
+logminer:
+  max_session_age: 20m
+```
+
+Reach for this when you see ORA-04036 on a database with rare log switches; leave it at `0s` otherwise.
 
 ---
 
