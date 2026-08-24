@@ -23,7 +23,7 @@ Maturity note: Redpanda Agentic Data Plane is generally available. Its APIs are 
 
 ### AI agents
 
-Managed agents run inside the Agentic Data Plane platform. Self-managed (user-hosted) agents are registered as metadata-only records. Both are managed through `AgentRegistryService` (proto) or the `AIAgentService` MCP tool group (v1alpha3). Key fields: `model`, `llm_provider`, `system_prompt`, `max_iterations` (0-200), `mcp_servers` (max 32 refs), `subagents` (max 16). A2A agent cards are published at `/.well-known/agent-card.json`. Triggers (Teams, Cron) fire agents on external events.
+Managed agents run inside the Agentic Data Plane platform. Self-managed (user-hosted) agents are registered as metadata-only records. Both are managed through `AgentRegistryService` (proto) or the `AIAgentService` MCP tool group (v1alpha3). Key fields: `model`, `llm_provider`, `system_prompt`, `max_iterations` (0-200), `mcp_servers` (max 32 refs), `subagents` (max 16). A2A agent cards are published at `/.well-known/agent-card.json`. Triggers (Teams, Cron) fire agents on external events; a trigger can be paused and resumed via `Trigger.enabled` (toggled through `UpdateTrigger` with `update_mask = ["enabled"]`) without deleting it or losing its run history.
 
 See [references/agents.md](references/agents.md).
 
@@ -50,16 +50,17 @@ See [references/gateway-and-providers.md](references/gateway-and-providers.md).
 - **Data policies** (preview): per-MCP-server data shaping (`MCPServer.data_policies`) that masks, redacts, drops, or clamps fields and filters response rows before the model sees them. Cedar decides *whether* a call runs; data policies decide *how* the data is shaped and *to whom*.
 - **OAuth / identity** (`OAuthClientService`, `OAuthProviderService`, `OAuthConnectionService`): manage OAuth clients (for external tools calling the aigw Authorization Server) and OAuth providers (third-party identity sources).
 
-Services absent from the Agentic Data Plane v1alpha1 surface: `SpendLimitService`, `RateLimitService`, `RoutingService`, `BackendPoolService`, `AccessControlService`, `AuditService` (OCSF), `SSOService`. The names exist only in the legacy `aigateway/v1` generated tree used by `rpk cloud mcp`.
+Services absent from the Agentic Data Plane v1alpha1 surface: `SpendLimitService`, `RateLimitService`, `RoutingService`, `BackendPoolService`, `AccessControlService`, `SSOService`. The names exist only in the legacy `aigateway/v1` generated tree used by `rpk cloud mcp`. OCSF-based authorization-decision accountability is served by the preview `AuditLogService` on `v1alpha1` — see the observability section.
 
 See [references/governance.md](references/governance.md).
 
-### Observability: transcripts and insights
+### Observability: transcripts, audit log, and insights
 
-- **TranscriptsService**: `ListTranscripts`, `GetTranscript`. Conversations are grouped by OTel `gen_ai.conversation.id`. `TranscriptSummary` includes token counts and `estimated_cost_usd`. Supports managed and self-managed (BYOA) agents.
+- **TranscriptsService**: `ListTranscripts`, `GetTranscript`. Execution-level observability of an agent conversation. Conversations are grouped by OTel `gen_ai.conversation.id`. `TranscriptSummary` includes token counts and `estimated_cost_usd`. Supports managed and self-managed (BYOA) agents.
+- **AuditLogService** (Preview): `ListAuditLogEntries`, `GetAuditLogEntry`. Read-only OCSF audit trail across the Agentic Data Plane (management API, LLM proxy, MCP gateway, A2A, spending). Entries carry a call-level `outcome` (`ALLOWED` / `DENIED` / `PARTIAL`), server-minted `correlation_id` for grouping a collection-filtered call's per-resource decisions, on-behalf-of fields (`invoked_by`, `agent_name`, `agent_uid`), and redacted `entity_before`/`entity_after` diffs on config changes. Reading the audit log is itself audited.
 - **InsightsService** (Experimental): single `GetInsights` RPC returning `active_agents`, `total_requests`, `total_cost_microcents` over a time window. May change or be removed without a version bump.
 
-There is no `AuditService` in the Agentic Data Plane public API. For request/response accountability, use `TranscriptsService`.
+Use `TranscriptsService` for what an agent *did* in a conversation, and `AuditLogService` for what any principal was *allowed or refused* to do against the platform's APIs.
 
 See [references/observability.md](references/observability.md).
 
@@ -142,4 +143,4 @@ For the `rpk cloud mcp` control-plane server (manages Redpanda Cloud clusters, n
 - [references/gateway-and-providers.md](references/gateway-and-providers.md): `LLMProviderService` RPCs, provider types and auth schemes, `ModelService`, pricing overrides, AI Gateway proxy behavior, explicit out-of-scope list.
 - [references/governance.md](references/governance.md): `BudgetService`, `SpendingService`, `GuardrailService` (Bedrock, 6 categories), Cedar access-control services, OAuth/identity services, absent service names.
 - [references/rpk-ai.md](references/rpk-ai.md): `rpk ai` subcommand tree, lifecycle management, global flags, common errors, per-group subcommand details.
-- [references/observability.md](references/observability.md): `TranscriptsService` RPCs and fields, `InsightsService` (Experimental), accountability framing, no AuditService in the Agentic Data Plane.
+- [references/observability.md](references/observability.md): `TranscriptsService` RPCs and fields, `AuditLogService` (Preview) RPCs, filters, verdicts, grouped-call semantics and delegation fields, `InsightsService` (Experimental), transcripts-vs-audit-log framing.

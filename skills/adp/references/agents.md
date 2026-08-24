@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. Evidence date: 2026-07-13.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. `Trigger.enabled` (field 15) / `TriggerUpdate.enabled` (field 4) pause-resume field and cron-scheduler semantics verified against `agent.proto` on 2026-08-24. Evidence date: 2026-08-24.
 
 # Agentic Data Plane Agents Reference
 
@@ -137,6 +137,26 @@ Triggers attach to an agent and fire it on an external event. Two trigger types 
 **`CronTrigger`**: fires the agent on a schedule (cron expression).
 
 The trigger lifecycle RPCs (`CreateTrigger` through `DeleteTrigger`) operate as a sub-resource on the agent. The internal `ReportTriggerHealth` RPC is used by the runtime only and is never called by external clients.
+
+### Pause and resume a trigger
+
+`Trigger.enabled` (bool, positive polarity) toggles a trigger live/paused without deleting it, so its configuration and run history stay intact. A trigger is created enabled; the server stamps the field and it is not settable via `TriggerInput` at create time.
+
+Toggle it through the existing `UpdateTrigger` RPC with a field mask over `enabled` only:
+
+```
+UpdateTrigger({
+  trigger: { name: "agents/<agent>/triggers/<trigger>", enabled: false },
+  update_mask: ["enabled"]
+})
+```
+
+Semantics for the cron scheduler:
+
+- Setting `enabled = false` (pause) drops the trigger from the scheduler's cross-tenant scan so it stops firing; the schedule and its recorded runs are preserved.
+- Setting `enabled = true` (resume) re-registers it from the next scheduled instant onward — ticks missed while paused are **never** backfilled.
+
+The field is generic across trigger kinds, but only the cron scheduler honors it today.
 
 ## `ManagedAgentRuntime` (orchestrator-internal)
 
