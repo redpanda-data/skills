@@ -29,6 +29,7 @@ via `%t`. A parsed topic takes precedence over the argument.
 | `--schema-key-id` | | string | | Schema ID (or `topic`) to encode the record **key** |
 | `--schema-type` | | string | | Fully-qualified Protobuf message type name for value |
 | `--schema-key-type` | | string | | Fully-qualified Protobuf message type name for key |
+| `--schema-context` | | string | | Schema Registry context to resolve schemas in; see [Schema Registry contexts](#schema-registry-contexts) |
 | `--allow-auto-topic-creation` | | bool | false | Auto-create the topic if it does not exist |
 | `--delivery-timeout` | | duration | `0` | Per-record delivery timeout; if non-zero, minimum 1s |
 | `--max-message-bytes` | | int32 | `-1` | Max record-batch bytes before compression |
@@ -205,6 +206,33 @@ Protobuf with a specific message type:
 echo '{"name":"Alice"}' \
   | rpk topic produce users --schema-id=7 --schema-type=com.example.User
 ```
+
+### Schema Registry contexts
+
+Schema IDs are scoped per Schema Registry context, so a schema lookup has to
+happen in the same context the broker uses for the topic. By default rpk
+resolves the context from the topic's `redpanda.schema.registry.context`
+property (fetched with DescribeTopicConfigs), falling back to the default
+context when the topic has none. This matters for a topic bound to a
+non-default context — for example an Iceberg topic in
+`value_schema_id_prefix` mode: resolving in the default context would encode
+against the wrong schema, or fail outright.
+
+`--schema-context` overrides that resolution. An empty value or a lone dot
+both force the default (root) context regardless of the topic's property:
+
+```bash
+# Resolve schemas in the .staging context
+echo '{"id":1}' | rpk topic produce orders --schema-id=1 --schema-context=.staging
+
+# Force the default context, ignoring the topic's configured context
+echo '{"id":1}' | rpk topic produce orders --schema-id=topic --schema-context=
+echo '{"id":1}' | rpk topic produce orders --schema-id=topic --schema-context=.
+```
+
+If the topic's context cannot be determined, rpk exits with an error rather
+than silently defaulting — except for an unknown topic, which is tolerated
+(it may be about to be auto-created, and a new topic has no context anyway).
 
 ### Reading from a file
 

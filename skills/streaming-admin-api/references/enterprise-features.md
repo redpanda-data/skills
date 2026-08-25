@@ -319,7 +319,7 @@ Shadowing provides offset-preserving, asynchronous replication between two disti
 | `CreateShadowLink` | Create a shadow link to a source cluster |
 | `GetShadowLink` | Get one shadow link (config + status) |
 | `ListShadowLinks` | List all shadow links on the cluster |
-| `UpdateShadowLink` | Update a shadow link (uses `update_mask`) |
+| `UpdateShadowLink` | Update a shadow link (`update_mask` selects the fields to write; an unset mask replaces the whole configuration) |
 | `DeleteShadowLink` | Delete a link (`force: true` to delete with active shadow topics) |
 | `FailOver` | Promote shadow topics to writable. Omit `shadow_topic_name` to fail over the whole link, or set it to fail over a single topic |
 | `GetShadowTopic` / `ListShadowTopics` | Inspect shadow topics within a link |
@@ -371,9 +371,12 @@ curl -u admin:secret -X POST \
 - `topic_metadata_sync_options` (`TopicMetadataSyncOptions`): `interval`, `auto_create_shadow_topic_filters` (`NameFilter[]`), `synced_shadow_topic_properties`, `exclude_default`, `start_at_earliest` / `start_at_latest` / `start_at_timestamp` (oneof start offset), `paused`.
 - `consumer_offset_sync_options` (`ConsumerOffsetSyncOptions`): `interval`, `group_filters`, `paused`.
 - `security_sync_options` (`SecuritySettingsSyncOptions`): `interval`, `acl_filters` (`ACLFilter[]`), `paused`.
+- `role_sync_options` (`RoleSyncOptions`): `interval`, `role_name_filters` (`NameFilter[]`), `paused`. RBAC role shadowing, opt-in — no roles sync until an INCLUDE filter is present, and a non-empty filter list is rejected until every broker is upgraded (the `shadow_link_role_sync` cluster feature is active).
 - `schema_registry_sync_options` (`SchemaRegistrySyncOptions`): `shadow_schema_registry_topic` (replicates `_schemas` byte-for-byte).
 
 Replicated-by-default topic properties: partition count, `max.message.bytes`, `cleanup.policy`, `timestamp.type`, plus (unless `exclude_default=true`) `compression.type`, `retention.bytes`, `retention.ms`, `delete.retention.ms`, replication factor, `min.compaction.lag.ms`, `max.compaction.lag.ms`. Properties that may **not** be synced: `redpanda.remote.readreplica`, `redpanda.remote.recovery`, `redpanda.remote.allowgaps`, `redpanda.virtual.cluster.id`, `redpanda.leaders.preference`, `redpanda.storage.mode`.
+
+A masked `UpdateShadowLink` merges repeated fields by **appending**, so removing an entry from a filter list requires replacing the whole configuration (send the update with no `update_mask`). This is what `rpk shadow update` does.
 
 Without a valid license, new shadow links cannot be created; existing links keep operating and can be updated/failed over.
 

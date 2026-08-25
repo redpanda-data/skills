@@ -208,8 +208,9 @@ rpk shadow describe <link-name>
 rpk shadow status <link-name>
 rpk shadow status <link-name> --print-overview --print-topic   # also: --print-task / --print-all
 
-# 4. Update (opens $EDITOR; applies only changed fields; name is immutable)
-rpk shadow update <link-name>
+# 4. Update — replaces the whole configuration; name is immutable
+rpk shadow update <link-name>                                # opens $EDITOR seeded with the current config
+rpk shadow update <link-name> --config-file shadow-link.yaml  # scripted; no editor
 
 # 5. Fail over — converts shadow topics into regular topics; replication stops
 rpk shadow failover <link-name> --all
@@ -225,6 +226,29 @@ rpk shadow delete <link-name>
 For Cloud, generate and create with `--for-cloud`; for SCRAM auth, store the
 password in the shadow cluster's secret store and reference it in the config file
 as `${secrets.SECRET_NAME}`.
+
+**`rpk shadow update` replaces the entire configuration.** Both modes — the
+editor and `-c/--config-file` — submit the full config, so **any field omitted
+resets to its default**. They differ only in where the config comes from: the
+editor is seeded with the current configuration, while a config file is applied
+as-is. Always update from a complete config, never a fragment. Consequences
+worth knowing:
+
+- Removing an entry from a filter list (topic, group, ACL, or role filters)
+  actually removes it; submit the list you want to end up with.
+- The `name` in a config file must match the `LINK_NAME` argument; the link
+  name can never be changed (delete and recreate to rename).
+- Set passwords appear in the editor as the literal placeholder `<redacted>`.
+  Leave it untouched to keep the stored password, or replace it to set a new
+  one. A config file containing `<redacted>` is **rejected** so the
+  placeholder is never stored verbatim; leaving a password empty while its
+  username is set keeps the existing value.
+
+Sync tasks are configured in per-task blocks of the shadow-link config:
+`client_options`, `topic_metadata_sync_options`,
+`consumer_offset_sync_options`, `security_sync_options`,
+`schema_registry_sync_options`, and `role_sync_options` (RBAC role
+shadowing — supported for both self-hosted and Cloud links).
 
 On expiration: new shadow links cannot be created; existing links keep running and
 can be updated.

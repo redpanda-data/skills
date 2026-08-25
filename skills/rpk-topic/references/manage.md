@@ -157,8 +157,17 @@ changes. Supports four operations:
 | `--subtract key=value` | | Remove value from a list-of-values key |
 | `--dry` | | Validate; do not apply |
 | `--no-confirm` | | Skip confirmation on destructive operations |
+| `--regex` | `-r` | Parse the input topics as regular expressions |
 
-All flags are repeatable. Multiple operations can be combined in one call.
+The four operation flags are repeatable. Multiple operations can be combined in
+one call.
+
+With `-r/--regex`, each input topic is treated as a regular expression and
+expanded against the cluster's topic list before the alter request is issued.
+Expressions are anchored the same way `rpk topic list -r` and
+`rpk topic delete -r` anchor them — a leading `^` and trailing `$` are added if
+absent, so an expression matches whole topic names only. Because it is the same
+expression format, listing first previews exactly which topics will be altered.
 
 ```bash
 # Change retention
@@ -179,6 +188,10 @@ rpk topic alter-config orders --append compression.type=gzip
 
 # Dry run
 rpk topic alter-config orders --set max.message.bytes=2097152 --dry
+
+# Apply the same change to every topic matching an expression
+rpk topic list -r '^events-.*'                                    # preview matches
+rpk topic alter-config -r '^events-.*' --set retention.ms=86400000
 ```
 
 **Note:** Disabling tiered storage (`redpanda.remote.write=false`) requires
@@ -366,6 +379,7 @@ Default: summary + size.
 | `read_replica` | Read-only replica from another cluster's tiered storage |
 | `cloud_topic` | Redpanda Cloud Topic (L0/L1 storage) |
 | `cloud_topic_read_replica` | Cloud Topic read replica |
+| `tiered_cloud_topic` | Cloud Topic that also keeps a real local log (the `tiered_v2` storage-mode implementation) |
 
 ### Output sections
 
@@ -376,8 +390,14 @@ Default: summary + size.
 **SIZE (tiered):** `PARTITION`, `CLOUD-BYTES`, `LOCAL-BYTES`, `TOTAL-BYTES`,
 `CLOUD-SEGMENTS`, `LOCAL-SEGMENTS`.
 
-**SIZE (cloud_topic):** `PARTITION`, `LOCAL-BYTES`, `L0-BYTES`, `L1-BYTES`,
-`TOTAL-BYTES`, `L1-EXTENTS`.
+**SIZE (cloud-topic modes):** `PARTITION`, `LOCAL-BYTES`, `L0-BYTES`,
+`L1-BYTES`, `TOTAL-BYTES`, `L1-EXTENTS`. Used for `cloud_topic`,
+`cloud_topic_read_replica`, and `tiered_cloud_topic`. Only
+`tiered_cloud_topic` keeps a local log worth counting, so it adds a
+`LOCAL-SEGMENTS` column after `LOCAL-BYTES`; the other two omit it.
+
+The `SUMMARY` section omits `LAST-UPLOAD` for `cloud_topic` and
+`cloud_topic_read_replica`, and prints it for every other mode.
 
 **SYNC:** `PARTITION`, `LAST-SEGMENT-UPLOAD`, `LAST-MANIFEST-UPLOAD`,
 `METADATA-UPDATE-PENDING`, and optionally `LAST-MANIFEST-SYNC` for read replicas.
