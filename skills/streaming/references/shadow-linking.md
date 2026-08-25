@@ -33,8 +33,9 @@ rpk shadow list                      # all links + health
 rpk shadow describe <link-name>      # full config (connection, filters, sync options)
 rpk shadow status <link-name>        # lag, task health, sync status
 
-# 4. Update (opens editor; only changed fields are pushed; name is immutable)
-rpk shadow update <link-name>
+# 4. Update — the submitted config REPLACES the whole configuration; name is immutable
+rpk shadow update <link-name>                                   # editor, seeded with the current config
+rpk shadow update <link-name> --config-file shadow-config.yaml  # scripted; no editor
 
 # 5. Failover (promote shadow topics to writable)
 rpk shadow failover <link-name> --topic <topic-name>   # individual topic
@@ -56,9 +57,12 @@ Each replication concern runs as a continuous task, mapping to a section of `sha
 | Source Topic Sync | `topic_metadata_sync_options` | Topic discovery, auto-creation filters, topic properties, starting offset |
 | Consumer Group Shadowing | `consumer_offset_sync_options` | Consumer group offsets/membership (with offset clamping to shadow HWM) |
 | Security Migrator | `security_sync_options` | ACLs (all by default) |
+| Roles Migrator | `role_sync_options` | RBAC roles selected by name filter (nothing until an INCLUDE filter is added) |
 | Schema Registry Sync | `schema_registry_sync_options` | Byte-for-byte `_schemas` topic replication |
 
 Task states: `ACTIVE`, `PAUSED`, `FAULTED`, `NOT_RUNNING`, `LINK_UNAVAILABLE`. Pause an individual task by setting `paused: true` in its section.
+
+**Updates replace the whole configuration.** `rpk shadow update` submits the full config in both modes (editor and `--config-file`), so any section or field omitted resets to its default and a filter list shrinks when you remove an entry. Always update from a complete config, never a fragment. Set passwords render in the editor as the literal `<redacted>` placeholder — leave it to keep the stored password; a config file containing that placeholder is rejected.
 
 ## Config File Nested Keys (shadow-config.yaml)
 
@@ -126,6 +130,14 @@ security_sync_options:
       permission_type: ALLOW             # ALLOW or DENY
       host: '*'
 
+role_sync_options:
+  interval: 30s
+  paused: false
+  role_name_filters:                     # empty (the default) syncs no roles at all
+  - pattern_type: PREFIX                 # LITERAL (incl. wildcard '*') or PREFIX
+    filter_type: INCLUDE                 # INCLUDE or EXCLUDE (EXCLUDE wins)
+    name: app-
+
 schema_registry_sync_options:
   shadow_schema_registry_topic: {}       # enable byte-for-byte _schemas replication
 ```
@@ -135,6 +147,15 @@ schema_registry_sync_options:
 - EXCLUDE filters take precedence over INCLUDE.
 - Among INCLUDE filters, the first match wins.
 - Items matching no filter are excluded by default.
+
+### Role shadowing
+
+`role_sync_options` shadows RBAC role definitions from the source cluster.
+Unlike the ACL filters in `security_sync_options`, it is **opt-in**: with no
+`role_name_filters` entry, no roles are synced. Role shadowing requires every
+broker in the cluster to be upgraded — a shadow link that configures role name
+filters is rejected until the cluster's `shadow_link_role_sync` feature is
+active. Both self-hosted and Redpanda Cloud shadow links support it.
 
 ### Starting offset for new shadow topics
 

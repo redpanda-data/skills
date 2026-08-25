@@ -137,6 +137,12 @@ rpk topic alter-config archive-topic \
   --brokers localhost:9092
 ```
 
+#### Topics exempt from local eviction
+
+The cluster property `log_eviction_exempt_topics` lists topics in the `kafka` namespace whose local log is exempt from **every** form of data deletion: retention, local retention on a tiered topic, and disk space management all leave their data on local disk, and a partition move delivers the full log to the new replica. It does **not** affect topic deletion through the Kafka API (that is `kafka_nodelete_topics`).
+
+It defaults to the Schema Registry topic `_schemas`, which is replayed in full at startup — trimming it to the cloud tier would make Schema Registry recovery depend on cloud reads, and its size is already bounded by compaction. Changing this property **requires a broker restart**, because whether the exemption applies to a partition is decided when that partition starts.
+
 ### Compacted Topics
 
 When `cleanup.policy=compact`, nothing is deleted from object storage based on retention. With `cleanup.policy=compact,delete`, compacted segments are deleted from object storage based on `retention.ms` and `retention.bytes`.

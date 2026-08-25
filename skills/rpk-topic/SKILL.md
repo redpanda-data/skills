@@ -172,6 +172,7 @@ Supports four operations (all repeatable):
 | `--subtract key=value` | Remove from a list-of-values key |
 | `--dry` | Validate only; do not apply |
 | `--no-confirm` | Skip confirmation prompt |
+| `-r, --regex` | Parse the input topics as regular expressions and alter every matching topic |
 
 ```bash
 # Enable tiered storage on a topic
@@ -184,7 +185,14 @@ rpk topic alter-config orders --set retention.ms=86400000
 
 # Revert retention to cluster default
 rpk topic alter-config orders --delete retention.ms
+
+# Apply one change to every topic matching an expression
+rpk topic alter-config -r '^events-.*' --set retention.ms=86400000
 ```
+
+`-r/--regex` uses the same anchored expression format as `rpk topic list -r`
+and `rpk topic delete -r`, so list first to preview exactly which topics an
+expression will alter.
 
 ## add-partitions
 
@@ -275,7 +283,10 @@ rpk topic describe-storage orders -a -H
 ```
 
 Cloud storage modes: `disabled`, `write_only`, `read_only`, `full`,
-`read_replica`, `cloud_topic`, `cloud_topic_read_replica`.
+`read_replica`, `cloud_topic`, `cloud_topic_read_replica`,
+`tiered_cloud_topic`. The three cloud-topic modes print the L0/L1 SIZE
+layout rather than the segment-based tiered-storage one; see
+[manage.md](references/manage.md) for the column sets.
 
 ## delete
 
@@ -314,6 +325,7 @@ Key flags:
 | `--schema-key-id` | | Schema ID or `topic` for key |
 | `--schema-type` | | Fully-qualified Protobuf message type for value |
 | `--schema-key-type` | | Fully-qualified Protobuf message type for key |
+| `--schema-context` | | Schema Registry context to resolve schemas in; unset uses the topic's `redpanda.schema.registry.context` |
 | `--allow-auto-topic-creation` | false | Auto-create the topic if it does not exist |
 | `-o, --output-format` | `Produced to partition %p at offset %o with timestamp %d.\n` | Line printed to stdout after each successful record |
 | `--delivery-timeout` | `0` | Per-record delivery timeout (min 1s) |
@@ -357,6 +369,7 @@ Key flags:
 | `--read-committed` | false | Only read committed offsets (for transactions) |
 | `--print-control-records` | false | Also print control records |
 | `--use-schema-registry` | | Decode with schema registry (`key`, `value`, or both) |
+| `--schema-context` | | Schema Registry context to resolve schema IDs in; unset uses each topic's `redpanda.schema.registry.context` |
 | `--meta-only` | false | Print metadata but not record value (only affects `-f json` output) |
 
 ```bash

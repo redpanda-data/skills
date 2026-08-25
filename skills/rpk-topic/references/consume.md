@@ -30,6 +30,7 @@ or a stop-offset is consumed.
 | `--pretty-print` | | bool | true | Pretty-print JSON output over multiple lines |
 | `--meta-only` | | bool | false | Print metadata (`value_size`) instead of record value (only affects `-f json` output) |
 | `--use-schema-registry` | | string | | Decode with schema registry: `key`, `value`, or both (default when flag given without value) |
+| `--schema-context` | | string | | Schema Registry context to resolve schema IDs in; see [Schema Registry decoding](#schema-registry-decoding) |
 | `--rack` | | string | | Rack for follower-fetching (consumer rack awareness) |
 | `--fetch-max-bytes` | | int32 | `1048576` | Max bytes per fetch request per broker |
 | `--fetch-max-wait` | | duration | `5s` | Max time to wait for broker reply on fetch |
@@ -232,6 +233,30 @@ rpk topic consume orders --use-schema-registry=key
 rpk reads the Confluent wire-format schema ID prefix from each message,
 fetches the schema from the Schema Registry, and decodes the bytes.
 Schema Registry URL is taken from the active profile or `-X registry.hosts=...`.
+
+### Schema Registry contexts
+
+Schema IDs are scoped per context, so the ID prefix must be resolved in the
+same context the broker uses for the topic. By default rpk resolves the
+context per topic from that topic's `redpanda.schema.registry.context`
+property (via DescribeConfigs), falling back to the default context when the
+topic has none. Resolution is per topic, so a single consume can span topics
+in different contexts. Records produced into a non-default context would
+otherwise fail to decode, or decode against the wrong schema.
+
+`--schema-context` overrides the resolution for every topic in the consume.
+An empty value or a lone dot both force the default (root) context:
+
+```bash
+# Decode against schemas in the .staging context
+rpk topic consume orders --use-schema-registry=value --schema-context=.staging
+
+# Force the default context, ignoring each topic's configured context
+rpk topic consume orders --use-schema-registry=value --schema-context=
+```
+
+If a topic's context cannot be determined, rpk exits with an error rather than
+decoding against the default context.
 
 ## Worked Examples
 

@@ -118,6 +118,14 @@ Global flags available on every `rpk registry` subcommand:
 
 **_schemas topic** — the internal compacted Kafka topic that persists all registry state. Do not edit it directly.
 
+**Startup recovery** — the registry store is hydrated by replaying `_schemas`, and by default that replay is **lazy**: nothing loads the topic until the first request arrives, so on a large registry the first request blocks for the whole replay. Set the cluster property `schema_registry_replay_on_startup` to replay at Schema Registry start-up instead, which makes recovery time predictable and keeps the first request from waiting behind it:
+
+```bash
+rpk cluster config set schema_registry_replay_on_startup true
+```
+
+Default `false`; no broker restart required. The replay runs in the background and does not block broker start-up, and a request that races it still triggers exactly one replay. Because the replay reads the whole local log, keep `_schemas` on local disk — see `log_eviction_exempt_topics`, which exempts it by default.
+
 ## Compatibility Levels
 
 Compatibility governs which schema versions can coexist. The default is `BACKWARD`. Set globally (no subject arg) or per-subject.
