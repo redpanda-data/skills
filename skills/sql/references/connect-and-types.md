@@ -452,6 +452,103 @@ SELECT ARRAY_UPPER(ids, 1)      FROM vectors;
 SELECT PG_TYPEOF(ids) FROM vectors;
 ```
 
+### Map values (`map(...)` and `m[key]`)
+
+`map(...)` is an Oxla extension (not PostgreSQL) that builds a map value inline,
+and `m[key]` looks a value up in it. There is **no `MAP` column type**: `MAP` is
+not one of the declarable types in `ColumnType.h`, so there is no
+`CREATE TABLE t (m MAP(...))` form. The constructor also takes **literals only**.
+So the practical shape of the feature is a *constant lookup table applied to a
+column* — the map is constant, the subscript key is any expression:
+
+```sql
+-- Constructor: alternating key, value, key, value, ...
+SELECT map('a', 1, 'b', 2);           -- {"(a,1)","(b,2)"}  (see wire form below)
+
+-- Lookup by key; the result type is the map's value type
+SELECT (map('a', 1, 'b', 2))['a'];    -- 1
+SELECT (map('a', 1, 'b', 2))['c'];    -- NULL (miss)
+SELECT (map(1, 'x', 2, 'y'))[2];      -- 'y'
+
+-- The useful form: constant code -> label map, keyed by a column
+SELECT (map(1, 'new', 2, 'shipped', 3, 'closed'))[status_code] FROM orders;
+
+-- The map's own type is visible through pg_typeof
+SELECT pg_typeof(map('a', 1));        -- map(text,integer)
+```
+
+`map` is recognized by function name, not by a new reserved keyword, so an existing
+identifier called `map` is unaffected. Only the plain call form is a constructor:
+`map(DISTINCT ...)`, `map(...) OVER (...)`, and `map(...) WITHIN GROUP (...)` stay
+on the ordinary function path, where they are rejected.
+
+**Constructor rules:**
+
+- Every argument must be a **literal**. A column reference or a volatile call is
+  rejected: `SELECT map('a', random())` →
+  `map() constructor for non-literals is not supported`. Only the subscript key may
+  be a non-constant expression.
+- The argument list must have an **even** number of elements
+  (`map() requires an even number of arguments`).
+- Keys may not be `NULL` (`map keys cannot be NULL`). Values may be.
+- All keys are unified to one common key type, and all values to one common value
+  type; each element is then resolved against that unified type.
+- The key type must be a **primitive** type from the supported key set (below);
+  `map(ROW(1, 2), 'x')` → `map key type must be a primitive type`.
+- Neither keys nor values may carry decimal precision/scale — a
+  `NUMERIC(p,s)`/`DECIMAL(p,s)` key or value is rejected
+  (`map key type cannot have decimal precision/scale`, and the matching
+  `map value type ...` message).
+- Values are not restricted to primitives: a `ROW(...)` value works
+  (`map('a', ROW(1, 2))`).
+- `map()` with no arguments only works where the target map type is already known
+  from context; on its own it fails with `cannot determine type of empty map`.
+
+**Supported key types** (the `map_key` constraint, grounded in
+`schema/constraints_instance.h`): `INT`, `BIGINT`, `INT16`, `INT32`, `FLOAT`,
+`DOUBLE`, `BOOL`, `TEXT`, `BYTEA`, `TIMESTAMP`, `TIMESTAMPTZ`, `TIME`, `DATE`,
+`UUID`, `OID`. Notably **not** supported as keys: `NUMERIC`/`DECIMAL`, `INTERVAL`,
+`JSON`, the geospatial types, and any array/composite/map type. The same check is
+re-applied to a map whose type came from an external schema, so a lookup on a map
+with an unsupported key type is rejected when the query is planned.
+
+**Lookup semantics:**
+
+- Exactly one subscript. Maps do not support slicing — `(map('a', 1))['a':'b']` is
+  rejected with `map does not support slicing`, unlike array slices.
+- The lookup key is resolved to the map's key type, so a literal key is coerced
+  like any other comparison operand.
+- A missing key yields `NULL`, and a key stored with a `NULL` value yields `NULL`
+  too — **a stored NULL is indistinguishable from a miss**.
+- A `NULL` lookup key yields `NULL`.
+- Duplicate keys are stored verbatim in argument order, and a lookup resolves to
+  the **last** matching occurrence: `(map('a', 1, 'a', 2))['a']` → `2`.
+- Map entries and keys are non-nullable by construction; only the value type
+  participates in nullability.
+
+**How a whole map reaches the client:** a map has no PostgreSQL wire type of its
+own. It is physically an array of `{key, value}` pair composites, and that is what
+it reports over the wire, so projecting a whole map (rather than an `m[key]` lookup)
+arrives as an array of two-field records — `map('a', 1, 'b', 2)` renders as
+`{"(a,1)","(b,2)"}`, and `map('a', ROW(1, 2))` as `{"(a,\"(1,2)\")"}`.
+
+**What a map value does not support.** A map is neither an array nor a record, and
+it carries no equality, ordering, or cast operators of its own, so the map value
+itself cannot be grouped, sorted, deduplicated, concatenated, or cast — extract a
+value with `m[key]` first:
+
+| Expression | Error |
+|---|---|
+| `map('a', 1) \|\| 'x'::text` | `operator does not exist: map(text,integer) \|\| text` |
+| `SELECT map('a', 1) GROUP BY 1` | `could not identify an equality operator for type map(text,integer)` |
+| `SELECT map('a', 1) ORDER BY 1` | `could not identify an ordering operator for type map(text,integer)` |
+| `SELECT DISTINCT map('a', 1)` | `could not identify an equality operator for type map(text,integer)` |
+| `map('a', 1)::text` | `cannot cast type map(text,integer) to text` |
+
+There is also no map-to-map cast and no map-to-array cast. An array of
+`{key, value}` pairs can be coerced into a map type where a map is expected, since
+that is the map's physical shape.
+
 ### Geospatial types
 
 | Type | Notes |
