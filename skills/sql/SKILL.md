@@ -138,6 +138,20 @@ Types grounded in `src/sqlparser/sql/ColumnType.h` (the `enum class DataType` li
 | `ARRAY` | Arrays (`INT[]`, `FLOAT[]`, etc.) |
 | `GEOMETRY` / `GEOGRAPHY` / `POINT` | Geospatial |
 
+There is no `MAP` column type. `map(...)` is an expression-level Oxla extension
+that builds a **literals-only** map, read back with the `m[key]` subscript — in
+practice a constant lookup table keyed by a column:
+
+```sql
+SELECT (map(1, 'new', 2, 'shipped', 3, 'closed'))[status_code] FROM orders;
+```
+
+A miss and a stored `NULL` both return `NULL`; duplicate keys resolve to the last
+occurrence; keys must be primitive and non-`NULL` (no `NUMERIC`/`DECIMAL`,
+`INTERVAL`, `JSON`, or geospatial keys); slicing is rejected; and the map value
+itself cannot be grouped, sorted, deduplicated, concatenated, or cast. See
+[references/connect-and-types.md](references/connect-and-types.md).
+
 ## DDL and DML
 
 Full reference: [references/ddl-dml.md](references/ddl-dml.md).
@@ -427,7 +441,7 @@ SELECT * FROM generate_series(10, 1, -1);
 
 ## Reference Directory
 
-- [connect-and-types.md](references/connect-and-types.md): PostgreSQL wire protocol connection (port 5432, psql/JDBC/psycopg2/pgx), authentication (`initial_password`), SSL config, and the full supported data-type list grounded in `ColumnType.h`.
+- [connect-and-types.md](references/connect-and-types.md): PostgreSQL wire protocol connection (port 5432, psql/JDBC/psycopg2/pgx), authentication (`initial_password`), SSL config, and the full supported data-type list grounded in `ColumnType.h`, including the wide-integer (`INT16`/`INT32`) cast and operator matrix and the expression-level map surface (`map(...)` constructor, `m[key]` lookup, supported key types, miss-vs-stored-NULL semantics).
 - [ddl-dml.md](references/ddl-dml.md): CREATE/DROP TABLE, CREATE TABLE AS SELECT (CTAS), CREATE/DROP VIEW, CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE, GRANT/REVOKE (valid targets: ON table / ON TABLE / ON SCHEMA / ON DATABASE / ON EXTERNAL SOURCE — `ON ALL TABLES IN SCHEMA` is rejected by the parser), the `ALTER TABLE IF EXISTS catalog=>table WITH (...)` Kafka-catalog rebind, SELECT/INSERT VALUES/INSERT SELECT/UPDATE/DELETE, SELECT INTO (table or file destination), PREPARE/EXECUTE, and transactions — all grounded in `query_planner` test cases and `bison_parser.y`.
 - [kafka-iceberg.md](references/kafka-iceberg.md): Oxla + Redpanda enterprise differentiator — querying Redpanda/Kafka topics and Apache Iceberg tables via SQL. CREATE/ALTER/DROP STORAGE (s3/gcs/abs), CREATE/ALTER/DROP ICEBERG CATALOG (uri/warehouse/auth_type oauth2|basic|aws_sigv4|gcp + nested keys), CREATE/ALTER/DROP REDPANDA|KAFKA CATALOG (initial_brokers/schema_registry_url required, sasl_*, truststore, key_store_*, USING CATALOG bind/detach), CREATE TABLE / ALTER TABLE IF EXISTS catalog=>topic WITH (topic/schema_lookup_policy/error_handling_policy/struct_mapping_policy/confluent_wire_protocol plus the key/header decode options key_decode_mode/key_schema_subject/key_confluent_wire_protocol/key_schema_message_full_name/header_value_type), REFRESH, DESCRIBE/SHOW, GRANT ON EXTERNAL SOURCE, and the Redpanda Enterprise Iceberg-topic properties (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/invalid.record.action). Notes Redpanda Enterprise license requirements. Grounded in `bison_parser.y`, `connection_option_names.h`, `kafka/conversions.cpp`, `iceberg_catalog_parser.cpp`.
 - [data-loading.md](references/data-loading.md): COPY FROM / COPY TO with CSV/Parquet/ORC formats, STDIN/STDOUT, S3 credentials via `aws_cred(...)`, and bulk-loading patterns for analytical ingestion.
