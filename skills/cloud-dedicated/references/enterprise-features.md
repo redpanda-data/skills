@@ -172,7 +172,7 @@ Asynchronous, offset-preserving replication between distinct Redpanda clusters f
 | `topic_metadata_sync_options` | No | `interval`, `auto_create_shadow_topic_filters[]`, starting offset, `paused`. |
 | `consumer_offset_sync_options` | No | `interval`, `paused`, `group_filters[]`. |
 | `security_sync_options` | No | `interval`, `paused`, `acl_filters[]`. |
-| `schema_registry_sync_options` | No | `shadow_schema_registry_topic` ({} enables byte-for-byte `_schemas` replication). |
+| `schema_registry_sync_options` | No | A **oneof**: `shadow_schema_registry_topic` (byte-for-byte `_schemas` replication) **or** `shadow_schema_registry_api` (HTTP-API replication from a Redpanda or Confluent Schema Registry). See [Schema Registry replication modes](#schema-registry-replication-modes). |
 
 **`ShadowLinkClientOptions` nested keys** (`client_options`):
 - `bootstrap_servers[]` — source cluster brokers; required if `source_redpanda_id` is not provided.
@@ -190,6 +190,64 @@ Asynchronous, offset-preserving replication between distinct Redpanda clusters f
 System-topic rules: literal filters for `__consumer_offsets` and `_redpanda.audit_log` are rejected; prefix filters for `_redpanda`/`__redpanda` are rejected; `*` does not match `_redpanda`/`__redpanda`.
 
 **Service account ACLs on the source cluster** (for the replication user): topic `read`; `describe_configs` on topics; consumer-group `describe`+`read`; ACL `describe`; cluster `describe`.
+
+### Schema Registry replication modes
+
+`schema_registry_sync_options` carries a oneof — a link uses **one** mode, never both:
+
+| Mode | Use when |
+|---|---|
+| `shadow_schema_registry_topic: {}` | The source is another Redpanda cluster and you want an exact replica. Shadows the `_schemas` topic byte for byte: no filtering, no context remapping, no schema validation. Only takes effect if `_schemas` exists on the source and is absent or empty on the shadow cluster; unsetting it later does **not** remove an already-added `_schemas` shadow topic — fail that topic over or delete it. |
+| `shadow_schema_registry_api: {...}` | The source is a **Confluent Schema Registry** (migration off Confluent), or you need to replicate selected contexts/subjects, remap contexts, or control how unsupported schema features are handled. The shadow cluster polls the source registry over the Schema Registry HTTP API and imports subjects, versions, compatibility settings, and modes — preserving subject names and schema IDs. |
+
+**`shadow_schema_registry_api` keys:**
+
+| Key | Notes |
+|---|---|
+| `source_url` | Source Schema Registry HTTP endpoint. **Required on create** (CEL-enforced). Omit it on a masked `PATCH` that rotates only a credential. |
+| `auth_options.basic.{username,password}` | HTTP basic auth. `basic` is the **only** accepted arm — any other auth arm is a 400. `password` must reference a data-plane secret as `${secrets.<SECRET_ID>}`; inline plaintext is rejected. For Confluent Cloud, username/password are the Schema Registry API key and secret. Omit `auth_options` entirely for mTLS or an unauthenticated source registry. |
+| `tls_settings` | **Nested** shape here (unlike the flat `client_options.tls_settings` above): `enabled`, `do_not_set_sni_hostname`, and a oneof of `tls_pem_settings` (`ca`, `key`, `cert`) or `tls_file_settings`. In Cloud, `tls_file_settings` is **rejected** — use `tls_pem_settings`, whose `key` must be a `${secrets.<SECRET_ID>}` reference, with `key` and `cert` both set or both empty (mTLS to the source registry). |
+| `tail_interval` | Duration between incremental polls for new subjects/versions. Cluster default applies when unset or zero (10s). |
+| `full_sync_interval` | Duration between full scans of the selected subjects, catching anything a tail sync missed. Cluster default applies when unset or zero (5m). |
+| `max_source_requests_per_second` | Request-rate cap against the source registry. Cluster default applies when unset or zero (30/s). |
+| `source_filter.{contexts,subjects}` | Literal names only — no wildcards or prefixes. `contexts` selects whole contexts (default context is `.`); `subjects` selects individual subjects in qualified syntax (`orders-value`, `:.prod:orders-value`). The two lists are a **union**, and a subject selected by both replicates once. Unset or empty means the whole source registry. |
+| `destination` | Oneof: `identity: {}` preserves source context names; `exact.mappings[]` of `{source, destination}` renames them. With `exact`, every source context in scope must have exactly one mapping — an unmapped context fails the sync task, so scope `source_filter.contexts` to the mapped set. |
+| `unsupported_schema_feature_policy` | What to do with source schemas using features the Redpanda Schema Registry lacks (rule sets, metadata tags; subject-config override/default metadata and rule sets, compatibility groups — not compatibility levels, which do replicate). `UNSUPPORTED_SCHEMA_FEATURE_POLICY_FAIL` (default) skips the schema and records an error; `..._REMOVE` strips the unsupported fields and imports the rest. |
+| `paused` | Pauses the Schema Registry sync task. Pausing also **lifts** the write protection described below — this is the step that makes the shadow cluster's contexts writable at cutover. |
+
+Behavioral rules that shape a migration:
+
+- While the link is active, the destination contexts it replicates into are **read-only** — the shadow cluster rejects client writes there so replicas stay identical to the source. Contexts outside the filter stay writable. Pause the task (or fail the link over) to cut applications over.
+- Those destination contexts must be **empty** before the link starts; the rest of the registry does not have to be.
+- Requires a shadow cluster on Redpanda 26.2 or later, and network reachability from the shadow cluster to the source registry endpoint. Replicating any context other than the default one requires `schema_registry_enable_qualified_subjects` (enabled by default).
+- Schema arrival lags topic data by up to `tail_interval`, so consumers can briefly see records whose schema IDs are not yet resolvable on the shadow cluster. This is not a replication error.
+- API-mode Schema Registry replication is rolling out to Redpanda Cloud; if the options are not yet available for a cluster, the customer should contact Redpanda Support.
+
+```bash
+# API-mode Schema Registry replication on a new link (control plane).
+# Keep topic/offset/ACL sync options in the same request for a full migration —
+# a link carrying only schema_registry_sync_options replicates schemas and nothing else.
+curl -s -X POST "https://api.redpanda.com/v1/shadow-links" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{"shadow_link":{
+    "shadow_redpanda_id":"<dest-cluster-id>","name":"confluent-migration",
+    "client_options":{"bootstrap_servers":["<source-broker>:9092"],"tls_settings":{"enabled":true}},
+    "schema_registry_sync_options":{"shadow_schema_registry_api":{
+      "source_url":"https://<source-schema-registry-host>",
+      "auth_options":{"basic":{"username":"<sr-api-key>","password":"${secrets.<SECRET_ID>}"}},
+      "tls_settings":{"enabled":true},
+      "source_filter":{"contexts":["."],"subjects":[]},
+      "destination":{"identity":{}},
+      "unsupported_schema_feature_policy":"UNSUPPORTED_SCHEMA_FEATURE_POLICY_FAIL"}}}}'
+
+# Rotate only the source-registry credential (masked PATCH; source_url not required):
+curl -s -X PATCH "https://api.redpanda.com/v1/shadow-links/${SHADOW_LINK_ID}?update_mask=schema_registry_sync_options.shadow_schema_registry_api.auth_options.basic.password" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{"shadow_link":{"id":"'"${SHADOW_LINK_ID}"'","schema_registry_sync_options":{"shadow_schema_registry_api":{
+        "auth_options":{"basic":{"password":"${secrets.<NEW_SECRET_ID>}"}}}}}}'
+```
+
+The same settings are configurable in the Cloud UI (Schema Registry section of the create-shadow-link wizard), with `rpk shadow create --config-file` (YAML keys match the API field names), and with the Terraform provider's `redpanda_shadow_link` resource. Monitor progress with `rpk shadow status <link-name> --print-registry` (inventory of selected source vs destination subjects/versions, current and last full sync counters, last error) and inspect stored settings with `rpk shadow describe <link-name> --print-registry`.
 
 **Create via Control Plane API:**
 
@@ -235,7 +293,7 @@ rpk shadow failover <link-name> --topic orders                 # per-topic failo
 
 License expiration: new shadow links cannot be created; existing links keep operating and can be updated.
 
-Source: `controlplane/v1/shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`); `controlplane/v1/operation.proto` (`TYPE_CREATE/UPDATE/DELETE_SHADOW_LINK = 15/16/17`); `manage/pages/disaster-recovery/shadowing/setup.adoc` (rpk/self-managed `ShadowLinkConfig` YAML, filter/pattern/auth keys, service-account ACLs, system-topic rules); `reference/pages/rpk/rpk-shadow/rpk-shadow-create.adoc` and `rpk-shadow-failover.adoc`.
+Source: `controlplane/v1/shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`, and the Cloud-only CEL rules on the Schema Registry API mode: `source_url` required on create, basic-only auth, secret-ref password/key, PEM-only TLS); `redpanda` `proto/redpanda/core/admin/v2/shadow_link.proto` (`SchemaRegistrySyncOptions` oneof, `ShadowSchemaRegistryApi` fields and defaults, `SchemaRegistrySourceFilter`, `SchemaRegistryContextDestination`, `UnsupportedSchemaFeaturePolicy`) and `proto/redpanda/core/common/v1/tls.proto` (nested `TLSSettings`); `controlplane/v1/operation.proto` (`TYPE_CREATE/UPDATE/DELETE_SHADOW_LINK = 15/16/17`); `manage/pages/disaster-recovery/shadowing/migrate-schemas-confluent.adoc` (Confluent migration workflow, prerequisites, limitations, monitoring), `manage/pages/disaster-recovery/shadowing/setup.adoc` (rpk/self-managed `ShadowLinkConfig` YAML, filter/pattern/auth keys, service-account ACLs, system-topic rules); `reference/pages/rpk/rpk-shadow/rpk-shadow-create.adoc` and `rpk-shadow-failover.adoc`.
 
 ---
 
