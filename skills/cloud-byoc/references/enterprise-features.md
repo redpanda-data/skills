@@ -214,6 +214,8 @@ rpk shadow failover [LINK_NAME] --all          # or --topic <name>   (+ optional
 rpk shadow delete [LINK_NAME]
 ```
 
+Schema Registry replication has two mutually exclusive modes: byte-for-byte `_schemas` topic shadowing (Redpanda source), or HTTP-API replication of selected subjects, versions, and compatibility settings — which also accepts a **Confluent Schema Registry** as the source, making it the supported path for migrating schemas off Confluent. Fields, prerequisites, and the read-only-destination-context rule are in [Clusters and Agent](clusters-and-agent.md#schema-registry-replication-modes).
+
 Key constraints (from `shadowing/overview.adoc`): each shadow cluster maintains exactly **one** shadow link; async only (no active-active); data transforms are blocked on the shadow cluster while shadowing is active; no automatic fallback to the original source after failover — reconfigure all clients to the shadow cluster before resuming writes to avoid split-brain.
 
 License behavior: new shadow links cannot be created without a license; existing links keep operating and can be updated.
