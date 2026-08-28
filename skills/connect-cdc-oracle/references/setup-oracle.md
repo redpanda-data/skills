@@ -122,7 +122,8 @@ GRANT SELECT ON V_$LOGMNR_CONTENTS TO rpcn;
 GRANT SELECT ON ALL_TABLES         TO rpcn;
 GRANT SELECT ON ALL_LOG_GROUPS     TO rpcn;
 GRANT SELECT ON ALL_TAB_COLUMNS    TO rpcn;
--- Required for snapshot primary-key discovery (replication/snapshot.go queries these):
+-- Primary-key discovery, for tables given a snapshot_filters entry (grant them
+-- anyway — they cost nothing and a filter added later needs them):
 GRANT SELECT ON ALL_CONSTRAINTS    TO rpcn;
 GRANT SELECT ON ALL_CONS_COLUMNS   TO rpcn;
 
@@ -158,7 +159,7 @@ GRANT SELECT ON V_$LOGMNR_CONTENTS  TO C##RPCN CONTAINER=ALL;
 GRANT SELECT ON ALL_TABLES          TO C##RPCN CONTAINER=ALL;
 GRANT SELECT ON ALL_LOG_GROUPS      TO C##RPCN CONTAINER=ALL;
 GRANT SELECT ON ALL_TAB_COLUMNS     TO C##RPCN CONTAINER=ALL;
--- Required for snapshot primary-key discovery:
+-- Primary-key discovery, for tables given a snapshot_filters entry:
 GRANT SELECT ON ALL_CONSTRAINTS     TO C##RPCN CONTAINER=ALL;
 GRANT SELECT ON ALL_CONS_COLUMNS    TO C##RPCN CONTAINER=ALL;
 GRANT CREATE TABLE       TO C##RPCN CONTAINER=ALL;

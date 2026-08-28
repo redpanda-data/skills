@@ -269,11 +269,15 @@ Snapshot behaviour is controlled by `snapshot_mode` (since 4.99.0), an enum with
 
 ### When `snapshot_mode: snapshot_and_stream` (first run, formerly `stream_snapshot: true`)
 
-> **Prerequisite:** Every table included in the snapshot must have a **primary key**. The connector paginates snapshot rows using a primary-key cursor; if a table lacks a primary key, the connector fails at snapshot prepare with `"can't find a primary key for table '%s', does it exist and have one set?"`. `snapshot_mode: none` does not have this requirement.
+> **Prerequisite:** Only tables that have a `snapshot_filters` entry must have a **primary key** — those are paged with a primary-key cursor, and one without a key fails when its own snapshot starts with `"can't find a primary key for table '%s', does it exist and have one set?"`. Tables with no filter are read through a single unordered full-table cursor and need no primary key. `snapshot_mode: none` snapshots nothing, so neither case applies.
+>
+> Changed in 4.107.0 — before that release *every* snapshotted table was paged by primary key, so all of them required one.
 
 1. The current SCN is captured from `V$DATABASE` before the snapshot begins.
 2. A consistent read-only transaction (`SET TRANSACTION READ ONLY`) is opened per table.
-3. Tables are scanned in batches of `snapshot_max_batch_size` rows using primary-key-based cursor pagination. Up to `max_parallel_snapshot_tables` tables are scanned concurrently.
+3. Each table is scanned, up to `max_parallel_snapshot_tables` of them concurrently. Which of two paths a table takes depends on whether it has a `snapshot_filters` entry:
+   - **With a filter** — paged with a primary-key cursor in `snapshot_max_batch_size`-row queries, so its rows arrive in primary-key order.
+   - **Without a filter** — read through one unordered `SELECT * FROM "SCHEMA"."TABLE"` cursor. This is faster (Oracle picks a full table scan with sequential multiblock reads instead of the random I/O an `ORDER BY` forces), but the rows arrive in **no guaranteed order**. Do not build downstream logic that assumes snapshot rows are ordered. Changed in 4.107.0 — before that release these tables were paged by primary key too.
 4. Snapshot rows are emitted with `operation = read`.
 5. After all tables complete, the pre-snapshot SCN is written to the checkpoint.
 6. LogMiner streaming starts from the pre-snapshot SCN — changes that occurred during the snapshot are replayed from the redo log.
@@ -373,7 +377,7 @@ The `online_catalog` LogMiner strategy does not capture DDL in the redo log. DDL
 | `logminer.backoff_interval` | Low-traffic tables, reducing Oracle load | Increase (10s–60s) |
 | `logminer.mining_interval` | Near-real-time latency needed | Decrease (100ms) |
 | `max_parallel_snapshot_tables` | Snapshot of many tables is slow | Increase (2–8) |
-| `snapshot_max_batch_size` | Snapshot throughput limited | Increase (5000–10000) |
+| `snapshot_max_batch_size` | Snapshot of a table that has a `snapshot_filters` entry is slow | Increase (5000–10000). No effect on unfiltered tables — there it only paces cancellation checks |
 | `checkpoint_limit` | Output throughput limited | Increase (2048–4096) |
 | `batching.count` / `batching.period` | Output batching too small | Increase |
 | `logminer.transaction_cache` | Memory pressure from large transactions | Add Redis cache |

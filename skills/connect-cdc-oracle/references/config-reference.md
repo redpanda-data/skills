@@ -61,7 +61,9 @@ Controls whether and how an initial snapshot of existing rows is taken before st
 
 Snapshot rows are emitted with `operation = read`. The SCN captured at the start of the snapshot is stored in the checkpoint; LogMiner streaming (in `snapshot_and_stream`) resumes from that SCN when the snapshot is complete.
 
-> **Prerequisite:** Every snapshotted table must have a **primary key**. The connector uses primary-key cursor pagination to batch snapshot reads. A table without a primary key causes the connector to fail at snapshot prepare with `"can't find a primary key for table '%s', does it exist and have one set?"`. `snapshot_mode: none` has no primary-key requirement.
+> **Prerequisite:** Only tables that have a `snapshot_filters` entry need a **primary key** — those are paged with a primary-key cursor, and one without a key fails when its own snapshot starts with `"can't find a primary key for table '%s', does it exist and have one set?"`. Tables with no filter are read through a single unordered full-table cursor and need no primary key. `snapshot_mode: none` snapshots nothing, so neither case applies.
+>
+> Changed in 4.107.0 — before that release *every* snapshotted table was paged by primary key, so all of them required one.
 
 On restart with a stored checkpoint SCN, snapshotting is **not** re-run regardless of `snapshot_mode`. The connector always resumes from the cached SCN.
 
@@ -99,7 +101,10 @@ max_parallel_snapshot_tables: 4
 
 **Type:** `int` | **Required:** no | **Default:** `1000`
 
-Maximum number of rows per batch during snapshotting. Each batch is paged using a cursor on the table's primary key; the cursor state is held in memory during the snapshot.
+What this bounds depends on whether the table has a `snapshot_filters` entry:
+
+- **With a filter** — rows fetched per query. The table is paged with a primary-key cursor (`ORDER BY` the full key, `FETCH FIRST n ROWS ONLY`), and the cursor state is held in memory during the snapshot. Raising it means fewer, larger round trips.
+- **Without a filter** (the default for every table) — the table is read through a single unordered cursor, so this value only paces how often the snapshot checks whether it has been cancelled. It bounds no fetch and does not change snapshot throughput.
 
 ```yaml
 snapshot_max_batch_size: 5000
