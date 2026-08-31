@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. `Trigger.enabled` (field 15) / `TriggerUpdate.enabled` (field 4) pause-resume field and cron-scheduler semantics verified against `agent.proto` on 2026-08-24. Evidence date: 2026-08-24.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. `Trigger.enabled` (field 15) / `TriggerUpdate.enabled` (field 4) pause-resume field and cron-scheduler semantics verified against `agent.proto` on 2026-08-24. Write-time reference and model/provider validation verified against `cloudv2/apps/adp-api/internal/service/agent/aigw_resolver.go` on 2026-08-31. Evidence date: 2026-08-31.
 
 # Agentic Data Plane Agents Reference
 
@@ -88,6 +88,23 @@ These are the fields a builder sets when creating or updating a managed agent (`
 There is no `tools` field on `ManagedAgentSpec`. Agents access tools exclusively through `mcp_servers` references. (The `tools` field exists on `mcp_server.proto`, not on the agent proto.)
 
 **Aggregate MCP-reference cap.** The `max 32 items` bound is *per list*. Beyond it, the server rejects (with `InvalidArgument`) any spec whose *total* MCP references — the root agent's `mcp_servers` plus every subagent's `mcp_servers` — exceed **32 per agent**. The total counts references, not distinct servers: a server named by both the root agent and a subagent counts twice, because the runtime dials one connection per (registry, server) reference (`agent.proto:507–514`). So 16 subagents each referencing 32 servers is per-list-valid but exceeds the aggregate cap and is rejected.
+
+## Write-time validation of references and models
+
+`CreateAgent` and `UpdateAgent` validate a managed spec's outbound references before persisting it, so a bad reference fails the write instead of surfacing later as a broken agent. Two independent checks run.
+
+**Reference existence.** Every `llm_provider` and `mcp_servers` name on the spec — the root agent's plus each subagent's, deduped — is resolved against the service of record. A name that does not exist fails with `InvalidArgument` carrying a `BadRequest.FieldViolation` whose `field` is the offending path (for example `agent.managed.spec.subagents.<name>.mcp_servers`), so you can map the rejection back to the exact spec element. If the reference lookup itself cannot be completed, the RPC fails `Unavailable` instead — that distinguishes "your spec is wrong" from "we cannot tell right now", and only the former means you should edit the spec.
+
+**Model / provider pairing.** Each effective `(model, llm_provider)` pairing — including every subagent pairing, after inheritance is applied — is checked against the resolved provider. This check is scoped to **Bedrock providers only**, where it applies two gates:
+
+1. **Catalog validity.** The model must be a Bedrock model the runtime can build. A rejection names the model and suggests the full inference-profile form.
+2. **Enabled on the provider.** The model must appear in the provider's `provider_models` list, which the gateway enforces on every proxied request. Failing this gate returns `InvalidArgument` with a message of the form `model "…" is not enabled on llm_provider "…"; enable it on the provider or pick one of its models`. An **empty** `provider_models` list is not a rejection: it means the provider serves whatever its SDK accepts, so the gate is skipped.
+
+Non-Bedrock providers (OpenAI, Anthropic, Google, OpenAI-compatible) are **not** model-checked at write time; they keep the gateway's request-time enforcement as their only gate, because their model IDs are matched with family-prefix rules that live in the gateway.
+
+**Update-path scoping.** `UpdateAgent` validates only the pairings the update actually *changes*, so a pre-existing spec that already holds a bad model stays editable — you can edit the prompt beside it without the write being rejected for the stale model. Rarely, a provider referenced by a changed pairing can be resolved before the row lock and then vanish; that surfaces as `Aborted` with a "changed while the update was in flight; retry" message, and the correct response is to retry the update.
+
+Because the check runs on the *merged* spec, a partial update whose field mask names only a model (a subagent model edit, or a leaf-path config apply) is still validated against the provider it inherits, even when the mask does not carry `llm_provider`.
 
 ## Subagents
 

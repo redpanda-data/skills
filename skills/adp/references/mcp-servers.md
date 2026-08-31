@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` (MCPServerService RPCs, MCPServer fields, code-mode comment, tool-naming comment, `data_policies` field, `response_format` field and `MCPResponseFormat` enum, `PreviewDataPolicies`/`PreviewToolResponse` RPCs), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/data_policy.proto` (DataShaping/DataPolicy), `cloudv2/proto/public/cloud/redpanda/mcps/v1/auth.proto` (auth mode messages), `cloudv2/apps/aigw/internal/mcp/managed/defaults.go` (managed catalog registrations). Evidence date: 2026-08-03 (`response_format`/`MCPResponseFormat` added and verified against `mcp_server.proto`; MCPServerService RPCs and data policies unchanged; managed catalog unchanged since 2026-06-29).
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` (MCPServerService RPCs, MCPServer fields, code-mode comment, tool-naming comment, `data_policies` field, `response_format` field and `MCPResponseFormat` enum, `PreviewDataPolicies`/`PreviewToolResponse` RPCs), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/data_policy.proto` (DataShaping/DataPolicy), `cloudv2/proto/public/cloud/redpanda/mcps/v1/auth.proto` (auth mode messages), `cloudv2/apps/aigw/internal/mcp/managed/defaults.go` (managed catalog registrations), `cloudv2/apps/aigw/internal/mcp/proxy.go` (shared hook chain above the managed/remote/code-mode dispatch), `cloudv2/apps/aigw/internal/mcp/response_format_hook.go` (encoder scope, `tools/list` `outputSchema` strip, fail-open outcomes, code-mode alias trimming). Evidence date: 2026-08-31 (`response_format` scope and failure behavior verified against the aigw MCP proxy and response-format hook; `response_format`/`MCPResponseFormat` field and enum, MCPServerService RPCs, and data policies unchanged since 2026-08-03; managed catalog unchanged since 2026-06-29).
 
 # Agentic Data Plane MCP Servers Reference
 
@@ -119,6 +119,16 @@ A server's `response_format` selects how its tool results are encoded on the MCP
 | `MCP_RESPONSE_FORMAT_TOON` (2) | TOON (Token-Oriented Object Notation) | A leaner indentation-based encoding that also trims nested objects, not only arrays-of-objects. Same strip-`structuredContent` + lossless-round-trip contract as JTON |
 
 Both JTON and TOON are optimizations only — they preserve a lossless round-trip and never alter the result's data. This is a newer capability; confirm it is active in your environment (and the encoded output is what you expect) via live introspection before relying on it.
+
+### Scope and failure behavior
+
+- **Applies to both `REMOTE` and `MANAGED` servers.** The encoder sits in the shared MCP proxy chain, above the managed / remote / code-mode dispatch, so a remote server you own is encoded on the proxied leg just like a managed catalog entry. A managed server answers plain JSON; a remote server on the Streamable HTTP transport answers SSE, and both framings are handled.
+- **Whole-server, not per-tool.** The setting is a single field on the server; there is no per-tool granularity. A server mixing tabular and non-tabular tools simply passes the non-tabular results through.
+- **A code-mode endpoint inherits the parent server's format.** The `-code` alias reads `response_format` from the server whose config it shares, so you set it once on the parent.
+- **`tools/list` drops `outputSchema`.** On a server that has opted in, the advertised tools lose their `outputSchema`, because encoding strips the duplicate `structuredContent` a schema would promise. Expect no structured-output contract on the tools of an opted-in server; the tool still returns its data in the encoded text block.
+- **It fails open, never closed.** The encoder never denies a call and never truncates a result. Anything it cannot safely re-encode is forwarded byte-for-byte: a non-JSON (prose) payload, an error result or one with `isError` set, a payload whose encoding would not actually shrink it, a very large payload, and — critically — any encoding that does not round-trip exactly back to the source value. High-precision decimals are a known round-trip rejection, so they pass through unencoded.
+
+Because passthrough is silent and shape-dependent, do not assume a given tool's output is encoded; treat `response_format` as a best-effort token optimization rather than a guaranteed wire format.
 
 ## Data policies (preview)
 
