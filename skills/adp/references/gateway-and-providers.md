@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto` (LLMProviderService RPCs lines 16-66, LLMProvider fields lines 82-260, provider config oneof lines 220-231, provider type enum lines 68-78, config messages lines 574-747, ProviderModelPricing lines 451-548), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/model.proto` (ModelService RPCs lines 10-23, Model fields, ModelCapabilities lines 26-36, ListModelsRequest lines 62-72), `cloudv2/apps/aigw/internal/server/server.go` (LLMProviderService registered lines 1054/1189; ModelService registered lines 1059/1213), `cloudv2/apps/aigw/internal/llm/provider/google/google.go:70` (Gemini x-goog-api-key injection). `Model.max_input_tokens` (field 6) and `max_output_tokens` (field 7) re-verified against `model.proto` on 2026-07-06. Evidence date: 2026-07-06.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto` (LLMProviderService RPCs lines 16-66, LLMProvider fields lines 82-260, provider config oneof lines 220-231, provider type enum lines 68-78, config messages lines 574-747, ProviderModelPricing lines 451-548), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/model.proto` (ModelService RPCs lines 10-23, Model fields, ModelCapabilities lines 26-36, ListModelsRequest lines 62-72), `cloudv2/apps/aigw/internal/server/server.go` (LLMProviderService registered lines 1054/1189; ModelService registered lines 1059/1213), `cloudv2/apps/aigw/internal/llm/provider/google/google.go:70` (Gemini x-goog-api-key injection). `cloudv2/apps/aigw/internal/services/llmprovider/service.go` (create-path `Transcripts` defaulting). `Model.max_input_tokens` (field 6) and `max_output_tokens` (field 7) re-verified against `model.proto` on 2026-07-06. Evidence date: 2026-08-31 (transcript-recording create default verified against the aigw llmprovider service; `LLMProviderService` RPCs, provider types, and pricing overrides unchanged since 2026-07-06).
 
 # AI Gateway, LLM Providers, and Models Reference
 
@@ -56,10 +56,34 @@ Source: `llm_provider.proto:82-260`.
 | `provider_models` (field 19) | Canonical model list (`ProviderModel`); field 7 `models` is deprecated, do not use |
 | `enabled` (field 8) | Toggle; a disabled provider rejects all requests |
 | `url` (field 11) | OUTPUT_ONLY; computed proxy URL for this provider; not persisted |
-| `transcripts` (field 20) | `Transcripts.record_input_messages`, `record_output_messages`; OTel content capture |
+| `transcripts` (field 20) | `Transcripts.record_input_messages`, `record_output_messages`; OTel content capture. **Both default to enabled when you omit the message on create** — see below |
 | `guardrail` (field 21) | Optional; references a `Guardrail` resource evaluated before forwarding |
 
 The **provider config oneof** (`llm_provider.proto:220-231`) holds exactly one of: `openai_config`, `anthropic_config`, `google_config`, `bedrock_config`, `openai_compatible_config`. The set arm must match the `type` field.
+
+### Transcript recording defaults to ON
+
+`Transcripts` carries two plain (no-presence) bools: `record_input_messages` (field 1) and `record_output_messages` (field 2). They control whether the gateway populates `gen_ai.input.messages` and `gen_ai.output.messages` on call spans — that is, whether prompts and completions are captured verbatim for transcripts.
+
+On `CreateLLMProvider` the server distinguishes an **absent** `transcripts` message from a supplied one:
+
+- **Omit `transcripts`** → the server stamps both fields **true**. A provider created without saying anything about transcripts captures full request and response content.
+- **Supply `transcripts`** → the message is honoured as written, so a supplied `false` is a real opt-out.
+
+To create a provider that does *not* capture content, send the message explicitly:
+
+```json
+{
+  "transcripts": {
+    "record_input_messages": false,
+    "record_output_messages": false
+  }
+}
+```
+
+Existing providers are not backfilled — this defaulting applies to newly created providers only, and `UpdateLLMProvider` can flip either field at any time.
+
+**Privacy consequence.** Captured content may contain PII or secrets, and enabling capture is now the default for any programmatic create that leaves the field unset. If a provider must not record content, set the fields explicitly on create rather than relying on the zero value.
 
 ## Supported provider types and auth schemes
 
@@ -132,7 +156,7 @@ What the proxy does:
 - Injects the resolved credential (API key, SigV4 signature, or passthrough `Authorization`) on each outbound request.
 - Authenticates inbound clients via OIDC service accounts and short-lived tokens.
 - Records spend, request counts, and token counts per provider on OTel spans.
-- Optionally captures `gen_ai.input.messages` and `gen_ai.output.messages` content (controlled by `transcripts` fields on `LLMProvider`).
+- Optionally captures `gen_ai.input.messages` and `gen_ai.output.messages` content (controlled by `transcripts` fields on `LLMProvider`; enabled by default when the message is omitted on create — see [Transcript recording defaults to ON](#transcript-recording-defaults-to-on)).
 - Optionally evaluates a `Guardrail` resource before forwarding (`llm_provider.proto:243-258`).
 
 ## Not in scope
