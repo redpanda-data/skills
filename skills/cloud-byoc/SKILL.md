@@ -154,10 +154,10 @@ All mutating operations (CreateNetwork, CreateCluster, DeleteCluster, DeleteNetw
 
 | Resource | Endpoints |
 |---|---|
-| Networks | `POST /v1/networks`, `GET /v1/networks/{id}`, `GET /v1/networks`, `DELETE /v1/networks/{id}` |
+| Networks | `POST /v1/networks`, `GET /v1/networks/{id}`, `GET /v1/networks`, `PATCH /v1/networks/{id}?update_mask=...`, `DELETE /v1/networks/{id}` |
 | Clusters | `POST /v1/clusters`, `GET /v1/clusters/{id}`, `GET /v1/clusters`, `PATCH /v1/clusters/{id}?update_mask=...`, `DELETE /v1/clusters/{id}` |
 | Network Peerings | `POST /v1/network/{network_id}/network-peerings`, `GET`/`DELETE /v1/network/{network_id}/network-peerings/{id}`, `GET /v1/network/{network_id}/network-peerings` |
-| Cloud Provider Access (PREVIEW) | `POST /v1/cloud-provider-accesses`, `GET`/`DELETE /v1/cloud-provider-accesses/{id}`, `GET /v1/cloud-provider-accesses` |
+| Cloud Provider Access (PREVIEW) | `GET /v1/cloud-provider-accesses/prerequisites`, `POST /v1/cloud-provider-accesses`, `GET`/`DELETE /v1/cloud-provider-accesses/{id}`, `GET /v1/cloud-provider-accesses` |
 | Shadow Links | `POST /v1/shadow-links`, `GET`/`DELETE /v1/shadow-links/{id}`, `GET /v1/shadow-links`, `PATCH /v1/shadow-links/{id}?update_mask=...` |
 | Operations | `GET /v1/operations/{id}`, `GET /v1/operations` |
 | Scheduled Operations (PREVIEW) | `GET /v1/scheduled-operations` (list only) |

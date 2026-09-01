@@ -69,10 +69,10 @@ The Admin API uses three authorization levels (defined in `server.h`):
 | Level | Meaning |
 |-------|---------|
 | `publik` (public) | No authentication required even when auth is enabled. Used for informational/read-only endpoints. |
-| `authenticated` | Requires valid credentials (any authenticated user). |
+| `authenticated` (enum `user`) | Requires valid credentials (any authenticated user) but not superuser status. Spelled `authenticated` in the docs; the enum member is `user`. |
 | `superuser` | Requires a superuser account. Most write/mutating endpoints require superuser. |
 
-**Superusers** are configured in `redpanda.yaml` under `superusers:` list. When using `rpk security user create` with SASL, you then add that user to the `superusers` config property in the cluster config.
+**Superusers** are the `superusers` **cluster configuration** property, not a node property in `redpanda.yaml`. It has `needs_restart: no`, so changes apply live — the Admin API server watches for cluster-config updates that touch `superusers` or `admin_api_require_auth` and re-reads them. Create the user first (`rpk security user create`), then add it: `rpk cluster config set superusers '["admin"]'`. To seed the list before the cluster is up, put it in `/etc/redpanda/.bootstrap.yaml`.
 
 ## Setting Up curl for All Requests
 

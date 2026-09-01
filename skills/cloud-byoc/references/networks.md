@@ -70,6 +70,7 @@ When creating an AWS network with BYOVPC, the `customer_managed_resources.aws` o
 | `dynamodb_table.arn` | ARN of pre-created DynamoDB table for Terraform locks |
 | `vpc.arn` | ARN of your pre-created VPC (pattern: `arn:aws:ec2:<region>:<account>:vpc/<vpc-id>`) |
 | `private_subnets.arns` | List of private subnet ARNs (pattern: `arn:aws:ec2:<region>:<account>:subnet/<subnet-id>`) |
+| `public_subnets.arns` | **PREVIEW, optional.** Public subnet ARNs, same pattern. Required only for a **dual-listener** cluster, whose public seed NLB is placed in these subnets. **Write-once:** it may be set on a network that has none (see [Updating a Network](#updating-a-network)), but not changed or cleared afterwards. |
 
 ```bash
 curl -s -X POST "${BASE}/v1/networks" \
@@ -235,6 +236,46 @@ curl -s "${BASE}/v1/networks/${NET_ID}" \
   -H "Authorization: Bearer ${TOKEN}" | jq '.network | {id, name, state, cidr_block, zones}'
 ```
 
+## Updating a Network
+
+`PATCH /v1/networks/{network.id}` updates an existing network. Note the path
+parameter is `network.id` — this differs from GET/DELETE, which use
+`/v1/networks/{id}`. The request maps `body: "network"`, so the body **is the
+`NetworkUpdate` object directly** — do not wrap it as `{"network": {...}}` — and
+`update_mask` is a separate required top-level parameter, passed in the query
+string rather than the body. This is the same shape as the cluster PATCH.
+
+Only two fields are settable after create, and **both are PREVIEW**:
+
+| Field | Notes |
+|---|---|
+| `egress_spec` | Centralized-egress configuration; see [Centralized egress](#centralized-egress-transit-gateway--hub-vpc-preview). |
+| `customer_managed_resources` | Typed as `Network.UpdatableCustomerManagedResources`, whose only member is `aws.public_subnets` — so this exists to let an existing BYOVPC network adopt dual listeners. Write-once. |
+
+```bash
+# Attach public subnets to an existing AWS BYOVPC network (PREVIEW)
+OP=$(curl -s -X PATCH "${BASE}/v1/networks/${NET_ID}?update_mask=customer_managed_resources" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{
+    "id": "'"${NET_ID}"'",
+    "customer_managed_resources": {
+      "aws": {
+        "public_subnets": {
+          "arns": [
+            "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-0aaa1111",
+            "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-0bbb2222",
+            "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-0ccc3333"
+          ]
+        }
+      }
+    }
+  }' | jq -r '.operation.id')
+```
+
+Returns an `UpdateNetworkOperation` (202) whose operation `type` is
+`TYPE_UPDATE_NETWORK = 18`. Poll `GET /v1/operations/{id}` until
+`STATE_COMPLETED`.
+
 ## Deleting a Network
 
 A network can only be deleted after all clusters using it have been deleted.
@@ -327,12 +368,31 @@ Unlike most control-plane mutations, **create/delete here are synchronous** — 
 
 | Operation | Endpoint | Returns |
 |---|---|---|
+| Prerequisites | `GET /v1/cloud-provider-accesses/prerequisites` | The values you need to build the IAM trust policy — see below |
 | Create | `POST /v1/cloud-provider-accesses` | `CloudProviderAccess` (201, synchronous) |
 | Get | `GET /v1/cloud-provider-accesses/{id}` | `CloudProviderAccess` |
-| List | `GET /v1/cloud-provider-accesses` | `CloudProviderAccess[]` |
+| List | `GET /v1/cloud-provider-accesses` | `CloudProviderAccess[]` (`filter.cloud_provider`, `page_size` ≤ 1000, `page_token`) |
 | Delete | `DELETE /v1/cloud-provider-accesses/{id}` | 204; **409** if still referenced by a network |
 
-### CloudProviderAccessCreate fields
+### Step 1: fetch the prerequisites
+
+The IAM role must already trust Redpanda **before** you register it, so start
+here rather than at create. Pass the cloud provider as a query parameter:
+
+```bash
+curl -s "${BASE}/v1/cloud-provider-accesses/prerequisites?cloud_provider=CLOUD_PROVIDER_AWS" \
+  -H "Authorization: Bearer ${TOKEN}" | jq '.aws'
+# → { "external_id": "...", "principal_arn": "arn:aws:iam::...:role/..." }
+```
+
+| Response field | Use it for |
+|---|---|
+| `external_id` | The `sts:ExternalId` condition on your role's trust policy (confused-deputy protection). Derived from your organization ID. |
+| `principal_arn` | The `Principal` on your role's trust policy — the Redpanda role that will assume yours. |
+
+Build the role with both values, then continue to create.
+
+### Step 2: create the access (CloudProviderAccessCreate fields)
 
 | Field | Required | Notes |
 |---|---|---|
@@ -340,7 +400,9 @@ Unlike most control-plane mutations, **create/delete here are synchronous** — 
 | `cloud_provider` | Yes | **AWS only** this release. |
 | `config.aws.role_arn` | Yes | ARN of the IAM role Redpanda assumes. Pattern `^arn:aws:iam::\d{12}:role/.+$`. |
 
-The server populates `config.aws.external_id` (output-only, derived from your organization ID). You **must** add this External ID to the IAM role's trust policy — it provides STS confused-deputy protection.
+The response echoes `config.aws.external_id` (output-only) — the same value the
+prerequisites call returned. Use it to confirm the role's trust policy matches;
+it is not new information at this point.
 
 ```bash
 # Register a cross-account AWS access (PREVIEW)

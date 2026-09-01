@@ -25,14 +25,14 @@ The alias `rpk sec` also works: `rpk sec user list`, `rpk sec acl list`, etc.
 ## Quickstart
 
 ```bash
-# 1. Enable SASL + ACL authorization on the broker (redpanda.yaml, requires restart)
-#    redpanda:
-#      enable_sasl: true            # authentication: clients must present credentials
-#      kafka_enable_authorization: true  # authorization: enforce ACLs (default-deny)
-#      superusers: ["admin"]
-
-# 2. Create a superuser first (using an existing superuser or bootstrap)
+# 1. Create the superuser FIRST, before auth is on (else you lock yourself out)
 rpk security user create admin --password 'S3cur3Pass!' --mechanism scram-sha-256
+
+# 2. Enable SASL + ACL authorization. All three are CLUSTER config properties
+#    (not redpanda.yaml node config) and none requires a broker restart.
+rpk cluster config set superusers '["admin"]'
+rpk cluster config set enable_sasl true               # clients must present credentials
+rpk cluster config set kafka_enable_authorization true # enforce ACLs (default-deny)
 
 # 3. Create an application user (password auto-generated if -p omitted)
 rpk security user create app-user --password 'AppPass123'
@@ -71,7 +71,7 @@ rpk security role describe data-engineers
 
 SASL/SCRAM users authenticate clients to Redpanda. Redpanda supports two mechanisms: **SCRAM-SHA-256** (default) and **SCRAM-SHA-512**.
 
-SASL must be enabled in `redpanda.yaml` with `enable_sasl: true` (controls authentication — clients must present credentials). ACL authorization enforcement is controlled separately by `kafka_enable_authorization: true` (when enabled, clients without a matching allow ACL are denied). Both are typically enabled together for a fully secured cluster. Superusers are defined in the `superusers` list and bypass all ACL checks.
+SASL is enabled with the `enable_sasl` cluster property (controls authentication — clients must present credentials). ACL authorization enforcement is controlled separately by `kafka_enable_authorization` (when `true`, clients without a matching allow ACL are denied; when unset it follows `enable_sasl`). Both are typically enabled together for a fully secured cluster. Superusers are the `superusers` cluster property and bypass all ACL checks. All three are cluster configuration, applied without a broker restart — set them with `rpk cluster config set`, or seed them in `/etc/redpanda/.bootstrap.yaml` before first boot.
 
 ### user create
 
@@ -298,12 +298,14 @@ See [enterprise-security.md](references/enterprise-security.md) for the full con
 
 When enabling SASL on a new cluster:
 
-1. Add `enable_sasl: true` (authentication), `kafka_enable_authorization: true` (ACL enforcement), and `superusers: ["admin"]` to `redpanda.yaml`.
-2. Restart the broker.
-3. Create the `admin` user via `rpk security user create admin --password '...'` using whatever auth the Admin API listener is configured for.
-4. Create application users with `rpk security user create`.
+1. Create the `admin` user via `rpk security user create admin --password '...'`, using whatever auth the Admin API listener currently requires. Do this **first** — enabling SASL before a superuser exists locks you out.
+2. `rpk cluster config set superusers '["admin"]'`.
+3. `rpk cluster config set enable_sasl true` (authentication) and `rpk cluster config set kafka_enable_authorization true` (ACL enforcement). These are cluster properties; no broker restart.
+4. Create application users with `rpk security user create` (now authenticating as `admin`).
 5. Grant ACLs to each application user with `rpk security acl create`.
 6. Connect clients using SASL credentials.
+
+For a cluster provisioned from scratch, seed steps 2–3 in `/etc/redpanda/.bootstrap.yaml`.
 
 Without ACLs, newly created users cannot access any resource.
 
