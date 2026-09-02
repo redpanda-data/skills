@@ -330,6 +330,7 @@ TO 's3://exports/enriched_orders.parquet'
 | `DELIMITER ','` | CSV | Field delimiter character |
 | `HEADER ON` / `HEADER OFF` | CSV | Include/exclude header row |
 | `NULL ''` | CSV | String representation of NULL |
+| `ON_ERROR STOP` / `ON_ERROR IGNORE` | CSV, `COPY FROM` | Row-level error handling: `STOP` (the default) fails the copy on the first unparseable row; `IGNORE` skips bad rows and loads the rest |
 | `aws_cred(...)` | S3 paths | Inline AWS credentials block |
 
 For `aws_cred(...)` parameters:

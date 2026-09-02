@@ -279,6 +279,21 @@ in `iceberg_schema_builder.cpp` and `test_iceberg_ddl.py`):
   `GEOGRAPHY`, `POINT`. The same applies when one of these is nested inside a
   composite or array; the error names the full column path (e.g. `c.span`,
   `c[]`).
+- There is no SQL side to Iceberg's `map` type: SQL has no declarable map column
+  type, so `CREATE TABLE` cannot produce a `map` column. A `map` column created by
+  another Iceberg writer is readable — see
+  [Reading `map` columns](#reading-map-columns).
+
+### Concurrent commits
+
+Iceberg commits are optimistic: the client re-reads the table metadata and retries
+internally (per the table's `commit.retry` properties). When retries are exhausted,
+or a commit-time validation fails, the statement fails with a dedicated
+concurrent-modification error reported to SQL clients as SQLSTATE **`40001`**
+(`serialization_failure`, message `iceberg commit conflicts with a concurrent table
+change`) — the standard "re-run the statement" signal. Retry it; the retry re-reads
+the table first. Any other failure keeps its own error code, so `40001`
+specifically means another writer changed the table underneath this statement.
 
 ### Authorization
 
@@ -307,6 +322,28 @@ SELECT age, name FROM test_iceberg_catalog=>my.path.table1;
 -- Single-namespace table
 SELECT id, name FROM my_ice=>ns.orders;
 ```
+
+### Reading `map` columns
+
+An Iceberg `map<K, V>` column resolves to an Oxla map column — for example a
+`map<string, long>` reads as `map(text,bigint)` — and is queried with the `m[key]`
+subscript. Both the key and the value type are translated by the same rules as any
+other Iceberg column, so an unsupported key or value type makes the column's schema
+incompatible rather than silently degrading it.
+
+```sql
+SELECT id, vals['region'], vals['nope'] FROM my_ice=>ns.events;
+SELECT pg_typeof(vals) FROM my_ice=>ns.events LIMIT 1;   -- map(text,bigint)
+```
+
+A Parquet map is physically an entry list with no key-uniqueness guarantee, so the
+lookup rules are the same as for a Kafka map column: duplicate keys are kept
+verbatim and a lookup returns the **last** matching entry (a later `NULL`
+tombstones the key, a later value revives it), a miss and a stored `NULL` both
+yield `NULL`, and projecting the whole column emits the array-of-pairs text form.
+`REFRESH` picks map columns up like any other schema change. See
+[kafka-catalogs.md](kafka-catalogs.md#map-columns) for the per-format mapping and
+`/redpanda:sql` for full map semantics.
 
 ### Partition Pruning
 
