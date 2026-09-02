@@ -290,7 +290,7 @@ Grounded in `KafkaSourceOptions::k_option_definitions`
 | `output_schema_message_full_name` | no | string | output message full name |
 | `schema_lookup_policy` | no | `LATEST` (default), `SCHEMA_ID` | how to resolve schemas |
 | `error_handling_policy` | no | `FAIL` (default), `FILL_NULL`, `DROP_RECORD` | bad-record behavior |
-| `struct_mapping_policy` | no | `COMPOUND` (default), `JSON`, `FLATTEN`, `VARIANT` | only `JSON` and `COMPOUND` are accepted in the current version |
+| `struct_mapping_policy` | no | `COMPOUND` (default), `JSON`, `FLATTEN`, `VARIANT` | only `JSON` and `COMPOUND` are accepted in the current version. `COMPOUND` maps a nested record to a struct column and a schema map field to a map column; `JSON` collapses both to a single `JSON` column |
 | `confluent_wire_protocol` | no | `true`, `false` | **only valid when `schema_lookup_policy = 'LATEST'`** |
 | `key_decode_mode` | no | `binary` (default), `string`, `schema_latest`, `schema_id_prefix` | how to decode the record key: raw `BYTEA`, UTF-8 `TEXT`, latest key schema, or per-record schema-ID prefix |
 | `key_schema_subject` | no | string | Schema Registry subject for the key schema (`schema_*` key modes) |

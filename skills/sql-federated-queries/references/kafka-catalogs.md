@@ -288,6 +288,29 @@ WHERE  (redpanda).timestamp >= TIMESTAMP '2024-01-01 00:00:00';
 
 Note: `offset` must be quoted as `"offset"` because it is a reserved SQL keyword.
 
+### Metadata predicates and read pruning
+
+A `WHERE` clause on `(redpanda).partition`, `(redpanda)."offset"`, or
+`(redpanda).timestamp` is used at planning time to narrow the offset range each
+scan reads, not just to filter rows afterwards. The three differ in what that
+costs:
+
+- `partition` and `offset` bounds are resolved from the predicate alone — no call
+  to the broker.
+- A `timestamp` lower bound has to be translated into per-partition start offsets,
+  which requires a **broker timequery**. If that resolution fails (an unreachable
+  or slow broker, or no broker connection available), the query does not fail:
+  the affected scans fall back to reading **without** their timestamp bounds. Results stay exact —
+  the extracted filters still apply during execution — but more of the topic is
+  read, and offset/partition pruning from the same `WHERE` clause is kept. The
+  fallback is reported in the server log as a warning carrying the query ID and
+  the failure reason.
+
+So a query that suddenly reads far more of a topic than usual, with no change to
+its SQL, is worth checking against that warning; filtering by `(redpanda)."offset"`
+or `(redpanda).partition` instead of (or alongside) `(redpanda).timestamp` avoids
+the broker timequery entirely.
+
 ---
 
 ## Schema Decoding: Avro, Protobuf, JSON
@@ -313,7 +336,7 @@ enum class SchemaType : int32_t { Avro = 0, Protobuf = 1, Json = 2 };
 | bytes | BYTEA |
 | record | STRUCT (COMPOUND policy) or JSON (JSON policy) |
 | array | ARRAY |
-| map | JSON |
+| map | `map(text, <value type>)` (COMPOUND policy) or JSON (JSON policy) — see [Map columns](#map-columns) |
 | date (logical) | DATE |
 | time-millis / time-micros | TIME |
 | timestamp-millis / timestamp-micros | TIMESTAMP |
@@ -324,12 +347,64 @@ enum class SchemaType : int32_t { Avro = 0, Protobuf = 1, Json = 2 };
 
 Protobuf field types map via `pbTypeToSqlt` in `oxla/src/external_schema/protobuf/protobuf_sql_mapping.h`.
 Nested messages become STRUCT fields (COMPOUND policy) or JSON (JSON policy).
+A `map<K, V>` field becomes a map column under the COMPOUND policy, or a single JSON
+column under the JSON policy — see [Map columns](#map-columns).
 
 ### JSON schema mappings
 
 JSON Schema types map via `oxla/src/external_schema/json/`: `string`→TEXT,
 `integer`→BIGINT, `number`→DOUBLE, `boolean`→BOOL, `object`→STRUCT or JSON,
 `array`→ARRAY.
+
+### Map columns
+
+Under `struct_mapping_policy = 'COMPOUND'` (the default), a map field in the
+topic's schema resolves to a **map column**, queried with the `m[key]` subscript.
+Under `'JSON'`, the same field collapses to one `JSON` column instead, like a
+nested record.
+
+| Schema | Map field | Resolved SQL type |
+|--------|-----------|-------------------|
+| Avro | `{"type": "map", "values": "long"}` | `map(text,bigint)` |
+| Avro | `{"type": "map", "values": ["null", "string"]}` | `map(text,text)` (a nullable value union unwraps) |
+| Avro | map of record / map of array | `map(text, <struct>)` / `map(text,<elem>[])` |
+| Protobuf | `map<string, int64>` | `map(text,bigint)` |
+| Protobuf | `map<int64, string>` | `map(bigint,text)` |
+| Protobuf | `map<string, Msg>` | `map(text, <struct>)` |
+
+Avro map keys are always strings, so an Avro map is always keyed by `text`;
+Protobuf map keys carry the key field's own type, so a Protobuf map can be keyed by
+an integer. Describing the source shows each column's resolved map type. Map values
+follow the same policy as any other field, so a record-valued map is a map of
+structs under COMPOUND and part of the JSON column under JSON.
+
+```sql
+-- Look values up by key; a miss (and a stored NULL) is NULL
+SELECT id, attrs['region'], attrs['nope'] FROM my_kafka=>events;
+
+-- A lookup result is a first-class value: descend into a record- or array-valued hit
+SELECT (objects['o']).a, arrs['nums'][2] FROM my_kafka=>events;
+
+-- The map's own type
+SELECT pg_typeof(attrs) FROM my_kafka=>events LIMIT 1;   -- map(text,bigint)
+```
+
+Semantics that differ from a typical map API, because a map is physically an entry
+list with no uniqueness guarantee:
+
+- Duplicate keys are kept verbatim and a lookup returns the **last** matching
+  entry, so a later `NULL` tombstones a key and a later value revives it.
+- A stored `NULL` value is indistinguishable from a missing key — both yield `NULL`.
+- Projecting the whole column (`SELECT attrs`) emits the physical array-of-pairs
+  text form (e.g. `{"(name,row3)"}`); project `m[key]` lookups for typed values.
+- The map value itself carries no equality, ordering, or cast operators, so it
+  cannot be grouped, sorted, deduplicated, or cast — extract with `m[key]` first.
+
+Map columns work on a Kafka-only source, an Iceberg-only table, and the transparent
+Kafka+Iceberg union alike, with identical lookup results; across the two legs of a
+transparent source a map column unifies like any other column (its value type
+widens, and a struct value type takes the superset of fields). Full map semantics:
+`/redpanda:sql` (`references/connect-and-types.md`).
 
 ---
 

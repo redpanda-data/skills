@@ -369,6 +369,13 @@ SELECT CAST(UUID 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS BYTEA);  -- uuid -> b
 SELECT CAST(data AS UUID) FROM blobs;                               -- bytea column -> uuid
 ```
 
+**`COPY` CSV.** A `UUID` column round-trips through `COPY ... TO` and
+`COPY ... FROM` in `FORMAT CSV`: `COPY FROM` accepts every textual form a UUID
+literal accepts (same parser as the cast from text), and `COPY TO` always writes
+the canonical lowercase hyphenated form, whatever form was ingested. A malformed
+value is an ordinary CSV parse error for that row — skip such rows with
+`ON_ERROR IGNORE` (see [data-loading.md](data-loading.md)).
+
 In the current engine, comparison, ordering, and grouping operators are not yet
 defined on `UUID` (e.g. `WHERE id = ...`, `ORDER BY id`, `GROUP BY id`, and
 joins on UUID columns): a `uuid`-vs-`uuid` or `uuid`-vs-integer comparison
@@ -458,8 +465,10 @@ SELECT PG_TYPEOF(ids) FROM vectors;
 and `m[key]` looks a value up in it. There is **no `MAP` column type**: `MAP` is
 not one of the declarable types in `ColumnType.h`, so there is no
 `CREATE TABLE t (m MAP(...))` form. The constructor also takes **literals only**.
-So the practical shape of the feature is a *constant lookup table applied to a
-column* — the map is constant, the subscript key is any expression:
+So the shape of the constructor is a *constant lookup table applied to a column* —
+the map is constant, the subscript key is any expression. Map-typed **columns** do
+exist, but only from an external schema (a Kafka source or an Iceberg table); see
+[Map columns from an external schema](#map-columns-from-an-external-schema) below.
 
 ```sql
 -- Constructor: alternating key, value, key, value, ...
@@ -548,6 +557,36 @@ value with `m[key]` first:
 There is also no map-to-map cast and no map-to-array cast. An array of
 `{key, value}` pairs can be coerced into a map type where a map is expected, since
 that is the map's physical shape.
+
+#### Map columns from an external schema
+
+A column can hold a map when its type comes from an external schema rather than
+from `CREATE TABLE`:
+
+- a Kafka source whose **Avro** schema has a `map` field or whose **Protobuf**
+  schema has a `map<K, V>` field, read under `struct_mapping_policy = 'COMPOUND'`
+  (under `'JSON'` the same field collapses to a single `JSON` column);
+- an **Iceberg** table with a `map` column.
+
+Such a column behaves like any other map value: subscript it with `m[key]`, and the
+lookup, miss-vs-stored-`NULL`, and last-duplicate-wins rules above all apply
+unchanged. The key-type check is re-applied to the external type, so a map whose key
+type is not in the supported key set is rejected when the query is planned. A lookup
+result is a first-class value of the map's value type — descend into it (`(m['o']).a`
+for a record value, `m['nums'][2]` for an array value) or use it in an expression.
+
+```sql
+-- Kafka source (COMPOUND policy) or Iceberg table with a map column
+SELECT id, attrs['region'], attrs['missing'] FROM my_kafka=>events;
+SELECT pg_typeof(attrs) FROM my_kafka=>events LIMIT 1;   -- e.g. map(text,bigint)
+```
+
+Because a whole map still has no wire type of its own, projecting the column itself
+(`SELECT attrs`) returns the array-of-pairs text form; project `m[key]` lookups to
+get typed values. Map columns cannot be created from SQL — there is no map column
+type in `CREATE TABLE`, and `CREATE TABLE` against an Iceberg catalog has no map
+type either. For how each format's map fields resolve, see
+`/redpanda:sql-federated-queries`.
 
 ### Geospatial types
 
@@ -661,6 +700,32 @@ SELECT pg_typeof(170141183460469231731687303715884105728);  -- int32
 
 `ORDER BY` on a wide-integer column is supported, including the
 `ORDER BY ... LIMIT` (top-k) form.
+
+**Wide-integer bind parameters.** A wide-integer value can be sent as an
+extended-protocol bind parameter, in either the text or the binary parameter format:
+the value is its **decimal string** in both cases (the wide types are surfaced to
+clients as domains over text, so there is no packed 16-/32-byte binary form). With a
+standard driver, bind the parameter as a string and let the target column or cast
+coerce it:
+
+```java
+// pgJDBC
+PreparedStatement ps = conn.prepareStatement("SELECT CAST(? AS int16)");
+ps.setString(1, "170141183460469231731687303715884105727");
+```
+
+```php
+// PDO — turn emulated prepares off, or the driver interpolates client-side
+$conn->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+$stmt = $conn->prepare('SELECT CAST(:wide AS int32)');
+$stmt->bindValue('wide', '57896044618658097711785492504343953926634992332820282019728792003956564819967', PDO::PARAM_STR);
+```
+
+Malformed wide-integer text is reported as
+`invalid input syntax for type int16: "..."` (or `int32`) with SQLSTATE `22P02`
+(`invalid_text_representation`), matching the `uuid`, point, and decimal parsers; a
+value that parses but exceeds the type's range is a separate out-of-range error
+(SQLSTATE `22003`).
 
 ---
 

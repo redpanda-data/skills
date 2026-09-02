@@ -301,7 +301,23 @@ tail -f ${TMPDIR:-/tmp}/oxla/server.*.log | grep -i kafka
 
 Look for connection errors, authentication failures, or consumer group rebalance issues.
 
-### Step 4 — If the source is a Redpanda Iceberg Topic, check the upstream side
+### Step 4 — If a Kafka-source query reads more of the topic than expected
+
+A query filtering on `(redpanda).timestamp` normally has that bound translated into
+per-partition start offsets via a broker timequery. When the timequery fails, the
+scan degrades to reading without its timestamp bounds instead of failing the query:
+results stay exact, but the read volume grows. The fallback is logged as a warning
+carrying the query ID and the failure reason, so grep for it before hunting
+elsewhere:
+
+```bash
+tail -f ${TMPDIR:-/tmp}/oxla/server.*.log | grep -iE 'timestamp-to-offset|timestamp pruning'
+```
+
+Fixes: restore broker reachability, or filter by `(redpanda)."offset"` /
+`(redpanda).partition`, which prune without a broker call.
+
+### Step 5 — If the source is a Redpanda Iceberg Topic, check the upstream side
 
 If `system.catalogs` shows an `iceberg` (or `redpanda`) source and the table looks
 stale or rows are missing, the cause is often on the Redpanda cluster, not in Oxla.
