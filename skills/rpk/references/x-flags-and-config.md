@@ -20,7 +20,7 @@ corresponding `RPK_*` environment variable. For persistent configuration use
 
 | `-X` option | Environment variable | Default |
 |---|---|---|
-| `brokers` | `RPK_BROKERS` | `localhost:9092` |
+| `brokers` | `RPK_BROKERS` | `127.0.0.1:9092` |
 | `tls.enabled` | `RPK_TLS_ENABLED` | `false` |
 | `tls.insecure_skip_verify` | `RPK_TLS_INSECURE_SKIP_VERIFY` | `false` |
 | `tls.ca` | `RPK_TLS_CA` | `""` |
@@ -29,13 +29,13 @@ corresponding `RPK_*` environment variable. For persistent configuration use
 | `sasl.mechanism` | `RPK_SASL_MECHANISM` | `""` |
 | `user` | `RPK_USER` | `""` |
 | `pass` | `RPK_PASS` | `""` |
-| `admin.hosts` | `RPK_ADMIN_HOSTS` | `localhost:9644` |
+| `admin.hosts` | `RPK_ADMIN_HOSTS` | `127.0.0.1:9644` |
 | `admin.tls.enabled` | `RPK_ADMIN_TLS_ENABLED` | `false` |
 | `admin.tls.insecure_skip_verify` | `RPK_ADMIN_TLS_INSECURE_SKIP_VERIFY` | `false` |
 | `admin.tls.ca` | `RPK_ADMIN_TLS_CA` | `""` |
 | `admin.tls.cert` | `RPK_ADMIN_TLS_CERT` | `""` |
 | `admin.tls.key` | `RPK_ADMIN_TLS_KEY` | `""` |
-| `registry.hosts` | `RPK_REGISTRY_HOSTS` | `localhost:8081` |
+| `registry.hosts` | `RPK_REGISTRY_HOSTS` | `127.0.0.1:8081` |
 | `registry.tls.enabled` | `RPK_REGISTRY_TLS_ENABLED` | `false` |
 | `registry.tls.insecure_skip_verify` | `RPK_REGISTRY_TLS_INSECURE_SKIP_VERIFY` | `false` |
 | `registry.tls.ca` | `RPK_REGISTRY_TLS_CA` | `""` |
@@ -43,12 +43,12 @@ corresponding `RPK_*` environment variable. For persistent configuration use
 | `registry.tls.key` | `RPK_REGISTRY_TLS_KEY` | `""` |
 | `cloud.client_id` | `RPK_CLOUD_CLIENT_ID` | `""` |
 | `cloud.client_secret` | `RPK_CLOUD_CLIENT_SECRET` | `""` |
-| `globals.prompt` | `RPK_GLOBALS_PROMPT` | `bg-red "%n"` |
+| `globals.prompt` | `RPK_GLOBALS_PROMPT` | `""` (no prompt) |
 | `globals.no_default_cluster` | `RPK_GLOBALS_NO_DEFAULT_CLUSTER` | `false` |
-| `globals.command_timeout` | `RPK_GLOBALS_COMMAND_TIMEOUT` | `30s` |
+| `globals.command_timeout` | `RPK_GLOBALS_COMMAND_TIMEOUT` | `10s` |
 | `globals.dial_timeout` | `RPK_GLOBALS_DIAL_TIMEOUT` | `3s` |
-| `globals.request_timeout_overhead` | `RPK_GLOBALS_REQUEST_TIMEOUT_OVERHEAD` | `10s` |
-| `globals.retry_timeout` | `RPK_GLOBALS_RETRY_TIMEOUT` | `30s` |
+| `globals.request_timeout_overhead` | `RPK_GLOBALS_REQUEST_TIMEOUT_OVERHEAD` | `5s` |
+| `globals.retry_timeout` | `RPK_GLOBALS_RETRY_TIMEOUT` | `11s` |
 | `globals.fetch_max_wait` | `RPK_GLOBALS_FETCH_MAX_WAIT` | `5s` |
 | `globals.kafka_protocol_request_client_id` | `RPK_GLOBALS_KAFKA_PROTOCOL_REQUEST_CLIENT_ID` | `rpk` |
 
@@ -63,7 +63,7 @@ Profile selection: `RPK_PROFILE=<profile-name>`
 Comma-delimited list of `host:port` pairs for the Kafka API.
 
 - **Type**: string
-- **Default**: `localhost:9092`
+- **Default**: `127.0.0.1:9092`
 - **Example**: `rpk topic list -X brokers=broker1:9092,broker2:9092`
 
 ---
@@ -123,8 +123,9 @@ SASL authentication mechanism.
 - **Default**: `""`
 - **Accepted values**: `SCRAM-SHA-256`, `SCRAM-SHA-512`, `PLAIN`, `OAUTHBEARER`
 - **Notes**:
-  - The Admin API uses Basic auth with Kafka SASL credentials; if the mechanism
-    is unspecified it defaults to `SCRAM-SHA-256` for Admin API auth.
+  - If you set `user`/`pass` but leave the mechanism unspecified, rpk falls back
+    to `SCRAM-SHA-256` — for the Kafka API and for Admin API auth alike.
+  - The Admin API uses Basic auth with these same Kafka SASL credentials.
   - For `OAUTHBEARER`: set `pass` to an OIDC access token (raw value or
     prefixed with `token:`), leave `user` unset.
 
@@ -149,7 +150,7 @@ API is configured to require authentication.
 Comma-delimited list of `host:port` pairs for the Admin API.
 
 - **Type**: string
-- **Default**: `localhost:9644`
+- **Default**: `127.0.0.1:9644`
 - **Example**: `rpk cluster info -X admin.hosts=broker1:9644,broker2:9644`
 
 ---
@@ -174,7 +175,7 @@ TLS settings for the Admin API connection. Same semantics as the corresponding
 Comma-delimited list of `host:port` pairs for the Schema Registry.
 
 - **Type**: string
-- **Default**: `localhost:8081`
+- **Default**: `127.0.0.1:8081`
 - **Example**: `rpk registry schema list -X registry.hosts=broker1:8081`
 
 ---
@@ -289,12 +290,15 @@ Examples: `30s`, `1m30s`, `2h`, `500ms`, `1h15m30s`
 ## Discover all available -X options
 
 ```bash
-# Short list with defaults
+# Short list: every key with its accepted value format
 rpk -X list
 
-# Detailed descriptions
+# Detailed descriptions, with an example value per option
 rpk -X help
 ```
+
+Treat this output as authoritative over any static table — including the one
+above.
 
 ---
 

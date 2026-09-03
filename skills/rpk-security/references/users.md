@@ -6,25 +6,36 @@
 
 ## Prerequisites
 
-SASL must be enabled on the broker. In `redpanda.yaml`:
+SASL must be enabled on the broker. `enable_sasl`,
+`kafka_enable_authorization`, and `superusers` are all **cluster configuration**
+properties (not node properties in `redpanda.yaml`), and all three have
+`needs_restart: no`:
 
-```yaml
-redpanda:
-  enable_sasl: true              # authentication: clients must present SASL credentials
-  kafka_enable_authorization: true  # authorization: enforce ACLs (default-deny for non-superusers)
-  superusers:
-    - "admin"   # these users bypass all ACL checks
+```bash
+rpk cluster config set enable_sasl true                    # clients must present SASL credentials
+rpk cluster config set kafka_enable_authorization true     # enforce ACLs (default-deny for non-superusers)
+rpk cluster config set superusers '["admin"]'              # these users bypass all ACL checks
 ```
 
-`enable_sasl` and `kafka_enable_authorization` are independent settings. `enable_sasl` controls whether clients must authenticate; `kafka_enable_authorization` controls whether ACL authorization is enforced. Both are typically enabled together for a fully secured cluster.
+`enable_sasl` and `kafka_enable_authorization` are independent settings. `enable_sasl` controls whether clients must authenticate; `kafka_enable_authorization` controls whether ACL authorization is enforced. Both are typically enabled together for a fully secured cluster. `kafka_enable_authorization` is nullable: left unset (`null`), authorization follows `enable_sasl`; set explicitly, it wins.
+
+On a cluster that is not up yet, seed the same properties in the cluster
+bootstrap file `/etc/redpanda/.bootstrap.yaml`:
+
+```yaml
+enable_sasl: true
+kafka_enable_authorization: true
+superusers:
+  - "admin"
+```
 
 A superuser connection is required to manage other users. Pass credentials to rpk via profile or `-X` flags:
 
 ```bash
 rpk security user list -X brokers=localhost:9092 \
   -X sasl.mechanism=SCRAM-SHA-256 \
-  -X sasl.username=admin \
-  -X sasl.password='AdminPass!'
+  -X user=admin \
+  -X pass='AdminPass!'
 ```
 
 ## SCRAM Mechanisms
@@ -133,28 +144,62 @@ rpk security user update alice \
 
 ## Superusers
 
-Superusers are defined in `redpanda.yaml` under `redpanda.superusers`. They bypass all ACL checks. You cannot create or remove superusers with rpk — edit `redpanda.yaml` and restart the broker.
+`superusers` is a **cluster configuration** property, not a node property in
+`redpanda.yaml`. Principals in the list bypass all ACL checks. It has
+`needs_restart: no`, so you can change it with rpk and the brokers pick it up
+live:
+
+```bash
+# Replace the superuser list (array-valued: pass a YAML/JSON list)
+rpk cluster config set superusers '["admin", "replication-user"]'
+
+# Read it back
+rpk cluster config get superusers
+```
+
+`rpk cluster config set` YAML-parses the value for array-typed properties, so
+quote the list — a bare `rpk cluster config set superusers admin` would be
+accepted as a one-element list, which is easy to do by accident when you meant
+to append.
+
+To seed superusers before the cluster is up, put them in the cluster bootstrap
+file `/etc/redpanda/.bootstrap.yaml` (cluster properties, applied at first
+boot), not in `redpanda.yaml`:
 
 ```yaml
-redpanda:
-  superusers:
-    - "admin"
-    - "replication-user"
+superusers:
+  - "admin"
 ```
 
 A superuser can manage other users, create ACLs, and access any topic.
 
 ## Bootstrapping a Cluster
 
-When enabling SASL for the first time on a self-hosted cluster:
+When enabling SASL for the first time on a self-hosted cluster, create the
+superuser **before** you turn authentication on — otherwise you lock yourself
+out of the cluster you were about to secure. None of these steps needs a broker
+restart.
 
-1. Edit `redpanda.yaml` and add `enable_sasl: true` plus the admin user to `superusers`.
-2. Restart the broker.
-3. Create the admin user via rpk using whatever auth the Admin API listener is configured for (no auth if the listener has no auth requirements, basic auth, or mTLS):
+1. Create the admin user, using whatever auth the Admin API listener currently
+   requires (none, basic auth, or mTLS):
    ```bash
    rpk security user create admin --password 'AdminPass!'
    ```
-4. Create application users and grant them ACLs.
+2. Put it in the superuser list:
+   ```bash
+   rpk cluster config set superusers '["admin"]'
+   ```
+3. Turn on authentication and ACL enforcement:
+   ```bash
+   rpk cluster config set enable_sasl true
+   rpk cluster config set kafka_enable_authorization true
+   ```
+4. Create application users and grant them ACLs — from here on, pass the admin
+   credentials (`-X user=admin -X pass=...`, or a profile).
+
+For a cluster being provisioned from scratch, seed steps 2–3 in
+`/etc/redpanda/.bootstrap.yaml` instead and create the admin user on first
+contact.
 
 On Redpanda Cloud clusters, users are managed via the Cloud UI or the Dataplane API (rpk uses the API automatically when a cloud profile is active).
 

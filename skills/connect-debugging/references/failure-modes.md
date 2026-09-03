@@ -160,8 +160,8 @@ rpk cluster info -X brokers=<broker:9092>
 rpk cluster info -X brokers=<broker:9092> \
   -X tls.enabled=true \
   -X sasl.mechanism=SCRAM-SHA-256 \
-  -X sasl.username=myuser \
-  -X sasl.password=mypass
+  -X user=myuser \
+  -X pass=mypass
 ```
 
 **Typical error messages and fixes:**

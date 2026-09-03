@@ -16,7 +16,7 @@ Each ACL consists of five components:
 | **Operation** | What action is allowed or denied | `read`, `write`, `describe` |
 | **Permission** | Allow or Deny | `allow`, `deny` |
 
-By default all permissions are **denied**. You only need explicit deny ACLs to narrow down a wildcard allow. This default-deny behavior only takes effect when `kafka_enable_authorization: true` is set in `redpanda.yaml`. Superusers (defined in `redpanda.superusers`) bypass all ACL checks regardless of ACL configuration.
+By default all permissions are **denied**. You only need explicit deny ACLs to narrow down a wildcard allow. This default-deny behavior only takes effect when the `kafka_enable_authorization` cluster property is `true` (`rpk cluster config set kafka_enable_authorization true`); left unset, authorization follows `enable_sasl`. Superusers — the `superusers` cluster property — bypass all ACL checks regardless of ACL configuration.
 
 ### Principals
 

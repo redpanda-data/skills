@@ -40,7 +40,18 @@ must not "correct" them into hardcoded values:
 
 - **`rpk node` is not an rpk command** (resolved): rpk has no `node` command group. Node / `redpanda.yaml` properties — including `fips_mode` — are set via `rpk redpanda config set redpanda.<key>` (`src/go/rpk/pkg/cli/redpanda/config.go`, `NewConfigCommand` → `set`, which edits the local `redpanda.yaml`). The skill already documents this form; `rpk node config set` is a docs/Admin-API spelling, not an rpk command.
 - **Enterprise cluster-config keys / topic properties** (accepted values, defaults) are broker config, not rpk. Treat the docs property partials (`cluster-properties.adoc`, `topic-properties.adoc`, `object-storage-properties.adoc`) as the citation of record; the upstream is `src/v/config/configuration.cc`.
-- Per-`-X` default values in `x-flags-and-config.md` were not each line-verified against the `params.go` defaults struct — re-check individual defaults there.
+- **Per-`-X` default values** (resolved): there is **no defaults struct** in `params.go`. The
+  `xflag` struct is `{path, testExample, kind, parse}` — the second string is a *test example*,
+  not a default, and must never be read as one. Authoritative default sources are, per key:
+  - address defaults (`brokers`, `admin.hosts`, `registry.hosts`) — `params.go`, which fills
+    `127.0.0.1:{DefaultKafkaPort,DefaultAdminPort,DefaultSchemaRegPort}`;
+  - `globals.command_timeout` — `rpk_yaml.go` `RpkGlobals.GetCommandTimeout()`;
+  - `globals.dial_timeout` / `request_timeout_overhead` / `retry_timeout` / `fetch_max_wait` /
+    `kafka_protocol_request_client_id` — `src/go/rpk/pkg/kafka/client_franz.go`, where rpk
+    applies its own `kgo.*` options (an unset global means rpk's value stands; a key rpk does
+    not set falls through to the franz-go default);
+  - `globals.prompt`, `globals.no_default_cluster` — zero values; `RpkGlobals` sets no default.
+  `ParamsHelp()` (`rpk -X help`) states the address defaults in prose and is a good cross-check.
 
 ## Usage
 
