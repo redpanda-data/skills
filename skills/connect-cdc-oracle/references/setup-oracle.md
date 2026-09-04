@@ -251,6 +251,8 @@ LogMiner can only mine redo logs that still exist on disk. If archived logs are 
 - The connector is paused or offline for longer than Oracle's log retention window.
 - `scn_window_size` is very large and processing one window takes too long.
 
+**Retention is not the only cause.** `ORA-01291` also appears after a flashback or point-in-time recovery followed by `OPEN RESETLOGS`, which starts a new database incarnation: a checkpoint taken before the reset belongs to the prior incarnation, and no amount of retention makes it resumable. The connector selects only archived logs whose `RESETLOGS_CHANGE#` and `RESETLOGS_TIME` match `V$DATABASE`, so prior-incarnation logs are never mined. Recovery there is a checkpoint reset, not a retention change — see the ORA-01291 section of [pipeline-and-output.md](pipeline-and-output.md).
+
 ### Increase retention via RMAN
 
 ```sql
