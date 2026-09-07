@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. `Trigger.enabled` (field 15) / `TriggerUpdate.enabled` (field 4) pause-resume field and cron-scheduler semantics verified against `agent.proto` on 2026-08-24. Write-time reference and model/provider validation verified against `cloudv2/apps/adp-api/internal/service/agent/aigw_resolver.go` on 2026-08-31. Evidence date: 2026-08-31.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. `Trigger.enabled` (field 15) / `TriggerUpdate.enabled` (field 4) pause-resume field and cron-scheduler semantics verified against `agent.proto` on 2026-08-24. Write-time reference and model/provider validation verified against `cloudv2/apps/adp-api/internal/service/agent/aigw_resolver.go` on 2026-08-31. `ManagedAgentSpec.system_prompt` / `Subagent.system_prompt` byte cap, the `reasoning_effort` field (9) and the `ReasoningEffort` enum verified against `agent.proto` on 2026-09-07; the widened model-catalog check and the reasoning-effort write-time gate verified against `aigw_resolver.go` (`checkModelRefs`, `checkReasoningEffortRefs`, `ValidateReasoningEffort`) on 2026-09-07. Evidence date: 2026-09-07.
 
 # Agentic Data Plane Agents Reference
 
@@ -79,11 +79,12 @@ These are the fields a builder sets when creating or updating a managed agent (`
 |-------|----------|------------|
 | `model` | yes | min 1 char, max 128 chars |
 | `llm_provider` | yes | min 1 char, max 63 chars, pattern `^[a-z][a-z0-9-]*$` |
-| `system_prompt` | no | max 16,384 chars |
+| `system_prompt` | no | max 50,000 **UTF-8 bytes** (a byte cap, not a character count — multi-byte text costs more than one byte per character) |
 | `max_iterations` | no | 0 to 200; `0` (or omitted) means "use the runtime default" — the server clamps it to a positive cap before persist, so the value read back is never `0`; negatives are rejected |
 | `mcp_servers` | no | max 32 items per list; each min 1 char, max 63 chars, pattern `^[a-z][a-z0-9-]*$` (an aggregate cap also applies — see below) |
 | `subagents` | no | max 16 pairs; key pattern `^[a-z][a-z0-9-]*$` |
 | `agent_card` | no | see A2A agent card section below |
+| `reasoning_effort` | no | `ReasoningEffort` enum; unset keeps the provider/runtime default — see [Reasoning effort](#reasoning-effort) |
 
 There is no `tools` field on `ManagedAgentSpec`. Agents access tools exclusively through `mcp_servers` references. (The `tools` field exists on `mcp_server.proto`, not on the agent proto.)
 
@@ -91,20 +92,44 @@ There is no `tools` field on `ManagedAgentSpec`. Agents access tools exclusively
 
 ## Write-time validation of references and models
 
-`CreateAgent` and `UpdateAgent` validate a managed spec's outbound references before persisting it, so a bad reference fails the write instead of surfacing later as a broken agent. Two independent checks run.
+`CreateAgent` and `UpdateAgent` validate a managed spec's outbound references before persisting it, so a bad reference fails the write instead of surfacing later as a broken agent. Two independent checks run here; an explicit `reasoning_effort` adds a third (see [Reasoning effort](#reasoning-effort)).
 
 **Reference existence.** Every `llm_provider` and `mcp_servers` name on the spec — the root agent's plus each subagent's, deduped — is resolved against the service of record. A name that does not exist fails with `InvalidArgument` carrying a `BadRequest.FieldViolation` whose `field` is the offending path (for example `agent.managed.spec.subagents.<name>.mcp_servers`), so you can map the rejection back to the exact spec element. If the reference lookup itself cannot be completed, the RPC fails `Unavailable` instead — that distinguishes "your spec is wrong" from "we cannot tell right now", and only the former means you should edit the spec.
 
-**Model / provider pairing.** Each effective `(model, llm_provider)` pairing — including every subagent pairing, after inheritance is applied — is checked against the resolved provider. This check is scoped to **Bedrock providers only**, where it applies two gates:
+**Model / provider pairing.** Each effective `(model, llm_provider)` pairing — including every subagent pairing, after inheritance is applied — is checked against the resolved provider. Two gates apply, with different scopes:
 
-1. **Catalog validity.** The model must be a Bedrock model the runtime can build. A rejection names the model and suggests the full inference-profile form.
-2. **Enabled on the provider.** The model must appear in the provider's `provider_models` list, which the gateway enforces on every proxied request. Failing this gate returns `InvalidArgument` with a message of the form `model "…" is not enabled on llm_provider "…"; enable it on the provider or pick one of its models`. An **empty** `provider_models` list is not a rejection: it means the provider serves whatever its SDK accepts, so the gate is skipped.
+1. **Catalog validity — every catalog provider (Anthropic, OpenAI, Google, Bedrock).** The model name must construct through the same model constructor the agent runtime runs at boot, so a name the runtime would reject fails the write instead of crash-looping the agent after it is saved. The check runs offline against the compiled-in catalog (no credentials, no upstream call), and it accepts everything the runtime accepts: exact model IDs, official aliases, dated snapshots, models that are retired but still known, and — for Bedrock — the region's inference-profile routing. A rejection is `InvalidArgument` with a `BadRequest.FieldViolation` on the offending path and a message of the form `model "…" is not a known <provider> model, so a managed agent could not start with it; pick a model from the provider's model list or check the spelling`; on Bedrock it also suggests the full inference-profile form for the provider's region.
+2. **Enabled on the provider — Bedrock only.** The model must additionally appear in the provider's `provider_models` list, which the gateway enforces on every proxied request. Failing this gate returns `InvalidArgument` with a message of the form `model "…" is not enabled on llm_provider "…"; enable it on the provider or pick one of its models`. An **empty** `provider_models` list is not a rejection: it means the provider serves whatever its SDK accepts, so the gate is skipped.
 
-Non-Bedrock providers (OpenAI, Anthropic, Google, OpenAI-compatible) are **not** model-checked at write time; they keep the gateway's request-time enforcement as their only gate, because their model IDs are matched with family-prefix rules that live in the gateway.
+Two scoping rules follow from this:
+
+- **OpenAI-compatible providers are not model-checked at all.** They have no catalog to check against, so any model name is accepted at write time and the gateway's request-time behavior is the only gate.
+- **Non-Bedrock catalog providers get gate 1 but not gate 2.** Their allowlist matching uses family-prefix rules that live in the gateway, so replicating them at write time would reject configurations the gateway accepts. They keep the gateway's request-time allowlist as their only allowlist gate.
+
+A provider the gateway does not know is skipped by the model check entirely — the reference-existence check above owns the verdict on references you actually wrote.
 
 **Update-path scoping.** `UpdateAgent` validates only the pairings the update actually *changes*, so a pre-existing spec that already holds a bad model stays editable — you can edit the prompt beside it without the write being rejected for the stale model. Rarely, a provider referenced by a changed pairing can be resolved before the row lock and then vanish; that surfaces as `Aborted` with a "changed while the update was in flight; retry" message, and the correct response is to retry the update.
 
 Because the check runs on the *merged* spec, a partial update whose field mask names only a model (a subagent model edit, or a leaf-path config apply) is still validated against the provider it inherits, even when the mask does not carry `llm_provider`.
+
+## Reasoning effort
+
+`ManagedAgentSpec.reasoning_effort` (field 9) sets how much computation a reasoning-capable model spends before answering. It is a persisted property of the agent, not a per-request or playground-only knob, so it applies to every run of the agent. A higher level costs more per request.
+
+The `ReasoningEffort` enum runs `REASONING_EFFORT_LOW` (1), `MEDIUM` (2), `HIGH` (3), `XHIGH` (4), `MAX` (5). `REASONING_EFFORT_UNSPECIFIED` (0) leaves the provider's or runtime's own default in place — it does not mean "no reasoning".
+
+**Subagents inherit it.** There is no per-subagent `reasoning_effort` field: the parent's setting applies to every subagent, including a subagent that overrides `model` or `llm_provider`.
+
+**Which levels a model accepts is a live fact, not a fixed list.** Read it from the catalog rather than assuming: `ModelCapabilities.supported_reasoning_efforts` on `ModelService.GetModel` / `ListModels` enumerates the levels that exact model accepts, and it is empty for a model with no configurable reasoning control (see [gateway-and-providers.md](gateway-and-providers.md)). Because a subagent may run a different model, the levels safely settable on an agent are the **intersection** across the parent's model and every subagent's model.
+
+**Write-time validation.** When `reasoning_effort` is set to anything other than `UNSPECIFIED`, `CreateAgent` / `UpdateAgent` check the effort against every effective model pairing (parent plus subagents, after inheritance) before persisting:
+
+- A model that does not list the requested level fails with `InvalidArgument` and a `BadRequest.FieldViolation` on `agent.managed.spec.reasoning_effort`, with the message `model "…" does not support reasoning effort <level>` (level lowercased, e.g. `xhigh`). Several offending models are reported together in one error rather than one at a time.
+- A pairing on an **OpenAI-compatible** provider always fails the same way: those providers have no catalog, so no effort can be confirmed supported. Leave `reasoning_effort` unset for an agent on an OpenAI-compatible provider.
+- A model the gateway cannot resolve fails with `InvalidArgument` (`model "…" not found in aigw`); a lookup that cannot be completed fails `Unavailable`, which means "we cannot tell right now" and should be retried rather than edited around.
+- On `UpdateAgent` the effort is validated only against the model pairings the update actually changes, so an untouched, already-stored model does not block an unrelated edit.
+
+Leaving `reasoning_effort` unset is always accepted, on every provider type.
 
 ## Subagents
 
@@ -112,7 +137,7 @@ Because the check runs on the *merged* spec, a partial update whose field mask n
 
 | Field | Required | Constraint |
 |-------|----------|------------|
-| `system_prompt` | yes | min 1 char, max 16,384 chars |
+| `system_prompt` | yes | min 1 char, max 50,000 **UTF-8 bytes** |
 | `description` | yes | min 1 char, max 1,024 chars |
 | `mcp_servers` | no | max 32 items; each min 1 char, max 63 chars |
 | `model` | no | max 128 chars; empty = inherit the parent agent's `model` |

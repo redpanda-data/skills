@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto` (LLMProviderService RPCs lines 16-66, LLMProvider fields lines 82-260, provider config oneof lines 220-231, provider type enum lines 68-78, config messages lines 574-747, ProviderModelPricing lines 451-548), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/model.proto` (ModelService RPCs lines 10-23, Model fields, ModelCapabilities lines 26-36, ListModelsRequest lines 62-72), `cloudv2/apps/aigw/internal/server/server.go` (LLMProviderService registered lines 1054/1189; ModelService registered lines 1059/1213), `cloudv2/apps/aigw/internal/llm/provider/google/google.go:70` (Gemini x-goog-api-key injection). `cloudv2/apps/aigw/internal/services/llmprovider/service.go` (create-path `Transcripts` defaulting). `Model.max_input_tokens` (field 6) and `max_output_tokens` (field 7) re-verified against `model.proto` on 2026-07-06. Evidence date: 2026-08-31 (transcript-recording create default verified against the aigw llmprovider service; `LLMProviderService` RPCs, provider types, and pricing overrides unchanged since 2026-07-06).
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto` (LLMProviderService RPCs lines 16-66, LLMProvider fields lines 82-260, provider config oneof lines 220-231, provider type enum lines 68-78, config messages lines 574-747, ProviderModelPricing lines 451-548), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/model.proto` (ModelService RPCs lines 10-23, Model fields, ModelCapabilities lines 26-36, ListModelsRequest lines 62-72), `cloudv2/apps/aigw/internal/server/server.go` (LLMProviderService registered lines 1054/1189; ModelService registered lines 1059/1213), `cloudv2/apps/aigw/internal/llm/provider/google/google.go:70` (Gemini x-goog-api-key injection). `cloudv2/apps/aigw/internal/services/llmprovider/service.go` (create-path `Transcripts` defaulting). `Model.max_input_tokens` (field 6) and `max_output_tokens` (field 7) re-verified against `model.proto` on 2026-07-06. The `CheckConnection` `target` oneof (`name` / `LLMProviderConnectionConfig`), its `dataplane_adp_llmprovider_check_connection` permission and `check_connection` Cedar action, and `ModelCapabilities.supported_reasoning_efforts` (field 10) verified against `llm_provider.proto` / `model.proto` on 2026-09-07. Evidence date: 2026-09-07 (provider types, pricing overrides, and the transcript-recording create default unchanged).
 
 # AI Gateway, LLM Providers, and Models Reference
 
@@ -40,9 +40,22 @@ Source: `llm_provider.proto:16-66`. Service name: `redpanda.api.adp.v1alpha1.LLM
 | `UpdateLLMProvider` | `dataplane_adp_llmprovider_update` |
 | `DeleteLLMProvider` | `dataplane_adp_llmprovider_delete` |
 | `ListLLMProviderTypes` | none — `skip: true` (read-only static catalog; any authenticated caller) |
-| `CheckConnection` | `dataplane_adp_llmprovider_get` |
+| `CheckConnection` | `dataplane_adp_llmprovider_check_connection` |
 
-`CheckConnection` (`llm_provider.proto:59-65`) fires a live upstream probe to the configured provider endpoint and returns `latency_ms` plus a `google.rpc.Status` indicating reachability.
+`CheckConnection` fires a live upstream probe and returns `latency_ms` plus a `google.rpc.Status` (`OK` on success; otherwise a canonical code and a human-readable message). It carries its own permission — `dataplane_adp_llmprovider_check_connection`, Cedar action `check_connection` — so the ability to probe a provider is grantable separately from reading or writing one.
+
+### Testing a connection before you save it
+
+`CheckConnectionRequest` carries a required `target` oneof, so the same RPC covers both a saved provider and a draft:
+
+| `target` arm | What it probes |
+|---|---|
+| `name` | An existing, persisted provider, by resource name. Use this to re-test a provider whose credentials or endpoint may have changed. |
+| `provider_config` | An **unpersisted** `LLMProviderConnectionConfig` — connection settings only. Nothing is created or cached, so you can validate credentials before committing a `CreateLLMProvider`. |
+
+`LLMProviderConnectionConfig` is a bare `provider_config` oneof over the same five config messages as the resource (`openai_config`, `anthropic_config`, `google_config`, `bedrock_config`, `openai_compatible_config`); exactly one arm is required. Resource identity, models, guardrails, tags, and every other persistence field are deliberately absent — a draft check answers "do these credentials reach this endpoint", nothing more. Credential references are still resolved through the secret store, so a probe can fail on a missing secret before any request leaves the gateway.
+
+Read `status` for the verdict, not `latency_ms`: latency is `0` when the probe failed *before* a request went out (a missing secret, for example), which is indistinguishable from a very fast response if you only look at the number.
 
 ## Key `LLMProvider` fields
 
@@ -116,7 +129,9 @@ Both `ModelService` RPCs bypass authorization (`skip: true`): the catalog is bui
 
 **Key `Model` fields:** `name`, `label`, `provider_type` (`LLMProviderType`), `capabilities` (`ModelCapabilities`), `default_pricing` (`ProviderModelPricing`, sourced from `ai-sdk-go/pricing.Catalog`), `max_input_tokens` (field 6) and `max_output_tokens` (field 7). The two token limits are `optional int64`, OUTPUT_ONLY: the model's context-window (input) and single-response generation (output) caps, sourced from the ai-sdk-go per-model constraints catalog. Both are unset when the catalog declares no limit — absent means "unknown", never zero — so treat a missing value as unknown rather than zero.
 
-**`ModelCapabilities`** (`model.proto:26-36`): `streaming`, `tools`, `json_mode`, `structured_output`, `vision`, `audio`, `multi_turn`, `system_prompts`, `reasoning`.
+**`ModelCapabilities`**: `streaming`, `tools`, `json_mode`, `structured_output`, `vision`, `audio`, `multi_turn`, `system_prompts`, `reasoning` (field 9), and `supported_reasoning_efforts` (field 10).
+
+`supported_reasoning_efforts` is a repeated `ReasoningEffort` listing the portable effort levels **this exact model** accepts, and it is empty for a model that exposes no configurable reasoning control. It is the authoritative source for what you may set as an agent's `reasoning_effort`: the agent write path validates the requested effort against this list and rejects an unsupported combination, so read it live per model rather than assuming a level exists (see [agents.md](agents.md)). Note that `reasoning = true` and a non-empty `supported_reasoning_efforts` are different facts — a model can reason without letting you dial the effort.
 
 **`ListModelsRequest` filters** (`model.proto:62-72`): optional `provider_type` filter; optional `aws_region` for Bedrock regional filtering.
 
