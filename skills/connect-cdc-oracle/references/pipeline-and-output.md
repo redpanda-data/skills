@@ -339,6 +339,10 @@ The connector logs `"No SCN found in checkpoint cache"` and behaves as if it is 
 
 ### ORA-01291: missing logfile
 
+`ORA-01291` has **two distinct causes with different fixes**, and the connector raises the same error for both — it prints one summary covering both cases and notes which remedies apply to which. Work out which cause you have before acting: the fix for one does nothing for the other.
+
+#### Cause 1: logs aged out (a retention problem)
+
 Archived redo logs have been purged before the connector processed them. This typically happens when processing takes longer than Oracle's log retention period.
 
 The connector logs a summary similar to the following (paraphrased — see `logminer/logminer.go` for the exact message):
@@ -350,6 +354,15 @@ The connector logs a summary similar to the following (paraphrased — see `logm
 - Reset the checkpoint and restart from the current SCN (note: this results in data loss; a snapshot may be required).
 
 To recover from data loss, clear the checkpoint (delete the Redis key or truncate `RPCN.CDC_CHECKPOINT_CACHE`) and set `snapshot_mode: snapshot_and_stream` to re-snapshot.
+
+#### Cause 2: a new database incarnation (since 4.108.0)
+
+A flashback or point-in-time recovery on the source database followed by `OPEN RESETLOGS` starts a **new database incarnation** and permanently invalidates any checkpoint taken before that event: the checkpoint belongs to the prior incarnation, and no log file from either incarnation covers the gap.
+
+**Increasing retention does not help** — the problem is incarnation identity, not log availability. The connector only mines archived logs belonging to the current incarnation: the log-file query joins `V$ARCHIVED_LOG` to `V$DATABASE` on both `RESETLOGS_CHANGE#` and `RESETLOGS_TIME`, so prior-incarnation logs are never selected. Only the checkpoint-reset option applies, and two details make it easy to get wrong:
+
+- **The checkpoint must be deleted explicitly.** With the default Oracle-based checkpoint cache the checkpoint row lives in the same database, so the flashback rolls it *back* rather than clearing it. It is still present after a restart, so the connector resumes from the same stale SCN and hits the error again. Delete the entry at `checkpoint_cache_key` — the Redis key, or the row in `checkpoint_cache_table_name` (default `RPCN.CDC_CHECKPOINT_CACHE`).
+- **`snapshot_mode` alone has no effect.** A checkpoint that is still present skips snapshotting entirely. Clearing the checkpoint on its own loses every change committed between the last checkpoint and the restart; to avoid that gap, clear the checkpoint **and** set `snapshot_mode: snapshot_and_stream` in the same change.
 
 ---
 
