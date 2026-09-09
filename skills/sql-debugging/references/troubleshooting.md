@@ -104,6 +104,37 @@ grpcurl -plaintext \
   oxla.admin.v1.LoggingService/SetLogLevel
 ```
 
+### Step 7 — Explain the query's planning and its plan
+
+`EXPLAIN` returns its explanation as a relation, so it can be inspected from any
+SQL client without touching server config or log levels.
+
+```sql
+-- Where planning time went (works under either planner)
+EXPLAIN TIMING SELECT region, SUM(amount) FROM orders GROUP BY region;
+
+-- The operations the engine will run. Requires the pipeline planner:
+SET oxla.query_planner.pipeline = on;
+EXPLAIN PHYSICAL SELECT region, SUM(amount) FROM orders GROUP BY region;
+
+-- Which planner options are in force for this session
+EXPLAIN CONFIG;
+```
+
+- `EXPLAIN TIMING` returns `measurement`, `attribution`, `invocations`, and
+  `elapsed` (microseconds) per planning stage — use it when a query is slow
+  *before* execution starts, or when planning itself is suspected.
+- `EXPLAIN PHYSICAL` returns one row per operator output; join or filter it like
+  a table (`SELECT ... FROM explain('<query>', 'physical_plan') WHERE ...`) to
+  narrow a large plan. A query that fails to plan still explains itself, with the
+  failure attributed to the stage that produced it.
+- `EXPLAIN CONFIG` lists each `oxla.query_planner.*` option with its session
+  value, which is the quickest way to confirm whether an optimization was
+  switched off in this session.
+
+Full mode, column, and `explain()` argument reference: `/redpanda:sql`
+(`references/ddl-dml.md`).
+
 ---
 
 ## Playbook 2: Diagnose Memory / OOM Pressure

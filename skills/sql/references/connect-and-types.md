@@ -510,6 +510,13 @@ on the ordinary function path, where they are rejected.
   `map value type ...` message).
 - Values are not restricted to primitives: a `ROW(...)` value works
   (`map('a', ROW(1, 2))`).
+- A map may not be an array's element type: `SELECT ARRAY[map('a', 1)]` is
+  rejected with `Arrays of maps are not supported` (`FeatureNotSupported`), the
+  companion of `Multi-dimensional arrays are not supported`. The same rejection
+  applies when an external schema is resolved, naming the field (`field '<name>':
+  Arrays of maps are not supported`): a stored Avro/Protobuf type or an Iceberg
+  column shaped as a list of maps — or a list of lists — is rejected at schema
+  resolution / scan planning instead of resolving to a column.
 - `map()` with no arguments only works where the target map type is already known
   from context; on its own it fails with `cannot determine type of empty map`.
 
@@ -732,7 +739,8 @@ value that parses but exceeds the type's range is a separate out-of-range error
 ## What PostgreSQL features are NOT in Oxla
 
 - No `SERIAL` / `SEQUENCE` auto-increment columns (not found in test cases).
-- No `EXPLAIN <query>` SQL statement. Query-plan output is controlled by config flags `feature_flags.print_query_plan` and `feature_flags.pipeline_visualization`, not by an EXPLAIN command.
+- No PostgreSQL-style `EXPLAIN`. Oxla has an `EXPLAIN` statement, but it returns the explanation **as a relation** (`EXPLAIN`, `EXPLAIN PHYSICAL <query>`, `EXPLAIN TIMING <query>`, `EXPLAIN CONFIG`, plus the `explain()` table function) rather than plan text, and there is no `EXPLAIN ANALYZE` and no parenthesized option list such as `EXPLAIN (FORMAT JSON) …`. See [ddl-dml.md](ddl-dml.md#explain). The config flags `feature_flags.print_query_plan` and `feature_flags.pipeline_visualization` control server-side query-plan *logging*, which is separate from `EXPLAIN`.
+- No materialized views and no `CREATE OR REPLACE VIEW`. Plain non-materialized `CREATE VIEW` / `DROP VIEW` are supported, with invoker-based privileges rather than PostgreSQL's owner-based ones — see [ddl-dml.md](ddl-dml.md#create--drop-view).
 - No `FOREIGN KEY` constraints.
 - No `ALTER TABLE ... ADD/DROP/RENAME COLUMN`. The only `ALTER TABLE` form re-binds an external Redpanda/Kafka catalog table via `ALTER TABLE IF EXISTS catalog=>table_name WITH (...)` (use `IF EXISTS` and the `catalog=>table_name` external-source form). See [kafka-iceberg.md](kafka-iceberg.md). To change schema, use `CREATE TABLE AS SELECT`.
 - `SELECT INTO` supports both a table destination (`SELECT ... INTO new_table FROM ...`) and a file destination (`SELECT ... INTO 'path' (options) FROM ...`). See ddl-dml.md.
