@@ -73,13 +73,21 @@ TRUNCATE orders;         -- TABLE keyword is optional
 
 Oxla does **not** support `ALTER TABLE ... ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`. The parser has no such production.
 
-The only `ALTER TABLE` form re-binds an external Redpanda/Kafka catalog table.
-Use the `IF EXISTS` form — it is the canonical Kafka-catalog rebind syntax and the
-table name **must** use the `catalog=>table_name` external-source form (the parser
-raises `YYERROR` "Expected catalog=>table_name syntax" otherwise):
+There are two `ALTER TABLE` forms. The first re-binds an external Redpanda/Kafka
+catalog table. Use the `IF EXISTS` form — it is the canonical Kafka-catalog rebind
+syntax and the table name **must** use the `catalog=>table_name` external-source
+form (the parser raises `YYERROR` "Expected catalog=>table_name syntax"
+otherwise):
 
 ```sql
 ALTER TABLE IF EXISTS my_catalog=>my_table WITH (schema_lookup_policy = 'LATEST');
+```
+
+The second reassigns ownership; sibling forms exist for other resource kinds
+(schemas, views, types, storages, catalogs):
+
+```sql
+ALTER TABLE orders OWNER TO analytics_role;
 ```
 
 See [kafka-iceberg.md](kafka-iceberg.md) for the full Redpanda/Kafka and Iceberg
@@ -96,6 +104,10 @@ CREATE TABLE orders_new AS
 
 ## CREATE / DROP VIEW
 
+Views are **non-materialized**: the `SELECT` text is stored in the catalog and
+inlined in place of the view reference on every use (the same rewrite applied to
+CTEs). Nothing is stored as data, so a view always reads the current base data.
+
 ```sql
 CREATE VIEW emea_orders AS
     SELECT * FROM orders WHERE region = 'EMEA';
@@ -108,6 +120,175 @@ CREATE VIEW regional_summary AS
 DROP VIEW emea_orders;
 DROP VIEW IF EXISTS emea_orders;
 ```
+
+The stored body may be any `SELECT`, including `ORDER BY`/`LIMIT`, a `WITH`
+clause, a set operation, aggregates, and joins — the whole body text is stored
+verbatim, so `LIMIT 2` in the definition still limits the view:
+
+```sql
+CREATE VIEW top_two AS SELECT order_id FROM orders ORDER BY amount DESC LIMIT 2;
+
+-- Views nest: a view body may reference another view.
+CREATE VIEW filtered AS SELECT id, name FROM orders WHERE region = 'EMEA';
+CREATE VIEW filtered_one AS SELECT id FROM filtered WHERE id = 3;
+```
+
+Semantics to know:
+
+- **Late binding.** The body is re-resolved from its stored text on every use, so
+  the view picks up new rows, and `SELECT *` reflects the base table's current
+  columns.
+- **The column shape is pinned.** The columns the body resolved to at `CREATE` are
+  stored as the view's contract. If a later re-resolve does not produce exactly
+  those columns, the query fails with `view "<name>" is invalid: its definition no
+  longer produces the columns stored at creation (<detail>); drop and recreate the
+  view` (SQLSTATE `55000`, `object_not_in_prerequisite_state`). The detail says
+  what moved: `expected N columns, got M`, `column i is named "x", expected "y"`,
+  or `column "x" changed type`. A view whose body is a set operation stores no
+  columns and carries no contract.
+- **Privileges are invoker-based**, unlike PostgreSQL (which runs a body as the
+  view's owner). The body is inlined before privilege checks, so the caller needs
+  `SELECT` on the view *and* on every relation the body reads — otherwise
+  `permission denied for table <base_table>`. `ALTER TABLE <view> OWNER TO <role>`
+  reassigns a view's owner (a view is a relation for that statement).
+- **Dependencies are RESTRICT.** Dropping a table or view another view reads is
+  refused with `dependent objects still exist` (SQLSTATE `2BP01`); drop the
+  dependent view first.
+- **A CTE shadows a same-named view** — CTE substitution runs before view
+  inlining. Qualify the name (`public.my_view`) to reach the view past a
+  same-named CTE. A caller's CTE never leaks into a view body, and a body's own
+  CTE may reuse the view's name.
+- **Not supported:** an explicit column-alias list. `CREATE VIEW v (x, y) AS
+  SELECT ...` is rejected with `column alias list in CREATE VIEW is not yet
+  supported` (`FeatureNotSupported`); alias the columns inside the body instead
+  (`SELECT id AS x, name AS y`). A body that is not a `SELECT` is rejected too
+  (`view definition must be a SELECT query`). There is no `CREATE OR REPLACE
+  VIEW` (the parser has no `OR REPLACE` production) and no materialized views
+  (no `MATERIALIZED` keyword in the grammar) — drop and recreate instead.
+- **Introspection.** A view shows up in `pg_class` with `relkind = 'v'`, its
+  columns in `pg_attribute`, and its stored definition in
+  `pg_catalog.pg_views` (`schemaname`, `viewname`, `viewowner`, `definition`).
+  Unlike PostgreSQL, `definition` is the body text as written, not a reprint from
+  the parse tree.
+
+---
+
+## EXPLAIN
+
+`EXPLAIN` returns its explanation **as a relation** (a normal result set), not as
+PostgreSQL's plan text. It is sugar over the `explain()` table function: the
+statement rewrites itself into `SELECT * FROM explain(<query>, <mode>)`, so both
+spellings return identical rows.
+
+```sql
+-- What EXPLAIN can do: a help table of the modes, their syntax and an example
+EXPLAIN;
+
+-- The operations the engine will run for a query
+EXPLAIN PHYSICAL SELECT region, SUM(amount) FROM orders GROUP BY region;
+
+-- How long each planning stage took
+EXPLAIN TIMING SELECT * FROM orders WHERE region = 'EMEA';
+
+-- The query-planner options of the current session, with their values
+EXPLAIN CONFIG;
+```
+
+| Mode | Statement | Needs a query | Returns |
+|------|-----------|---------------|---------|
+| `help` | `EXPLAIN` | no | the modes, their syntax, and a runnable example of each |
+| `physical_plan` | `EXPLAIN PHYSICAL <query>` | yes | one row per operator output: operator topology, expressions, physical column ids |
+| `timing` | `EXPLAIN TIMING <query>` | yes | the planning-stage breakdown |
+| `config` | `EXPLAIN CONFIG` | no | every query-planner option, its value in this session, and what it does |
+
+The variant keyword is case-insensitive (`EXPLAIN physical …` works). Only a
+`SELECT` query can be explained: the grammar is `EXPLAIN [<variant>] [<select>]`,
+so an `INSERT`/`UPDATE`/DDL statement after `EXPLAIN` is either a syntax error or
+read as a variant name and answered with the help table — never explained. There
+is no `EXPLAIN ANALYZE` (no mode executes the query) and no parenthesized
+PostgreSQL option list (`EXPLAIN (FORMAT JSON) …`).
+
+**Misuse renders the help table instead of an error** — the way `--help` answers
+an unknown flag. An unrecognized variant, a query-dependent mode with no query,
+or a standalone mode handed a query all fall back to `help`.
+
+**`EXPLAIN PHYSICAL` requires the pipeline planner.** It walks the planner's IR,
+which only the pipeline planner builds:
+
+```sql
+SHOW oxla.query_planner.pipeline;          -- check the session's current value
+SET oxla.query_planner.pipeline = on;      -- required before EXPLAIN PHYSICAL
+```
+
+Without it the statement fails with `explain() mode 'physical_plan' requires
+oxla.query_planner.pipeline = on` (`FeatureNotSupported`). `help`, `config`, and
+`timing` work under either planner.
+
+### The `explain()` table function
+
+Because the explanation is a relation, `explain()` can be filtered, ordered, and
+joined like any table. The statement form always orders `physical_plan` by
+`row_num`; through the function you choose:
+
+```sql
+-- Same rows as EXPLAIN PHYSICAL, ordered explicitly
+SELECT operation, value FROM explain('SELECT 1', 'physical_plan') ORDER BY row_num;
+
+-- Standalone modes take one argument
+SELECT * FROM explain('help');
+SELECT * FROM explain('config');
+
+-- Narrow a large plan: it filters and paginates like any relation
+SELECT row_num, node, operation, value
+FROM explain('SELECT * FROM orders WHERE region = ''EMEA''', 'physical_plan')
+ORDER BY row_num
+LIMIT 20;
+```
+
+Filter on `node`, `operation`, `pass`, or the id columns to narrow a plan to the
+part you care about — read the actual values from a live run first, since the
+rows are runtime output.
+
+Argument rules (all arguments must be **string literals**, else
+`explain() arguments must be string literals`):
+
+- one argument — a standalone mode name (`'help'`, `'config'`)
+- two arguments — the query text, then a query-dependent mode name
+  (`'physical_plan'`, `'timing'`)
+- three arguments — plus an options string, comma-separated `key=value` pairs.
+  The only option is **`steps=n`**: stop planning once `n` passes have run, so
+  raising it one pass at a time explains each planning step on its own.
+  `SELECT * FROM explain('SELECT 1', 'physical_plan', 'steps=3')`. Options are
+  available through the function only, not through the `EXPLAIN` statement.
+
+Note that the mode name used by `explain()` (`physical_plan`) differs from the
+statement's variant keyword (`PHYSICAL`); `timing`, `config`, and `help` are
+spelled the same in both. A nested `explain()` is bounded by
+`oxla.query_planner.max_self_invoke_depth`; exceeding it fails with
+`explain() nested deeper than oxla.query_planner.max_self_invoke_depth (<n>)`.
+
+### Result columns per mode
+
+Column names are stable; the rows are runtime output — read them from the live
+server rather than assuming values.
+
+| Mode | Columns |
+|------|---------|
+| `help` | `query`, `description` |
+| `config` | `option`, `value` (nullable), `description` |
+| `timing` | `measurement`, `attribution`, `invocations`, `elapsed` (`decimal(18,6)`, microseconds) |
+| `physical_plan` | `row_num`, `node`, `physical_id`, `parent_id`, `child_id`, `operation`, `value`, `pass`, `logical_column` |
+
+A plan that failed to build still explains itself: `physical_plan` renders the
+partial plan with the failure attributed to the planning stage that produced it,
+so `EXPLAIN PHYSICAL` over a query that will not plan is still informative.
+
+`EXPLAIN CONFIG` is the live source of truth for the planner options — it lists
+each `oxla.query_planner.*` option with its session value and description, so
+read the options from it rather than from a pinned list. Individual options are
+session-settable (`SET oxla.query_planner.optimization.<name> = off`), and
+`oxla.query_planner.optimization.all` is a write-only shorthand that switches
+every planner optimization at once.
 
 ## CREATE / DROP SCHEMA
 

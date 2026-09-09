@@ -5,7 +5,8 @@ description: >-
   analytical database, for writing and running SQL queries. Use when connecting
   via psql or a PostgreSQL driver, creating tables and schemas, loading data
   with COPY (CSV/Parquet/ORC, S3), running analytical queries with joins,
-  aggregate and window functions, CTEs, or set operations, or working with
+  aggregate and window functions, CTEs, or set operations, creating views,
+  explaining a query plan with EXPLAIN, or working with
   Oxla's data types and role-based grants. Also covers Oxla's external-source
   integration for querying Redpanda/Kafka topics and Apache Iceberg tables
   directly with SQL, including CREATE REDPANDA/KAFKA CATALOG, CREATE ICEBERG
@@ -18,7 +19,7 @@ description: >-
 Oxla is a distributed columnar analytical database that speaks the PostgreSQL wire protocol (port 5432). Any `psql` client, JDBC driver, `psycopg2`, or `pgx` application connects to it without modification. Oxla is purpose-built for analytical (OLAP) workloads — large scans, aggregations, multi-table joins, and window functions over wide tables — and differs from standard PostgreSQL in execution architecture (columnar, distributed, parallel) and in which DDL/DML features it supports.
 
 Key differences from PostgreSQL to keep in mind:
-- There is no `EXPLAIN <query>` SQL statement. Query-plan output is controlled by the config flags `feature_flags.print_query_plan` and `feature_flags.pipeline_visualization`, not by an EXPLAIN command.
+- `EXPLAIN` exists but is not PostgreSQL's: it returns the explanation **as a relation**, not as plan text, and there is no `EXPLAIN ANALYZE` and no parenthesized option list. `EXPLAIN` alone renders a help table of the modes; `EXPLAIN PHYSICAL <query>`, `EXPLAIN TIMING <query>`, and `EXPLAIN CONFIG` are the modes. See [ddl-dml.md](references/ddl-dml.md#explain).
 - `COPY FROM/TO` uses explicit `FORMAT` option names (`CSV`, `PARQUET`, `ORC`).
 - `SELECT INTO` supports two forms: `SELECT ... INTO new_table FROM ...` (creates a new table) and `SELECT ... INTO 'path' (options) FROM ...` (writes to a file). The parenthesized option list selects the file form.
 - `CREATE TABLE [IF NOT EXISTS] t AS SELECT ...` (CTAS) is supported and is the idiomatic way to materialize or reshape a table.
@@ -198,7 +199,9 @@ DROP TABLE IF EXISTS sales;
 -- TRUNCATE
 TRUNCATE TABLE sales;
 
--- CREATE / DROP VIEW
+-- CREATE / DROP VIEW — non-materialized: the SELECT text is stored and inlined
+-- on every use, so the view always reads current base data. Privileges are
+-- invoker-based (the caller needs SELECT on the view and on its base relations).
 CREATE VIEW emea_orders AS
     SELECT * FROM orders WHERE region = 'EMEA';
 DROP VIEW emea_orders;
@@ -438,6 +441,27 @@ EXCEPT ALL
 SELECT i0 FROM tb2;
 ```
 
+## EXPLAIN
+
+`EXPLAIN` returns its explanation as a **relation**, so it can be filtered and
+ordered with plain SQL. Four modes; an unrecognized spelling renders the help
+table rather than an error.
+
+```sql
+EXPLAIN;                                    -- help: the modes and an example of each
+EXPLAIN CONFIG;                             -- query-planner options + session values
+EXPLAIN TIMING SELECT * FROM orders;        -- planning-stage breakdown
+SET oxla.query_planner.pipeline = on;       -- required for PHYSICAL only
+EXPLAIN PHYSICAL SELECT * FROM orders;      -- operator topology, one row per output
+
+-- Same explanations as a queryable relation
+SELECT operation, value FROM explain('SELECT 1', 'physical_plan') ORDER BY row_num;
+```
+
+Only `SELECT` queries can be explained. See
+[ddl-dml.md](references/ddl-dml.md#explain) for the per-mode result columns, the
+`explain()` argument rules, and the `steps=n` option.
+
 ## GENERATE_SERIES
 
 ```sql
@@ -450,7 +474,7 @@ SELECT * FROM generate_series(10, 1, -1);
 ## Reference Directory
 
 - [connect-and-types.md](references/connect-and-types.md): PostgreSQL wire protocol connection (port 5432, psql/JDBC/psycopg2/pgx), authentication (`initial_password`), SSL config, and the full supported data-type list grounded in `ColumnType.h`, including the wide-integer (`INT16`/`INT32`) cast and operator matrix plus how to bind wide-integer parameters, and the map surface (`map(...)` constructor, `m[key]` lookup on both constructed maps and external-schema map columns, supported key types, miss-vs-stored-NULL semantics).
-- [ddl-dml.md](references/ddl-dml.md): CREATE/DROP TABLE, CREATE TABLE AS SELECT (CTAS), CREATE/DROP VIEW, CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE, GRANT/REVOKE (valid targets: ON table / ON TABLE / ON SCHEMA / ON DATABASE / ON EXTERNAL SOURCE — `ON ALL TABLES IN SCHEMA` is rejected by the parser), the `ALTER TABLE IF EXISTS catalog=>table WITH (...)` Kafka-catalog rebind, SELECT/INSERT VALUES/INSERT SELECT/UPDATE/DELETE, SELECT INTO (table or file destination), PREPARE/EXECUTE, and transactions — all grounded in `query_planner` test cases and `bison_parser.y`.
+- [ddl-dml.md](references/ddl-dml.md): CREATE/DROP TABLE, CREATE TABLE AS SELECT (CTAS), CREATE/DROP VIEW (non-materialized, inlined per use, pinned column contract, invoker privileges, `pg_views`), the `EXPLAIN` statement and `explain()` table function (help/physical_plan/timing/config modes, per-mode result columns, `steps=n`), CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE, GRANT/REVOKE (valid targets: ON table / ON TABLE / ON SCHEMA / ON DATABASE / ON EXTERNAL SOURCE — `ON ALL TABLES IN SCHEMA` is rejected by the parser), the `ALTER TABLE IF EXISTS catalog=>table WITH (...)` Kafka-catalog rebind, SELECT/INSERT VALUES/INSERT SELECT/UPDATE/DELETE, SELECT INTO (table or file destination), PREPARE/EXECUTE, and transactions — all grounded in `query_planner` test cases and `bison_parser.y`.
 - [kafka-iceberg.md](references/kafka-iceberg.md): Oxla + Redpanda enterprise differentiator — querying Redpanda/Kafka topics and Apache Iceberg tables via SQL. CREATE/ALTER/DROP STORAGE (s3/gcs/abs), CREATE/ALTER/DROP ICEBERG CATALOG (uri/warehouse/auth_type oauth2|basic|aws_sigv4|gcp + nested keys), CREATE/ALTER/DROP REDPANDA|KAFKA CATALOG (initial_brokers/schema_registry_url required, sasl_*, truststore, key_store_*, USING CATALOG bind/detach), CREATE TABLE / ALTER TABLE IF EXISTS catalog=>topic WITH (topic/schema_lookup_policy/error_handling_policy/struct_mapping_policy/confluent_wire_protocol plus the key/header decode options key_decode_mode/key_schema_subject/key_confluent_wire_protocol/key_schema_message_full_name/header_value_type), REFRESH, DESCRIBE/SHOW, GRANT ON EXTERNAL SOURCE, and the Redpanda Enterprise Iceberg-topic properties (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/invalid.record.action). Notes Redpanda Enterprise license requirements. Grounded in `bison_parser.y`, `connection_option_names.h`, `kafka/conversions.cpp`, `iceberg_catalog_parser.cpp`.
 - [data-loading.md](references/data-loading.md): COPY FROM / COPY TO with CSV/Parquet/ORC formats, STDIN/STDOUT, S3 credentials via `aws_cred(...)`, and bulk-loading patterns for analytical ingestion.
 - [functions-and-analytics.md](references/functions-and-analytics.md): Complete function reference — aggregates (SUM/AVG/COUNT/percentile_disc/percentile_cont/mode/CORR), string (CONCAT/SUBSTR/REPLACE/REGEXP_REPLACE/STARTS_WITH/ENDS_WITH/STRPOS/LENGTH/UPPER/LOWER), math (ABS/CEIL/FLOOR/ROUND/SQRT/EXP/LN/LOG10/trig), date-time (EXTRACT/TIMESTAMP_TRUNC/MAKE_DATE/MAKE_TIMESTAMP/CURRENT_TIMESTAMP), window functions, CTEs, CASE/IF, and ARRAY functions — all grounded in test cases.

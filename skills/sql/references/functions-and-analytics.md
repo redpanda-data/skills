@@ -104,7 +104,22 @@ SELECT i0,
        FOR_MAX(f0, l0)
 FROM tb1
 GROUP BY i0;
+
+-- The carried value may be TEXT or BYTEA: "the name of the highest-paid employee"
+SELECT dept, FOR_MAX(salary, name) FROM employees GROUP BY dept;
 ```
+
+Argument types (grounded in the function registry's overload constraints):
+
+- **First argument — the metric** that is minimized/maximized. Must be orderable
+  and aggregable: `INT`, `BIGINT`, the wide integers (`INT16`/`INT32`), `FLOAT`,
+  `DOUBLE`, `BOOL`, `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMPTZ`, `INTERVAL`, or
+  `UUID`. `TEXT`, `BYTEA`, `JSON`, `NUMERIC`/`DECIMAL`, `OID`, and the geospatial
+  types (`GEOMETRY`/`GEOGRAPHY`/`POINT`) are rejected as the metric.
+- **Second argument — the carried value**, which is only copied, never ordered, so
+  it accepts more: any of the metric types **plus** `TEXT`, `BYTEA`, and `JSON`.
+  Only `NUMERIC`/`DECIMAL`, `OID`, and the geospatial types are rejected.
+- The result has the value argument's type.
 
 ---
 

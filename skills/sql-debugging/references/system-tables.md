@@ -276,8 +276,14 @@ ORDER BY table_schema, table_name;
 
 Oxla also implements several standard `pg_catalog` tables for driver compatibility (representative subset — more tables exist):
 
-- `pg_catalog.pg_class` — relations
+- `pg_catalog.pg_class` — relations (a view appears here with `relkind = 'v'`)
 - `pg_catalog.pg_attribute` — columns
+- `pg_catalog.pg_views` — non-materialized views: `schemaname`, `viewname`,
+  `viewowner`, `definition`. `definition` is the view's stored `SELECT` text as
+  written (Oxla stores the text; PostgreSQL reprints it from the parse tree).
+  Rows are scoped like other catalog reads — a view is listed only for a role
+  with a grant reaching it. Note that `viewowner` is returned as an empty string
+  — do not rely on it to identify a view's owner.
 - `pg_catalog.pg_type` — type catalog
 - `pg_catalog.pg_namespace` — schema namespaces
 - `pg_catalog.pg_authid` / `pg_user` / `pg_roles` — role/user catalog
