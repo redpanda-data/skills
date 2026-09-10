@@ -205,7 +205,7 @@ Redpanda Cloud is a managed deployment of Redpanda **Enterprise Edition**, so on
 
 | Feature | Key config (nested keys in the reference) |
 |---|---|
-| Tiered Storage | `redpanda.storage.mode`, `redpanda.remote.read/write/recovery`, `retention.local.target.{ms,bytes}`; cluster `cloud_storage_enabled`, `cloud_storage_enable_remote_{read,write}`, `default_redpanda_storage_mode` |
+| Tiered Storage | `redpanda.storage.mode`, `redpanda.storage.mode.impl` (`tiered_v1`/`tiered_v2`, read-only after create), `redpanda.remote.read/write/recovery`, `retention.local.target.{ms,bytes}`; cluster `cloud_storage_enabled`, `cloud_storage_enable_remote_{read,write}`, `default_redpanda_storage_mode`, `default_redpanda_storage_mode_tiered_impl` |
 | Cloud Topics | cluster `cloud_topics_enabled`; topic `redpanda.storage.mode=cloud` |
 | Iceberg Topics | `redpanda.iceberg.mode` (`disabled`/`key_value`/`value_schema_id_prefix`/`value_schema_latest`), `redpanda.iceberg.delete`, `redpanda.iceberg.invalid.record.action`, `redpanda.iceberg.partition.spec`, `redpanda.iceberg.target.lag.ms`; cluster `iceberg_enabled`, `iceberg_default_catalog_namespace`, `iceberg_catalog_type`, `iceberg_rest_catalog_endpoint`, `iceberg_target_lag_ms` |
 | Continuous Data Balancing | `partition_autobalancing_mode=continuous`, `partition_autobalancing_node_availability_timeout_sec`, `partition_autobalancing_node_autodecommission_timeout_sec`, `partition_autobalancing_max_disk_usage_percent`, `core_balancing_continuous` |

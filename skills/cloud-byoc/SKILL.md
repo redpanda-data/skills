@@ -244,7 +244,7 @@ Key features and their nested keys (full detail in [Enterprise Features](referen
 
 | Feature | Where | Primary keys |
 |---|---|---|
-| Tiered Storage (always on) | topic | `redpanda.remote.write/read/delete/recovery`, `redpanda.storage.mode` |
+| Tiered Storage (always on) | topic + cluster | `redpanda.remote.write/read/delete/recovery`, `redpanda.storage.mode`, `redpanda.storage.mode.impl` (`tiered_v1`/`tiered_v2`, read-only after create); cluster `default_redpanda_storage_mode_tiered_impl` |
 | Cloud Topics | topic | `redpanda.cloud_topic.enabled`, `redpanda.storage.mode=cloud` |
 | Iceberg Topics | cluster + topic | `iceberg_enabled`, `iceberg_default_catalog_namespace`; `redpanda.iceberg.mode/delete/invalid.record.action/partition.spec/target.lag.ms` |
 | Continuous Data Balancing | cluster | `partition_autobalancing_mode=continuous`, `partition_autobalancing_max_disk_usage_percent`, `partition_autobalancing_node_availability_timeout_sec`, `partition_autobalancing_node_autodecommission_timeout_sec`, `core_balancing_continuous` |
