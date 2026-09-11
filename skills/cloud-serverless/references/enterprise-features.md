@@ -180,6 +180,7 @@ API to set them:
 | Feature | Why not user-configurable on Serverless |
 |---|---|
 | Tiered Storage (`cloud_storage_*`) | Storage is fully managed; Serverless is object-storage-native by design. |
+| Tiered Storage version selection (`default_redpanda_storage_mode_tiered_impl`, topic `redpanda.storage.mode.impl`) | Serverless uses Tiered Storage v1. The v2 (beta) version and its selection property are available only on BYOC and Dedicated clusters — see `/redpanda:cloud-byoc` or `/redpanda:cloud-dedicated`. |
 | Customer-managed encryption keys (BYOK / CMK) | **Not offered on Redpanda Cloud** (any tier). Encryption keys are Redpanda-managed — data at rest uses SSE-S3 / cloud-provider AES-256. There is no API to bring your own key. Source: https://docs.redpanda.com/cloud-data-platform/security/cloud-encryption/ |
 | Cloud Topics (`redpanda.cloud_topic.enabled`) | Managed cluster topology; not a tenant toggle. |
 | Continuous Data Balancing (`partition_autobalancing_mode`, `partition_autobalancing_node_availability_timeout_sec`, disk-pressure thresholds) | Cluster-level balancing is managed by Redpanda. |

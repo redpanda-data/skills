@@ -66,7 +66,51 @@ Per-topic Tiered Storage properties (grounded in `topic-properties.adoc`):
 | `redpanda.remote.read` | bool | Fetch segments from object storage to local. Cluster default: `cloud_storage_enable_remote_read`. |
 | `redpanda.remote.delete` | bool | Delete objects from storage when the topic/data is deleted. |
 | `redpanda.remote.recovery` | bool | Recover/reproduce a topic from object storage. Create-time only — cannot be altered on an existing topic. (Topic Recovery enterprise feature.) |
-| `redpanda.storage.mode` | string | Newer unified control: `local`, `tiered`, `cloud`, or `unset`. |
+| `redpanda.storage.mode` | string | Newer unified control: `local`, `tiered`, `cloud`, or `unset`. `tiered` is an alias resolved to a Tiered Storage version at create time (see below). |
+| `redpanda.storage.mode.impl` | string | `tiered_v1` / `tiered_v2`. Reports which Tiered Storage version a `tiered` topic uses. Read-only after create; settable only at topic create. |
+
+### Tiered Storage versions (v1 and v2 beta)
+
+Starting in Redpanda v26.2, Tiered Storage has two versions, both enabled the same way
+(`redpanda.storage.mode=tiered`). The cluster property
+`default_redpanda_storage_mode_tiered_impl` (`tiered_v1` default, or `tiered_v2`) decides
+which version the `tiered` alias resolves to for **newly created** topics.
+
+| | `tiered_v1` | `tiered_v2` (beta) |
+|---|---|---|
+| Availability | Default. All Cloud cluster types. | **Beta** — BYOC and Dedicated clusters on Redpanda v26.2+ only. Not supported for production deployments. |
+| Compacted data | Compaction runs on local data only; data already uploaded to object storage is not compacted, so duplicate keys can remain there indefinitely. | Compaction runs on the data in object storage, so the entire partition is compacted. |
+| Compaction window | Limited to a small window; only duplicate keys within that window are removed. | Full compaction — eventually only the latest value per key is retained across the partition. |
+| Tombstone removal | Not supported. | Supported, after the retention period set by `delete.retention.ms`. |
+
+```bash
+# Cluster-wide default for new tiered topics (no cluster restart required)
+rpk cluster config set default_redpanda_storage_mode_tiered_impl=tiered_v2
+
+# Or per topic at create time — pass both; tiered_v1/tiered_v2 both mean mode `tiered`
+# (setting .impl alone works only when it matches the cluster default)
+rpk topic create events -c redpanda.storage.mode=tiered -c redpanda.storage.mode.impl=tiered_v2
+
+# Which version does an existing topic use?
+rpk topic describe events   # redpanda.storage.mode=tiered, redpanda.storage.mode.impl=tiered_v1|tiered_v2
+```
+
+Decision rules:
+
+- The only difference is compaction of object-storage data, so choose `tiered_v2` **only**
+  for `compact` topics that must not accumulate stale values or tombstones in object
+  storage. For non-compacted topics, stay on the default.
+- v2 is beta: do not recommend it for production data. Rollout is progressive — read the
+  property back (`rpk cluster config get default_redpanda_storage_mode_tiered_impl`)
+  instead of assuming the cluster can set `tiered_v2`.
+- Version choice is **create-time and irreversible**: a topic cannot be converted between
+  v1 and v2, `redpanda.storage.mode.impl` is read-only after create, and changing the
+  cluster property affects only topics created afterwards. Upgrading a cluster never
+  changes the version of existing topics. To change version, create a new topic and migrate.
+
+On BYOC the property is set like any other cluster config — `rpk cluster config set`, or
+`cluster_configuration.custom_properties` on the control-plane cluster surface (values as
+JSON strings).
 
 License note: Tiered Storage is an Enterprise feature. Topic Recovery (`redpanda.remote.recovery=true`) and Whole Cluster Restore (WCR) are also enterprise-gated. All are included with the Cloud subscription.
 
