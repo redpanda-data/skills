@@ -52,6 +52,26 @@ the Go config spec in `internal/impl/mysql/input_mysql_stream.go`:
 - The `endpoint` requiredness under `aws` (skill says "required when `aws.enabled=true`"): the generated page marks `aws.endpoint` `# No default (required)` unconditionally — confirm conditional-required semantics in `internal/impl/mysql/aws/aws.go`.
 - Confirm which Connect **release tag** the skill targets and re-verify field list/defaults against that tag (this pass read `main`).
 
+## Sync log
+
+- **Verified against Connect v4.109.0 (2026-09-11 sync).** No config fields changed. The
+  `tables` name check in `validate.go` was rewritten from two ASCII regexes to a per-rune
+  walk, so the rules `config-reference.md` documented were wrong for every non-ASCII name:
+  - `isIdentifierStartRune` admits an ASCII letter, `_`, or any rune in U+0080–U+FFFF (the
+    extended range the source comment cites MySQL's unquoted-identifier rules for); a leading
+    digit or `$` is still rejected (`errInvalidTableStartChar`). `isIdentifierRune` adds ASCII
+    digits and `$` for the remaining positions.
+  - Supplementary characters (U+10000 and above) and invalid UTF-8 are rejected
+    (`errInvalidTableName`); `utf8.ValidString` is checked up front precisely because
+    `utf8.RuneError` would otherwise fall inside the extended range and be accepted.
+  - The 64-character cap is unchanged and still counted with `utf8.RuneCountInString`, i.e.
+    in runes rather than bytes. `validate_test.go` pins each of these cases, including
+    `café` / `日本語テーブル` / `Пользователи` / `orders_ñ_2024` as valid and
+    `table_😀` / `strings.Repeat("é", 65)` as invalid.
+  - Where the check runs: `validateTableName` is called from `newMySQLStreamInput` (the
+    config-parse/construction path), not from a `LintRule`, so a bad name fails at startup
+    and `rpk connect lint` does not catch it. Applied to `references/config-reference.md`.
+
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every

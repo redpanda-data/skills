@@ -106,11 +106,25 @@ tables:
 
 Lint rule: the field must contain at least one entry — an empty `tables: []` is a lint error.
 
-Table name validation rules (from `validate.go`):
-- Must not be empty
-- Maximum 64 UTF-8 characters
-- Must start with a letter or underscore (`[a-zA-Z_]`)
-- May contain only letters, digits, underscores, and `$` (`[a-zA-Z0-9_$]+`)
+Table name validation rules (from `validate.go`). Every entry is checked when the input is
+built, so an invalid name fails the pipeline at startup — it is not a lint rule, and
+`rpk connect lint` will not flag it:
+
+- Must not be empty, and must be valid UTF-8.
+- Maximum 64 characters, counted in **runes, not bytes** — a 64-character name made of
+  multi-byte characters is accepted even though it exceeds 64 bytes.
+- First character: an ASCII letter, `_`, or a character in the extended range
+  U+0080–U+FFFF. A leading digit or `$` is rejected.
+- Remaining characters: any of the above, plus ASCII digits and `$`.
+- Characters above U+FFFF (the supplementary planes — emoji, for example) are rejected.
+
+**Changed in 4.109.0:** the check was previously ASCII-only (`^[a-zA-Z_]` followed by
+`[a-zA-Z0-9_$]+$`) and rejected every non-ASCII table name. It now admits the extended
+identifier range MySQL permits in unquoted identifiers, so accented Latin, CJK and Cyrillic
+table names stream normally (`café`, `日本語テーブル`, `Пользователи`, `orders_ñ_2024`). Names
+that would need backtick quoting in MySQL — anything containing a space, `-` or `@` — are
+still rejected, as are names given with a database prefix (`mydb.orders`), because `.` is not
+a permitted character.
 
 ---
 
