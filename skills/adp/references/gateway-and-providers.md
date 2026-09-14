@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto` (LLMProviderService RPCs lines 16-66, LLMProvider fields lines 82-260, provider config oneof lines 220-231, provider type enum lines 68-78, config messages lines 574-747, ProviderModelPricing lines 451-548), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/model.proto` (ModelService RPCs lines 10-23, Model fields, ModelCapabilities lines 26-36, ListModelsRequest lines 62-72), `cloudv2/apps/aigw/internal/server/server.go` (LLMProviderService registered lines 1054/1189; ModelService registered lines 1059/1213), `cloudv2/apps/aigw/internal/llm/provider/google/google.go:70` (Gemini x-goog-api-key injection). `cloudv2/apps/aigw/internal/services/llmprovider/service.go` (create-path `Transcripts` defaulting). `Model.max_input_tokens` (field 6) and `max_output_tokens` (field 7) re-verified against `model.proto` on 2026-07-06. The `CheckConnection` `target` oneof (`name` / `LLMProviderConnectionConfig`), its `dataplane_adp_llmprovider_check_connection` permission and `check_connection` Cedar action, and `ModelCapabilities.supported_reasoning_efforts` (field 10) verified against `llm_provider.proto` / `model.proto` on 2026-09-07. Evidence date: 2026-09-07 (provider types, pricing overrides, and the transcript-recording create default unchanged).
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto` (LLMProviderService RPCs lines 16-66, LLMProvider fields lines 82-260, provider config oneof lines 220-231, provider type enum lines 68-78, config messages lines 574-747, ProviderModelPricing lines 451-548), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/model.proto` (ModelService RPCs lines 10-23, Model fields, ModelCapabilities lines 26-36, ListModelsRequest lines 62-72), `cloudv2/apps/aigw/internal/server/server.go` (LLMProviderService registered lines 1054/1189; ModelService registered lines 1059/1213), `cloudv2/apps/aigw/internal/llm/provider/google/google.go:70` (Gemini x-goog-api-key injection). `cloudv2/apps/aigw/internal/services/llmprovider/service.go` (create-path `Transcripts` defaulting). `Model.max_input_tokens` (field 6) and `max_output_tokens` (field 7) re-verified against `model.proto` on 2026-07-06. The `CheckConnection` `target` oneof (`name` / `LLMProviderConnectionConfig`), its `dataplane_adp_llmprovider_check_connection` permission and `check_connection` Cedar action, and `ModelCapabilities.supported_reasoning_efforts` (field 10) verified against `llm_provider.proto` / `model.proto` on 2026-09-07. Failed-call investigation: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent_network_service.proto` (the `QueryLLMProviderCallFailures` RPC on `AgentNetworkService` with its `dataplane_adp_llmprovider_get` permission and `get`-on-`LLMProvider` Cedar action, `QueryLLMProviderCallFailuresRequest` scope/`Filter.caller`/paging bounds, `LLMProviderCallFailureEvidence` fields, and the `LLMProviderCallFailureReason` enum) verified on 2026-09-14. Evidence date: 2026-09-14 (provider types, pricing overrides, and the transcript-recording create default unchanged).
 
 # AI Gateway, LLM Providers, and Models Reference
 
@@ -56,6 +56,40 @@ Source: `llm_provider.proto:16-66`. Service name: `redpanda.api.adp.v1alpha1.LLM
 `LLMProviderConnectionConfig` is a bare `provider_config` oneof over the same five config messages as the resource (`openai_config`, `anthropic_config`, `google_config`, `bedrock_config`, `openai_compatible_config`); exactly one arm is required. Resource identity, models, guardrails, tags, and every other persistence field are deliberately absent — a draft check answers "do these credentials reach this endpoint", nothing more. Credential references are still resolved through the secret store, so a probe can fail on a missing secret before any request leaves the gateway.
 
 Read `status` for the verdict, not `latency_ms`: latency is `0` when the probe failed *before* a request went out (a missing secret, for example), which is indistinguishable from a very fast response if you only look at the number.
+
+### Investigating calls that already failed
+
+`CheckConnection` answers "can the gateway reach this provider *now*". To ask why calls failed over some past window, use `QueryLLMProviderCallFailures` — an on-demand telemetry drilldown, not a managed collection:
+
+| Aspect | Detail |
+|---|---|
+| Service | `AgentNetworkService` (not `LLMProviderService`), `redpanda.api.adp.v1alpha1` |
+| Permission | `dataplane_adp_llmprovider_get`, Cedar action `get` on `LLMProvider` — reading a provider's failures is the same capability as reading the provider |
+| Scope | Required `llm_provider` (bare lowercase `LLMProvider.name`, ≤ 63 chars — this resource predates canonical AIP names), plus a required `start_time` (inclusive) / `end_time` (exclusive) window |
+| Narrowing | Optional `filter.caller` oneof: `agent_name` (`agents/{agent}`) or `user_email` (matches direct, non-agent calls only) |
+| Paging | `page_size` 0 → 50, values above 100 coerced to 100; `page_token` must be replayed against an identical scope and filter |
+| Order | `start_time` descending, then `span_id` descending |
+
+Each `LLMProviderCallFailureEvidence` entry is one deduplicated gateway-side failed span: `trace_id` / `span_id`, `start_time`, `latency`, `model`, the `caller` oneof (`agent_name` or `user_email`), `response_id`, `conversation_id`, and the classification pair below. Individual fields are empty where the telemetry did not record them (`trace_id` on older history, `model`, `response_id`, `conversation_id` for a call with no transcript) — treat an empty field as "not recorded", not as a measured absence.
+
+**The classification is content-safe by construction.** `reason` is a stable `LLMProviderCallFailureReason` enum and `error_summary` is derived *only* from `reason`; provider-supplied error text is never returned by this RPC. Do not expect to read the upstream's own message here, and do not parse `error_summary` — switch on `reason`:
+
+| `LLM_PROVIDER_CALL_FAILURE_REASON_…` | What it means |
+|---|---|
+| `UNSPECIFIED` | Could not be classified more precisely |
+| `RATE_LIMITED` | The provider rate limit was reached |
+| `AUTHENTICATION_FAILED` | The provider rejected its configured credentials |
+| `PERMISSION_DENIED` | The provider denied the requested operation |
+| `RESOURCE_NOT_FOUND` | The request referenced an upstream resource that does not exist — a removed or renamed model is the common case |
+| `TIMED_OUT` | The provider call exceeded its deadline |
+| `PROVIDER_UNAVAILABLE` | The provider was temporarily unavailable or overloaded |
+| `SAFETY_POLICY_BLOCKED` | A provider safety policy blocked the request |
+| `REQUEST_TOO_LARGE` | The request exceeded a provider size limit |
+| `INVALID_REQUEST` | The provider rejected the request shape or parameters |
+| `PROVIDER_INTERNAL` | The provider reported an internal failure |
+| `PROVIDER_ERROR` | Another provider-side failure; no text is exposed |
+
+The reason is what selects the remedy: `AUTHENTICATION_FAILED` points at the provider's credentials (re-probe with `CheckConnection`), `RESOURCE_NOT_FOUND` at the model the caller asked for (re-check against `rpk ai model list` and the provider's `provider_models`), `RATE_LIMITED` and `PROVIDER_UNAVAILABLE` at upstream capacity rather than at your configuration.
 
 ## Key `LLMProvider` fields
 
