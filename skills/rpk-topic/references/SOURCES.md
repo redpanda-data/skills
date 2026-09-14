@@ -4,12 +4,12 @@ Maps each file in `skills/rpk-topic/` to the source paths it derives from, so fu
 human maintainers know exactly where to verify claims.
 
 The `rpk topic` command group is Go source in the **public** repo `redpanda-data/redpanda` under
-`src/go/rpk/pkg/cli/topic/`; the user-facing reference is auto-generated in the **public** repo
+`src/go/rpk/pkg/cli/topic/`; the user-facing reference is auto-generated in the **private** repo
 `redpanda-data/docs`. Topic *properties* (retention, tiered storage, Iceberg, schema-id
 validation, etc.) are **broker** config, not rpk — `rpk` only passes `key=value` pairs through the
 Kafka config APIs; the citation of record is the generated docs partial
 `modules/reference/partials/properties/topic-properties.adoc` (upstream:
-`src/v/config/configuration.cc`). All repos are public — read them via the Redpanda-Github-Read MCP
+`src/v/config/configuration.cc`). Read them via the Redpanda-Github-Read MCP
 connector (`search_code`, `get_file_contents`), or `gh api` for verification; do not guess. Before
 writing or changing any fact, re-open the cited source and confirm exact command paths, flag names,
 and config keys. `rpk` is versioned: verify against the **current stable release tag**, not

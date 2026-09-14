@@ -17,9 +17,7 @@ upstream Redpanda setting that controls it.
 > Enterprise) is a hard prerequisite — Iceberg tables are written alongside the
 > Tiered Storage log segments in object storage.
 
-Sources (Redpanda docs, verified): `manage/iceberg/about-iceberg-topics.adoc`,
-`manage/iceberg/use-iceberg-catalogs.adoc`, `manage/iceberg/iceberg-troubleshooting.adoc`,
-`reference/properties/topic-properties.adoc`, `get-started/licensing/overview.adoc`.
+Sources (Redpanda docs, verified): the About Iceberg Topics, Use Iceberg Catalogs, and Iceberg troubleshooting pages, the topic properties reference, and the licensing overview (paths in [SOURCES.md](SOURCES.md)).
 
 ---
 

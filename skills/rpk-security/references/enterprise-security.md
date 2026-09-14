@@ -41,7 +41,7 @@ Records detailed logs of cluster activity for compliance. When `audit_enabled` i
 | `audit_client_max_buffer_size` | Bytes the internal audit client allocates; toggle audit off/on to apply | `16777216` |
 | `audit_queue_max_buffer_size_per_shard` | Max audit buffer memory per shard, in bytes; requires restart to change | `1048576` |
 
-The cluster property `audit_enabled` defaults to `false` (per `reference:properties/cluster-properties.adoc`); the value `true` is what requires an Enterprise license. The Helm value `auditLogging.enabled` also defaults to `false`.
+The cluster property `audit_enabled` defaults to `false` (per the cluster properties reference); the value `true` is what requires an Enterprise license. The Helm value `auditLogging.enabled` also defaults to `false`.
 
 Valid `audit_enabled_event_types` values: `management`, `produce`, `consume`, `describe`, `heartbeat`, `authenticate`, `schema_registry`, `admin`. Keep the list as restrictive as your compliance needs allow.
 

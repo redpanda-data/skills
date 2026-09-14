@@ -22,7 +22,7 @@ The **unified** `redpanda_migrator` input/output pair was introduced in **Redpan
 | Topic renaming | `topic_prefix` | `topic` with interpolation, e.g. `'migrated_${! @kafka_topic }'` |
 | Offset sync | `redpanda_migrator_offsets` pair | `consumer_groups` block on the output |
 
-If you encounter a config using the bundle components, the full field-by-field mapping lives in the docs guide `guides:migration/migrate-unified-redpanda-migrator.adoc` (docs.redpanda.com → Redpanda Connect → Guides → Migration). Key renames: `topic_prefix` → output `topic` interpolation; `regexp_topics: true` → `regexp_topics_include`/`regexp_topics_exclude` arrays; `translate_schema_ids` → `schema_registry.translate_ids`; `consumer_group_offsets_poll_interval` → `consumer_groups.interval`.
+If you encounter a config using the bundle components, the full field-by-field mapping lives in the Redpanda Connect migration guide (docs.redpanda.com → Redpanda Connect → Guides → Migration). Key renames: `topic_prefix` → output `topic` interpolation; `regexp_topics: true` → `regexp_topics_include`/`regexp_topics_exclude` arrays; `translate_schema_ids` → `schema_registry.translate_ids`; `consumer_group_offsets_poll_interval` → `consumer_groups.interval`.
 
 ## When to use the migrator vs a plain pipeline
 
@@ -118,7 +118,7 @@ For high-throughput migrations:
 Do not rely on any per-field enumeration here; the migrator's full config schema is auto-generated. Consult:
 
 - `rpk connect create redpanda_migrator` (input template) and `rpk connect create //redpanda_migrator` (output template) on your installed version.
-- Component reference pages: docs.redpanda.com → Redpanda Connect → Components → Inputs/Outputs → `redpanda_migrator` (rp-connect-docs `modules/components/pages/{inputs,outputs}/redpanda_migrator.adoc`).
-- End-to-end cookbook: rp-connect-docs `modules/cookbooks/pages/redpanda_migrator.adoc`.
-- Legacy-to-unified upgrade guide: rp-connect-docs `modules/guides/pages/migration/migrate-unified-redpanda-migrator.adoc`.
+- Component reference pages: docs.redpanda.com → Redpanda Connect → Components → Inputs/Outputs → `redpanda_migrator`.
+- End-to-end cookbook: docs.redpanda.com → Redpanda Connect → Cookbooks → Redpanda Migrator.
+- Legacy-to-unified upgrade guide: docs.redpanda.com → Redpanda Connect → Guides → Migration.
 - Implementation: `redpanda-data/connect` `internal/impl/redpanda/migrator/`.

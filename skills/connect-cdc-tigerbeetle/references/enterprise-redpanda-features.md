@@ -4,7 +4,7 @@ The `tigerbeetle_cdc` input itself is a **certified** community connector, not a
 
 However, once TigerBeetle ledger events land in a Redpanda topic, the **destination topic and cluster** can use Redpanda Enterprise features. These are Redpanda's key differentiators for a CDC sink — and financial ledger events are the archetypal workload for them (long-term auditable retention, lakehouse analytics, DR). **Each feature below requires a valid Redpanda Enterprise license** on the destination cluster (not on Connect). Without a valid license, topics cannot be created or modified to enable these features, and on license expiration the behaviors noted apply.
 
-Authoritative source: `docs/modules/get-started/pages/licensing/overview.adoc`, `docs/modules/reference/partials/properties/topic-properties.adoc`, `docs/modules/reference/partials/properties/cluster-properties.adoc`.
+Authoritative source: the Redpanda licensing overview and the topic and cluster properties references (paths in [SOURCES.md](SOURCES.md)).
 
 ---
 
@@ -132,7 +132,7 @@ rpk shadow status my-cdc-shadow-link --print-overview --print-topic
 rpk shadow failover my-cdc-shadow-link --topic transfers-cdc
 ```
 
-See `docs/modules/manage/pages/disaster-recovery/index.adoc` and `docs/modules/reference/pages/rpk/rpk-shadow/`.
+See the Redpanda disaster recovery docs and the `rpk shadow` command reference.
 
 ---
 
@@ -193,12 +193,12 @@ Distinct from the Redpanda cluster license. These apply to the Connect process r
 | Feature | Doc | Notes |
 |---|---|---|
 | Enterprise connectors | `connect:components:catalog` (support=enterprise) | `tigerbeetle_cdc` is `certified`, not enterprise. Other inputs/outputs/processors in the same pipeline may be enterprise. |
-| Secrets management | `connect:configuration:secrets.adoc` | Look up secrets (e.g., Redis URL, Kafka SASL password) from a remote secret manager at runtime instead of env vars. |
-| Redpanda Connect configuration service | `connect:components:redpanda/about.adoc` | The `redpanda:` config block streams Connect logs and status events to a topic on the Redpanda cluster. |
-| Allow / deny lists | `connect:configuration:allow_and_deny_lists.adoc` | Restrict which components a pipeline may run. |
-| FIPS compliance | `connect:get-started:quickstarts/rpk.adoc#fips-compliance` | FIPS guidance is documented for the `rpk`-embedded Connect; `tigerbeetle_cdc` requires the standalone cgo binary, so verify FIPS applicability for that build separately. |
+| Secrets management | Redpanda Connect docs → Configuration → Secrets | Look up secrets (e.g., Redis URL, Kafka SASL password) from a remote secret manager at runtime instead of env vars. |
+| Redpanda Connect configuration service | Redpanda Connect docs → Components → `redpanda` | The `redpanda:` config block streams Connect logs and status events to a topic on the Redpanda cluster. |
+| Allow / deny lists | Redpanda Connect docs → Configuration → Allow and deny lists | Restrict which components a pipeline may run. |
+| FIPS compliance | Redpanda Connect docs → Get Started → rpk quickstart, FIPS compliance section | FIPS guidance is documented for the `rpk`-embedded Connect; `tigerbeetle_cdc` requires the standalone cgo binary, so verify FIPS applicability for that build separately. |
 
-Apply a Connect license as described in `connect:get-started:licensing.adoc`. Without it, enterprise connectors are blocked after the trial; the un-gated `tigerbeetle_cdc` input keeps working.
+Apply a Connect license as described in the Redpanda Connect licensing page (Get Started → Licensing). Without it, enterprise connectors are blocked after the trial; the un-gated `tigerbeetle_cdc` input keeps working.
 
 ---
 

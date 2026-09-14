@@ -1,8 +1,8 @@
-Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status; `--no-browser` flag and always-fresh-grant behavior in `login.go`), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/internal/cmd/trigger` (`cmd.go`, `create.go`, `update.go`, `runs.go`, `gitops.go`: the `trigger` command tree, kind flags, pause/resume, `runs`, GitOps wiring), `cloudv2/apps/rpai/internal/gitops` (`doc.go`, `command.go`: the complete-manifest comparison rule and the `apply`/`diff` long help shared by every resource group), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing; and in `claude.go` the transport-mode neutralization — `buildClaudeEnv`'s scrub list, `claudeRouteEnv`'s overlay pins, `claudeOnDiskTransportModeSet` / `claudeOnDiskAuthTokenSet` and `claudeEnvTruthy` for the two on-disk `settings.json` guards), `cloudv2/apps/rpai/internal/cmd/llm/pricing.go` (`--pricing` flag: keys, USD-per-million units, merge-into-`provider-models` behavior) and `cloudv2/apps/rpai/internal/cmd/generated.go` (`AddPricingSugar` wiring — `llm create`/`update` only). Evidence date: 2026-09-14 (`trigger` command tree and the shared GitOps complete-manifest rule verified against `internal/cmd/trigger`, `internal/gitops` and `testdata/commands-snapshot.md` on 2026-09-14; `run claude` transport-mode neutralization and the two on-disk `settings.json` guards verified against `claude.go` on 2026-09-14; `auth login --no-browser` flag and always-fresh-grant behavior verified against `login.go` on 2026-08-24; `--pricing` flag on `llm create`/`update` verified 2026-08-17; `connection` subcommands re-verified 2026-08-03; `run` subcommand flags last verified 2026-07-06).
+Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status; `--no-browser` flag and always-fresh-grant behavior in `login.go`), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/internal/cmd/trigger` (`cmd.go`, `create.go`, `update.go`, `runs.go`, `gitops.go`: the `trigger` command tree, kind flags, pause/resume, `runs`, GitOps wiring), `cloudv2/apps/rpai/internal/gitops` (`doc.go`, `command.go`: the complete-manifest comparison rule and the `apply`/`diff` long help shared by every resource group), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing; and in `claude.go` the transport-mode neutralization — `buildClaudeEnv`'s scrub list, `claudeRouteEnv`'s overlay pins, `claudeOnDiskTransportModeSet` / `claudeOnDiskAuthTokenSet` and `claudeEnvTruthy` for the two on-disk `settings.json` guards), `cloudv2/apps/rpai/internal/cmd/llm/pricing.go` (`--pricing` flag: keys, USD-per-million units, merge-into-`provider-models` behavior) and `cloudv2/apps/rpai/internal/cmd/generated.go` (`AddPricingSugar` wiring — `llm create`/`update` only). Published-docs coverage notes are checked against the `adp-docs` `rpk-ai-*.adoc` reference pages. Evidence date: 2026-09-14 (`trigger` command tree and the shared GitOps complete-manifest rule verified against `internal/cmd/trigger`, `internal/gitops` and `testdata/commands-snapshot.md` on 2026-09-14; `run claude` transport-mode neutralization and the two on-disk `settings.json` guards verified against `claude.go` on 2026-09-14; `auth login --no-browser` flag and always-fresh-grant behavior verified against `login.go` on 2026-08-24; `--pricing` flag on `llm create`/`update` verified 2026-08-17; `connection` subcommands re-verified 2026-08-03; `run` subcommand flags last verified 2026-07-06).
 
 # rpk ai CLI Reference
 
-**Maturity: Preview.** The Agentic Data Plane product is generally available; the `rpk ai` CLI itself is in Preview (all `rpk ai` reference pages in adp-docs carry `:page-preview: true`). The binary is in production use.
+**Maturity: Preview.** The Agentic Data Plane product is generally available; the `rpk ai` CLI itself is in Preview (every `rpk ai` reference page in the Agentic Data Plane documentation carries the Preview marker). The binary is in production use.
 
 Audience: an AI agent using `rpk ai` to operate the Redpanda AI platform. Optimize for correct command usage.
 
@@ -94,7 +94,7 @@ When running as `rpk ai`, the binary uses prefixed flag names. Source: `root.go:
 | `--format` | `-o` | `RPAI_FORMAT` | `table` | output format: `table`, `wide`, `json`, `yaml`, `markdown` |
 | `--no-color` | (none) | `NO_COLOR` | false | disable colored output |
 
-**Important:** `--rpai-endpoint` is intentionally NOT bound to a `RPAI_ENDPOINT` environment variable. The adp-docs pages incorrectly describe it as `(env: RPAI_ENDPOINT)`. The source code comment at `root.go:206-213` states this explicitly: binding it would silently override the Agentic Data Plane environment chosen via `rpk ai env use`. The correct behavior is that `--rpai-endpoint` only takes effect when passed as a flag for a single invocation.
+**Important:** `--rpai-endpoint` is intentionally NOT bound to a `RPAI_ENDPOINT` environment variable. The published `rpk ai` reference pages incorrectly describe it as `(env: RPAI_ENDPOINT)`. The source code comment at `root.go:206-213` states this explicitly: binding it would silently override the Agentic Data Plane environment chosen via `rpk ai env use`. The correct behavior is that `--rpai-endpoint` only takes effect when passed as a flag for a single invocation.
 
 Config default path: `$HOME/.rpai/config` (production). Non-production environments use `$HOME/.rpai_<env>/config` (for example, `$HOME/.rpai_integration/config`). Source: `apps/rpai/internal/config/cloudenv.go:179-181`.
 
@@ -151,13 +151,13 @@ Sub-groups:
   - `cancel <agent|url> <task-id>`
   - `watch <agent|url> <task-id>` (alias: `resubscribe`)
 
-Note: adp-docs currently publishes only `rpk-ai-agent.adoc` and `rpk-ai-agent-list.adoc`. The full subcommand tree above is confirmed from source but not all subpages are published.
+Note: the published `rpk ai` reference currently covers only the `agent` group page and `agent list`. The full subcommand tree above is confirmed from source but not all subpages are published.
 
 ## `auth` subcommands
 
 Source: `internal/cmd/auth/cmd.go:18`. Subcommands: `login`, `logout`, `token`, `status`.
 
-Not yet documented in adp-docs.
+Not yet covered by the published `rpk ai` reference.
 
 ## `connection` subcommands
 
@@ -170,7 +170,7 @@ A *connection* is your personal OAuth grant to a third-party provider — create
 | `rpk ai connection list` | List your OAuth connections and their status. `-o wide` / `-o yaml` add connected-at, token-expiry, and refresh-token detail |
 | `rpk ai connection revoke <provider-name>` | Revoke your own connection to the named provider: invalidates your stored tokens and calls the provider's revocation endpoint best-effort. Affects only your connection, not other users' |
 
-Backed by the `ListConnections` / `RevokeConnection` RPCs. Not yet documented in adp-docs.
+Backed by the `ListConnections` / `RevokeConnection` RPCs. Not yet covered by the published `rpk ai` reference.
 
 ## `env` subcommands
 
@@ -178,7 +178,7 @@ Source: `internal/cmd/env/cmd.go:47`. Subcommands: `add` (aliases: `create`), `l
 
 All subcommands work without a profile or config (`AnnotationSkipDeps: "true"`). The deprecated `profile` alias exists for one-release compatibility.
 
-Not yet documented in adp-docs.
+Not yet covered by the published `rpk ai` reference.
 
 ## `llm` subcommands
 
@@ -211,7 +211,7 @@ rpk ai llm create --name openai-prod --type openai --api-key-ref OPENAI_KEY \
   --pricing model=gpt-4o,input=2.50,output=10.00,cached=1.25
 ```
 
-adp-docs publishes: `rpk-ai-llm.adoc` and CRUD subpages. `check`, `apply`, `diff`, and `--pricing` are not yet documented.
+The published reference covers the `llm` group page and its CRUD subpages. `check`, `apply`, `diff`, and `--pricing` are not yet documented.
 
 ## `mcp` subcommands
 
@@ -225,7 +225,7 @@ Subcommands: `create`, `get`, `list`, `update`, `delete`, `types`, `tools`, `app
 
 **`types`**: Lists available managed MCP server types.
 
-adp-docs publishes CRUD subpages plus `tools`, `tools list`, `tools call`, and `types`. `apply` and `diff` are not yet documented.
+The published reference covers the CRUD subpages plus `tools`, `tools list`, `tools call`, and `types`. `apply` and `diff` are not yet documented.
 
 ## `model` subcommands
 
@@ -233,7 +233,7 @@ Aliases: `models`, `m`. Source: `internal/cmd/model/cmd.go:51`.
 
 Subcommands: `list`, `get <name>`
 
-adp-docs publishes `rpk-ai-model.adoc`, `rpk-ai-model-get.adoc`, `rpk-ai-model-list.adoc`.
+The published reference covers the `model` group page, `model get`, and `model list`.
 
 ## `oauth-client` subcommands
 
@@ -243,7 +243,7 @@ Subcommands: `create`, `get`, `list`, `delete`, `revoke-tokens`, `apply`, `diff`
 
 **`dcr` sub-group** (`oauthclient/dcr.go:43`): `get`, `update`, `iat`, `mint`, `list`, `revoke <id>`
 
-adp-docs publishes basic CRUD subpages. `revoke-tokens`, `dcr`, `apply`, `diff` are not yet documented.
+The published reference covers the basic CRUD subpages. `revoke-tokens`, `dcr`, `apply`, `diff` are not yet documented.
 
 ## `oauth-provider` subcommands
 
@@ -251,7 +251,7 @@ Canonical name: `oauth-provider`. Aliases: `oauth`, `op`. Source: `internal/cmd/
 
 Subcommands: `create`, `get`, `list`, `update`, `delete`, `apply`, `diff`
 
-adp-docs publishes CRUD subpages. `apply` and `diff` are not yet documented.
+The published reference covers the CRUD subpages. `apply` and `diff` are not yet documented.
 
 ## `trigger` subcommands
 
@@ -289,7 +289,7 @@ rpk ai trigger update agents/my-agent/triggers/<id> --enabled=false
 rpk ai trigger runs agents/my-agent/triggers/<id>
 ```
 
-Not yet documented in adp-docs.
+Not yet covered by the published `rpk ai` reference.
 
 ## GitOps: `apply` and `diff`
 
@@ -360,7 +360,7 @@ Under `rpk ai`, `run codex` rejects a static `--token` (its refresh command can'
 rpk ai run codex -L openai -m gpt-5.3-codex -e high -- --ask-for-approval never
 ```
 
-Not yet documented in adp-docs.
+Not yet covered by the published `rpk ai` reference.
 
 ## Common errors
 

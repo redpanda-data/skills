@@ -159,7 +159,7 @@ rpk cluster config set cloud_topics_enabled=true     # cluster prerequisite; nee
 In the Redpanda source it is a `deprecated_property` (not an `enterprise<>`-wrapped
 schema property), so it is NOT one of the enterprise-flagged cluster-config
 properties listed in the table above — do not classify it as `is_enterprise: true`.
-The command is still current per the docs (cloud-topics.adoc).
+The command is still current per the Cloud Topics docs page.
 
 Per-topic, a topic is made a Cloud Topic only at creation time using the topic
 property `redpanda.storage.mode=cloud`:

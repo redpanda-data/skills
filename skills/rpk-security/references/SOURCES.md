@@ -9,8 +9,7 @@ The `rpk security` command group is Go source in the **public** repo
 Broker-side authentication/authorization (SASL, ACLs, OIDC, Kerberos, mTLS, roles, audit,
 license) is under `src/v/security/` and `src/v/kafka/server/handlers/`; cluster config keys
 are defined in `src/v/config/configuration.cc` (rpk only passes them through). The
-user-facing reference is auto-generated in the **public** repo `redpanda-data/docs`. All
-are public — read them via the Redpanda-Github-Read MCP connector (`search_code`,
+user-facing reference is auto-generated in the **private** repo `redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP connector (`search_code`,
 `get_file_contents`), or `gh api .../contents/<path>` for verification; do not guess.
 Before writing or changing any fact, re-open the cited source and confirm exact command
 paths, flag names, and config keys. `rpk` is versioned: verify against the **current stable

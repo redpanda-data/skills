@@ -1,7 +1,7 @@
 # tigerbeetle_cdc: Complete Config Reference
 
 Source: `connect/internal/impl/tigerbeetle/input_tigerbeetle.go`
-Docs: `rp-connect-docs/modules/components/pages/inputs/tigerbeetle_cdc.adoc` (fields of record: the auto-generated partial `modules/components/partials/fields/inputs/tigerbeetle_cdc.adoc`)
+Docs: `connect/docs/modules/components/pages/inputs/tigerbeetle_cdc.adoc` in the public connect repo; the published Redpanda Connect docs page for `tigerbeetle_cdc` renders the auto-generated field reference of record
 Version introduced: **4.65.0** (per docs page)
 Status: **beta** per the docs page (`:status: beta`); the source config spec registers `Stable()` — see the TODO in [SOURCES.md](SOURCES.md).
 Support tier: **`certified`** in `connect/internal/plugins/info.csv` — the only CDC input not marked `enterprise` there. The source file carries an Apache-2.0 header and contains no enterprise license check; no Enterprise license is required to run it.

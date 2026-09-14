@@ -163,7 +163,7 @@ output:
 - **Component not available:** if `tigerbeetle_cdc` is not recognized, you are running a non-cgo build (`rpk connect` or the standard Docker image). Switch to the cgo-enabled binary.
 - **Persistent cache:** the progress cache is the only durable state. Losing it re-streams all available events (safe but duplicative under at-least-once).
 - **Throughput/pacing:** `event_count_max` (default 2730) caps events per request; `idle_interval_ms` (default 1000) is the wait when a poll returns nothing; an optional `rate_limit` resource throttles requests; `timeout_seconds` (default 15) bounds each query.
-- **Version:** verify field names and defaults against the generated reference (`modules/components/partials/fields/inputs/tigerbeetle_cdc.adoc` in rp-connect-docs) or `redpanda-connect create tigerbeetle_cdc` on a cgo-enabled binary — not `rpk connect create`, which lacks the component.
+- **Version:** verify field names and defaults against the generated field reference on the `tigerbeetle_cdc` page of the Redpanda Connect docs or `redpanda-connect create tigerbeetle_cdc` on a cgo-enabled binary — not `rpk connect create`, which lacks the component.
 - **Support tier / license:** `certified` in `internal/plugins/info.csv` — the only CDC input that is not `enterprise` there. Apache-2.0 source, no enterprise license check. Status is beta — the API may change.
 - **Redpanda Cloud:** `info.csv` marks the component `cloud: n` ("not yet certified for cloud") — it cannot run as a Redpanda Cloud managed pipeline. Run the self-hosted cgo binary and write to your Cloud cluster over TLS/SASL.
 

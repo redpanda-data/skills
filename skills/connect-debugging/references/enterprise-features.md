@@ -17,7 +17,7 @@ The canonical Connect enterprise feature set (per the licensing overview):
 | Redpanda Connect configuration service (`redpanda:` block) | Enterprise | No change |
 | Secrets management (remote lookup at runtime) | Enterprise | No change |
 
-Source: `docs/modules/get-started/pages/licensing/overview.adoc` (Connect table),
+Source: the Redpanda licensing overview (Connect table),
 plus implementation files licensed under RCL in
 `connect/internal/cli/enterprise.go`, `connect/internal/secrets/secrets.go`.
 
@@ -387,4 +387,4 @@ controlled by NOT loading a license (the open-source fallback blocks enterprise
 connectors), or by using a `deny` list in `/etc/redpanda/connector_list.yaml` to
 remove enterprise components. Cluster-side enterprise features are disabled via
 `rpk cluster config set` (see
-`docs/modules/get-started/pages/licensing/disable-enterprise-features.adoc`).
+the Disable Enterprise Features page).

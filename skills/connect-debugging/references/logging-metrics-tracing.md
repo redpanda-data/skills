@@ -37,7 +37,7 @@ logger:
 
 ### Log levels
 
-The available options (grounded in `docs/modules/components/pages/logger/about.adoc`)
+The available options (grounded in `connect/docs/modules/components/pages/logger/about.adoc`)
 are: `OFF`, `FATAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`, `ALL`, `NONE`.
 
 Ordered from most to least verbose (per-level descriptions are guidance
@@ -98,7 +98,7 @@ Note: `file` is marked Experimental in the logger docs.
 
 The `redpanda:` top-level section sends logs to a Kafka topic. This is
 separate from the `logger:` section. Grounded in
-`docs/modules/components/pages/redpanda/about.adoc`:
+`connect/docs/modules/components/pages/redpanda/about.adoc`:
 
 ```yaml
 redpanda:
@@ -121,7 +121,7 @@ or rename metric paths before they are exported.
 ### Prometheus (recommended for production)
 
 Hosts `/metrics` and `/stats` on the Connect HTTP server (default port 4195).
-Grounded in `docs/modules/components/pages/metrics/prometheus.adoc`.
+Grounded in `connect/docs/modules/components/pages/metrics/prometheus.adoc`.
 
 ```yaml
 metrics:
@@ -164,7 +164,7 @@ metrics:
 
 ### StatsD
 
-Grounded in `docs/modules/components/pages/metrics/statsd.adoc`.
+Grounded in `connect/docs/modules/components/pages/metrics/statsd.adoc`.
 
 ```yaml
 metrics:
@@ -181,7 +181,7 @@ metrics:
 ### json_api (debugging)
 
 Serves metrics as a JSON object at `/metrics` and `/stats`. Human-readable;
-parse with `jq`. Grounded in `docs/modules/components/pages/metrics/json_api.adoc`.
+parse with `jq`. Grounded in `connect/docs/modules/components/pages/metrics/json_api.adoc`.
 
 ```yaml
 metrics:
@@ -200,7 +200,7 @@ curl -s http://localhost:4195/metrics | jq 'to_entries | map(select(.key | conta
 ### logger metrics (no HTTP server required)
 
 Prints each metric as a log line on shutdown and optionally on a periodic
-interval. Grounded in `docs/modules/components/pages/metrics/logger.adoc`.
+interval. Grounded in `connect/docs/modules/components/pages/metrics/logger.adoc`.
 
 ```yaml
 metrics:
@@ -264,7 +264,7 @@ CPU/memory metrics.
 ## OpenTelemetry Tracing
 
 Send distributed traces to an OpenTelemetry collector. Grounded in
-`docs/modules/components/pages/tracers/open_telemetry_collector.adoc`.
+`connect/docs/modules/components/pages/tracers/open_telemetry_collector.adoc`.
 
 ```yaml
 tracer:
@@ -301,7 +301,7 @@ Other tracer backends available: `jaeger`, `gcp_cloudtrace`, `redpanda`, `none`.
 ## HTTP Server and Health Endpoints
 
 The built-in HTTP server (default `0.0.0.0:4195`) is configured under `http:`.
-Grounded in `docs/modules/components/pages/http/about.adoc`.
+Grounded in `connect/docs/modules/components/pages/http/about.adoc`.
 
 ### Full schema (all fields with defaults)
 

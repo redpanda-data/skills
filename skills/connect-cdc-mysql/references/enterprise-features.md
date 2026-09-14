@@ -7,7 +7,7 @@ differentiators relevant to a MySQL/MariaDB CDC pipeline, with their exact neste
 config keys, grounded in the licensing docs and source under `/tmp/redpanda-skills-src`.
 
 For the canonical list of all Redpanda enterprise features and license-expiration
-behavior, see `get-started/licensing/overview.adoc`.
+behavior, see the Redpanda licensing overview.
 
 ---
 
@@ -69,8 +69,8 @@ rpk cluster config set iceberg_enabled true
 ### Topic-level properties (per CDC topic)
 
 Set these on the topics your CDC pipeline writes to (the topics produced by the
-`kafka_franz`/`redpanda` output). Grounded in `manage/iceberg/*.adoc` and
-`reference/properties/topic-properties.adoc`.
+`kafka_franz`/`redpanda` output). Grounded in the Redpanda Iceberg Topics pages and
+the topic properties reference.
 
 | Topic property | Values | Notes |
 |---|---|---|
@@ -244,5 +244,5 @@ separate Redpanda enterprise feature — `rpk redpanda config set redpanda.fips_
 | Server-side Schema ID Validation | Topics with schema validation settings cannot be created/modified. |
 
 The cluster continues operating without data loss; only the further *use* of these
-features is restricted. See `get-started/licensing/disable-enterprise-features.adoc`
+features is restricted. See the Disable Enterprise Features page
 for the disable commands per feature.

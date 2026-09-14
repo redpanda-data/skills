@@ -2,7 +2,7 @@
 
 Redpanda Cloud (BYOC and BYOVPC) is a managed deployment of **Redpanda Enterprise Edition** — the enterprise license is included with your Cloud subscription, so you do **not** apply a license key yourself. Every enterprise differentiator below is available on a BYOC cluster; you enable it through cluster configuration and topic properties, not through a license workflow.
 
-Source grounding: `docs/modules/get-started/pages/licensing/overview.adoc`, the per-feature pages under `docs/modules/manage/` and `docs/modules/develop/`, and the property partials under `docs/modules/reference/partials/properties/`.
+Source grounding: the Redpanda licensing overview, the per-feature pages of the Redpanda docs, and the topic, cluster and object storage property references; file paths are listed in [SOURCES.md](SOURCES.md).
 
 ---
 
@@ -58,7 +58,7 @@ rpk topic alter-config <topic> --set redpanda.iceberg.mode=key_value
 
 Tiered Storage is the foundation of Cloud BYOC — every cluster writes log segments to the object-storage bucket you registered in `customer_managed_resources` (`cloud_storage_bucket.arn` on AWS, `tiered_storage_bucket.name` on GCP, `tiered_cloud_storage.*` on Azure — see `clusters-and-agent.md`).
 
-Per-topic Tiered Storage properties (grounded in `topic-properties.adoc`):
+Per-topic Tiered Storage properties (grounded in the topic properties reference):
 
 | Property | Type | Meaning |
 |---|---|---|
@@ -151,7 +151,7 @@ Iceberg integration writes topic data as Apache Iceberg (Parquet) tables in your
 | `iceberg_invalid_record_action` | Cluster default for `redpanda.iceberg.invalid.record.action`. |
 | `iceberg_default_partition_spec` | Cluster default for `redpanda.iceberg.partition.spec`. |
 
-**Topic properties** (grounded in `topic-properties.adoc`):
+**Topic properties** (grounded in the topic properties reference):
 
 | Topic property | Type | Values / Default |
 |---|---|---|
@@ -260,7 +260,7 @@ rpk shadow delete [LINK_NAME]
 
 Schema Registry replication has two mutually exclusive modes: byte-for-byte `_schemas` topic shadowing (Redpanda source), or HTTP-API replication of selected subjects, versions, and compatibility settings — which also accepts a **Confluent Schema Registry** as the source, making it the supported path for migrating schemas off Confluent. Fields, prerequisites, and the read-only-destination-context rule are in [Clusters and Agent](clusters-and-agent.md#schema-registry-replication-modes).
 
-Key constraints (from `shadowing/overview.adoc`): each shadow cluster maintains exactly **one** shadow link; async only (no active-active); data transforms are blocked on the shadow cluster while shadowing is active; no automatic fallback to the original source after failover — reconfigure all clients to the shadow cluster before resuming writes to avoid split-brain.
+Key constraints (from the Shadowing overview page): each shadow cluster maintains exactly **one** shadow link; async only (no active-active); data transforms are blocked on the shadow cluster while shadowing is active; no automatic fallback to the original source after failover — reconfigure all clients to the shadow cluster before resuming writes to avoid split-brain.
 
 License behavior: new shadow links cannot be created without a license; existing links keep operating and can be updated.
 

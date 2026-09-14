@@ -175,7 +175,7 @@ These are enterprise Connect features (per the licensing overview) that commonly
 | **Allow or deny lists** | Limit which Connect components a pipeline may run on a shared Connect instance. |
 | **FIPS compliance** | Run the pipeline using a FIPS-compliant build of `rpk connect`. |
 
-### `redpanda` config service block (top-level namespace, grounded in connect `redpanda/about.adoc`)
+### `redpanda` config service block (top-level namespace, grounded in the public connect repo's `docs/modules/components/pages/redpanda/about.adoc`)
 
 ```yaml
 redpanda:

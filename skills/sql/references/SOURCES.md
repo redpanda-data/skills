@@ -2,7 +2,7 @@
 
 Maps each file in `skills/sql/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
 
-Redpanda SQL is the **Oxla** engine. The source of truth is the **private** repo `redpanda-data/oxla` — read it only via the Redpanda-Github-Read MCP connector (`search_code`, `get_file_contents`); do **not** `gh`-query or clone oxla. User-facing SQL docs are **public** and live in `redpanda-data/cloud-docs` under the `sql` module (`modules/sql/pages/`) — **not** in `redpanda-data/docs` (that repo has no `sql` module / Oxla content, verified). The public docs are fine to read via `gh api repos/redpanda-data/cloud-docs/contents/<path>`.
+Redpanda SQL is the **Oxla** engine. The source of truth is the **private** repo `redpanda-data/oxla` — read it only via the Redpanda-Github-Read MCP connector (`search_code`, `get_file_contents`); do **not** `gh`-query or clone oxla. User-facing SQL docs live in the **private** repo `redpanda-data/cloud-docs` under the `sql` module (`modules/sql/pages/`) — **not** in `redpanda-data/docs` (that repo has no `sql` module / Oxla content, verified). Read them via the Redpanda-Github-Read MCP connector or, with an authorized account, `gh api repos/redpanda-data/cloud-docs/contents/<path>`.
 
 Oxla SQL surface = the bison grammar plus the query-planner test corpus. Before writing or changing any fact, re-open the cited source and confirm exact grammar productions, option keys, type names, and config defaults. Config defaults are version-specific — verify against the current default config, not a pinned copy.
 

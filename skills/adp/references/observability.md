@@ -315,7 +315,7 @@ Use the right surface for the question:
 - **`TranscriptsService`** — execution-level observability of an agent conversation: turns, tool calls, model choices, per-conversation cost, and reconstructed spans. Grouped by OTel `gen_ai.conversation.id`.
 - **`AuditLogService`** — authorization-decision-level accountability: who invoked what, whether it was allowed, which policy decided, and what fields changed on a resource update. Grouped by the server-minted `correlation_id`.
 
-The adp-docs observability concepts page (`adp-docs/modules/monitor/pages/concepts.adoc:323-334`) frames the execution side explicitly:
+The Agentic Data Plane observability concepts page frames the execution side explicitly:
 
 > "Transcripts provide: a complete, immutable record of every execution step, stored on Redpanda's distributed log with no gaps; hierarchical view of request flow through your system (parent-child span relationships); detailed timing information for performance analysis; ability to reconstruct execution paths and identify bottlenecks. Transcripts are optimized for execution-level observability and governance."
 

@@ -4,7 +4,7 @@ Redpanda Cloud is a managed deployment of Redpanda **Enterprise Edition**. On a 
 
 This page documents the enterprise differentiators and their **nested settings/config keys**. Each section notes whether the feature requires Enterprise Edition (all listed here do; on Cloud Dedicated the license is included).
 
-The canonical enterprise-feature list and license-expiration behavior are in the upstream docs: `get-started/pages/licensing/overview.adoc` (table "Enterprise features in Redpanda") and `get-started/pages/licensing/disable-enterprise-features.adoc`. The verbatim sources for each feature below are cited inline.
+The canonical enterprise-feature list and license-expiration behavior are in the Redpanda docs: the licensing overview (table "Enterprise features in Redpanda") and the Disable Enterprise Features page. Each feature below names the docs page it is grounded in; the file paths are in [SOURCES.md](SOURCES.md).
 
 > **Setting cluster properties on a Dedicated cluster.** Numeric `custom_properties` values must be passed as JSON **strings** (see [Create Cluster](create-cluster.md#custom-cluster-configuration)). Some properties require a cluster restart; the Control Plane `PATCH` performs this as a long-running Operation. Poll `GET /v1/operations/{id}` until `STATE_COMPLETED`.
 
@@ -17,7 +17,7 @@ curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask
 
 > **Encryption keys:** Customer-managed encryption keys (BYOK / CMK) are **not** offered on Cloud Dedicated. Data at rest uses the cloud provider's default volume encryption (AES-256), and Tiered Storage uses a Redpanda-managed, periodically rotated master key (SSE-S3). Source: `cloud-data-platform/security/cloud-encryption/`.
 
-> **Kafka Connect (managed connectors)** is **disabled by default on new clusters** (since Jul 2025). To enable it on a Dedicated cluster, contact Redpanda Support; to disable it again, use the Cloud API. Source: `develop/managed-connectors/disable-kc.adoc`, `get-started/cloud-overview.adoc`.
+> **Kafka Connect (managed connectors)** is **disabled by default on new clusters** (since Jul 2025). To enable it on a Dedicated cluster, contact Redpanda Support; to disable it again, use the Cloud API. Source: the Redpanda Cloud docs pages on disabling Kafka Connect and the Cloud overview.
 
 ---
 
@@ -101,7 +101,7 @@ Decision rules:
   pass both properties when you want a version explicitly.
 - Serverless clusters use Tiered Storage v1; the property is not a Serverless knob.
 
-Source: `manage/partials/tiered-storage.adoc` (`redpanda.storage.mode`, `redpanda.remote.read/write/recovery`, `retention.local.target.*`, `cloud_storage_enable_remote_*`, `default_redpanda_storage_mode`, `tiered-storage-versions` region: v1/v2 comparison, selection, restrictions); `reference/partials/properties/object-storage-properties.adoc` (`default_redpanda_storage_mode_tiered_impl`), `reference/partials/properties/topic-properties.adoc` (`redpanda.storage.mode.impl`); licensing `overview.adoc` (Tiered Storage, Topic Recovery rows).
+Source: the Tiered Storage page (`redpanda.storage.mode`, `redpanda.remote.read/write/recovery`, `retention.local.target.*`, `cloud_storage_enable_remote_*`, `default_redpanda_storage_mode`, the Tiered Storage versions section: v1/v2 comparison, selection, restrictions); the object storage properties reference (`default_redpanda_storage_mode_tiered_impl`), the topic properties reference (`redpanda.storage.mode.impl`); the Redpanda licensing overview (Tiered Storage, Topic Recovery rows).
 
 ---
 
@@ -121,7 +121,7 @@ rpk topic create my-cloud-topic -c redpanda.storage.mode=cloud
 
 License expiration: new Cloud Topics cannot be created and existing ones cannot be modified (including partition changes). Pair with Follower Fetching and [Leader Pinning](#leadership-pinning-enterprise) for further cross-AZ cost reduction.
 
-Source: `develop/pages/manage-topics/cloud-topics.adoc` (`cloud_topics_enabled`, `redpanda.storage.mode=cloud`); licensing `overview.adoc` (Cloud Topics row).
+Source: the Cloud Topics page (`cloud_topics_enabled`, `redpanda.storage.mode=cloud`); the Redpanda licensing overview (Cloud Topics row).
 
 ---
 
@@ -161,7 +161,7 @@ rpk topic create clicks -p5 -r3 \
 
 License expiration: topics cannot be created or modified with `redpanda.iceberg.mode`.
 
-Source: `manage/pages/iceberg/about-iceberg-topics.adoc` (`iceberg_enabled`, `iceberg_default_catalog_namespace`, `redpanda.iceberg.mode` values, `iceberg_delete`/`redpanda.iceberg.delete`); `iceberg/iceberg-performance-tuning.adoc` (`redpanda.iceberg.partition.spec`, `iceberg_target_lag_ms`, `redpanda.iceberg.target.lag.ms`); `iceberg/iceberg-troubleshooting.adoc` (`redpanda.iceberg.invalid.record.action`, `iceberg_invalid_record_action`); `iceberg/use-iceberg-catalogs.adoc` (`iceberg_catalog_type`, `iceberg_rest_catalog_endpoint`).
+Source: the About Iceberg Topics page (`iceberg_enabled`, `iceberg_default_catalog_namespace`, `redpanda.iceberg.mode` values, `iceberg_delete`/`redpanda.iceberg.delete`); the Iceberg performance tuning page (`redpanda.iceberg.partition.spec`, `iceberg_target_lag_ms`, `redpanda.iceberg.target.lag.ms`); the Iceberg troubleshooting page (`redpanda.iceberg.invalid.record.action`, `iceberg_invalid_record_action`); the Use Iceberg Catalogs page (`iceberg_catalog_type`, `iceberg_rest_catalog_endpoint`).
 
 ---
 
@@ -187,7 +187,7 @@ rpk cluster config set partition_autobalancing_max_disk_usage_percent 75
 rpk cluster partitions balancer-status   # off|ready|starting|in-progress|stalled
 ```
 
-Source: `manage/pages/cluster-maintenance/continuous-data-balancing.adoc` (`partition_autobalancing_mode`, `_node_availability_timeout_sec`, `_node_autodecommission_timeout_sec`, `_max_disk_usage_percent`); licensing `disable-enterprise-features.adoc` (`node_add` fallback, `core_balancing_continuous`).
+Source: the Continuous Data Balancing page (`partition_autobalancing_mode`, `_node_availability_timeout_sec`, `_node_autodecommission_timeout_sec`, `_max_disk_usage_percent`); the Disable Enterprise Features page (`node_add` fallback, `core_balancing_continuous`).
 
 ---
 
@@ -341,7 +341,7 @@ rpk shadow failover <link-name> --topic orders                 # per-topic failo
 
 License expiration: new shadow links cannot be created; existing links keep operating and can be updated.
 
-Source: `controlplane/v1/shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`, and the Cloud-only CEL rules on the Schema Registry API mode: `source_url` required on create, basic-only auth, secret-ref password/key, PEM-only TLS); `redpanda` `proto/redpanda/core/admin/v2/shadow_link.proto` (`SchemaRegistrySyncOptions` oneof, `ShadowSchemaRegistryApi` fields and defaults, `SchemaRegistrySourceFilter`, `SchemaRegistryContextDestination`, `UnsupportedSchemaFeaturePolicy`) and `proto/redpanda/core/common/v1/tls.proto` (nested `TLSSettings`); `controlplane/v1/operation.proto` (`TYPE_CREATE/UPDATE/DELETE_SHADOW_LINK = 15/16/17`); `manage/pages/disaster-recovery/shadowing/migrate-schemas-confluent.adoc` (Confluent migration workflow, prerequisites, limitations, monitoring), `manage/pages/disaster-recovery/shadowing/setup.adoc` (rpk/self-managed `ShadowLinkConfig` YAML, filter/pattern/auth keys, service-account ACLs, system-topic rules); `reference/pages/rpk/rpk-shadow/rpk-shadow-create.adoc` and `rpk-shadow-failover.adoc`.
+Source: `controlplane/v1/shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`, and the Cloud-only CEL rules on the Schema Registry API mode: `source_url` required on create, basic-only auth, secret-ref password/key, PEM-only TLS); `redpanda` `proto/redpanda/core/admin/v2/shadow_link.proto` (`SchemaRegistrySyncOptions` oneof, `ShadowSchemaRegistryApi` fields and defaults, `SchemaRegistrySourceFilter`, `SchemaRegistryContextDestination`, `UnsupportedSchemaFeaturePolicy`) and `proto/redpanda/core/common/v1/tls.proto` (nested `TLSSettings`); `controlplane/v1/operation.proto` (`TYPE_CREATE/UPDATE/DELETE_SHADOW_LINK = 15/16/17`); the Shadowing docs pages on migrating schemas from Confluent (workflow, prerequisites, limitations, monitoring) and on setup (rpk/self-managed `ShadowLinkConfig` YAML, filter/pattern/auth keys, service-account ACLs, system-topic rules); the `rpk shadow create` and `rpk shadow failover` reference pages.
 
 ---
 
@@ -364,7 +364,7 @@ rpk topic create <topic> \
 
 License expiration: Remote Read Replica topics cannot be created or modified.
 
-Source: `manage/partials/remote-read-replicas.adoc` (`redpanda.remote.readreplica`, cross-region query params, Azure unsupported); `disable-enterprise-features.adoc` (`cloud_storage_enable_remote_read`).
+Source: the Remote Read Replicas page (`redpanda.remote.readreplica`, cross-region query params, Azure unsupported); the Disable Enterprise Features page (`cloud_storage_enable_remote_read`).
 
 ---
 
@@ -372,7 +372,7 @@ Source: `manage/partials/remote-read-replicas.adoc` (`redpanda.remote.readreplic
 
 Detach (unmount) a Tiered Storage topic to keep its data in object storage and free local resources, then mount it to the same or a different cluster. On Cloud, exposed through the Data Plane `CloudStorageService` (`/v1/cloud-storage/...`): `ListMountableTopics`, `MountTopics`, `UnmountTopics`, and mount-task endpoints (`GetMountTask`, `ListMountTasks`, `UpdateMountTask`, `DeleteMountTask`).
 
-Source: `manage/pages/mountable-topics.adoc`; data-plane `CloudStorageService`.
+Source: the Mountable Topics page; data-plane `CloudStorageService`.
 
 ---
 
@@ -392,7 +392,7 @@ rpk topic alter-config orders --set redpanda.leaders.preference=ordered_racks:us
 
 License expiration: Leader Pinning is disabled on all topics.
 
-Source: `develop/pages/produce-data/leader-pinning.adoc` (`redpanda.leaders.preference` values, `default_leaders_preference`); `disable-enterprise-features.adoc` (`default_leaders_preference none`).
+Source: the Leader Pinning page (`redpanda.leaders.preference` values, `default_leaders_preference`); the Disable Enterprise Features page (`default_leaders_preference none`).
 
 ---
 
@@ -416,7 +416,7 @@ rpk topic alter-config events --set redpanda.value.schema.id.validation=true \
 
 License expiration: topics with schema-validation settings cannot be created or modified.
 
-Source: `manage/pages/schema-reg/schema-id-validation.adoc` (`enable_schema_id_validation` values, `redpanda.{key,value}.schema.id.validation`, `redpanda.{key,value}.subject.name.strategy`, Confluent equivalents).
+Source: the Server-Side Schema ID Validation page (`enable_schema_id_validation` values, `redpanda.{key,value}.schema.id.validation`, `redpanda.{key,value}.subject.name.strategy`, Confluent equivalents).
 
 ---
 
@@ -443,7 +443,7 @@ rpk cluster config set audit_enabled_event_types '["management","authenticate","
 
 License expiration: read access to the audit log topic is denied, but logging continues.
 
-Source: `manage/partials/audit-logging.adoc` (all `audit_*` properties, defaults, event types); `disable-enterprise-features.adoc` (`audit_enabled false`).
+Source: the Audit Logging page (all `audit_*` properties, defaults, event types); the Disable Enterprise Features page (`audit_enabled false`).
 
 ---
 
@@ -453,7 +453,7 @@ Source: `manage/partials/audit-logging.adoc` (all `audit_*` properties, defaults
 
 **Group-Based Access Control (GBAC)** maps OIDC group memberships to ACLs/role assignments using `Group:` principals in ACLs. License expiration: ACLs with `Group:` principals cannot be created (existing ones are still evaluated and can be deleted).
 
-Source: licensing `overview.adoc` (RBAC, GBAC rows); `disable-enterprise-features.adoc` (RBAC disable via `rpk security role delete`); data-plane `SecurityService`.
+Source: the Redpanda licensing overview (RBAC, GBAC rows); the Disable Enterprise Features page (RBAC disable via `rpk security role delete`); data-plane `SecurityService`.
 
 ---
 
@@ -468,7 +468,7 @@ External-identity and Kerberos authentication for the Kafka and HTTP layers, con
 
 OIDC additionally uses `oidc_*` cluster properties (for example, the discovery URL and token audience) to point at the identity provider. License expiration for OIDC/OAuthBearer and Kerberos: no change to running behavior.
 
-Source: `disable-enterprise-features.adoc` (Kerberos = remove `GSSAPI` from `sasl_mechanisms`; OIDC = remove `OIDC` from `sasl_mechanisms` and `http_authentication`); licensing `overview.adoc` (OAUTHBEARER/OIDC, Kerberos rows).
+Source: the Disable Enterprise Features page (Kerberos = remove `GSSAPI` from `sasl_mechanisms`; OIDC = remove `OIDC` from `sasl_mechanisms` and `http_authentication`); the Redpanda licensing overview (OAUTHBEARER/OIDC, Kerberos rows).
 
 ---
 
@@ -482,7 +482,7 @@ Runs Redpanda with a FIPS-validated cryptographic module. Node-level configurati
 
 License expiration: no change.
 
-Source: `disable-enterprise-features.adoc` (`fips_mode disabled`); licensing `overview.adoc` (FIPS Compliance row).
+Source: the Disable Enterprise Features page (`fips_mode disabled`); the Redpanda licensing overview (FIPS Compliance row).
 
 ---
 
@@ -491,4 +491,4 @@ Source: `disable-enterprise-features.adoc` (`fips_mode disabled`); licensing `ov
 - **Whole Cluster Restore (WCR):** recover a cluster from a source cluster's snapshot in object storage. License expiration blocks WCR; an expired source-cluster license propagates the restriction to the target.
 - **Topic Recovery:** restore a single topic from Tiered Storage via `redpanda.remote.recovery=true` at topic create (see [Tiered Storage](#tiered-storage-enterprise)).
 
-Source: licensing `overview.adoc` (Whole Cluster Restore, Topic Recovery rows).
+Source: the Redpanda licensing overview (Whole Cluster Restore, Topic Recovery rows).

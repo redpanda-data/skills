@@ -7,8 +7,8 @@ properties**, set at creation with `rpk topic create -c key=value` (alias
 enterprise properties, their nested keys, accepted values, and defaults.
 
 All property names, values, and defaults below are verified against
-`docs/modules/reference/partials/properties/topic-properties.adoc`,
-the feature docs under `docs/modules/manage` / `docs/modules/develop`, and
+the Redpanda topic properties reference,
+the per-feature docs pages (paths in [SOURCES.md](SOURCES.md)), and
 the licensing overview. **Features marked "Enterprise" require a valid
 Enterprise Edition license**; without one they cannot be enabled, and on
 license expiration they enter the restricted behavior noted in

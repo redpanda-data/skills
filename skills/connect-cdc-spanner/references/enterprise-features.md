@@ -13,20 +13,20 @@ relevant to a `gcp_spanner_cdc` pipeline. Two scopes matter:
 All keys/flags below are grounded in the source docs under
 `/tmp/redpanda-skills-src`. Features marked **Enterprise** require a valid
 Redpanda Enterprise Edition license. License behavior on expiration is taken
-from `get-started/licensing/overview.adoc`.
+from the Redpanda licensing overview.
 
 ---
 
 ## 1. Redpanda Connect enterprise gating (the connector itself)
 
 The `gcp_spanner_cdc` input is one of the **enterprise connectors** listed in
-`get-started/licensing/overview.adoc` (the connect section). Without a valid
+the Redpanda licensing overview (the Connect section). Without a valid
 Enterprise license, *all enterprise connectors are blocked* — the pipeline
 fails at startup with a license error (`license.CheckRunningEnterprise` in the
 connector source).
 
 How to supply the license to Redpanda Connect (see
-`connect:get-started:licensing.adoc#apply-a-license-key-to-redpanda-connect`):
+the Redpanda Connect licensing page, section "Apply a license key to Redpanda Connect"):
 
 - `REDPANDA_LICENSE` environment variable, or
 - `--redpanda.license` / a license file path, or
@@ -49,7 +49,7 @@ expires you are blocked from running enterprise connectors until you upgrade.
 
 Enterprise feature. Lives under the top-level `redpanda` namespace (not the
 `gcp_spanner_cdc` input). Sends Connect process logs and pipeline status to
-Redpanda topics. Grounded in `connect:components:redpanda/about.adoc`.
+Redpanda topics. Grounded in Redpanda Connect docs → Components → `redpanda`.
 
 ```yaml
 redpanda:
@@ -85,8 +85,8 @@ block is for operational logs/status telemetry, not the CDC payload.
 CDC pipeline: instead of only landing change events as Kafka records, Redpanda
 can also materialize the destination topic as an Apache Iceberg table in object
 storage, queryable by Spark, Flink, Snowflake, Databricks, ClickHouse, Trino,
-etc. — no separate ETL. Grounded in `manage/iceberg/about-iceberg-topics.adoc`
-and `reference/properties/topic-properties.adoc`.
+etc. — no separate ETL. Grounded in the About Iceberg Topics page
+and the topic properties reference.
 
 **Prerequisites:** an Enterprise license **and** Tiered Storage enabled on the
 topic (Iceberg writes Parquet alongside the Tiered Storage log segments).
@@ -175,10 +175,10 @@ with local storage acting only as a write buffer. This is the most relevant
 remaining "where CDC events land" differentiator alongside Tiered Storage and
 Iceberg Topics: it is optimized for high-throughput, cost-sensitive CDC
 workloads that can tolerate higher latencies than standard Kafka topics.
-Grounded in `get-started/licensing/overview.adoc` (Cloud Topics row),
-`develop/manage-topics/cloud-topics.adoc`, and
-`reference/properties/topic-properties.adoc` (`redpanda.cloud_topic.enabled`,
-line 948) and `cluster-properties.adoc` (`cloud_topics_enabled`).
+Grounded in the Redpanda licensing overview (Cloud Topics row),
+the Cloud Topics page, and
+the topic properties reference (`redpanda.cloud_topic.enabled`)
+and the cluster properties reference (`cloud_topics_enabled`).
 
 ### Cluster-level enablement (prerequisite)
 
@@ -230,8 +230,8 @@ replication of topics (including your CDC destination topics) between distinct
 Redpanda clusters for cross-region data protection, managed with `rpk shadow`
 (setup / monitor / failover). This is the key DR feature for protecting the
 stream of Spanner change events after they land in Redpanda. Grounded in
-`get-started/licensing/overview.adoc` (Shadowing row) and
-`deploy:redpanda/manual/disaster-recovery/shadowing/index.adoc`.
+the Redpanda licensing overview (Shadowing row) and
+the Shadowing section of the Redpanda disaster recovery docs.
 
 **On license expiration:** new shadow links cannot be created; existing shadow
 links keep operating and can be updated.

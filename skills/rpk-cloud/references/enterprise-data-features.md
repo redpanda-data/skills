@@ -9,7 +9,7 @@ This reference covers the enterprise data-plane features you drive through rpk a
 - Cloud Topics
 - Tiered Storage topic-level retention
 
-> License: all of these are **Enterprise** features. On Redpanda Cloud the license is supplied by the managed platform. On self-managed Redpanda the same features require an Enterprise Edition license key (`rpk cluster license info` / `rpk cluster license set`). See the canonical enterprise feature list in `get-started/licensing/overview.adoc`.
+> License: all of these are **Enterprise** features. On Redpanda Cloud the license is supplied by the managed platform. On self-managed Redpanda the same features require an Enterprise Edition license key (`rpk cluster license info` / `rpk cluster license set`). See the canonical enterprise feature list in the Redpanda licensing overview.
 
 ---
 
@@ -162,5 +162,5 @@ rpk topic alter-config logs --set initial.retention.local.target.bytes=107374182
 
 Some enterprise differentiators are configured outside the `rpk cloud` / Cloud-data-plane surface and are intentionally not duplicated here:
 
-- **Shadow Linking** (cross-cluster DR, `rpk shadow`), **Remote Read Replicas**, **Continuous Data Balancing** (`partition_autobalancing_mode=continuous`), **Leadership Pinning** (`default_leaders_preference`), **Audit Logging** (`audit_enabled`), **FIPS** (`fips_mode`), **Server-side Schema ID Validation** (`enable_schema_id_validation`), and SASL **OIDC/OAuthBearer/Kerberos** mechanisms are cluster-level / self-managed concerns. See `get-started/licensing/overview.adoc` and `get-started/licensing/disable-enterprise-features.adoc` for the full enterprise list and the config key used to disable each.
+- **Shadow Linking** (cross-cluster DR, `rpk shadow`), **Remote Read Replicas**, **Continuous Data Balancing** (`partition_autobalancing_mode=continuous`), **Leadership Pinning** (`default_leaders_preference`), **Audit Logging** (`audit_enabled`), **FIPS** (`fips_mode`), **Server-side Schema ID Validation** (`enable_schema_id_validation`), and SASL **OIDC/OAuthBearer/Kerberos** mechanisms are cluster-level / self-managed concerns. See the Redpanda licensing overview and the Disable Enterprise Features page for the full enterprise list and the config key used to disable each.
 - **RBAC / IAM** for Cloud is covered in [rbac-and-iam.md](rbac-and-iam.md).

@@ -8,8 +8,8 @@ Redpanda Connect is Go source in the **public** repo `redpanda-data/connect`: th
 `internal/license/`, and `internal/secrets/`; the user-facing component reference
 (logger, metrics, tracers, http, CDC inputs, `redpanda:` block) is AsciiDoc under
 `docs/modules/components/pages/` **in the same repo**. The Connect *product* docs
-(licensing overview, quickstarts) are the **public** repo `redpanda-data/rp-connect-docs`.
-Both are public — read them via the Redpanda-Github-Read MCP connector
+(licensing overview, quickstarts) are the **private** repo `redpanda-data/rp-connect-docs`.
+Read them via the Redpanda-Github-Read MCP connector
 (`get_file_contents`), or `gh api .../contents/`; avoid `gh search code` (rate-limited).
 Before writing or changing any fact, re-open the cited source and confirm exact flag
 names, config keys, and error strings. Connect is versioned: verify against the **current

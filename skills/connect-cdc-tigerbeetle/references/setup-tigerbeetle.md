@@ -29,7 +29,7 @@ The standard (non-cgo) archive is named `redpanda-connect_<VERSION>_<os>_<arch>.
 
 ### Option B: build from source with cgo
 
-Build Redpanda Connect from the `redpanda-data/connect` repository with `CGO_ENABLED=1`. See the rp-connect-docs page `modules/install/pages/build-from-source.adoc` for the supported procedure.
+Build Redpanda Connect from the `redpanda-data/connect` repository with `CGO_ENABLED=1`. See the Redpanda Connect docs page on building from source (Install → Build from source) for the supported procedure.
 
 ### Verify the component is present
 

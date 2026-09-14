@@ -26,6 +26,8 @@ All source paths are relative to the `redpanda-data/cloudv2` repository root. Th
 `cloudv2` repo is private; read it via the Redpanda-Github-Read MCP connector
 (`search_code`, `get_file_contents`, `list_commits`, `get_commit`), not by cloning.
 
+Several reference files also cite **`adp-docs`** (private) product-documentation pages as secondary evidence: the gateway overview (`modules/gateway/pages/overview.adoc`), the observability concepts page (`modules/monitor/pages/concepts.adoc`), the A2A concepts and self-managed agents pages, the Continue/Cursor/Cline integration guides (`modules/connect/partials/integrations/`), and the `rpk-ai-*.adoc` CLI reference pages. Those paths live in each file's provenance header; the skill bodies name the pages without paths.
+
 **`adp/RELEASE_NOTES.md`** is the user-facing ADP changelog (one section per release,
 e.g. `v0.2.9`). It is deliberately *not* copied into the skill — a changelog is
 volatile and would go stale every release. The skill instead points the agent to read

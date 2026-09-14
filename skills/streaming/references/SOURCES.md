@@ -6,8 +6,8 @@ and human maintainers know exactly where to verify claims.
 The `streaming` skill documents the Kafka-API surface and behavior of the Redpanda broker
 plus cluster/topic/broker properties and enterprise streaming features. It is grounded in
 the **public** repo `redpanda-data/redpanda` (broker is C++ under `src/v/`; config under
-`src/v/config/`) and the auto-generated reference + feature pages in the **public** repo
-`redpanda-data/docs`. Both are public — read them via the Redpanda-Github-Read MCP
+`src/v/config/`) and the auto-generated reference + feature pages in the **private** repo
+`redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP
 connector (`search_code`, `get_file_contents`), or `gh` for verification.
 
 **Property grounding:** all cluster/topic/broker property claims are grounded in the

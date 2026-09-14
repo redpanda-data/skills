@@ -11,16 +11,9 @@ tables, Tiered Storage segments, and validated schemas that Oxla then reads.
 > Server-Side Schema ID Validation are Redpanda **Enterprise Edition** features
 > and require a valid license key (`rpk cluster license info`). Without a valid
 > license, topics cannot be created or modified to enable these features.
-> Source: `get-started/licensing/overview.adoc`,
-> `get-started/licensing/disable-enterprise-features.adoc`.
+> Source: the Redpanda licensing overview and the Disable Enterprise Features page.
 
-Sources grounded in:
-`docs/modules/manage/pages/iceberg/about-iceberg-topics.adoc`,
-`docs/modules/manage/pages/iceberg/use-iceberg-catalogs.adoc`,
-`docs/modules/reference/partials/properties/topic-properties.adoc`,
-`docs/modules/reference/attachments/redpanda-properties-v26.1.8.json`,
-`docs/modules/get-started/pages/licensing/overview.adoc`,
-`docs/modules/get-started/pages/licensing/disable-enterprise-features.adoc`.
+Sources grounded in the Redpanda docs: the About Iceberg Topics and Use Iceberg Catalogs pages, the topic properties reference, the generated cluster-properties JSON for the pinned Redpanda version, the licensing overview, and the Disable Enterprise Features page (paths in [SOURCES.md](SOURCES.md)).
 
 ---
 
@@ -46,7 +39,7 @@ v2 tables (Parquet data files) in object storage, in addition to the Tiered
 Storage log segments. These are the tables Oxla reads with `CREATE ICEBERG
 CATALOG` or transparent queries.
 
-**Prerequisites** (from `about-iceberg-topics.adoc`):
+**Prerequisites** (from the About Iceberg Topics page):
 - Enterprise license applied (`rpk cluster license info`).
 - Tiered Storage enabled for the topic (`cloud_storage_enabled=true`).
 
@@ -63,7 +56,7 @@ rpk cluster config set iceberg_default_catalog_namespace '["<custom-namespace>"]
 
 ### Per-topic Iceberg properties (`redpanda.iceberg.*`)
 
-Grounded in `topic-properties.adoc`. Set with
+Grounded in the topic properties reference. Set with
 `rpk topic alter-config <topic> --set <key>=<value>`.
 
 | Topic property | Type | Default | Accepted values / notes | Cluster default property |
@@ -106,7 +99,7 @@ table and is itself an Iceberg table Oxla can read.
 ## Iceberg catalog backing (must match the Oxla `CREATE ICEBERG CATALOG`)
 
 Redpanda writes Iceberg metadata to one of two catalog types
-(`use-iceberg-catalogs.adoc`). Whichever Redpanda uses, point Oxla's
+(the Use Iceberg Catalogs page). Whichever Redpanda uses, point Oxla's
 `CREATE ICEBERG CATALOG` at the same catalog.
 
 ### REST catalog (recommended for production)
@@ -117,7 +110,7 @@ rpk cluster config set iceberg_rest_catalog_endpoint http://catalog-service:8181
 ```
 
 REST catalog cluster properties (grounded in
-`redpanda-properties-v26.1.8.json` and `use-iceberg-catalogs.adoc`):
+the generated cluster-properties JSON and the Use Iceberg Catalogs page):
 
 | Cluster property | Purpose |
 |------------------|---------|
@@ -168,8 +161,8 @@ rpk cluster config set cloud_storage_enabled true
 
 Per the licensing docs, on license expiration: topics cannot be created or
 modified to enable Tiered Storage, and partitions cannot be added to topics with
-Tiered Storage properties. Source: `licensing/overview.adoc`,
-`licensing/disable-enterprise-features.adoc` (disable knob:
+Tiered Storage properties. Source: the licensing overview and
+the Disable Enterprise Features page (disable knob:
 `cloud_storage_enabled=false`).
 
 ---
@@ -189,9 +182,9 @@ rpk cluster config set enable_schema_id_validation true
 ```
 
 Disable knob (to drop the license requirement): `enable_schema_id_validation
-false` (source: `licensing/disable-enterprise-features.adoc`).
+false` (source: the Disable Enterprise Features page).
 
-Per-topic validation properties (grounded in `topic-properties.adoc`):
+Per-topic validation properties (grounded in the topic properties reference):
 
 | Topic property | Type | Default | Accepted values |
 |----------------|------|---------|-----------------|
@@ -215,7 +208,7 @@ use `schema_lookup_policy='SCHEMA_ID'` to resolve per-record schema IDs.
 ## License expiration behavior (for the source cluster)
 
 If the Redpanda cluster producing the data loses its Enterprise license
-(`licensing/overview.adoc`):
+(per the licensing overview):
 
 | Feature | Behavior on expiration |
 |---------|------------------------|

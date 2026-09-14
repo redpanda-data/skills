@@ -9,7 +9,7 @@ profiling, partition/raft health, and failure-mode triage plus enterprise-featur
 signals. It is grounded in the **public** repo `redpanda-data/redpanda` — the `rpk` CLI is
 Go under `src/go/rpk/`, the broker + Admin API are C++ under `src/v/`, config under
 `src/v/config/` — and the monitoring/troubleshooting + auto-generated reference pages in the
-**public** repo `redpanda-data/docs`. Both are public — read them via the Redpanda-Github-Read
+**private** repo `redpanda-data/docs`. Read them via the Redpanda-Github-Read
 MCP connector (`search_code`, `get_file_contents`), or `gh` for verification.
 
 **Metric grounding:** metric *names* are release-specific and are NOT pinned to a source
