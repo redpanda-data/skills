@@ -1,4 +1,4 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. `Trigger.enabled` (field 15) / `TriggerUpdate.enabled` (field 4) pause-resume field and cron-scheduler semantics verified against `agent.proto` on 2026-08-24. Write-time reference and model/provider validation verified against `cloudv2/apps/adp-api/internal/service/agent/aigw_resolver.go` on 2026-08-31. `ManagedAgentSpec.system_prompt` / `Subagent.system_prompt` byte cap, the `reasoning_effort` field (9) and the `ReasoningEffort` enum verified against `agent.proto` on 2026-09-07; the widened model-catalog check and the reasoning-effort write-time gate verified against `aigw_resolver.go` (`checkModelRefs`, `checkReasoningEffortRefs`, `ValidateReasoningEffort`) on 2026-09-07. Evidence date: 2026-09-07.
+Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. `Trigger.enabled` (field 15) / `TriggerUpdate.enabled` (field 4) pause-resume field and cron-scheduler semantics verified against `agent.proto` on 2026-08-24. Write-time reference and model/provider validation verified against `cloudv2/apps/adp-api/internal/service/agent/aigw_resolver.go` on 2026-08-31. `ManagedAgentSpec.system_prompt` / `Subagent.system_prompt` byte cap verified against `agent.proto` on 2026-09-07; the widened model-catalog check verified against `aigw_resolver.go` (`checkModelRefs`) on 2026-09-07. The `ManagedAgentSpec.reasoning` message (field 10) with its string `effort`, the deprecation of `reasoning_effort` (field 9) and the legacy status of the `ReasoningEffort` enum verified against `agent.proto` on 2026-09-14; the string-based write-time gate with its legacy fallback, the violation field path, the open-vs-legacy write normalization and the conflict error verified against `cloudv2/apps/adp-api/internal/service/agent/aigw_resolver.go` (`checkReasoningEffortRefs`, `supportedReasoningEfforts`, `ValidateReasoningEffort`), `cloudv2/apps/adp-api/internal/service/agent/reasoning_effort_compat.go` and `cloudv2/apps/adp-api/internal/agent/reasoningeffort/reasoning_effort.go` on 2026-09-14. Evidence date: 2026-09-14.
 
 # Agentic Data Plane Agents Reference
 
@@ -84,7 +84,8 @@ These are the fields a builder sets when creating or updating a managed agent (`
 | `mcp_servers` | no | max 32 items per list; each min 1 char, max 63 chars, pattern `^[a-z][a-z0-9-]*$` (an aggregate cap also applies — see below) |
 | `subagents` | no | max 16 pairs; key pattern `^[a-z][a-z0-9-]*$` |
 | `agent_card` | no | see A2A agent card section below |
-| `reasoning_effort` | no | `ReasoningEffort` enum; unset keeps the provider/runtime default — see [Reasoning effort](#reasoning-effort) |
+| `reasoning` | no | `Reasoning` message with one string field, `effort` (max 64 chars, the provider's own spelling); omit it to keep the provider/runtime default — see [Reasoning effort](#reasoning-effort) |
+| `reasoning_effort` | no | **Deprecated** `ReasoningEffort` enum, still accepted and kept in sync; prefer `reasoning.effort` — see [Reasoning effort](#reasoning-effort) |
 
 There is no `tools` field on `ManagedAgentSpec`. Agents access tools exclusively through `mcp_servers` references. (The `tools` field exists on `mcp_server.proto`, not on the agent proto.)
 
@@ -92,7 +93,7 @@ There is no `tools` field on `ManagedAgentSpec`. Agents access tools exclusively
 
 ## Write-time validation of references and models
 
-`CreateAgent` and `UpdateAgent` validate a managed spec's outbound references before persisting it, so a bad reference fails the write instead of surfacing later as a broken agent. Two independent checks run here; an explicit `reasoning_effort` adds a third (see [Reasoning effort](#reasoning-effort)).
+`CreateAgent` and `UpdateAgent` validate a managed spec's outbound references before persisting it, so a bad reference fails the write instead of surfacing later as a broken agent. Two independent checks run here; an explicit `reasoning.effort` adds a third (see [Reasoning effort](#reasoning-effort)).
 
 **Reference existence.** Every `llm_provider` and `mcp_servers` name on the spec — the root agent's plus each subagent's, deduped — is resolved against the service of record. A name that does not exist fails with `InvalidArgument` carrying a `BadRequest.FieldViolation` whose `field` is the offending path (for example `agent.managed.spec.subagents.<name>.mcp_servers`), so you can map the rejection back to the exact spec element. If the reference lookup itself cannot be completed, the RPC fails `Unavailable` instead — that distinguishes "your spec is wrong" from "we cannot tell right now", and only the former means you should edit the spec.
 
@@ -114,22 +115,30 @@ Because the check runs on the *merged* spec, a partial update whose field mask n
 
 ## Reasoning effort
 
-`ManagedAgentSpec.reasoning_effort` (field 9) sets how much computation a reasoning-capable model spends before answering. It is a persisted property of the agent, not a per-request or playground-only knob, so it applies to every run of the agent. A higher level costs more per request.
+`ManagedAgentSpec.reasoning.effort` — the `Reasoning` message (field 10) with its single string field `effort` — sets how much computation a reasoning-capable model spends before answering. It is a persisted property of the agent, not a per-request or playground-only knob, so it applies to every run of the agent. A higher level costs more per request.
 
-The `ReasoningEffort` enum runs `REASONING_EFFORT_LOW` (1), `MEDIUM` (2), `HIGH` (3), `XHIGH` (4), `MAX` (5). `REASONING_EFFORT_UNSPECIFIED` (0) leaves the provider's or runtime's own default in place — it does not mean "no reasoning".
+**The value is a provider-owned string, not a platform enum.** Effort vocabularies are open and differ by provider and by model, so `effort` carries the provider's own spelling — case-sensitive, at most 64 characters, sent back exactly as the model catalog advertises it. Leaving it empty (or omitting the `reasoning` message) uses the provider's or runtime's default; it does not mean "no reasoning".
 
-**Subagents inherit it.** There is no per-subagent `reasoning_effort` field: the parent's setting applies to every subagent, including a subagent that overrides `model` or `llm_provider`.
+**Which values a model accepts is a live fact, not a fixed list.** Read it from the catalog rather than assuming: `ModelCapabilities.reasoning_efforts` on `ModelService.GetModel` / `ListModels` lists the values that exact model accepts, least to most computation, and it is empty for a model with no configurable reasoning control (see [gateway-and-providers.md](gateway-and-providers.md)). Because a subagent may run a different model, the values safely settable on an agent are the **intersection** across the parent's model and every subagent's model.
 
-**Which levels a model accepts is a live fact, not a fixed list.** Read it from the catalog rather than assuming: `ModelCapabilities.supported_reasoning_efforts` on `ModelService.GetModel` / `ListModels` enumerates the levels that exact model accepts, and it is empty for a model with no configurable reasoning control (see [gateway-and-providers.md](gateway-and-providers.md)). Because a subagent may run a different model, the levels safely settable on an agent are the **intersection** across the parent's model and every subagent's model.
+**Subagents inherit it.** There is no per-subagent reasoning field: the parent's setting applies to every subagent, including a subagent that overrides `model` or `llm_provider`.
 
-**Write-time validation.** When `reasoning_effort` is set to anything other than `UNSPECIFIED`, `CreateAgent` / `UpdateAgent` check the effort against every effective model pairing (parent plus subagents, after inheritance) before persisting:
+**Write-time validation.** When an effort is set, `CreateAgent` / `UpdateAgent` check it against every effective model pairing (parent plus subagents, after inheritance) before persisting:
 
-- A model that does not list the requested level fails with `InvalidArgument` and a `BadRequest.FieldViolation` on `agent.managed.spec.reasoning_effort`, with the message `model "…" does not support reasoning effort <level>` (level lowercased, e.g. `xhigh`). Several offending models are reported together in one error rather than one at a time.
-- A pairing on an **OpenAI-compatible** provider always fails the same way: those providers have no catalog, so no effort can be confirmed supported. Leave `reasoning_effort` unset for an agent on an OpenAI-compatible provider.
+- A model whose `reasoning_efforts` does not contain the value fails with `InvalidArgument`, one `BadRequest.FieldViolation` per offending model with the message `model "…" does not support reasoning effort <value>`, and an `ErrorInfo` whose reason is `REASONING_EFFORT_UNSUPPORTED`. Several offending models are reported together in one error rather than one at a time. The violation's `field` is `agent.managed.spec.reasoning.effort` when the request wrote the new field (or its update mask names `managed.spec.reasoning`), and `agent.managed.spec.reasoning_effort` when it wrote the deprecated one — the error addresses whichever representation you used.
+- A pairing on an **OpenAI-compatible** provider always fails the same way: those providers have no catalog, so no effort can be confirmed supported. Leave the effort unset for an agent on an OpenAI-compatible provider.
 - A model the gateway cannot resolve fails with `InvalidArgument` (`model "…" not found in aigw`); a lookup that cannot be completed fails `Unavailable`, which means "we cannot tell right now" and should be retried rather than edited around.
 - On `UpdateAgent` the effort is validated only against the model pairings the update actually changes, so an untouched, already-stored model does not block an unrelated edit.
 
-Leaving `reasoning_effort` unset is always accepted, on every provider type.
+Leaving the effort unset is always accepted, on every provider type.
+
+**The deprecated `reasoning_effort` enum (field 9).** Older clients set `ManagedAgentSpec.reasoning_effort`, a closed `ReasoningEffort` enum (`LOW`, `MEDIUM`, `HIGH`, `XHIGH`, `MAX`; `UNSPECIFIED` means default) whose value set is frozen. The server still accepts it and keeps the two fields coherent:
+
+- **Reading:** `reasoning.effort` wins when both are set; a legacy-only agent's enum is read as its lowercase provider spelling (`LOW` → `low`, and so on).
+- **Writing:** a value written through either field is mirrored into the other when the enum can represent it. A provider-owned value the enum cannot represent leaves `reasoning_effort` at `UNSPECIFIED` rather than misreporting it, and a legacy-form write can overwrite or clear an effort the enum can represent but never erases a provider-owned value it cannot. On `UpdateAgent` the field mask decides which representation is authoritative.
+- **Conflict:** a write that sets the two fields to different values fails `InvalidArgument` (`reasoning effort fields must not conflict`, `ErrorInfo` reason `REASONING_EFFORT_FIELDS_CONFLICT`).
+
+Use `reasoning.effort` for new work and treat the enum as a compatibility shim. A value such as a provider's lowest or highest setting may have no enum equivalent at all, which is exactly why the string field exists.
 
 ## Subagents
 
@@ -180,6 +189,8 @@ Triggers attach to an agent and fire it on an external event. Two trigger types 
 
 The trigger lifecycle RPCs (`CreateTrigger` through `DeleteTrigger`) operate as a sub-resource on the agent. The internal `ReportTriggerHealth` RPC is used by the runtime only and is never called by external clients.
 
+From the CLI, triggers are managed with the **top-level** `rpk ai trigger` group (`create`, `get`, `list`, `update`, `delete`, `runs`, plus GitOps `apply`/`diff`), not under `rpk ai agent`. The registry stores the trigger configuration but never validates the Teams credentials or resolves the secret refs, so an accepted trigger can still be reported unhealthy by the component that operates it. See [rpk-ai.md](rpk-ai.md#trigger-subcommands).
+
 ### Pause and resume a trigger
 
 `Trigger.enabled` (bool, positive polarity) toggles a trigger live/paused without deleting it, so its configuration and run history stay intact. A trigger is created enabled; the server stamps the field and it is not settable via `TriggerInput` at create time.
@@ -198,7 +209,7 @@ Semantics for the cron scheduler:
 - Setting `enabled = false` (pause) drops the trigger from the scheduler's cross-tenant scan so it stops firing; the schedule and its recorded runs are preserved.
 - Setting `enabled = true` (resume) re-registers it from the next scheduled instant onward — ticks missed while paused are **never** backfilled.
 
-The field is generic across trigger kinds, but only the cron scheduler honors it today.
+The field is generic across trigger kinds, but only the cron scheduler honors it today. The CLI form is `rpk ai trigger update agents/<agent>/triggers/<trigger> --enabled=false`, and `--enabled=true` to resume.
 
 ## `ManagedAgentRuntime` (orchestrator-internal)
 

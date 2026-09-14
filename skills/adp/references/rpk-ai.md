@@ -1,4 +1,4 @@
-Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status; `--no-browser` flag and always-fresh-grant behavior in `login.go`), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing; and in `claude.go` the transport-mode neutralization — `buildClaudeEnv`'s scrub list, `claudeRouteEnv`'s overlay pins, `claudeOnDiskTransportModeSet` / `claudeOnDiskAuthTokenSet` and `claudeEnvTruthy` for the two on-disk `settings.json` guards), `cloudv2/apps/rpai/internal/cmd/llm/pricing.go` (`--pricing` flag: keys, USD-per-million units, merge-into-`provider-models` behavior) and `cloudv2/apps/rpai/internal/cmd/generated.go` (`AddPricingSugar` wiring — `llm create`/`update` only). Evidence date: 2026-09-14 (`run claude` transport-mode neutralization and the two on-disk `settings.json` guards verified against `claude.go` on 2026-09-14; `auth login --no-browser` flag and always-fresh-grant behavior verified against `login.go` on 2026-08-24; `--pricing` flag on `llm create`/`update` verified 2026-08-17; `connection` subcommands re-verified 2026-08-03; `run` subcommand flags last verified 2026-07-06).
+Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status; `--no-browser` flag and always-fresh-grant behavior in `login.go`), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/internal/cmd/trigger` (`cmd.go`, `create.go`, `update.go`, `runs.go`, `gitops.go`: the `trigger` command tree, kind flags, pause/resume, `runs`, GitOps wiring), `cloudv2/apps/rpai/internal/gitops` (`doc.go`, `command.go`: the complete-manifest comparison rule and the `apply`/`diff` long help shared by every resource group), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing; and in `claude.go` the transport-mode neutralization — `buildClaudeEnv`'s scrub list, `claudeRouteEnv`'s overlay pins, `claudeOnDiskTransportModeSet` / `claudeOnDiskAuthTokenSet` and `claudeEnvTruthy` for the two on-disk `settings.json` guards), `cloudv2/apps/rpai/internal/cmd/llm/pricing.go` (`--pricing` flag: keys, USD-per-million units, merge-into-`provider-models` behavior) and `cloudv2/apps/rpai/internal/cmd/generated.go` (`AddPricingSugar` wiring — `llm create`/`update` only). Evidence date: 2026-09-14 (`trigger` command tree and the shared GitOps complete-manifest rule verified against `internal/cmd/trigger`, `internal/gitops` and `testdata/commands-snapshot.md` on 2026-09-14; `run claude` transport-mode neutralization and the two on-disk `settings.json` guards verified against `claude.go` on 2026-09-14; `auth login --no-browser` flag and always-fresh-grant behavior verified against `login.go` on 2026-08-24; `--pricing` flag on `llm create`/`update` verified 2026-08-17; `connection` subcommands re-verified 2026-08-03; `run` subcommand flags last verified 2026-07-06).
 
 # rpk ai CLI Reference
 
@@ -115,6 +115,7 @@ Source: `root.go:134-150` (AddCommand calls), confirmed against `testdata/comman
 | `oauth-provider` | `oauth`, `op` | Manage OAuth providers (canonical name is `oauth-provider`; `oauth` is an alias) |
 | `policy` | `policies`, `pol` | Manage Cedar authorization policies: `create`, `get`, `list`, `update`, `delete`, plus `apply`/`diff` for GitOps-style manifest management |
 | `run` | (none) | Run AI coding tools (Claude Code, Codex) through the AI Gateway |
+| `trigger` | `triggers`, `agent-trigger` | Manage an agent's triggers (Microsoft Teams, cron schedule): `create`, `get`, `list`, `update`, `delete`, `runs`, plus `apply`/`diff`. Top-level, not under `agent` |
 | `version` | (none) | Print rpai version and commit |
 
 ## `rpk ai version`
@@ -252,6 +253,57 @@ Subcommands: `create`, `get`, `list`, `update`, `delete`, `apply`, `diff`
 
 adp-docs publishes CRUD subpages. `apply` and `diff` are not yet documented.
 
+## `trigger` subcommands
+
+Aliases: `triggers`, `agent-trigger`. Source: `internal/cmd/trigger/cmd.go`.
+
+Subcommands: `create <agent>`, `get <name>`, `list <agent>` (alias `ls`), `update <name>`, `delete <name>`, `runs <name>`, `apply`, `diff`
+
+A trigger is an agent-owned child resource, but its command group is mounted **top-level** (`rpk ai trigger …`, not `rpk ai agent trigger …`): a GitOps driver resolves `rpk ai <command> apply` with `<command>` as a single argv element, so a nested group could not be driven that way. The same reasoning keeps `policy` top-level.
+
+**Naming.** A trigger's resource name carries its parent: `agents/{agent}/triggers/{trigger}`. `create` and `list` take the parent agent, as a bare id (`my-agent`) or its resource name (`agents/my-agent`); `get`, `update`, `delete` and `runs` take the full two-segment name exactly as `list` prints it — a bare trigger id is rejected (`expected 4 path segments, got 1`). The trigger id is server-assigned unless `--id <dns-1123-label>` names one; the full name is printed on success.
+
+**Kind.** Exactly one kind per trigger, chosen at `create` by which flag family you pass, and immutable afterwards (delete and recreate to change it):
+
+| Kind | Flags |
+|---|---|
+| Microsoft Teams | `--teams-bot-app-id` (Azure Bot application/client ID), `--teams-bot-tenant-id` (Azure AD directory/tenant ID), `--teams-bot-app-secret-ref` (secret-store key holding the bot client secret — a bare `UPPER_SNAKE_CASE` key, never the secret itself) |
+| Schedule (cron) | `--cron-schedule` (standard 5-field expression, e.g. `"0 9 * * 1-5"`), `--cron-timezone` (IANA zone, e.g. `Europe/Prague`; **required** — the server never falls back to UTC), `--cron-input` (the message text each scheduled run sends to the agent) |
+
+Common flags on `create` and `update`: `--display-name`, `--description`, `--enabled` (default `true`). A `create` with no kind flags is an error naming both flag families. On `update`, only the flags you pass are changed; `--cron-*` flags apply only to a trigger that is already a schedule and `--teams-*` only to one that is already Teams.
+
+**Pause and resume.** `update <name> --enabled=false` pauses a trigger while keeping its configuration and run history; `--enabled=true` resumes it from the next scheduled instant onward, with no catch-up of missed ticks. This is the CLI form of the `Trigger.enabled` toggle in [agents.md](agents.md).
+
+**`runs <name>`** lists the recorded fires of a schedule trigger, newest first. Only cron triggers have runs; a Teams trigger reports an empty history. Each run's `conversation_id` joins it to its transcript (`rpk ai agent transcript get`).
+
+**`get -o yaml`** is how to see the kind configuration and the reported health: the tabular columns cannot reach the `kind` oneof or `status`.
+
+**The registry does not validate credentials.** The API stores the trigger configuration but never validates the Teams credentials or resolves the secret refs, so a trigger that is accepted can still be reported unhealthy by the component that operates it — read `status` after creating one.
+
+`delete` is idempotent: deleting an already-deleted trigger succeeds.
+
+```bash
+rpk ai trigger create my-agent --cron-schedule "0 9 * * 1-5" --cron-timezone Europe/Prague --cron-input "Post the daily summary"
+rpk ai trigger list my-agent
+rpk ai trigger update agents/my-agent/triggers/<id> --enabled=false
+rpk ai trigger runs agents/my-agent/triggers/<id>
+```
+
+Not yet documented in adp-docs.
+
+## GitOps: `apply` and `diff`
+
+Every resource group that lists `apply` and `diff` — `agent`, `llm`, `mcp`, `oauth-client`, `oauth-provider`, `policy`, `trigger` — delegates to one shared engine (`internal/gitops`). Both verbs take `-f <file|dir|->` (repeatable; `-` reads stdin) and reconcile YAML manifests against the live environment.
+
+**A manifest is the complete desired state of the resource.** Every writable field is compared, *including the ones the manifest omits*: an omitted field carries its proto zero — the value a `create` from that manifest would have produced — and is compared against the live value like any other. So trimming a field out of a manifest does not mean "leave it alone"; if the live resource holds a different value, `diff` reports drift and `apply` reconciles it back to the zero value. Start from a complete manifest by round-tripping `get -o yaml`, which dumps every writable field, rather than hand-writing a partial one. OUTPUT_ONLY fields are not compared.
+
+Further rules:
+
+- Lists, maps and oneof variants replace wholesale; a changed message masks only its changed leaves.
+- Fields that can only be set at creation are immutable; a manifest that changes one is an error, not a silent skip.
+- Neither verb prunes: a resource that exists live but is absent from the manifests is not detected or deleted.
+- `diff` prints, per manifest, whether `apply` would create, update (and which fields) or leave the resource unchanged, and exits non-zero when any change is pending, so CI can gate on "no drift". `apply` creates the resource if absent, otherwise updates every field that differs.
+
 ## `run` subcommands
 
 Source: `internal/cmd/run/{cmd,claude,codex}.go`. Routes an AI coding tool's model traffic through the AI Gateway for the active environment: the tool authenticates to the gateway (never directly to the upstream provider) and no upstream key is written to disk. Both subcommands take `-L`/`-m` as command-local flags (not renamed under `rpk ai`) and pass the tool's own flags after a literal `--`.
@@ -285,7 +337,7 @@ The point of `run claude` is that the session's traffic is metered and audited b
 
 **Passthrough is the exception, and it fails fast rather than silently.** `--passthrough` renders no settings overlay (that is what keeps the gateway token off disk), so it cannot pin a switch off, and an on-disk `settings.json` outranks the scrubbed environment. A passthrough launch is therefore **refused** when any `settings.json` applying to the launch — the Claude config home's, or `.claude/settings.json` / `.claude/settings.local.json` under the working directory — sets `env.CLAUDE_CODE_USE_VERTEX` or `env.CLAUDE_CODE_USE_BEDROCK` to a value Claude Code reads as on (`1`, `true`, `yes`, `on`, case-insensitive; `0` and empty are off). The error names the switch. An unreadable or malformed settings file is ignored rather than treated as a match.
 
-A second, separate guard covers the credential rather than the transport: a **token-backed managed** launch (`--token`, not passthrough) is refused when one of those same files sets `env.ANTHROPIC_AUTH_TOKEN`, which would override the gateway bearer — the message points at removing it or using `rpk ai auth login` instead.
+A second, separate guard covers the credential rather than the transport: a **token-backed managed** launch (`--token`, not passthrough, against an environment whose auth mode is not `none`) is refused when one of those same files sets `env.ANTHROPIC_AUTH_TOKEN`, which would override the gateway bearer — the message points at removing it or using `rpk ai auth login` instead.
 
 The fix in both cases is to remove the setting from `settings.json`, or to drop the flag that suppresses the overlay. Use `--claude-config-dir` to launch against a different `CLAUDE_CONFIG_DIR` (never written to), and `--print-settings` to see the overlay and launch environment without starting a session.
 
