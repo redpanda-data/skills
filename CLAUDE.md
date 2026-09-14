@@ -65,8 +65,9 @@ reason. Never guess a field name, default, flag, or endpoint.
 ## HARD RULE: public-surface rule
 
 This repository is PUBLIC (it ships as an installable plugin), while much of the product
-source it documents is PRIVATE (`cloudv2`, `oxla`, `cloud-docs`); operational detail and
-routine output live in the docs team's private `docs-team-standards` repo.
+source it documents is PRIVATE (`cloudv2`, `oxla`, and the docs repos `docs`, `cloud-docs`,
+`rp-connect-docs`, `adp-docs`); operational detail and routine output live in the docs
+team's private `docs-team-standards` repo.
 Nothing that identifies private-repo internals may appear on any public surface of this
 repo — PR titles, PR descriptions, commit messages, branch names, comments, or committed
 files: no private-repo commit SHAs or links, no internal source file paths or proto line
@@ -80,11 +81,20 @@ requires it.
 
 Two sanctioned exceptions to the internals ban:
 
-- Citations of PUBLIC source repos (`redpanda`, `docs`, `connect`, `benthos`,
-  `rp-connect-docs`) — tags, paths, commits — are fine anywhere.
+- Citations of PUBLIC source repos (`redpanda`, `connect`, `benthos`) — tags, paths,
+  commits — are fine anywhere. The docs repos are private (verified 2026-09-14 via the
+  GitHub API) and fall under the ban everywhere except the provenance surfaces below.
 - `SOURCES.md` files may name the private repos and the source file paths a skill is
   grounded in (the verification process depends on that mapping) — but never commit SHAs,
   tickets, gate names, rollout status, or unshipped surfaces.
+- The **provenance header** of a skill file — the leading `Source:` line of a
+  `references/*.md` file, and the equivalent line in a `SKILL.md` — may likewise name the
+  private repos, source file paths, symbol names, and line numbers a file's claims derive
+  from, together with the evidence dates on which they were verified. This is the same
+  mapping `SOURCES.md` carries, kept beside the content so the sync and drift-audit
+  routines can stamp what they re-verified and when. The same limits apply: no commit
+  SHAs, tickets, gate names, rollout status, or unshipped surfaces. Provenance stays in
+  that header; the body of a skill file cites public repos only.
 
 Automated routines post their full provenance and review reports to the docs team's
 private channel, never to this repo. If the private channel is unreachable, fail the run
