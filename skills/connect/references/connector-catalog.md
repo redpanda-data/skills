@@ -94,7 +94,7 @@ input, `tigerbeetle_cdc`, is **certified** (no license) and CGO-only; see
 ### In catalog but undocumented (flagged — do not recommend without checking)
 
 - `gateway` (input) and `a2a_message` (processor) are enterprise-tier in
-  `info.csv` at v4.99.0 but have **no reference page** in rp-connect-docs.
+  `info.csv` at v4.99.0 but have **no reference page** in the published Redpanda Connect docs.
   They appear to be Agentic Data Plane/agent-related surfaces; confirm status before
   documenting or recommending them.
 

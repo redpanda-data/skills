@@ -5,7 +5,7 @@ Redpanda Cloud is a managed deployment of **Redpanda Enterprise Edition**, so **
 1. **Organization / control-plane IAM** — who can manage clusters, networks, resource groups, and other org-level resources, via roles and role bindings (`redpanda/api/iam/v1`).
 2. **Cluster / data-plane security** — roles and ACL-style permissions inside a specific Redpanda cluster (`redpanda/api/dataplane/v1` `SecurityService`), plus Kafka users and ACLs.
 
-> License: RBAC is an Enterprise feature. On self-managed Redpanda, without a valid license you cannot create or modify roles or role-associated ACLs (role deletion is still allowed). On Cloud the managed platform supplies the license. See `get-started/licensing/overview.adoc`.
+> License: RBAC is an Enterprise feature. On self-managed Redpanda, without a valid license you cannot create or modify roles or role-associated ACLs (role deletion is still allowed). On Cloud the managed platform supplies the license. See the Redpanda licensing overview.
 
 ---
 

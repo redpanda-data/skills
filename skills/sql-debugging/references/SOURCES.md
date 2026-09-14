@@ -8,7 +8,7 @@ SQL) plus the **Redpanda-side** Iceberg Topics integration that feeds it. Oxla s
 the **PRIVATE** repo `redpanda-data/oxla` — read it **only** via the Redpanda-Github-Read
 MCP connector (`get_file_contents`, `search_code`); do **not** use `gh` or clone it. The
 Redpanda Iceberg source is the **public** repo `redpanda-data/redpanda` (`src/v/datalake/`,
-`src/v/config/`) and the **public** docs repo `redpanda-data/docs` (`manage/iceberg` module).
+`src/v/config/`) and the **private** docs repo `redpanda-data/docs` (`manage/iceberg` module).
 Before writing or changing any fact, re-open the cited source and confirm exact table/column
 names, metric `k_name` strings, proto enum values, and config keys.
 

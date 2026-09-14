@@ -1,6 +1,6 @@
 # postgres_cdc Config Reference
 
-Every field in the `postgres_cdc` input, grounded in `internal/impl/postgresql/input_pg_stream.go` and the generated documentation at `docs/modules/components/pages/inputs/postgres_cdc.adoc`. Introduced in version 4.39.0. The legacy input name `pg_stream` is deprecated.
+Every field in the `postgres_cdc` input, grounded in `internal/impl/postgresql/input_pg_stream.go` and the generated documentation at `connect/docs/modules/components/pages/inputs/postgres_cdc.adoc`. Introduced in version 4.39.0. The legacy input name `pg_stream` is deprecated.
 
 ## Required Fields
 

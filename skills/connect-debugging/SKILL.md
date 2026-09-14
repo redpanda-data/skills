@@ -129,7 +129,7 @@ rpk connect dry-run --verbose ./pipeline.yaml
 Configure the `logger:` section to control level and format. Full schema with
 all fields in [`references/logging-metrics-tracing.md`](references/logging-metrics-tracing.md).
 
-Key levels (grounded in `docs/modules/components/pages/logger/about.adoc`):
+Key levels (grounded in `connect/docs/modules/components/pages/logger/about.adoc`):
 `OFF`, `FATAL`, `ERROR`, `WARN`, `INFO` (default), `DEBUG`, `TRACE`, `ALL`, `NONE`.
 
 ```yaml
@@ -182,7 +182,7 @@ tracer:
 ## Health Endpoints
 
 The HTTP server (default `0.0.0.0:4195`) exposes these endpoints.
-Grounded in `docs/modules/components/pages/http/about.adoc`.
+Grounded in `connect/docs/modules/components/pages/http/about.adoc`.
 
 | Endpoint | Purpose |
 |----------|---------|

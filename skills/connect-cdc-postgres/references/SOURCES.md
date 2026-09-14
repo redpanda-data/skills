@@ -5,9 +5,9 @@ syncs and human maintainers know exactly where to verify claims.
 
 The `postgres_cdc` input is Go source in the **public** repo `redpanda-data/connect` under
 `internal/impl/postgresql/` (logical replication / WAL decoding via the `pgoutput` plugin). The
-user-facing reference is **auto-generated** into the **public** repo `redpanda-data/rp-connect-docs`
+user-facing reference is **auto-generated** into the **private** repo `redpanda-data/rp-connect-docs`
 (`modules/components/pages/inputs/postgres_cdc.adoc`), with field descriptions supplied by
-`docs-data/overrides.json`. Both repos are public — read them via the Redpanda-Github-Read MCP
+`docs-data/overrides.json`. Read them via the Redpanda-Github-Read MCP
 connector (`get_file_contents`) or `gh api .../contents/`; avoid `gh search code` (rate-limited).
 Before writing or changing any fact, re-open the cited source and confirm exact field names, types,
 and defaults. The connector was introduced in Connect **4.39.0**; the legacy input name `pg_stream`

@@ -2,7 +2,7 @@
 
 Maps each file in `skills/rpk-debug/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
 
-The `rpk debug` command group is Go source in the **public** repo `redpanda-data/redpanda` under `src/go/rpk/pkg/cli/debug/`. The remote (cluster-wide) bundle is orchestrated through the Redpanda **Admin API**, whose server-side handler lives in the same repo under `src/v/redpanda/admin/`. The user-facing reference is in the **public** repo `redpanda-data/docs`. All are public — read them via the Redpanda-Github-Read MCP connector (`search_code`, `get_file_contents`), or `gh api .../contents/<path>` for verification; do not guess. `rpk` is versioned: verify against the **current stable release tag**, not `dev`/`main`.
+The `rpk debug` command group is Go source in the **public** repo `redpanda-data/redpanda` under `src/go/rpk/pkg/cli/debug/`. The remote (cluster-wide) bundle is orchestrated through the Redpanda **Admin API**, whose server-side handler lives in the same repo under `src/v/redpanda/admin/`. The user-facing reference is in the **private** repo `redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP connector (`search_code`, `get_file_contents`), or `gh api .../contents/<path>` for verification; do not guess. `rpk` is versioned: verify against the **current stable release tag**, not `dev`/`main`.
 
 ## File-to-source table
 

@@ -8,7 +8,7 @@ grounded in the licensing docs and the topic/cluster property reference under
 are invented.
 
 > License note: features marked **(Enterprise)** require a valid Redpanda
-> Enterprise license. See `get-started/licensing/overview.adoc`. On license
+> Enterprise license. See the Redpanda licensing overview. On license
 > expiration the cluster keeps running, but the listed feature enters a
 > restricted state (you cannot create/modify topics with that property).
 
@@ -18,7 +18,7 @@ are invented.
 
 The `mongodb_cdc` input is gated by `license.CheckRunningEnterprise` and is
 listed under "Redpanda Connect enterprise features → Enterprise connectors" in
-`licensing/overview.adoc`. Without a valid license the connector is blocked
+the Redpanda licensing overview. Without a valid license the connector is blocked
 (after the 30-day trial). See [config-reference.md](config-reference.md) for
 every input field.
 
@@ -54,7 +54,7 @@ Cluster prerequisite:
 rpk cluster config set iceberg_enabled true
 ```
 
-Topic properties (all grounded in `reference/partials/properties/topic-properties.adoc`):
+Topic properties (all grounded in the topic properties reference):
 
 | Topic property | Type | Default | Values / notes |
 |---|---|---|---|
@@ -108,7 +108,7 @@ records carrying unregistered schema IDs — before a consumer ever sees them.
 **Enterprise license required**; topics with validation settings cannot be
 created/modified after expiry.
 
-Cluster property (grounded in `schema-reg/schema-id-validation.adoc`):
+Cluster property (grounded in the Server-Side Schema ID Validation page):
 
 ```bash
 # Default is `none`; set to `redpanda` (Redpanda strategy) or `compat` (Confluent-compatible)
@@ -143,7 +143,7 @@ required**; topics cannot be created/modified to enable Tiered Storage after
 expiry, and partitions cannot be added.
 
 Cluster prerequisites (one of the cloud backends configured), then enable remote
-read/write. Per-topic properties (grounded in topic-properties.adoc):
+read/write. Per-topic properties (grounded in the topic properties reference):
 
 | Topic property | Purpose | Cluster default property |
 |---|---|---|
@@ -177,8 +177,8 @@ Recovery** (`redpanda.remote.recovery=true`) — both require a license.
 The `redpanda`/`kafka_franz` output that receives CDC events supports TLS and
 SASL. SCRAM/PLAIN are available in all editions; **OAUTHBEARER/OIDC and Kerberos
 (GSSAPI) authentication require an Enterprise license** on the broker side
-(per `licensing/overview.adoc`). Output fields grounded in
-`connect/.../components/pages/redpanda/about.adoc`:
+(per the Redpanda licensing overview). Output fields grounded in
+`connect/docs/modules/components/pages/redpanda/about.adoc`:
 
 ```yaml
 output:
@@ -218,7 +218,7 @@ producer principal to that role (`rpk security role` / `rpk security acl`).
   password and the Redpanda SASL password from a remote secret store at runtime.
   Both the input `password` and output `sasl[].password` are flagged secret in
   source and should use `${SECRET}` interpolation rather than literals. See
-  `connect/configuration:secrets.adoc`.
+  Redpanda Connect docs → Configuration → Secrets.
 - **FIPS compliance (Enterprise)**: run the pipeline with a FIPS-compliant build
   of `rpk connect` when FedRAMP/FIPS cryptography is required.
 - **Allow/deny lists (Enterprise)**: restrict which Connect components a shared

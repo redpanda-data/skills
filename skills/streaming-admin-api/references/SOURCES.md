@@ -9,7 +9,7 @@ v25.3. Source of truth is the Admin API server, request handlers, and Swagger 1.
 JSON specs in the **public** repo `redpanda-data/redpanda` under `src/v/redpanda/admin/`
 (server is C++; the API surface is described by the `api-doc/*.json` specs and the ConnectRPC
 `.proto` files). Cluster-config property claims are grounded in the auto-generated partial in
-the **public** repo `redpanda-data/docs`. Both repos are public — read them via the
+the **private** repo `redpanda-data/docs`. Read them via the
 Redpanda-Github-Read MCP connector (`get_file_contents`, `search_code`), or `gh api` for
 verification.
 

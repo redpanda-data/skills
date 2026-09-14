@@ -13,7 +13,7 @@ Streams). Two public repos ground it:
   reference page is **auto-generated** from the Go config spec; DRY description overrides
   live in `docs-data/overrides.json`.
 
-Both are public — read them via the Redpanda-Github-Read MCP connector
+Read them via the Redpanda-Github-Read MCP connector
 (`get_file_contents`) or `gh api .../contents/`. Avoid `gh search code` (rate-limited).
 Before writing or changing any fact, re-open the cited source and confirm exact field
 names, defaults, enums, and error text. Redpanda Connect is versioned; verify against the

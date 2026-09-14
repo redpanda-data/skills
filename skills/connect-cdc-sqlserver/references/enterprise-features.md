@@ -68,8 +68,7 @@ in object storage, so SQL Server change data becomes queryable from Snowflake,
 Databricks, Spark, Flink, ClickHouse, etc. without a separate ETL hop. This is
 the natural lakehouse sink for `microsoft_sql_server_cdc` output.
 
-Source: `docs/modules/manage/pages/iceberg/about-iceberg-topics.adoc`,
-`docs/modules/reference/partials/properties/topic-properties.adoc`.
+Source: the About Iceberg Topics page and the topic properties reference.
 
 ### Prerequisites
 
@@ -148,8 +147,7 @@ read them as structured data), server-side Schema ID Validation makes the broker
 reject records whose schema ID is not registered, rather than letting a bad
 producer corrupt the topic.
 
-Source: `docs/modules/manage/pages/schema-reg/schema-id-validation.adoc`,
-`docs/modules/reference/partials/properties/topic-properties.adoc`.
+Source: the Server-Side Schema ID Validation page and the topic properties reference.
 
 ### Cluster property
 
@@ -194,8 +192,7 @@ rpk topic alter-config sqlserver.dbo.orders \
 audit, lakehouse backfill). Tiered Storage offloads topic log segments to object
 storage; it is also a **prerequisite for Iceberg Topics** (section 2).
 
-Source: `docs/modules/reference/partials/properties/topic-properties.adoc`
-(category-tiered-storage), `docs/modules/manage/pages/tiered-storage.adoc`.
+Source: the topic properties reference (Tiered Storage category) and the Tiered Storage page.
 
 ### Cluster property
 
@@ -258,5 +255,4 @@ rpk cluster config set enable_schema_id_validation none
 rpk cluster config set cloud_storage_enabled false # disable Tiered Storage
 ```
 
-Source: `docs/modules/get-started/pages/licensing/overview.adoc`,
-`docs/modules/get-started/pages/licensing/disable-enterprise-features.adoc`.
+Source: the Redpanda licensing overview and the Disable Enterprise Features page.

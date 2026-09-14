@@ -98,6 +98,6 @@ curl http://localhost:4195/streams/foo -X DELETE
 
 ## Authoritative reference
 
-- Docs: docs.redpanda.com → Redpanda Connect → Guides → Streams mode (rp-connect-docs `modules/guides/pages/streams_mode/{about,using_config_files,using_rest_api,streams_api}.adoc` — `streams_api.adoc` is the full endpoint spec).
+- Docs: docs.redpanda.com → Redpanda Connect → Guides → Streams mode (the About, Using config files, Using the REST API, and Streams API pages; the Streams API page is the full endpoint spec).
 - Engine source: `redpanda-data/benthos` `internal/cli/streams.go` (the `streams` subcommand and its flags) and `internal/stream/manager/api.go` (the REST handlers).
 - Live surface: `rpk connect streams --help` on your installed version for the current flag set.

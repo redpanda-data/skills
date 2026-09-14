@@ -4,8 +4,8 @@ Maps each file in `skills/rpk/` to the source paths it derives from, so future s
 human maintainers know exactly where to verify claims.
 
 The `rpk` CLI is Go source in the **public** repo `redpanda-data/redpanda` under
-`src/go/rpk/`; the user-facing reference is auto-generated in the **public** repo
-`redpanda-data/docs`. Both are public — read them via the Redpanda-Github-Read MCP
+`src/go/rpk/`; the user-facing reference is auto-generated in the **private** repo
+`redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP
 connector (`search_code`, `get_file_contents`), or `gh` for verification; do not guess.
 Before writing or changing any fact, re-open the cited source and confirm exact command
 paths, flag names, and config keys. `rpk` is versioned: verify against the **current

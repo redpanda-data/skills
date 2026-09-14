@@ -17,12 +17,14 @@ New clusters (Redpanda 24.3+) get a 30-day trial license automatically. After ex
 enable these features and active ones enter a restricted state.
 
 Grounded in:
-- `docs/modules/get-started/pages/licensing/overview.adoc` (enterprise feature tables)
-- `docs/modules/get-started/pages/licensing/disable-enterprise-features.adoc` (disable actions)
-- `docs/modules/reference/partials/properties/topic-properties.adoc` (topic property specs)
-- `docs/modules/manage/pages/iceberg/about-iceberg-topics.adoc` (Iceberg modes/prereqs)
-- `docs/modules/develop/pages/manage-topics/cloud-topics.adoc` (Cloud Topics enable/create)
-- `docs/modules/manage/pages/schema-reg/schema-id-validation.adoc` (schema ID validation)
+- the Redpanda licensing overview (enterprise feature tables)
+- the Disable Enterprise Features page (disable actions)
+- the topic properties reference (topic property specs)
+- the About Iceberg Topics page (Iceberg modes/prereqs)
+- the Cloud Topics page (Cloud Topics enable/create)
+- the Server-Side Schema ID Validation page (schema ID validation)
+
+File paths for all of these are in [SOURCES.md](SOURCES.md).
 - `connect/internal/license/shared_service.go` (Connect license enforcement)
 
 ---
@@ -56,7 +58,7 @@ The natural downstream pattern: land Salesforce CDC events in a Redpanda topic t
 materialized as an Apache Iceberg table, so Snowflake/Databricks/Spark/Flink can query the change
 stream without a separate ETL pipeline.
 
-**Prerequisites** (`about-iceberg-topics.adoc`):
+**Prerequisites** (the About Iceberg Topics page):
 - Enterprise license.
 - **Tiered Storage must be enabled** for the topic (Iceberg writes Parquet alongside Tiered Storage
   segments). See section 3.
@@ -82,7 +84,7 @@ rpk topic alter-config sf.cdc.account --set redpanda.iceberg.mode=value_schema_l
 | `redpanda.iceberg.partition.spec` | string | `(hour(redpanda.timestamp))` | Iceberg partitioning spec |
 | `redpanda.iceberg.target.lag.ms` | integer (ms) | `null` | How often the Iceberg table is refreshed from the topic |
 
-**Mode meanings** (`about-iceberg-topics.adoc`):
+**Mode meanings** (the About Iceberg Topics page):
 - `key_value`: two-column table — record metadata (incl. key) + a binary value column. Good for the
   raw CDC JSON payload when you have no registered schema.
 - `value_schema_id_prefix`: table columns match the topic's registered schema; producers must use the
@@ -105,7 +107,7 @@ Tiered Storage offloads CDC topic data to object storage for cheap long-term ret
 Event Retention); Tiered Storage lets you keep the materialized change history in Redpanda
 indefinitely.
 
-Enable at cluster level, then per topic (`topic-properties.adoc`, `disable-enterprise-features.adoc`):
+Enable at cluster level, then per topic (the topic properties reference, the Disable Enterprise Features page):
 
 ```bash
 rpk cluster config set cloud_storage_enabled true     # cluster-wide enable
@@ -144,7 +146,7 @@ buffer. They trade higher latency for lower cost, which fits cost-sensitive CDC 
 the Salesforce change stream does not need single-digit-ms reads. This is a distinct destination
 storage type, parallel to Tiered Storage (section 3) and the Iceberg pattern (section 2).
 
-**Prerequisites** (`cloud-topics.adoc`):
+**Prerequisites** (the Cloud Topics page):
 - Enterprise license (the cluster property `cloud_topics_enabled=true` requires Enterprise).
 - rpk v26.1 or later.
 - Cloud storage (object storage) enabled and configured on the cluster — same setup as Tiered
@@ -187,7 +189,7 @@ If you encode the produced Salesforce records with the Schema Registry wire form
 only records carrying a registered schema ID are accepted — invalid records are dropped by the
 broker, not the consumer.
 
-Enable at the cluster level (`schema-id-validation.adoc`):
+Enable at the cluster level (the Server-Side Schema ID Validation page):
 
 ```bash
 # none (default) | redpanda | compat

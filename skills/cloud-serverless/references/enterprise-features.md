@@ -14,9 +14,9 @@ configuration keys** through the Data Plane API (`${DP_URL}/v1/topics`) and as
 **RBAC roles** through `${DP_URL}/v1/roles`.
 
 Grounding: topic property keys, defaults, and accepted values are taken from
-`docs/modules/reference/partials/properties/topic-properties.adoc`; the
+the Redpanda topic properties reference; the
 enterprise-license requirement and per-feature behavior on license expiry are
-from `docs/modules/get-started/pages/licensing/overview.adoc`. Lines flagged
+from the Redpanda licensing overview (paths in [SOURCES.md](SOURCES.md)). Lines flagged
 `Available in the Redpanda Cloud Console` in the source confirm Cloud
 (including Serverless) availability of the property.
 
@@ -72,7 +72,7 @@ curl -s -X PATCH "${DP_URL}/v1/topics/orders/configurations" \
 | `redpanda.iceberg.invalid.record.action` | string (enum) | `drop`, `dlq_table` | `dlq_table` | Where to send records that fail schema translation: drop them or route to a dead-letter-queue table. |
 | `redpanda.iceberg.delete` | boolean | `true`, `false` | `true` | Whether the Iceberg table is deleted when the topic is deleted. Set `false` to retain the table. |
 
-**Mode semantics** (from `about-iceberg-topics.adoc`):
+**Mode semantics** (from the About Iceberg Topics page):
 
 - `key_value` — two columns: one for record metadata (including key), one binary
   column for the value. No Schema Registry entry required.

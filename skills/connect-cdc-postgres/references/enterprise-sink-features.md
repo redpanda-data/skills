@@ -2,7 +2,7 @@
 
 The `postgres_cdc` input is itself a **Redpanda Connect Enterprise connector** — it requires a
 valid Redpanda Enterprise license, and after the 30-day trial expires the connector is blocked
-until you upgrade. (See `get-started:licensing/overview.adoc`, "Redpanda Connect enterprise
+until you upgrade. (See the Redpanda licensing overview, "Redpanda Connect enterprise
 features" → "Enterprise connectors".)
 
 Once CDC events land in a Redpanda topic, several **Redpanda broker** enterprise features apply to
@@ -25,8 +25,8 @@ in object storage, in addition to the Kafka log. This is the highest-value pairi
 `postgres_cdc` snapshot + WAL stream becomes a continuously-updated Iceberg table queryable from
 Snowflake, Databricks, Spark, Flink, Trino, etc., with no separate ETL job.
 
-**Enterprise license required.** Grounded in `manage:iceberg/about-iceberg-topics.adoc` and
-`reference:properties/topic-properties.adoc`.
+**Enterprise license required.** Grounded in the About Iceberg Topics page and
+the topic properties reference.
 
 ### Cluster-level enablement (prerequisite)
 
@@ -87,7 +87,7 @@ automatically.
 
 CDC topics often must be retained far longer than local disk allows (replay, audit, lakehouse
 backfill). Tiered Storage offloads topic log segments to object storage. **Enterprise license
-required.** Grounded in `manage:tiered-storage.adoc` and `reference:properties/topic-properties.adoc`.
+required.** Grounded in the Tiered Storage page and the topic properties reference.
 
 ### Cluster enablement
 
@@ -124,7 +124,7 @@ rpk topic create pg.cdc.orders \
 When CDC events are serialized with the Confluent SerDes wire format (schema ID in the payload
 header), Redpanda brokers can reject records whose schema ID is not registered. This stops a
 misconfigured pipeline from polluting a CDC topic. **Enterprise license required.** Grounded in
-`manage:schema-reg/schema-id-validation.adoc`.
+the Server-Side Schema ID Validation page.
 
 Note: `postgres_cdc` emits plain JSON by default, so schema ID validation applies only when you
 serialize events through a schema-aware processor (`schema_registry_encode`) before the output.
@@ -163,7 +163,7 @@ rpk topic create pg.cdc.orders \
 ## 4. Redpanda Connect: license + secret management for the DSN
 
 - **Enterprise connector**: `postgres_cdc` is gated behind the Connect Enterprise license. Apply a
-  license to Redpanda Connect (see `connect:get-started:licensing.adoc`). After the 30-day trial
+  license to Redpanda Connect (see the Redpanda Connect licensing page (Get Started → Licensing)). After the 30-day trial
   the connector is blocked.
 - **Secrets management** (Connect enterprise feature): instead of embedding the PostgreSQL password
   or AWS keys in the `dsn`/`aws` block, reference a secret resolved at runtime from an external
@@ -174,7 +174,7 @@ rpk topic create pg.cdc.orders \
 
 ## License-expiration behavior (sink-topic features)
 
-From `get-started:licensing/overview.adoc`:
+From the Redpanda licensing overview:
 
 | Feature | Behavior on license expiration |
 |---|---|
