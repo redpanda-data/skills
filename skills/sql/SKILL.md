@@ -186,11 +186,15 @@ CREATE TABLE IF NOT EXISTS sales_backup AS SELECT * FROM sales;
 DROP TABLE sales;
 DROP TABLE IF EXISTS sales;
 
--- NOTE: Oxla does NOT support ALTER TABLE ... ADD/DROP/RENAME COLUMN.
--- The only ALTER TABLE form re-binds an external Redpanda/Kafka catalog table.
--- Use IF EXISTS and the catalog=>table_name external-source form (both required):
---   ALTER TABLE IF EXISTS my_catalog=>my_table WITH (schema_lookup_policy='LATEST')
--- To change a table's schema, use CREATE TABLE AS SELECT to recreate it.
+-- ALTER TABLE ... ADD COLUMN (native tables only; metadata-only, no data rewrite)
+ALTER TABLE sales ADD COLUMN discount BIGINT;             -- COLUMN keyword optional
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount BIGINT;
+-- Always nullable: rows written before the ALTER read back as NULL. One column per
+-- statement; NOT NULL and DEFAULT are rejected; no DROP/RENAME COLUMN. Refused on a
+-- view and on external (Kafka/Iceberg) tables. See references/ddl-dml.md.
+-- The other ALTER TABLE forms re-bind an external Redpanda/Kafka catalog table
+-- (ALTER TABLE IF EXISTS my_catalog=>my_table WITH (schema_lookup_policy='LATEST'))
+-- and reassign ownership. For DROP/RENAME/retype a column, recreate via CTAS.
 
 -- NOTE: GRANT ... ON ALL TABLES IN SCHEMA is NOT valid in Oxla (parser rejects
 -- the literal 'tables'). Valid targets: ON table, ON TABLE table, ON SCHEMA name,
@@ -474,7 +478,7 @@ SELECT * FROM generate_series(10, 1, -1);
 ## Reference Directory
 
 - [connect-and-types.md](references/connect-and-types.md): PostgreSQL wire protocol connection (port 5432, psql/JDBC/psycopg2/pgx), authentication (`initial_password`), SSL config, and the full supported data-type list grounded in `ColumnType.h`, including the wide-integer (`INT16`/`INT32`) cast and operator matrix plus how to bind wide-integer parameters, and the map surface (`map(...)` constructor, `m[key]` lookup on both constructed maps and external-schema map columns, supported key types, miss-vs-stored-NULL semantics).
-- [ddl-dml.md](references/ddl-dml.md): CREATE/DROP TABLE, CREATE TABLE AS SELECT (CTAS), CREATE/DROP VIEW (non-materialized, inlined per use, pinned column contract, invoker privileges, `pg_views`), the `EXPLAIN` statement and `explain()` table function (help/physical_plan/timing/config modes, per-mode result columns, `steps=n`), CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE, GRANT/REVOKE (valid targets: ON table / ON TABLE / ON SCHEMA / ON DATABASE / ON EXTERNAL SOURCE — `ON ALL TABLES IN SCHEMA` is rejected by the parser), the `ALTER TABLE IF EXISTS catalog=>table WITH (...)` Kafka-catalog rebind, SELECT/INSERT VALUES/INSERT SELECT/UPDATE/DELETE, SELECT INTO (table or file destination), PREPARE/EXECUTE, and transactions — all grounded in `query_planner` test cases and `bison_parser.y`.
+- [ddl-dml.md](references/ddl-dml.md): CREATE/DROP TABLE, CREATE TABLE AS SELECT (CTAS), CREATE/DROP VIEW (non-materialized, inlined per use, pinned column contract, invoker privileges, `pg_views`), the `EXPLAIN` statement and `explain()` table function (help/physical_plan/timing/config modes, per-mode result columns, `steps=n`), CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE, GRANT/REVOKE (valid targets: ON table / ON TABLE / ON SCHEMA / ON DATABASE / ON EXTERNAL SOURCE — `ON ALL TABLES IN SCHEMA` is rejected by the parser), the three `ALTER TABLE` forms (`ADD COLUMN` on a native table — nullable-only, metadata-only, one column per statement, with the `NOT NULL`/`DEFAULT`/view/external-table rejections; the `IF EXISTS catalog=>table WITH (...)` Kafka-catalog rebind; and `OWNER TO`), SELECT/INSERT VALUES/INSERT SELECT/UPDATE/DELETE, SELECT INTO (table or file destination), PREPARE/EXECUTE, and transactions — all grounded in `query_planner` test cases and `bison_parser.y`.
 - [kafka-iceberg.md](references/kafka-iceberg.md): Oxla + Redpanda enterprise differentiator — querying Redpanda/Kafka topics and Apache Iceberg tables via SQL. CREATE/ALTER/DROP STORAGE (s3/gcs/abs), CREATE/ALTER/DROP ICEBERG CATALOG (uri/warehouse/auth_type oauth2|basic|aws_sigv4|gcp + nested keys), CREATE/ALTER/DROP REDPANDA|KAFKA CATALOG (initial_brokers/schema_registry_url required, sasl_*, truststore, key_store_*, USING CATALOG bind/detach), CREATE TABLE / ALTER TABLE IF EXISTS catalog=>topic WITH (topic/schema_lookup_policy/error_handling_policy/struct_mapping_policy/confluent_wire_protocol plus the key/header decode options key_decode_mode/key_schema_subject/key_confluent_wire_protocol/key_schema_message_full_name/header_value_type), REFRESH, DESCRIBE/SHOW, GRANT ON EXTERNAL SOURCE, and the Redpanda Enterprise Iceberg-topic properties (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/invalid.record.action). Notes Redpanda Enterprise license requirements. Grounded in `bison_parser.y`, `connection_option_names.h`, `kafka/conversions.cpp`, `iceberg_catalog_parser.cpp`.
 - [data-loading.md](references/data-loading.md): COPY FROM / COPY TO with CSV/Parquet/ORC formats, STDIN/STDOUT, S3 credentials via `aws_cred(...)`, and bulk-loading patterns for analytical ingestion.
 - [functions-and-analytics.md](references/functions-and-analytics.md): Complete function reference — aggregates (SUM/AVG/COUNT/percentile_disc/percentile_cont/mode/CORR), string (CONCAT/SUBSTR/REPLACE/REGEXP_REPLACE/STARTS_WITH/ENDS_WITH/STRPOS/LENGTH/UPPER/LOWER), math (ABS/CEIL/FLOOR/ROUND/SQRT/EXP/LN/LOG10/trig), date-time (EXTRACT/TIMESTAMP_TRUNC/MAKE_DATE/MAKE_TIMESTAMP/CURRENT_TIMESTAMP), window functions, CTEs, CASE/IF, and ARRAY functions — all grounded in test cases.

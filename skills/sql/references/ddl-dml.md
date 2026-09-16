@@ -71,20 +71,101 @@ TRUNCATE orders;         -- TABLE keyword is optional
 
 ## ALTER TABLE
 
-Oxla does **not** support `ALTER TABLE ... ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`. The parser has no such production.
+There are three `ALTER TABLE` forms: `ADD COLUMN` on a native table, the
+Kafka-catalog rebind, and an ownership reassignment.
 
-There are two `ALTER TABLE` forms. The first re-binds an external Redpanda/Kafka
-catalog table. Use the `IF EXISTS` form — it is the canonical Kafka-catalog rebind
-syntax and the table name **must** use the `catalog=>table_name` external-source
-form (the parser raises `YYERROR` "Expected catalog=>table_name syntax"
-otherwise):
+### ADD COLUMN
+
+```sql
+ALTER TABLE orders ADD COLUMN discount BIGINT;
+ALTER TABLE orders ADD discount BIGINT;                       -- COLUMN keyword is optional
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount BIGINT;  -- idempotent
+ALTER TABLE IF EXISTS orders ADD COLUMN discount BIGINT;      -- missing table is a no-op
+ALTER TABLE analytics.orders ADD COLUMN discount BIGINT;      -- schema-qualified
+```
+
+Full form:
+
+```
+ALTER TABLE [IF EXISTS] [<schema>.]<table> ADD [COLUMN] [IF NOT EXISTS] <column> <type> [NULL]
+```
+
+`IF EXISTS` refers to the **table**; `IF NOT EXISTS` refers to the **column**.
+
+Semantics:
+
+- The added column is **always nullable**, and rows written before the `ALTER`
+  read back as `NULL` — not as an empty value. For an added array column the
+  pre-existing rows are `NULL`, not `{}`.
+- It is a **metadata-only** operation: no existing data file is read, rewritten,
+  or migrated, so the statement does not scale with table size.
+- The column is appended **last** in column order, which is what
+  `information_schema.columns.ordinal_position`, `pg_attribute.attnum`,
+  `system.columns`, and `DESCRIBE TABLE` report.
+- The column type may be **any type `CREATE TABLE` accepts** — a type `CREATE
+  TABLE` refuses is refused here too, so the addable and creatable type sets
+  cannot diverge. This includes arrays, `UUID`, geospatial types, and
+  user-defined composite types.
+- An `INSERT` that names the original columns keeps working and leaves the added
+  column `NULL`, so a client whose statements predate the `ALTER` needs no change.
+  For a scalar column type, an `UPDATE` can then set the new column on pre-existing
+  rows, and `DELETE` can filter on it (`WHERE <new_column> IS NULL` matches exactly
+  those rows).
+- **Adding an array column makes the table read-only for `UPDATE` and `DELETE`.**
+  Both are refused with `UPDATE on a table with array column is not supported` /
+  `DELETE on a table with array column is not supported`. This is the general rule
+  for any table with an array column — one created with the column behaves the
+  same — so it is not caused by `ADD COLUMN`, but a migration that adds
+  `tags TEXT[]` to a table that is later updated or purged row by row will hit it.
+  Adding a `DECIMAL`/`NUMERIC` or user-defined composite column currently also
+  breaks `UPDATE` on that table (`DELETE` still works); that failure surfaces as
+  an internal planner error whose text varies by build. If the table must stay
+  mutable, do not add a column of these types to it.
+- The caller must **own the table** (otherwise
+  `permission denied: must be owner of table <table>`).
+
+Not supported — each is an error, not a silent no-op:
+
+| Attempt | Result |
+|---|---|
+| `ADD COLUMN c INT NOT NULL` | `ADD COLUMN with NOT NULL is not supported; existing rows have no value for the new column` |
+| `ADD COLUMN c INT DEFAULT 5` | `DEFAULT is not supported in ALTER TABLE ... ADD COLUMN` |
+| Several columns in one statement (`ADD COLUMN a INT, ADD COLUMN b INT`) | syntax error — add one column per statement |
+| `DROP COLUMN` / `RENAME COLUMN` | syntax error — no such production |
+| `PRIMARY KEY` / `UNIQUE` column constraints | syntax error |
+| `ADD COLUMN c INT[][]` | `Multi-dimensional arrays are not supported` |
+| An external table (`ALTER TABLE cat=>t ADD COLUMN ...`) | `catalog=>table_name syntax is not supported in ALTER TABLE ... ADD COLUMN` |
+| A view | `cannot alter relation "<view>": it is not a table` — `IF EXISTS` does **not** mask this, because a view is the wrong kind of relation rather than an absent one |
+| A `pg_catalog` table | `permission denied for table <table>` |
+| A column name already on the table | `column "<name>" of relation "<table>" already exists` |
+| An unknown type | `type "<name>" does not exist` |
+
+`ADD COLUMN` applies to **native tables only** — a Kafka/Redpanda topic table or
+an Iceberg table is refused by the same check as a view, since neither is a
+native user table. Their columns follow the registered schema; re-bind them with
+the `WITH (...)` form below instead.
+
+A view stored as `SELECT *` over the altered table currently becomes invalid,
+because its stored column list no longer matches what its body produces
+(`view "<v>" is invalid: its definition no longer produces the columns stored at
+creation`). PostgreSQL, by contrast, freezes the `*` expansion at creation and
+keeps the view working, so re-check this behavior after an upgrade. Recreate the
+view to pick up the new column, or name the columns explicitly at creation so the
+added column does not affect it — see [CREATE / DROP VIEW](#create--drop-view).
+
+### Re-bind an external catalog table / reassign ownership
+
+The rebind form re-binds an external Redpanda/Kafka catalog table. Use the
+`IF EXISTS` form — it is the canonical Kafka-catalog rebind syntax and the table
+name **must** use the `catalog=>table_name` external-source form (the parser
+raises `YYERROR` "Expected catalog=>table_name syntax" otherwise):
 
 ```sql
 ALTER TABLE IF EXISTS my_catalog=>my_table WITH (schema_lookup_policy = 'LATEST');
 ```
 
-The second reassigns ownership; sibling forms exist for other resource kinds
-(schemas, views, types, storages, catalogs):
+The ownership form reassigns ownership; sibling forms exist for other resource
+kinds (schemas, views, types, storages, catalogs):
 
 ```sql
 ALTER TABLE orders OWNER TO analytics_role;
@@ -94,10 +175,12 @@ See [kafka-iceberg.md](kafka-iceberg.md) for the full Redpanda/Kafka and Iceberg
 catalog integration (an Oxla + Redpanda Enterprise differentiator), including all
 connection-option keys.
 
-To change a table's column structure, recreate it with `CREATE TABLE AS SELECT`:
+For a column change `ADD COLUMN` cannot express — dropping or renaming a column,
+changing a column's type, or adding a column with a backfilled value — recreate
+the table with `CREATE TABLE AS SELECT`:
 
 ```sql
--- Add a computed column: create a new table with the extra column
+-- Add a column with a computed value for existing rows
 CREATE TABLE orders_new AS
     SELECT *, amount * 0.1 AS discount FROM orders;
 ```
