@@ -310,7 +310,10 @@ was written so the decoded key and header values are queryable with SQL.
 This is the canonical Kafka-catalog rebind form. Use **`IF EXISTS`**, and the
 table name **must** use the `catalog=>table_name` external-source form (the parser
 raises `YYERROR` "Expected catalog=>table_name syntax" otherwise). This is the
-only `ALTER TABLE` form Oxla supports — there is no `ADD/DROP/RENAME COLUMN`.
+only `ALTER TABLE` form that applies to a topic table: `ALTER TABLE ... ADD
+COLUMN` is for native tables only and is refused on an external table (its
+columns follow the registered schema), and there is no `DROP/RENAME COLUMN` on
+any table. See [ddl-dml.md](ddl-dml.md#alter-table).
 
 ```sql
 ALTER TABLE IF EXISTS my_rp=>orders WITH (
