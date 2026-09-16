@@ -108,8 +108,19 @@ Semantics:
   user-defined composite types.
 - An `INSERT` that names the original columns keeps working and leaves the added
   column `NULL`, so a client whose statements predate the `ALTER` needs no change.
-  An `UPDATE` can then set the new column on pre-existing rows, and `DELETE` can
-  filter on it (`WHERE <new_column> IS NULL` matches exactly those rows).
+  For a scalar column type, an `UPDATE` can then set the new column on pre-existing
+  rows, and `DELETE` can filter on it (`WHERE <new_column> IS NULL` matches exactly
+  those rows).
+- **Adding an array column makes the table read-only for `UPDATE` and `DELETE`.**
+  Both are refused with `UPDATE on a table with array column is not supported` /
+  `DELETE on a table with array column is not supported`. This is the general rule
+  for any table with an array column — one created with the column behaves the
+  same — so it is not caused by `ADD COLUMN`, but a migration that adds
+  `tags TEXT[]` to a table that is later updated or purged row by row will hit it.
+  Adding a `DECIMAL`/`NUMERIC` or user-defined composite column currently also
+  breaks `UPDATE` on that table (`DELETE` still works); that failure surfaces as
+  an internal planner error whose text varies by build. If the table must stay
+  mutable, do not add a column of these types to it.
 - The caller must **own the table** (otherwise
   `permission denied: must be owner of table <table>`).
 
@@ -134,12 +145,13 @@ an Iceberg table is refused by the same check as a view, since neither is a
 native user table. Their columns follow the registered schema; re-bind them with
 the `WITH (...)` form below instead.
 
-A view stored as `SELECT *` over the altered table becomes invalid, because its
-stored column list no longer matches what its body produces (`view "<v>" is
-invalid: its definition no longer produces the columns stored at creation`).
-Recreate the view to pick up the new column, or name the columns explicitly at
-creation so the added column does not affect it — see
-[CREATE / DROP VIEW](#create--drop-view).
+A view stored as `SELECT *` over the altered table currently becomes invalid,
+because its stored column list no longer matches what its body produces
+(`view "<v>" is invalid: its definition no longer produces the columns stored at
+creation`). PostgreSQL, by contrast, freezes the `*` expansion at creation and
+keeps the view working, so re-check this behavior after an upgrade. Recreate the
+view to pick up the new column, or name the columns explicitly at creation so the
+added column does not affect it — see [CREATE / DROP VIEW](#create--drop-view).
 
 ### Re-bind an external catalog table / reassign ownership
 
