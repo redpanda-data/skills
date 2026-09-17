@@ -70,7 +70,7 @@ When creating an AWS network with BYOVPC, the `customer_managed_resources.aws` o
 | `dynamodb_table.arn` | ARN of pre-created DynamoDB table for Terraform locks |
 | `vpc.arn` | ARN of your pre-created VPC (pattern: `arn:aws:ec2:<region>:<account>:vpc/<vpc-id>`) |
 | `private_subnets.arns` | List of private subnet ARNs (pattern: `arn:aws:ec2:<region>:<account>:subnet/<subnet-id>`) |
-| `public_subnets.arns` | **PREVIEW, optional.** Public subnet ARNs, same pattern. Required only for a **dual-listener** cluster, whose public seed NLB is placed in these subnets. **Write-once:** it may be set on a network that has none (see [Updating a Network](#updating-a-network)), but not changed or cleared afterwards. |
+| `public_subnets.arns` | **Optional, beta.** Public subnet ARNs, same pattern. Required only for a **dual-listener** cluster, whose public seed NLB is placed in these subnets — provide one public subnet per availability zone that has a private (broker) subnet. Enabled per organization: without it, a request carrying this field is refused with a permission error telling you to contact Support. **Write-once:** it may be set on a network that has none (see [Updating a Network](#updating-a-network)), but not changed or cleared afterwards. |
 
 ```bash
 curl -s -X POST "${BASE}/v1/networks" \
@@ -245,15 +245,22 @@ parameter is `network.id` — this differs from GET/DELETE, which use
 `update_mask` is a separate required top-level parameter, passed in the query
 string rather than the body. This is the same shape as the cluster PATCH.
 
-Only two fields are settable after create, and **both are PREVIEW**:
+Only two fields are settable after create, and **both require per-organization enablement**:
 
 | Field | Notes |
 |---|---|
 | `egress_spec` | Centralized-egress configuration; see [Centralized egress](#centralized-egress-transit-gateway--hub-vpc-preview). |
 | `customer_managed_resources` | Typed as `Network.UpdatableCustomerManagedResources`, whose only member is `aws.public_subnets` — so this exists to let an existing BYOVPC network adopt dual listeners. Write-once. |
 
+`public_subnets` is the only member of the update message, so the mask accepts three equivalent
+spellings: `customer_managed_resources`, `customer_managed_resources.aws`, or
+`customer_managed_resources.aws.public_subnets`. Any other path under
+`customer_managed_resources` — including the `…public_subnets.arns` leaf — is rejected with
+`INVALID_ARGUMENT` ("not updatable"). Pass one of the three explicitly rather than relying on a
+mask derived from the body, which resolves to the `.arns` leaf and is refused.
+
 ```bash
-# Attach public subnets to an existing AWS BYOVPC network (PREVIEW)
+# Attach public subnets to an existing AWS BYOVPC network
 OP=$(curl -s -X PATCH "${BASE}/v1/networks/${NET_ID}?update_mask=customer_managed_resources" \
   -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d '{
@@ -436,6 +443,7 @@ BYOC supports a range of private-connectivity options. Most are configured as cl
 | Azure Private Link | cluster `azure_private_link` (`AzurePrivateLinkSpec`) | `enabled`, `allowed_subscriptions`, `connect_console`. |
 | VPC / VNet peering | network `NetworkPeeringService` | See [Network Peering](#network-peering-vpcvnet-peering) above. |
 | Centralized egress | network `egress_spec` (PREVIEW) | AWS Transit Gateway / GCP hub-VPC peering / Azure hub-VNet peering — see below. |
+| Dual listener mode | cluster `kafka_api`/`http_proxy`/`schema_registry` `connections[]` | One public and one private listener per service, each with its own endpoint and its own SASL or mTLS auth (beta, AWS only). On a BYOVPC network it also needs the network's `public_subnets`. See [Dual Listener Mode](clusters-and-agent.md#dual-listener-mode-public--private-listeners-per-service-beta-aws). |
 
 See the [Redpanda Cloud networking docs](https://docs.redpanda.com/cloud-data-platform/networking/) for the full guidance, including **BYOVPC on AWS (GA, March 2026)** as a fully customer-managed networking variant.
 

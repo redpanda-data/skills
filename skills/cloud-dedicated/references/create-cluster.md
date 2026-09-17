@@ -88,7 +88,7 @@ All fields below are sourced from `cloudv2/proto/public/cloud/redpanda/api/contr
 | `region` | string | Yes | Must match network's region |
 | `zones` | repeated string | Yes | At least 1; use 3 for multi-AZ |
 | `throughput_tier` | string | Yes | e.g. `tier-1-aws-v2-arm` — see Regions API |
-| `connection_type` | enum | No | `CONNECTION_TYPE_PUBLIC` (default) or `CONNECTION_TYPE_PRIVATE` |
+| `connection_type` | enum | No | `CONNECTION_TYPE_PUBLIC` (default) or `CONNECTION_TYPE_PRIVATE`. **Deprecated** in favour of the per-service `connections` list — see [Connection Types](#connection-types). |
 | `redpanda_version` | string | No | `major.minor` semver only (e.g. `24.1`); per proto comment: "Only major.minor semver is supported" |
 | `kafka_api` | KafkaAPISpec | No | SASL and mTLS settings |
 | `http_proxy` | HTTPProxySpec | No | mTLS settings for HTTP Proxy |
@@ -211,6 +211,39 @@ For private access, pair `CONNECTION_TYPE_PRIVATE` with a PrivateLink spec:
 - Azure: `azure_private_link.enabled = true` with `allowed_subscriptions`
 
 Source: `cluster.proto` (`ConnectionType` enum, `AWSPrivateLinkSpec`, `GCPPrivateServiceConnectSpec`, `AzurePrivateLinkSpec`).
+
+### `connection_type` is deprecated: per-service `connections`
+
+`connection_type` sets one topology for the whole cluster and is **deprecated** on the shared
+Cluster resource. Its replacement is a `connections` list on each service — `kafka_api`,
+`http_proxy`, and `schema_registry` — where each entry enables one listener with its own
+server-assigned endpoint and its own auth mode (**dual listener mode**):
+
+```json
+"kafka_api": {"connections": [
+  {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_SASL"}},
+  {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}
+]}
+```
+
+What this means for a Dedicated cluster today:
+
+- `connection_type` still works on create, and it is **not** updatable — connectivity changes go
+  through `connections`.
+- When a cluster uses `connections`, `GET /v1/clusters/{id}` reports one endpoint per listener in
+  `<service>.connections[]` (`config` plus `endpoint`); the `seed_brokers`, `url`, and `mtls`
+  endpoint fields on the service status are deprecated in favour of it.
+- `connections` cannot be combined with `connection_type` or with a per-service `sasl` block, must
+  be set on all three services with the same topology, and allows at most one connection per
+  `(type, auth.mode)` pair per service. A service with an mTLS connection needs its `mtls` block
+  enabled with a CA bundle.
+- Dual listener mode is **beta, AWS only** (Azure is rejected outright) and **enabled per
+  organization**, and it is not in the published Cloud API reference yet.
+- **TODO (needs human confirmation):** Redpanda's published guidance for dual listener mode covers
+  BYOC on AWS. The validation lives on the shared cluster API rather than a cluster-type check, but
+  availability for Dedicated is not documented — confirm with Redpanda Support before planning a
+  Dedicated cluster around it. The full rules and migration semantics are in the BYOC skill:
+  `/redpanda:cloud-byoc` → `references/clusters-and-agent.md`.
 
 ## Operation Polling
 

@@ -2,7 +2,7 @@
 
 This reference covers creating and managing BYOC clusters via the Control Plane API, plus the full `rpk cloud byoc` agent plugin flow.
 
-All field names and constraints are grounded in `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` and `pkg/cli/cloud/byoc/`.
+All field names and constraints are grounded in `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` and `pkg/cli/cloud/byoc/`. The dual-listener `connections` rules are grounded additionally in `cloudv2/apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (verified 2026-09-17).
 
 ---
 
@@ -29,7 +29,8 @@ Returns a `CreateClusterOperation`. The `operation.metadata.cluster_id` field ho
 
 | Field | Type | Notes |
 |---|---|---|
-| `connection_type` | enum | `CONNECTION_TYPE_PUBLIC` or `CONNECTION_TYPE_PRIVATE`. Set explicitly — the proto zero-value is `CONNECTION_TYPE_UNSPECIFIED` (0). |
+| `connection_type` | enum | `CONNECTION_TYPE_PUBLIC` or `CONNECTION_TYPE_PRIVATE`. Set explicitly — the proto zero-value is `CONNECTION_TYPE_UNSPECIFIED` (0). **Deprecated** in favour of the per-service `connections` list; the two are mutually exclusive. See [Dual Listener Mode](#dual-listener-mode-public--private-listeners-per-service-beta-aws). |
+| `kafka_api.connections[]` / `http_proxy.connections[]` / `schema_registry.connections[]` | []ConnectionSpec | One entry per listener: `{"type": CONNECTION_TYPE_PUBLIC\|PRIVATE, "auth": {"mode": AUTH_MODE_SASL\|AUTH_MODE_MTLS}}`. Replaces `connection_type` and the per-service `sasl` block. Beta, AWS only. See [Dual Listener Mode](#dual-listener-mode-public--private-listeners-per-service-beta-aws). |
 | `redpanda_version` | string | `major.minor` semver, e.g. `24.2` |
 | `customer_managed_resources` | object | Provider-specific IAM/storage resources you pre-created. See below. |
 | `kafka_api.mtls` / `kafka_api.sasl` | object | mTLS or SASL configuration |
@@ -101,6 +102,181 @@ curl -s -X POST "${BASE}/v1/clusters" \
   }
 }'
 ```
+
+---
+
+## Dual Listener Mode: public + private listeners per service (beta, AWS)
+
+A cluster is normally either public or private for all of its APIs (`connection_type`). Dual
+listener mode replaces that single choice with a **`connections` list on each cluster service** —
+`kafka_api`, `http_proxy`, and `schema_registry` — so VPC-internal clients reach the cluster over a
+private listener (no internet-gateway data-processing charges) while external clients keep using the
+public one.
+
+Each entry enables one listener and carries two fields:
+
+| Field | Values | Notes |
+|---|---|---|
+| `type` | `CONNECTION_TYPE_PUBLIC`, `CONNECTION_TYPE_PRIVATE` | Public = internet-facing load balancer; private = internal load balancer, reachable only from inside the VPC. Required. |
+| `auth.mode` | `AUTH_MODE_SASL`, `AUTH_MODE_MTLS` | SASL/SCRAM or mTLS, chosen per listener. Required. OIDC is not available on a connection. |
+
+Availability and gating:
+
+- **AWS only.** Setting `connections` on an Azure cluster is rejected with `INVALID_ARGUMENT` on
+  both create and update.
+- **Beta, enabled per organization.** A request that sets `connections` for an organization without
+  it returns `PERMISSION_DENIED` with reason `REASON_FEATURE_NOT_ENABLED`; contact Redpanda Support
+  to have it enabled. These fields are not listed in the published Cloud API reference yet, so
+  treat the shapes below as the contract.
+- Not configurable in the Cloud UI.
+
+### Configuration rules
+
+The API validates the whole request, not one service at a time:
+
+1. If any service sets `connections`, **all three must** (`kafka_api`, `http_proxy`,
+   `schema_registry`) — on create, and for any request that introduces the model.
+2. All three services must use the **same topology**: all public, all private, or both. Auth mode
+   may differ per service and per connection.
+3. Each `(type, auth.mode)` pair may appear **at most once per service**, so a service has at most
+   four connections: public SASL, public mTLS, private SASL, private mTLS. A duplicate pair is
+   rejected rather than deduplicated.
+4. `connections` cannot be combined with `connection_type` (cluster level) or with a per-service
+   `sasl` block — omit both. A set `connection_type` is rejected even when it agrees with the
+   connections you sent.
+5. If any connection on a service uses mTLS, that service's `mtls` block must have
+   `enabled: true` and a non-empty `ca_certificates_pem`; the public and private mTLS listeners of
+   that service share the bundle. `mtls.enabled: false` alongside an mTLS connection is rejected.
+6. Conversely, an `mtls` block on a service whose connections use **no** mTLS is rejected — drop
+   the block instead of leaving it behind.
+
+### Create a dual-listener cluster
+
+```bash
+curl -s -X POST "${BASE}/v1/clusters" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cluster": {
+      "name": "my-dual-listener-cluster",
+      "resource_group_id": "a0b40af9-0250-48ca-9417-783ed127ce42",
+      "type": "TYPE_BYOC",
+      "cloud_provider": "CLOUD_PROVIDER_AWS",
+      "region": "us-east-2",
+      "zones": ["use2-az1", "use2-az2", "use2-az3"],
+      "throughput_tier": "tier-1-aws-v3-arm",
+      "network_id": "cjcuq79c4vs94fcufc2g",
+      "kafka_api": {
+        "connections": [
+          {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_SASL"}},
+          {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}
+        ]
+      },
+      "http_proxy": {
+        "connections": [
+          {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_SASL"}},
+          {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}
+        ]
+      },
+      "schema_registry": {
+        "connections": [
+          {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_SASL"}},
+          {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}
+        ]
+      }
+    }
+  }' | jq .
+```
+
+For mTLS on the public listener and SASL on the private one, set `auth.mode` to `AUTH_MODE_MTLS` on
+the public entry and add the service's `mtls` block (rule 5):
+
+```json
+"kafka_api": {
+  "mtls": {
+    "enabled": true,
+    "ca_certificates_pem": ["-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----\n"]
+  },
+  "connections": [
+    {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_MTLS"}},
+    {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}
+  ]
+}
+```
+
+On a **BYOVPC** network the public seed load balancer needs customer-managed public subnets — one
+per availability zone that has a broker subnet. Register them on the network before creating the
+cluster; see [Networks](networks.md#aws-customer-managed-resources-network).
+
+Redpanda documents the Terraform provider as the primary path for this feature: the same list goes
+on the `redpanda_cluster` resource's `kafka_api`, `http_proxy`, and `schema_registry` blocks, where
+the values are lowercase (`type = "public"`, `auth = { mode = "sasl" }`) rather than the API's enum
+spellings, and each connection's server-assigned `endpoint` is readable after apply. Check the
+provider's own version constraints for the minimum release that carries `connections`, and the one
+that accepts `public_subnets` on `redpanda_network`.
+
+### Read each listener's endpoint
+
+Endpoints are server-assigned, one per connection, and `GET /v1/clusters/{id}` is the only place
+that reports them per listener. Each entry pairs the configuration under `config` with an
+`endpoint` — the seed broker address for `kafka_api`, the service URL for `http_proxy` and
+`schema_registry`:
+
+```bash
+curl -s "${BASE}/v1/clusters/${CLUSTER_ID}" -H "Authorization: Bearer ${TOKEN}" \
+  | jq '.cluster.kafka_api.connections[] | {type: .config.type, auth: .config.auth.mode, endpoint}'
+```
+
+The legacy `seed_brokers`, `url`, and `mtls` endpoint fields on the service status are deprecated in
+favour of `connections[].endpoint`. Give the private endpoint to in-VPC clients and the public
+endpoint to external ones.
+
+### Migrate an existing cluster
+
+`PATCH /v1/clusters/{cluster.id}` with the service's full connections list. Name each service's
+connections in `update_mask` (`kafka_api.connections`, or the whole `kafka_api` object) — a
+`connections` list carried in the body but **not** marked in the mask is ignored and the request
+falls back to the legacy listener path.
+
+```bash
+# Add a private SASL listener to each service of a public cluster
+curl -s -X PATCH "${BASE}/v1/clusters/${CLUSTER_ID}?update_mask=kafka_api.connections,http_proxy.connections,schema_registry.connections" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{
+    "kafka_api": {"connections": [
+      {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_SASL"}},
+      {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}]},
+    "http_proxy": {"connections": [
+      {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_SASL"}},
+      {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}]},
+    "schema_registry": {"connections": [
+      {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_SASL"}},
+      {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}]}
+  }' | jq '.operation.id'
+```
+
+Semantics to plan around:
+
+- **The list replaces the stored list.** Any connection you omit is removed, so send every
+  connection you want to keep.
+- **Public-only ↔ dual is self-service**, but the caller's role needs the
+  `controlplane_cluster_migrate_connectivity` permission on the cluster; without it the update
+  fails with a permission error naming the direction.
+- **Anything that changes the cluster between private-only and publicly reachable (public or dual)
+  is refused by this API** — the error directs you to contact Redpanda Support. Adding or removing a
+  public listener moves broker nodes between subnets, which the API cannot do; adding or removing a
+  private listener only adds or removes an internal load balancer.
+- A cluster created with `connection_type` adopts the model by setting `connections` on all three
+  services in one request (with `connection_type` dropped). There is **no path back**:
+  `connections` cannot be cleared, and each service must keep at least one connection.
+- **Changing a connection's auth mode** is not a topology change: it needs no migrate permission,
+  and on a cluster already using `connections` you can update one service at a time. A switched
+  connection keeps its endpoint (same host and port); adding a second auth mode on the same type
+  creates a new listener with its own endpoint. Because a switched listener keeps its port, read
+  `config.auth.mode` rather than inferring auth from the port number.
+
+Every `connections` change runs as a long-running operation — poll `GET /v1/operations/{id}` until
+`STATE_COMPLETED`, then re-read the endpoints.
 
 ---
 
@@ -289,7 +465,7 @@ DP_URL=$(curl -s "${BASE}/v1/clusters/${CLUSTER_ID}" \
 
 `PATCH /v1/clusters/{id}` with a `ClusterUpdate` body. Also returns an `UpdateClusterOperation`.
 
-Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`/`gcp_private_service_connect`/`azure_private_link`, `customer_managed_resources`, `cloud_provider_tags`, `maintenance_window_config`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`, `redpanda_connect`.
+Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`/`gcp_private_service_connect`/`azure_private_link`, `customer_managed_resources`, `cloud_provider_tags`, `maintenance_window_config`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`, `redpanda_connect`. `connection_type` is **not** updatable — changing a cluster's connectivity goes through the per-service `connections` list; see [Dual Listener Mode](#dual-listener-mode-public--private-listeners-per-service-beta-aws).
 
 **`update_mask` is a REQUIRED query parameter**, not a body field. From `cluster.proto` the `UpdateCluster` RPC is `patch: "/v1/clusters/{cluster.id}"` with `body: "cluster"`, plus a separate top-level required `update_mask` FieldMask. Two consequences:
 
