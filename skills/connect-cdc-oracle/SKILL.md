@@ -165,6 +165,7 @@ Every message emitted by `oracledb_cdc` carries these metadata fields (access wi
 | `transaction_id` | Oracle transaction ID in `USN.SLOT.SEQ` format; absent on snapshot (`read`) messages |
 | `source_ts_ms` | Wall-clock time when Oracle wrote the change to redo log (ms since epoch); absent on snapshot messages |
 | `commit_ts_ms` | Commit timestamp of the transaction (ms since epoch). On snapshot (`read`) messages this is Oracle's `SYSTIMESTAMP` captured when the snapshot SCN was taken — the same value for every snapshot row (since 4.99.0) |
+| `username` | Oracle database username of the session that performed the DML, from `V$LOGMNR_CONTENTS.USERNAME`. CDC only — absent on snapshot (`read`) messages, and on change events where Oracle reports a NULL or empty username (since 4.110.0) |
 | `schema` | Serialised table schema for use with `schema_registry_encode` processor; present when schema resolution succeeds |
 
 ## Performance and Scaling

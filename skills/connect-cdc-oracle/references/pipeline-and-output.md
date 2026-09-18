@@ -75,6 +75,7 @@ Access metadata in Bloblang with `meta("field_name")`.
 | `transaction_id` | string | CDC only | Transaction ID in `USN.SLOT.SEQ` format; absent on snapshot (`read`) messages |
 | `source_ts_ms` | string | CDC only | Milliseconds since Unix epoch when Oracle wrote the change to redo log; absent on snapshot messages |
 | `commit_ts_ms` | string | CDC + snapshot | Milliseconds since Unix epoch at transaction commit (from `V$LOGMNR_CONTENTS.TIMESTAMP` on the COMMIT redo record). On snapshot (`read`) messages this is Oracle's `SYSTIMESTAMP` captured when the snapshot SCN was taken, so every snapshot row carries the same value (since 4.99.0). |
+| `username` | string | CDC only | The Oracle database username of the session that performed the DML, from `V$LOGMNR_CONTENTS.USERNAME`. Absent on snapshot (`read`) messages, and on CDC events where Oracle reports a NULL or empty username — the field is only set when the value is non-empty, so downstream mappings must tolerate its absence (since 4.110.0). |
 | `schema` | string | When schema resolution succeeds | Serialised table schema (fingerprinted `schema.Common`) for use with `schema_registry_encode`. Present whenever schema lookup succeeds; absent if schema resolution fails (a warning is logged). |
 
 ---
