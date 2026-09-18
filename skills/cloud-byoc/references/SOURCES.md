@@ -58,6 +58,18 @@ still exists before describing the feature as GA:
   unconfirmed. `clusters-and-agent.md` hedges and tells the reader to pass the mask explicitly.
   Resolve by checking the gateway's mask handling for `UpdateCluster`, or by asking the page's
   author whether the example is missing the parameter, then tighten the wording.
+  Evidence found 2026-09-18, short of proof: `cluster_service.go`'s `fixFieldMaskCIAINFRA1279`
+  rewrites incoming mask paths of the form `cluster_configuration.custom_properties.<key>` to
+  `cluster_configuration.custom_properties.fields.<key>`. A per-map-key path is what a
+  body-derived mask produces — a hand-written mask names the field, not each key — and the TODO
+  above that function says the proper fix belongs "at the grpc gateway level", which attributes
+  the path shape to the gateway. If the gateway does derive leaf paths from the body for this
+  verb, then a `connections` body sent with no `update_mask` derives `<service>.connections`
+  (derivation stops at a repeated field), which is exactly the leaf the guards key off — the
+  published example would then be correct, and "ignored" would apply only to a mask that names
+  other paths, which *is* confirmed in `validateConnectionsUpdate`. One live call settles it:
+  PATCH a dual cluster's `connections` with no `update_mask` and see whether the listeners
+  change. Do not tighten the skill wording on the inference alone.
 
 ## Usage
 
