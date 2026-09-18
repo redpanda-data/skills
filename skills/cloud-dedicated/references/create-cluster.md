@@ -234,16 +234,16 @@ What this means for a Dedicated cluster today:
   `<service>.connections[]` (`config` plus `endpoint`); the `seed_brokers`, `url`, and `mtls`
   endpoint fields on the service status are deprecated in favour of it.
 - `connections` cannot be combined with `connection_type` or with a per-service `sasl` block, must
-  be set on all three services with the same topology, and allows at most one connection per
-  `(type, auth.mode)` pair per service. A service with an mTLS connection needs its `mtls` block
-  enabled with a CA bundle.
+  be set on all three services with the same topology when a cluster first adopts it, and allows at
+  most one connection per `(type, auth.mode)` pair per service. On a cluster already using
+  `connections`, a single service can be updated on its own as long as the topology still matches.
+  A service with an mTLS connection needs its `mtls` block enabled with a CA bundle.
 - Dual listener mode is **beta, AWS only** (Azure is rejected outright) and **enabled per
   organization**, and it is not in the published Cloud API reference yet.
-- **TODO (needs human confirmation):** Redpanda's published guidance for dual listener mode covers
-  BYOC on AWS. The validation lives on the shared cluster API rather than a cluster-type check, but
-  availability for Dedicated is not documented — confirm with Redpanda Support before planning a
-  Dedicated cluster around it. The full rules and migration semantics are in the BYOC skill:
-  `/redpanda:cloud-byoc` → `references/clusters-and-agent.md`.
+- **TODO (needs human confirmation):** Redpanda documents dual listener mode only for BYOC on AWS;
+  availability for Dedicated clusters is not documented — confirm with Redpanda Support before
+  planning a Dedicated cluster around it. The full rules and migration semantics are in the BYOC
+  skill: `/redpanda:cloud-byoc` → `references/clusters-and-agent.md`.
 
 ## Operation Polling
 

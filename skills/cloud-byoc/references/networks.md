@@ -70,7 +70,7 @@ When creating an AWS network with BYOVPC, the `customer_managed_resources.aws` o
 | `dynamodb_table.arn` | ARN of pre-created DynamoDB table for Terraform locks |
 | `vpc.arn` | ARN of your pre-created VPC (pattern: `arn:aws:ec2:<region>:<account>:vpc/<vpc-id>`) |
 | `private_subnets.arns` | List of private subnet ARNs (pattern: `arn:aws:ec2:<region>:<account>:subnet/<subnet-id>`) |
-| `public_subnets.arns` | **Optional, beta.** Public subnet ARNs, same pattern. Required only for a **dual-listener** cluster, whose public seed NLB is placed in these subnets — provide one public subnet per availability zone that has a private (broker) subnet. Enabled per organization: without it, a request carrying this field is refused with a permission error telling you to contact Support. **Write-once:** it may be set on a network that has none (see [Updating a Network](#updating-a-network)), but not changed or cleared afterwards. |
+| `public_subnets.arns` | **Optional, beta (PREVIEW in the API).** Public subnet ARNs, same pattern. Required only for a **dual-listener** cluster, whose public seed NLB is placed in these subnets — provide one public subnet per availability zone that has a private (broker) subnet. Enabled per organization: without it, a request carrying this field is refused with a permission error telling you to contact Support. **Write-once:** it may be set on a network that has none (see [Updating a Network](#updating-a-network)), but not changed or cleared afterwards. |
 
 ```bash
 curl -s -X POST "${BASE}/v1/networks" \
@@ -245,7 +245,7 @@ parameter is `network.id` — this differs from GET/DELETE, which use
 `update_mask` is a separate required top-level parameter, passed in the query
 string rather than the body. This is the same shape as the cluster PATCH.
 
-Only two fields are settable after create, and **both require per-organization enablement**:
+Only two fields are settable after create, and **both are PREVIEW in the API and require per-organization enablement**:
 
 | Field | Notes |
 |---|---|

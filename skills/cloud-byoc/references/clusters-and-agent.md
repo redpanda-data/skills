@@ -137,13 +137,19 @@ The API validates the whole request, not one service at a time:
 1. If any service sets `connections`, **all three must** (`kafka_api`, `http_proxy`,
    `schema_registry`) — on create, and for any request that introduces the model.
 2. All three services must use the **same topology**: all public, all private, or both. Auth mode
-   may differ per service and per connection.
+   may differ per service and per connection. On update this is checked against the effective
+   post-update state, so a single-service update on a cluster already using `connections` is
+   legitimate as long as its topology matches the other two services.
 3. Each `(type, auth.mode)` pair may appear **at most once per service**, so a service has at most
    four connections: public SASL, public mTLS, private SASL, private mTLS. A duplicate pair is
    rejected rather than deduplicated.
 4. `connections` cannot be combined with `connection_type` (cluster level) or with a per-service
-   `sasl` block — omit both. A set `connection_type` is rejected even when it agrees with the
-   connections you sent.
+   `sasl` block — omit both on create. A set `connection_type` is rejected even when it agrees
+   with the connections you sent. On **update** the check is mask-driven: `connection_type` is not
+   evaluated at all (it is not updatable), and the `sasl` reject fires only when the mask names
+   `<service>.sasl` (or the whole `<service>` object). A read-back body that still carries the
+   `sasl` block `GET` always projects is fine as long as the mask is the `<service>.connections`
+   leaf — the safe spelling for read-modify-write clients such as Terraform.
 5. If any connection on a service uses mTLS, that service's `mtls` block must have
    `enabled: true` and a non-empty `ca_certificates_pem`; the public and private mTLS listeners of
    that service share the bundle. `mtls.enabled: false` alongside an mTLS connection is rejected.
@@ -235,8 +241,10 @@ endpoint to external ones.
 
 `PATCH /v1/clusters/{cluster.id}` with the service's full connections list. Name each service's
 connections in `update_mask` (`kafka_api.connections`, or the whole `kafka_api` object) — a
-`connections` list carried in the body but **not** marked in the mask is ignored and the request
-falls back to the legacy listener path.
+`connections` list carried in the body but **not** named in an explicit mask is ignored and the
+request falls back to the legacy listener path. The published how-to's Cloud API example sends the
+same body with no `update_mask` at all; whether the API derives the mask from the body for a
+cluster update is not documented, so pass the mask explicitly as below rather than relying on it.
 
 ```bash
 # Add a private SASL listener to each service of a public cluster
