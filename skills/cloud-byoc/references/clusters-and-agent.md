@@ -259,9 +259,13 @@ Semantics to plan around:
 
 - **The list replaces the stored list.** Any connection you omit is removed, so send every
   connection you want to keep.
-- **Public-only ↔ dual is self-service**, but the caller's role needs the
+- **Public-only ↔ dual is self-service** on a standard BYOC cluster, but the caller's role needs the
   `controlplane_cluster_migrate_connectivity` permission on the cluster; without it the update
   fails with a permission error naming the direction.
+- **Not on BYOVPC.** A BYOVPC cluster always keeps its private connection, so it is never
+  public-only: every BYOVPC migration to or from dual listener mode goes through Redpanda Support.
+  The Terraform provider rejects a configuration that removes the private connection from a BYOVPC
+  cluster at plan time with a `Private Access Required` error.
 - **Anything that changes the cluster between private-only and publicly reachable (public or dual)
   is refused by this API** — the error directs you to contact Redpanda Support. Adding or removing a
   public listener moves broker nodes between subnets, which the API cannot do; adding or removing a
@@ -274,6 +278,13 @@ Semantics to plan around:
   connection keeps its endpoint (same host and port); adding a second auth mode on the same type
   creates a new listener with its own endpoint. Because a switched listener keeps its port, read
   `config.auth.mode` rather than inferring auth from the port number.
+- **The legacy `sasl`/`mtls` update path closes per service.** Once a service's listeners use
+  `connections`, a PATCH that masks that service's `sasl` or `mtls` (or the whole `<service>`
+  object) without a `connections` list in the body is rejected with `INVALID_ARGUMENT` — "cannot
+  update legacy sasl/mtls on `<service>` for a cluster with public/private listeners; use the
+  connections field instead". Change auth by editing `connections[].auth.mode`, and send the
+  service's `mtls` block alongside its `connections` (rules 5 and 6). Services still on the legacy
+  model are unaffected.
 
 Every `connections` change runs as a long-running operation — poll `GET /v1/operations/{id}` until
 `STATE_COMPLETED`, then re-read the endpoints.
@@ -465,7 +476,7 @@ DP_URL=$(curl -s "${BASE}/v1/clusters/${CLUSTER_ID}" \
 
 `PATCH /v1/clusters/{id}` with a `ClusterUpdate` body. Also returns an `UpdateClusterOperation`.
 
-Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`/`gcp_private_service_connect`/`azure_private_link`, `customer_managed_resources`, `cloud_provider_tags`, `maintenance_window_config`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`, `redpanda_connect`. `connection_type` is **not** updatable — changing a cluster's connectivity goes through the per-service `connections` list; see [Dual Listener Mode](#dual-listener-mode-public--private-listeners-per-service-beta-aws).
+Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`/`gcp_private_service_connect`/`azure_private_link`, `customer_managed_resources`, `cloud_provider_tags`, `maintenance_window_config`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`, `redpanda_connect`. `connection_type` is **not** updatable — changing a cluster's connectivity goes through the per-service `connections` list; see [Dual Listener Mode](#dual-listener-mode-public--private-listeners-per-service-beta-aws). On a service whose listeners already use `connections`, the `sasl`/`mtls` sub-fields can only be changed together with that service's `connections` list — a legacy-only PATCH is rejected (see [Migrate an existing cluster](#migrate-an-existing-cluster)).
 
 **`update_mask` is a REQUIRED query parameter**, not a body field. From `cluster.proto` the `UpdateCluster` RPC is `patch: "/v1/clusters/{cluster.id}"` with `body: "cluster"`, plus a separate top-level required `update_mask` FieldMask. Two consequences:
 

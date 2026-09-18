@@ -196,8 +196,11 @@ Decision rules:
 - Read endpoints from `connections[].endpoint` in `GET /v1/clusters/{id}`, not from the deprecated
   `seed_brokers`/`url` fields.
 - Migrating public-only ↔ dual is self-service (with the `controlplane_cluster_migrate_connectivity`
-  permission); anything that moves a cluster between private-only and publicly reachable goes
-  through Redpanda Support.
+  permission) — **except on BYOVPC clusters**, which always keep a private connection: every BYOVPC
+  migration to or from dual listener mode goes through Redpanda Support. Anything that moves any
+  cluster between private-only and publicly reachable also goes through Support.
+- Once a service uses `connections`, its legacy `sasl`/`mtls` update path is closed — the API
+  rejects such a PATCH and tells you to use `connections`. Change auth via `connections[].auth.mode`.
 
 Full rules, examples, and migration semantics: [Clusters and Agent](references/clusters-and-agent.md#dual-listener-mode-public--private-listeners-per-service-beta-aws).
 
