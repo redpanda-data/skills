@@ -7,6 +7,7 @@ description: >-
   tearing down BYOC clusters and Networks; wiring customer-managed IAM roles, buckets, or
   subnets into a cluster; setting up private connectivity (AWS PrivateLink, GCP Private
   Service Connect, Azure Private Link, VPC peering, or Transit Gateway egress);
+  configuring dual listener mode (a public and a private listener per service);
   registering cross-account AWS access; managing Shadow Link cross-cluster DR; running
   `rpk cloud byoc apply`; or enabling Enterprise features (Tiered Storage, Cloud Topics,
   Iceberg Topics, Continuous Data Balancing, RBAC, and more) on a BYOC cluster. For
@@ -88,6 +89,10 @@ CLUSTER_OP=$(curl -s -X POST "${BASE}/v1/clusters" \
     }
   }" | jq .)
 
+# connection_type is the legacy single-topology selector and is deprecated. For a cluster that
+# serves a public AND a private listener per service, send per-service "connections" instead —
+# see "Cluster Connectivity" below.
+
 # Note: tier names are version-dependent. Authoritative list:
 #   GET /v1/regions/CLOUD_PROVIDER_AWS  (or CLOUD_PROVIDER_GCP/CLOUD_PROVIDER_AZURE; cloud_provider is a path segment)
 #   or see https://docs.redpanda.com/redpanda-cloud/reference/tiers/byoc-tiers/
@@ -163,6 +168,41 @@ All mutating operations (CreateNetwork, CreateCluster, DeleteCluster, DeleteNetw
 | Scheduled Operations (PREVIEW) | `GET /v1/scheduled-operations` (list only) |
 | Resource Groups | `POST /v1/resource-groups`, `GET /v1/resource-groups/{id}`, `GET /v1/resource-groups` |
 | Regions | `GET /v1/regions/{cloud_provider}`, `GET /v1/regions/{cloud_provider}/{name}` |
+
+## Cluster Connectivity: `connection_type` vs `connections`
+
+`connection_type` (`CONNECTION_TYPE_PUBLIC` / `CONNECTION_TYPE_PRIVATE`) makes the whole cluster
+public or private and is **deprecated**. It is superseded by a per-service `connections` list on
+`kafka_api`, `http_proxy`, and `schema_registry` — **dual listener mode**, which serves a public and
+a private listener at the same time, each with its own server-assigned endpoint and its own
+SASL/SCRAM or mTLS auth:
+
+```json
+"kafka_api": {"connections": [
+  {"type": "CONNECTION_TYPE_PUBLIC",  "auth": {"mode": "AUTH_MODE_SASL"}},
+  {"type": "CONNECTION_TYPE_PRIVATE", "auth": {"mode": "AUTH_MODE_SASL"}}
+]}
+```
+
+Decision rules:
+
+- Want one connectivity mode for the whole cluster and nothing else? `connection_type` still works.
+- Need in-VPC clients on a private listener while external clients stay public? Use `connections`
+  — set them on **all three** services with the **same** topology, and omit `connection_type` and
+  the per-service `sasl` block (the API rejects either alongside `connections`).
+- Dual listener mode is **beta, AWS only, and enabled per organization**; Azure is rejected
+  outright, and the fields are not in the published API reference yet. It cannot be configured in
+  the Cloud UI.
+- Read endpoints from `connections[].endpoint` in `GET /v1/clusters/{id}`, not from the deprecated
+  `seed_brokers`/`url` fields.
+- Migrating public-only ↔ dual is self-service (with the `controlplane_cluster_migrate_connectivity`
+  permission) — **except on BYOVPC clusters**, which always keep a private connection: every BYOVPC
+  migration to or from dual listener mode goes through Redpanda Support. Anything that moves any
+  cluster between private-only and publicly reachable also goes through Support.
+- Once a service uses `connections`, its legacy `sasl`/`mtls` update path is closed — the API
+  rejects such a PATCH and tells you to use `connections`. Change auth via `connections[].auth.mode`.
+
+Full rules, examples, and migration semantics: [Clusters and Agent](references/clusters-and-agent.md#dual-listener-mode-public--private-listeners-per-service-beta-aws).
 
 ## Cluster State Machine
 
@@ -261,5 +301,5 @@ Key features and their nested keys (full detail in [Enterprise Features](referen
 
 - [BYOC Model and Auth](references/byoc-model-and-auth.md): What BYOC is vs Serverless, OAuth2 client-credentials flow, and the end-to-end provisioning sequence.
 - [Networks](references/networks.md): Creating the Network resource per cloud provider — AWS (VPC/subnet/IAM ARNs), GCP (network name, project, GCS bucket), Azure (VNet, subnets, resource groups). Plus VPC/VNet peering (NetworkPeeringService), Cloud Provider Access cross-account AWS provisioning (PREVIEW), and private connectivity / centralized egress (AWS PrivateLink incl. cross-region, GCP PSC, Azure Private Link, Transit Gateway egress). Field-level reference grounded in network.proto, network_peering.proto, cloud_provider_access.proto, and common.proto.
-- [Clusters and Agent](references/clusters-and-agent.md): ClusterCreate fields for BYOC (TYPE_BYOC, network_id, throughput_tier, customer_managed_resources, zones, cloud_provider_tags), the cluster PATCH/update_mask form, Operation lifecycle, Scheduled Operations (PREVIEW), control-plane Shadow Linking (ShadowLinkService, including the two Schema Registry replication modes and Confluent Schema Registry migration), and the full rpk cloud byoc install/apply/destroy/validate flow.
+- [Clusters and Agent](references/clusters-and-agent.md): ClusterCreate fields for BYOC (TYPE_BYOC, network_id, throughput_tier, customer_managed_resources, zones, cloud_provider_tags), dual listener mode (per-service `connections`, endpoints, and migration semantics), the cluster PATCH/update_mask form, Operation lifecycle, Scheduled Operations (PREVIEW), control-plane Shadow Linking (ShadowLinkService, including the two Schema Registry replication modes and Confluent Schema Registry migration), and the full rpk cloud byoc install/apply/destroy/validate flow.
 - [Enterprise Features](references/enterprise-features.md): Enabling Redpanda Enterprise differentiators on a BYOC cluster (license included with the Cloud subscription) via `cluster_configuration.custom_properties` and topic properties — Tiered Storage, Cloud Topics, Iceberg Topics, Continuous Data Balancing, Shadow Linking DR, Remote Read Replicas, Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/Kerberos, FIPS, Server-Side Schema ID Validation, and Leadership Pinning — with their nested config keys and license-expiration behavior, grounded in the licensing overview and per-feature docs.
