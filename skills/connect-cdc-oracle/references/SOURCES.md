@@ -4,19 +4,21 @@ Maps each file in `skills/connect-cdc-oracle/` to the source paths it derives fr
 syncs and human maintainers know exactly where to verify claims.
 
 The skill documents the `oracledb_cdc` **input** of Redpanda Connect (LogMiner-based CDC from
-Oracle Database). Two public repos are the ground truth:
+Oracle Database). Two repos are the ground truth — one public, one private:
 
 - **`redpanda-data/connect`** (Go) — the connector implementation under `internal/impl/oracledb/`.
   This is an **enterprise** connector (Redpanda Community License; `license.CheckRunningEnterprise`),
   introduced in **4.83.0**. Connect is versioned by release **tag**; verify against a released tag,
   not `main`, when pinning behavior.
-- **`redpanda-data/rp-connect-docs`** — the connector reference page. The field list, types, and
+- **`redpanda-data/rp-connect-docs`** (**private**) — the connector reference page. Only provenance
+  surfaces (this file, `Source:` headers) may name it or its paths; never a skill body, PR
+  description, or commit message. The field list, types, and
   defaults are **auto-generated** into a partial from the Go config; overrides live in
   `docs-data/overrides.json`. Do **not** hardcode field defaults here — defer to the generated partial.
 
 Read both via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `gh api .../contents/`.
-Avoid `gh search code` (rate-limited). All connect paths verified on `redpanda-data/connect@main`;
-docs paths on `redpanda-data/rp-connect-docs@main`.
+Avoid `gh search code` (rate-limited). Connect paths are verified at the release **tag** named in
+the newest sync-log entry below; docs paths on `redpanda-data/rp-connect-docs@main`.
 
 ## File-to-source table
 
@@ -48,8 +50,8 @@ docs paths on `redpanda-data/rp-connect-docs@main`.
 ## Sync log
 
 - **Verified against Connect v4.110.0 (2026-09-18 sync).** No config fields changed. The connector gained one new metadata field, and the LogMiner read path was reworked internally with no user-facing surface:
-  - **New `username` metadata field (#4674).** `logminer/logminer.go` now selects `USERNAME` in the `V$LOGMNR_CONTENTS` content query; `logminer/sqlredo/events.go` carries it as `RedoEvent.Username` (`sql.NullString`) and `DMLEvent.Username` (`string`); `logminer/sqlredo/parser.go` copies it only when `redoEvent.Username.Valid`; `replication/stream_message.go` adds `MessageEvent.Username`; and `batcher.go` `Publish()` emits it as `msg.MetaSet("username", ...)` **only when the value is non-empty**. So the key is absent whenever Oracle reports NULL or an empty username. `replication/snapshot.go` was not touched and the field is new in this release, so nothing on the snapshot path sets it — snapshot (`read`) messages never carry `username`. Added as a row to the metadata tables in `SKILL.md` and `pipeline-and-output.md`, matching the wording of the connector's own doc string (`input_oracledb_cdc.go`, rendered into `modules/components/pages/inputs/oracledb_cdc.adoc`).
-  - **Prepared statements on the LogMiner path (#4821) — no skill change.** `logminer/logminer.go`, `logminer/session.go`, and `logminer/cache_resource.go` now prepare and cache the LogMiner content, current-SCN, ADD_LOGFILE, and END_LOGMNR statements (new `stmtCache` plus `Close()` methods that release them). This is an internal performance/resource change: no config field, privilege, metadata key, or error string moved, so no skill surface is affected. The skill's existing cursor discussion is about *snapshot* cursors and is unrelated. Flagged only in case a future release exposes an Oracle cursor-limit (`OPEN_CURSORS`) implication worth documenting in `setup-oracle.md` — nothing in the source asserts one today.
+  - **New `username` metadata field (#4674).** `logminer/logminer.go` now selects `USERNAME` in the `V$LOGMNR_CONTENTS` content query; `logminer/sqlredo/events.go` carries it as `RedoEvent.Username` (`sql.NullString`) and `DMLEvent.Username` (`string`); `logminer/sqlredo/parser.go` copies it only when `redoEvent.Username.Valid`; `replication/stream_message.go` adds `MessageEvent.Username`; `logminer/cache_resource.go` adds `Username` to `serializedDMLEvent` (`json:"username"`) and copies it in `marshalEvent`/`unmarshalEvent`, so a buffered transaction replayed from the Oracle-based checkpoint cache keeps the field; and `batcher.go` `Publish()` emits it as `msg.MetaSet("username", ...)` **only when the value is non-empty**. So the key is absent whenever Oracle reports NULL or an empty username. `replication/snapshot.go` was not touched and the field is new in this release, so nothing on the snapshot path sets it — snapshot (`read`) messages never carry `username`. Added as a row to the metadata tables in `SKILL.md` and `pipeline-and-output.md`, matching the wording of the connector's own doc string (`input_oracledb_cdc.go`, rendered into `modules/components/pages/inputs/oracledb_cdc.adoc`).
+  - **Prepared statements on the LogMiner path (#4821) — no skill change.** `logminer/session.go` gains the `stmtCache` (`getOrPrepare`/`closeAll`) for the ADD_LOGFILE and START_LOGMNR statements and prepares END_LOGMNR per call; `logminer/logminer.go` holds the prepared content, current-SCN, and log-file-range statements plus the `Close()` methods that release them. This is an internal performance/resource change: no config field, privilege, metadata key, or error string moved, so no skill surface is affected. The skill's existing cursor discussion is about *snapshot* cursors and is unrelated. Flagged only in case a future release exposes an Oracle cursor-limit (`OPEN_CURSORS`) implication worth documenting in `setup-oracle.md` — nothing in the source asserts one today.
 
 - **Verified against Connect v4.108.0 (2026-09-04 sync).** No config fields changed. `ORA-01291` gained a second, distinct cause with a different fix, and the log-file selection now excludes prior database incarnations:
   - `logminer/logminer.go` `GetLogsBySCNRange` joins `V$ARCHIVED_LOG` to `V$DATABASE` on **both** `RESETLOGS_CHANGE#` and `RESETLOGS_TIME`, so archived logs from a prior incarnation are never selected. The filter is on the archived-log branch of the `UNION` only; the online-redo branch (`V$LOGFILE`/`V$LOG`) is unchanged.
