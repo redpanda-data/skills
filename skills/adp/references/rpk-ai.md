@@ -1,4 +1,4 @@
-Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status; `--no-browser` flag and always-fresh-grant behavior in `login.go`), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/internal/cmd/trigger` (`cmd.go`, `create.go`, `update.go`, `runs.go`, `gitops.go`: the `trigger` command tree, kind flags, pause/resume, `runs`, GitOps wiring), `cloudv2/apps/rpai/internal/gitops` (`doc.go`, `command.go`: the complete-manifest comparison rule and the `apply`/`diff` long help shared by every resource group), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing; and in `claude.go` the transport-mode neutralization — `buildClaudeEnv`'s scrub list, `claudeRouteEnv`'s overlay pins, `claudeOnDiskTransportModeSet` / `claudeOnDiskAuthTokenSet` and `claudeEnvTruthy` for the two on-disk `settings.json` guards), `cloudv2/apps/rpai/internal/cmd/llm/pricing.go` (`--pricing` flag: keys, USD-per-million units, merge-into-`provider-models` behavior) and `cloudv2/apps/rpai/internal/cmd/generated.go` (`AddPricingSugar` wiring — `llm create`/`update` only). Published-docs coverage notes are checked against the `adp-docs` `rpk-ai-*.adoc` reference pages. Evidence date: 2026-09-14 (`trigger` command tree and the shared GitOps complete-manifest rule verified against `internal/cmd/trigger`, `internal/gitops` and `testdata/commands-snapshot.md` on 2026-09-14; `run claude` transport-mode neutralization and the two on-disk `settings.json` guards verified against `claude.go` on 2026-09-14; `auth login --no-browser` flag and always-fresh-grant behavior verified against `login.go` on 2026-08-24; `--pricing` flag on `llm create`/`update` verified 2026-08-17; `connection` subcommands re-verified 2026-08-03; `run` subcommand flags last verified 2026-07-06).
+Source: `cloudv2/apps/rpai/internal/cmd/root.go` (subcommand tree lines 134-150, persistent flags lines 199-237, version subcommand lines 631-641), `cloudv2/apps/rpai/internal/auth` (token-resolver chain and OAuth device flow), `cloudv2/apps/rpai/internal/cmd/auth` (login, logout, token, status; `--no-browser` flag and always-fresh-grant behavior in `login.go`), `cloudv2/apps/rpai/internal/cmd/env` (add, list, use, show, rename, delete), `cloudv2/apps/rpai/internal/cmd/connection` (list, revoke; `ListConnections`/`RevokeConnection` RPCs), `cloudv2/apps/rpai/internal/cmd/trigger` (`cmd.go`, `create.go`, `update.go`, `runs.go`, `gitops.go`: the `trigger` command tree, kind flags, pause/resume, `runs`, GitOps wiring), `cloudv2/apps/rpai/internal/gitops` (`doc.go`, `command.go`: the complete-manifest comparison rule and the `apply`/`diff` long help shared by every resource group), `cloudv2/apps/rpai/testdata/commands-snapshot.md` (golden help output), `cloudv2/apps/rpai/internal/config/cloudenv.go` (config path lines 179-181), `cloudv2/apps/rpai/.goreleaser.yaml` (platforms, no FIPS build), `redpanda-data/redpanda/src/go/rpk/pkg/cli/ai/` (rpk-side install path and error messages), `cloudv2/apps/rpai/internal/cmd/run/claude.go` and `codex.go` (`run claude`/`run codex` flags, provider-type gating, Bedrock SigV4 routing; and in `claude.go` the transport-mode neutralization — `buildClaudeEnv`'s scrub list, `claudeRouteEnv`'s overlay pins, `claudeOnDiskTransportModeSet` / `claudeOnDiskAuthTokenSet` and `claudeEnvTruthy` for the two on-disk `settings.json` guards), `cloudv2/apps/rpai/internal/cmd/llm/pricing.go` (`--pricing` flag: keys, USD-per-million units, merge-into-`provider-models` behavior) and `cloudv2/apps/rpai/internal/cmd/generated.go` (`AddPricingSugar` wiring — `llm create`/`update` only). Published-docs coverage notes are checked against the `adp-docs` `rpk-ai-*.adoc` reference pages. Evidence date: 2026-09-21 (`llm create` flag surface — positional `NAME`, no `--type`, group-prefixed `--<group>.<field>` flags, `--provider-models` — re-verified against `testdata/commands-snapshot.md` and live `rpk ai llm create --help` on 2026-09-21; `trigger` command tree and the shared GitOps complete-manifest rule verified against `internal/cmd/trigger`, `internal/gitops` and `testdata/commands-snapshot.md` on 2026-09-14; `run claude` transport-mode neutralization and the two on-disk `settings.json` guards verified against `claude.go` on 2026-09-14; `auth login --no-browser` flag and always-fresh-grant behavior verified against `login.go` on 2026-08-24; `--pricing` flag on `llm create`/`update` verified 2026-08-17; `connection` subcommands re-verified 2026-08-03; `run` subcommand flags last verified 2026-07-06).
 
 # rpk ai CLI Reference
 
@@ -186,28 +186,35 @@ Aliases: `llm-provider`, `provider`, `lp`. Source: `internal/cmd/llm/cmd.go:20`.
 
 Subcommands: `create`, `get`, `list`, `update`, `delete`, `check`, `apply`, `diff`
 
-Key flags for `llm create`:
+`llm create` takes the provider name as a **positional argument** and has no `--type` flag. The provider type is selected by which provider-config flag group you set — `openai-config`, `anthropic-config`, `google-config`, `bedrock-config` or `openai-compatible-config` — and setting flags from two groups is an error. Every provider-config flag is generated from its proto field and carries the group as a dotted prefix (`--<group>.<field>`), so there are no bare `--api-key-ref`, `--base-url` or `--bedrock-region` flags. Key flags:
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--name string` | yes | LLM provider name |
-| `--type string` | yes | Provider type: `openai`, `anthropic`, `google`, `bedrock` |
-| `--display-name string` | no | Human-readable label |
-| `--base-url string` | no | Override base URL |
-| `--api-key-ref string` | no | Secret reference for the API key |
-| `--models []string` | no | Allowed model list |
-| `--enabled bool` | no | Default true |
-| `--authorization-passthrough bool` | no | Anthropic enterprise/Max OAuth passthrough |
-| `--bedrock-region string` | no | AWS region (Bedrock only) |
-| `--bedrock-access-key-id-ref string` | no | Secret reference for AWS access key (Bedrock only) |
-| `--pricing []string` | no | Per-model pricing override in USD per million tokens; repeatable. Also available on `llm update`. See below |
+| Flag | Description |
+|------|-------------|
+| `NAME` (positional) | LLM provider name. There is no `--name` flag |
+| `--display-name string` | Human-readable label |
+| `--provider-models stringArray` | Model identifiers; repeatable, bare names (comma-split) or a protojson object. Replaces the full list on `update` |
+| `--enabled` | True when set; pass `--enabled=false` to disable |
+| `--openai-config.api-key-ref string`, `--anthropic-config.api-key-ref string`, `--google-config.api-key-ref string`, `--openai-compatible-config.api-key-ref string` | Secret-store reference for the API key. Setting one selects that provider type. Leave empty for authorization passthrough or a no-auth endpoint |
+| `--openai-config.base-url string`, `--anthropic-config.base-url string`, `--google-config.base-url string`, `--bedrock-config.base-url string`, `--openai-compatible-config.base-url string` | Override the default endpoint |
+| `--anthropic-config.authorization-passthrough` | Forward the caller's upstream credential instead of a stored key; boolean, `=false` to disable. The OpenAI-family flags follow the same generation rule — `--openai-config.authorization-passthrough` and `--openai-compatible-config.authorization-passthrough` — but that spelling is derived from the field name and not yet confirmed in a golden help output, so check `rpk ai llm create --help` before relying on it. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough) for the credential rules and the `X-Redpanda-Cloud-Token` requirement |
+| `--bedrock-config.region string` (alias `--region`) | AWS region; required within the Bedrock group |
+| `--bedrock-config.static-credentials.access-key-id-ref string` (alias `--access-key-id-ref`), `--bedrock-config.static-credentials.secret-access-key-ref string` (alias `--secret-access-key-ref`) | Static AWS credentials; both required within their sub-group |
+| `--bedrock-config.assume-role.role-arn string` (alias `--role-arn`), `--bedrock-config.assume-role.external-id string`, `--bedrock-config.assume-role.session-name string` | STS assume-role credentials; `role-arn` is required within its sub-group |
+| `--transcripts.record-input-messages`, `--transcripts.record-output-messages` | Transcript content capture; boolean, `=false` to disable |
+| `--guardrail string` | Guardrail resource name to attach |
+| `--tags stringArray` | `key=value`, repeatable; replaces the full map on `update` |
+| `-f, --filename string` | Manifest to create from (YAML or JSON; `-` for stdin). Flags override file values |
+| `--dry-run` | Print the request that would be sent and exit without calling the server |
+| `--pricing stringArray` | Per-model pricing override in USD per million tokens; repeatable. Also available on `llm update`. See below |
+
+Because the flag set is generated from the API, a new provider type or field shows up as a new group or dotted flag rather than as a new value of some `--type` flag. Confirm the current set with `rpk ai llm create --help`.
 
 **`--pricing` (per-model pricing overrides).** Available on both `rpk ai llm create` and `rpk ai llm update`, repeatable once per model. Each value is a comma-separated key list — `model=<name>,input=<usd>,output=<usd>,cached=<usd>,cache_write_5m=<usd>,cache_write_1h=<usd>` — where `model` is required and at least one rate key must be set. Rates are **US dollars per million tokens** (for example `input=2.50`); an omitted rate keeps the catalog default, and an explicit `0` sets a free rate. Naming the same model twice is rejected.
 
 The flag is convenience sugar over `--provider-models`: it folds each rate card onto the matching model's `custom_pricing` by name (appending the model if it is not already in the list), so on `update` it follows the same replace-the-whole-list semantics as `--provider-models`. Hand-written `--provider-models` protojson that carries a `custom_pricing` object keeps working unchanged. The underlying API field is `ProviderModelPricing`, stored in microcents per million (the CLI converts from USD); the five rate keys `input`, `output`, `cached`, `cache_write_5m`, and `cache_write_1h` map to `input_per_million`, `output_per_million`, `cached_input_per_million`, `cache_creation_5m_per_million`, and `cache_creation_1h_per_million` respectively. See [gateway-and-providers.md](gateway-and-providers.md).
 
 ```bash
-rpk ai llm create --name openai-prod --type openai --api-key-ref OPENAI_KEY \
+rpk ai llm create openai-prod --openai-config.api-key-ref OPENAI_KEY \
   --pricing model=gpt-4o,input=2.50,output=10.00,cached=1.25
 ```
 
@@ -355,6 +362,8 @@ Launches OpenAI Codex with a throwaway `CODEX_HOME` pointed at the gateway's Ope
 | `--print-config` | (none) | Print the generated Codex config.toml and exit |
 
 Under `rpk ai`, `run codex` rejects a static `--token` (its refresh command can't carry the token off-disk); use `rpk ai auth login` instead.
+
+`run codex` wires API-key-style gateway authentication for the provider it targets. It does **not** set up ChatGPT/Codex *subscription* passthrough: that needs a provider with `authorization_passthrough` and the Codex base URL, and a Codex config that sends the subscription token in `Authorization` and the gateway token in `X-Redpanda-Cloud-Token` — configure Codex by hand for that case. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough).
 
 ```bash
 rpk ai run codex -L openai -m gpt-5.3-codex -e high -- --ask-for-approval never
