@@ -191,13 +191,13 @@ Key flags for `llm create`:
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--name string` | yes | LLM provider name |
-| `--type string` | yes | Provider type: `openai`, `anthropic`, `google`, `bedrock` |
+| `--type string` | yes | Provider type: `openai`, `anthropic`, `google`, `bedrock`, plus the OpenAI-compatible type and any type added since — confirm the accepted values live with `rpk ai llm create --help` |
 | `--display-name string` | no | Human-readable label |
 | `--base-url string` | no | Override base URL |
 | `--api-key-ref string` | no | Secret reference for the API key |
 | `--models []string` | no | Allowed model list |
 | `--enabled bool` | no | Default true |
-| `--authorization-passthrough bool` | no | Anthropic enterprise/Max OAuth passthrough |
+| `--authorization-passthrough bool` | no | Forward the caller's upstream credential instead of a stored key. Available on `anthropic`, `openai` and `openai-compatible` providers (not `google` or `bedrock`); the flag is generated from the provider-config group's `authorization_passthrough` field, so read its exact spelling for your provider type from `rpk ai llm create --help`. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough) for the credential rules and the `X-Redpanda-Cloud-Token` requirement |
 | `--bedrock-region string` | no | AWS region (Bedrock only) |
 | `--bedrock-access-key-id-ref string` | no | Secret reference for AWS access key (Bedrock only) |
 | `--pricing []string` | no | Per-model pricing override in USD per million tokens; repeatable. Also available on `llm update`. See below |
@@ -355,6 +355,8 @@ Launches OpenAI Codex with a throwaway `CODEX_HOME` pointed at the gateway's Ope
 | `--print-config` | (none) | Print the generated Codex config.toml and exit |
 
 Under `rpk ai`, `run codex` rejects a static `--token` (its refresh command can't carry the token off-disk); use `rpk ai auth login` instead.
+
+`run codex` wires API-key-style gateway authentication for the provider it targets. It does **not** set up ChatGPT/Codex *subscription* passthrough: that needs a provider with `authorization_passthrough` and the Codex base URL, and a Codex config that sends the subscription token in `Authorization` and the gateway token in `X-Redpanda-Cloud-Token` — configure Codex by hand for that case. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough).
 
 ```bash
 rpk ai run codex -L openai -m gpt-5.3-codex -e high -- --ask-for-approval never
