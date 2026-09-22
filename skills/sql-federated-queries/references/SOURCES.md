@@ -39,7 +39,7 @@ branch); all redpanda/docs paths against `redpanda-data/redpanda` and `redpanda-
 - **Attachment version drift**: `redpanda-iceberg-source-config.md` cites `modules/reference/attachments/redpanda-properties-v26.1.8.json`, but the file present in `redpanda-data/docs` is now `redpanda-properties-v26.1.10.json`. Update the citation (or drop the version pin).
 - **`topic-properties.adoc` is auto-generated** (>55 KB). Upstream source of truth for `redpanda.iceberg.*` / schema-validation topic properties is `redpanda-data/redpanda` (`src/v/config/configuration.cc`, `src/v/datalake/`). Per-property defaults not each line-verified this pass.
 - **Oxla PostgreSQL wire / `network.postgresql.port`** (SKILL quickstart) not verified against an Oxla config source path this pass — locate/cite the Oxla network-config definition or mark as deploy-time config.
-- **Oxla is on the private repo's default branch, unversioned here** — if Oxla adopts release tags, re-verify against the shipped tag.
+- **Verify Oxla claims at the shipped tag, not the default branch**: the `<version>-rcN` tag on `release/X.Y` for the version `redpanda-data/cloudv2` pins (`vars.redpanda_oxla_version` in `install-pack/*.yml`, `redpanda-oxla:` in `adp/images.yaml`; the lowest if they differ). The Oxla paths in this map were located on the default branch; re-confirm them at that tag.
 - Individual SQL option **defaults and accepted-value enums** (e.g. `struct_mapping_policy` `FLATTEN`/`VARIANT` "parsed but rejected", `schema_lookup_policy` naming) come from `conversions.cpp` / `schema_lookup_policy.h` / the metastore `.cpp` files — re-open and confirm exact string literals before editing.
 
 ## Usage
