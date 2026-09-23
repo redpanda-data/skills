@@ -135,6 +135,35 @@ EXPLAIN CONFIG;
 Full mode, column, and `explain()` argument reference: `/redpanda:sql`
 (`references/ddl-dml.md`).
 
+### Step 8 — For a slow Parquet or Iceberg scan, test the read strategy
+
+A native Parquet read normally uses **late materialization**: it decodes the
+columns a pushed-down predicate needs first, then decodes the remaining columns
+only for the rows that survived. That is a win when the predicate rejects most
+rows and a loss when it rejects almost none, since the scan then pays for two
+passes over the data. The session option turns the split off, forcing a one-pass
+read of every column:
+
+```sql
+-- What is in force for this session (the live surface — do not assume a default)
+SHOW oxla.parquet_late_materialization;
+
+-- Force single-pass reads for this session, then re-run the query
+SET oxla.parquet_late_materialization = off;
+
+-- Restore
+SET oxla.parquet_late_materialization = on;
+```
+
+- The value is boolean (`on`/`off`, `1`/`0`); anything else is rejected with
+  `parameter "oxla.parquet_late_materialization" requires Boolean value`.
+- It is per-session and captured when the query is planned, so set it before
+  running the query you are measuring — it does not affect queries already planned.
+- It reaches every native Parquet read, which includes Iceberg table scans.
+- Switching it off never changes results, only the read strategy. If the query
+  gets faster with it off, the predicate was not selective enough to repay the
+  split; if nothing changes, the planner had already declined to split.
+
 ---
 
 ## Playbook 2: Diagnose Memory / OOM Pressure
@@ -203,7 +232,9 @@ Adjust `resource_management.max_concurrent_queries` to reduce peak concurrent me
 
 ```yaml
 resource_management:
-  max_concurrent_queries: 50     # Default is 100; reduce under memory pressure
+  max_concurrent_queries: 50     # Reduce under memory pressure; the shipped
+                                 # default varies by version — read the running
+                                 # value before changing it
   query_queue_timeout: 30 s      # How long a query waits before admission timeout
 ```
 
@@ -382,7 +413,10 @@ FROM system.queries
 WHERE finished IS NULL;
 ```
 
-Compare against `resource_management.max_concurrent_queries` (default: 100).
+Compare against the cluster's own `resource_management.max_concurrent_queries`.
+The shipped default has changed across Oxla versions, so read the running value
+(from the node's config file, or the admin API's config surface) rather than
+assuming one.
 
 ### Step 3 — Check if specific queries are holding the system
 
