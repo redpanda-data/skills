@@ -359,6 +359,10 @@ GRANT USAGE  ON EXTERNAL SOURCE my_rp EXTERNAL_ACCESS 'read' TO analyst;
 REVOKE SELECT ON EXTERNAL SOURCE my_rp FROM analyst;
 ```
 
+The external-source level defines two relation privileges, `SELECT` and
+`INSERT`, so `GRANT ALL ON EXTERNAL SOURCE <catalog>` confers both. Grant
+`SELECT` explicitly when read-only access is what you intend.
+
 ---
 
 ## Related Redpanda Enterprise Iceberg-topic properties
