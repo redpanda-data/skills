@@ -577,10 +577,18 @@ from `CREATE TABLE`:
 
 Such a column behaves like any other map value: subscript it with `m[key]`, and the
 lookup, miss-vs-stored-`NULL`, and last-duplicate-wins rules above all apply
-unchanged. The key-type check is re-applied to the external type, so a map whose key
-type is not in the supported key set is rejected when the query is planned. A lookup
-result is a first-class value of the map's value type — descend into it (`(m['o']).a`
-for a record value, `m['nums'][2]` for an array value) or use it in an expression.
+unchanged. A lookup result is a first-class value of the map's value type — descend
+into it (`(m['o']).a` for a record value, `m['nums'][2]` for an array value) or use
+it in an expression.
+
+The key-type check is re-applied to the external type, but it gates the **lookup**,
+not the column. An external schema can carry a key type outside the supported set —
+an Iceberg `map` with a struct key is the case in practice, since no Kafka schema
+format can express one. Such a column still `REFRESH`es, resolves to a `map(...)`
+type, and projects as a whole map; only `m[key]` is rejected, at planning time, with
+`map key type <key type> is not supported` — and it is rejected for **any** index
+expression, including one shaped like the key itself, because the complaint is about
+the key type rather than the index.
 
 ```sql
 -- Kafka source (COMPOUND policy) or Iceberg table with a map column
@@ -615,6 +623,26 @@ SELECT ST_ASEWKT(CAST(point0 AS GEOMETRY)) FROM locations;
 SELECT ST_DISTANCE(geography0, GEOGRAPHY 'POINT(60.1699 24.9384)') FROM locations;
 SELECT ST_DISTANCE(geography0, geography1) FROM locations;
 ```
+
+**Geospatial values define neither equality nor ordering.** `GEOMETRY`,
+`GEOGRAPHY`, and `POINT` are excluded from both the `comparable` and the
+`equality_comparable_or_sortable` type sets, so a geospatial value cannot be
+grouped, deduplicated, ordered, or matched across the branches of a set
+operation:
+
+| Clause | Requires | Geospatial column |
+|---|---|---|
+| `GROUP BY` | `equality_comparable_or_sortable` | rejected — `could not identify an equality operator for type <type>` |
+| `SELECT DISTINCT` | `comparable` | rejected — same equality message |
+| `INTERSECT` / `EXCEPT` / `UNION` (without `ALL`) | `equality_comparable_or_sortable` on the unified column type | rejected — same equality message |
+| `ORDER BY` | `sortable_or_composite` | rejected — `could not identify an ordering operator for type <type>` |
+| `UNION ALL` | nothing (no deduplication) | accepted |
+
+The rejection reaches through composites: a `ROW(...)`/user composite type
+qualifies for `GROUP BY` and the set operations only if **every** leaf does, so a
+composite carrying a `POINT` (or a `JSON`) leaf is refused the same way. Project
+or compute a scalar first — for example group by a geohash or a rounded
+coordinate rather than by the geometry itself.
 
 ### Composite / ROW types
 

@@ -299,9 +299,10 @@ OXLA__ADMIN_API__SSL__KEY_FILE=/certs/admin.key
 
 ```yaml
 resource_management:
-  max_concurrent_queries: 100   # maximum queries processed simultaneously
-                                 # must be > 0; setting 0 causes a fatal startup error
-                                 # (do not use 0 to mean "unlimited")
+  max_concurrent_queries: <n>   # maximum queries processed simultaneously.
+                                 # Must be > 0; setting 0 causes a fatal startup error
+                                 # (do not use 0 to mean "unlimited"). The default
+                                 # varies by version: read the running value.
   query_queue_timeout: 30 s     # how long a queued query waits before timing out
 ```
 
@@ -334,7 +335,7 @@ Feature flags control experimental or gated features. All are **internal** param
 | `feature_flags.array_support` | `true` | Enable ARRAY column type |
 | `feature_flags.allow_table_operations` | `false` | Allow CREATE/DROP TABLE, INSERT, COPY, UPDATE, DELETE |
 | `feature_flags.allow_nonatomic_storage` | `false` | Allow non-atomic storage operations |
-| `feature_flags.allow_iceberg_queries` | `false` | Allow direct SELECT from Iceberg catalogs (transparent Kafka+Iceberg queries are unaffected). See [lakehouse-and-streaming.md](lakehouse-and-streaming.md) |
+| `feature_flags.allow_iceberg_queries` | `false` | Allow direct access to an Iceberg catalog's tables and namespaces — SELECT, INSERT, CREATE/DROP TABLE, CREATE/DROP NAMESPACE. `REFRESH`, transparent Kafka+Iceberg queries, and catalog-object DDL (`CREATE ICEBERG CATALOG`, `CREATE STORAGE`) are not gated. See [lakehouse-and-streaming.md](lakehouse-and-streaming.md) |
 | `feature_flags.centralized_access_control.enabled` | `false` | Centralized (control-plane) access control. With `.organization_id`, `.datastorage_id`, `.cluster_id`. See [auth-and-security.md](auth-and-security.md) |
 | `feature_flags.disable_table_tasks` | `false` | Disable background table tasks |
 | `feature_flags.allow_data_task_cancel` | `false` | Allow cancellation of data tasks |

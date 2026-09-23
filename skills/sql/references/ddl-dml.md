@@ -426,8 +426,14 @@ REVOKE ALL ON TABLE orders FROM analyst;    -- bare 'ALL' is accepted here too
 
 `ALL` (with or without the trailing `PRIVILEGES` keyword) expands to every
 privilege defined at that level: `SELECT`/`INSERT`/`UPDATE`/`DELETE` for a
-table, `CREATE`/`USAGE` for a schema, and `CONNECT` for a database. Both `ALL`
-and `ALL PRIVILEGES` produce the identical grant, matching PostgreSQL.
+table, `CREATE`/`USAGE` for a schema, `CONNECT` for a database, and
+`SELECT`/`INSERT` for an external source. Both `ALL` and `ALL PRIVILEGES`
+produce the identical grant, matching PostgreSQL.
+
+> The external-source level is the one that is easy to under-read: its `ALL`
+> confers `INSERT` as well as `SELECT`, so `GRANT ALL ON EXTERNAL SOURCE <catalog> TO <role>`
+> is not a read-only grant.
+> Grant `SELECT` explicitly where read-only access is what you mean.
 
 ### Valid GRANT/REVOKE targets
 

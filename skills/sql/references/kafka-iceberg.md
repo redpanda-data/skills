@@ -38,9 +38,22 @@ parse error if it is missing (`"Expected catalog=>table_name syntax"`).
 -- Query a Redpanda topic bound through a catalog, just like a table
 SELECT region, COUNT(*) FROM my_catalog=>orders_topic GROUP BY region;
 
--- Namespaced form: schema.catalog => schema.table
-SELECT * FROM ns.my_conn=>ns2.my_table;
+-- The catalog name itself may be schema-qualified
+SELECT * FROM ns.my_catalog=>orders_topic;
+
+-- Iceberg catalogs also take a namespace path on the right-hand side
+SELECT * FROM my_ice=>sales.orders;
 ```
+
+> **The right-hand side is namespaced for Iceberg catalogs only.** An Iceberg
+> table is addressed by its namespace path inside the catalog
+> (`catalog=>namespace.table`, nested paths included). A Kafka/Redpanda catalog
+> has no namespaces: the name after `=>` must be a bare source name, and a
+> qualified path is rejected with
+> `kafka sources do not support namespace-qualified paths; use "<catalog>=><source>" instead`
+> — in `SELECT`, in `CREATE TABLE`, and in `DROP TABLE` alike. The schema
+> qualifier on the **catalog name** (left of `=>`) is unaffected and works for
+> both kinds.
 
 ---
 
@@ -341,8 +354,8 @@ DROP TABLE IF EXISTS my_rp=>orders;
 Re-read source/topic metadata for an external table:
 
 ```sql
-REFRESH my_rp=>orders;
-REFRESH ns.my_conn=>ns2.my_table;   -- namespaced
+REFRESH my_rp=>orders;              -- Kafka source: bare source name
+REFRESH ns.my_ice=>sales.orders;    -- Iceberg: schema-qualified catalog, namespaced table
 ```
 
 ---
@@ -358,6 +371,10 @@ GRANT SELECT ON EXTERNAL SOURCE my_rp.orders TO analyst;
 GRANT USAGE  ON EXTERNAL SOURCE my_rp EXTERNAL_ACCESS 'read' TO analyst;
 REVOKE SELECT ON EXTERNAL SOURCE my_rp FROM analyst;
 ```
+
+The external-source level defines two relation privileges, `SELECT` and
+`INSERT`, so `GRANT ALL ON EXTERNAL SOURCE <catalog>` confers both. Grant
+`SELECT` explicitly when read-only access is what you intend.
 
 ---
 
