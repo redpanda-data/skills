@@ -175,8 +175,9 @@ REFRESH ns.catalog_name=>ns2.table_name;        -- Iceberg: namespaced table pat
 ```
 
 Only an Iceberg catalog takes a namespace path on the right of `=>`. A
-Kafka/Redpanda catalog has no namespaces, and a qualified path there is rejected
-(`kafka sources do not support namespace-qualified paths`).
+Kafka/Redpanda catalog has no namespaces: use the bare source name. `SELECT`,
+`CREATE TABLE`, and `DROP TABLE` reject a qualified Kafka path with
+`kafka sources do not support namespace-qualified paths`.
 
 ---
 

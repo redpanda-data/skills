@@ -430,8 +430,9 @@ table, `CREATE`/`USAGE` for a schema, `CONNECT` for a database, and
 `SELECT`/`INSERT` for an external source. Both `ALL` and `ALL PRIVILEGES`
 produce the identical grant, matching PostgreSQL.
 
-> An external source is the one level whose `ALL` set is **not** just `SELECT`:
-> `GRANT ALL ON EXTERNAL SOURCE <catalog> TO <role>` confers `INSERT` as well.
+> The external-source level is the one that is easy to under-read: its `ALL`
+> confers `INSERT` as well as `SELECT`, so `GRANT ALL ON EXTERNAL SOURCE <catalog> TO <role>`
+> is not a read-only grant.
 > Grant `SELECT` explicitly where read-only access is what you mean.
 
 ### Valid GRANT/REVOKE targets

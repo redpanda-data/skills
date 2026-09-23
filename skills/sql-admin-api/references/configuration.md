@@ -299,11 +299,10 @@ OXLA__ADMIN_API__SSL__KEY_FILE=/certs/admin.key
 
 ```yaml
 resource_management:
-  max_concurrent_queries: 32    # maximum queries processed simultaneously.
-                                 # EXAMPLE VALUE ONLY — the shipped default varies by
-                                 # version; read the running value, do not assume one
-                                 # must be > 0; setting 0 causes a fatal startup error
-                                 # (do not use 0 to mean "unlimited")
+  max_concurrent_queries: <n>   # maximum queries processed simultaneously.
+                                 # Must be > 0; setting 0 causes a fatal startup error
+                                 # (do not use 0 to mean "unlimited"). The default
+                                 # varies by version: read the running value.
   query_queue_timeout: 30 s     # how long a queued query waits before timing out
 ```
 
