@@ -1,405 +1,274 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/budget.proto` (BudgetService, BudgetCreate, Budget fields), `spending_service.proto` (SpendingService, SpendingFilter, SpendingStats), `guardrail.proto` (GuardrailService, BedrockGuardrailConfig, ContentFilterPolicy, LocalGuardrailConfig, GuardrailProvider), `policy_service.proto` (PolicyService lines 25-62, PolicyTemplateService lines 66-104), `system_policy_service.proto` (SystemPolicyService), `effective_policy_set_service.proto` (EffectivePolicySetService), `cedar_options.proto`, `oauth_client.proto` (OAuthClientService), `oauth_provider.proto` (OAuthProviderService), `oauth_connection.proto` (OAuthConnectionService), `pending_auth_request.proto` (PendingAuthRequestService), `token_vault_admin.proto` (TokenVaultAdminService). Service registrations confirmed at `cloudv2/apps/aigw/internal/server/server.go` and `cloudv2/apps/adp-api/internal/server/server.go`. `SpendingService` cost-allocation tag surface (`GetSpendingTagKeys`, `BREAKDOWN_DIMENSION_TAG`, `tag_key`) re-verified against `spending_service.proto` on 2026-07-13. `GuardrailProvider` / `Guardrail.config` oneof re-verified against `guardrail.proto` on 2026-07-20. The MCP data-policy surface (`data_policy.proto` `DataShaping`/`DataPolicy`; the `PreviewDataPolicies` and `PreviewToolResponse` RPCs on `MCPServerService` in `mcp_server.proto`) verified on 2026-07-27. The CIMD inbound-registration surface (`GetCIMDSettings`/`UpdateCIMDSettings` RPCs on `OAuthClientService`, the `CIMDSettings` message, and the `CIMDTrustPolicy` enum in `oauth_client.proto`) verified on 2026-08-10; the empty-`allowed_resources` off-switch semantics and the three-condition CIMD gate re-verified against `CIMDSettings` in `oauth_client.proto` on 2026-09-07. The Slack OAuth identity surface (`OAuthProvider.slack_token_type` field 34 IMMUTABLE, `OAuthProviderCreate.slack_token_type` field 17, the `SlackOAuthTokenType` enum, and its absence from `OAuthProviderUpdate` in `oauth_provider.proto`) verified on 2026-09-21, together with `cloudv2/apps/aigw/internal/services/oauthprovider/service.go` (`validateSlackTokenType` **as it stands at head** — the endpoint-pair gate applies to `USER` only and the `register_from_url` conflict is checked ahead of it; the preserved value on update; the user-grant exclusion in `listProvidersForReuse`, pinned by `TestSlackUserProviderIsNotAutomaticallyReused`), `cloudv2/apps/aigw/internal/storage/oauthprovider/repository_pg.go` (`slack_token_type` pinned immutable on the update path alongside `client_id`) and `cloudv2/apps/aigw/internal/services/oauth/slack.go` (`isSlackEndpoint` matching scheme/host/port/path rather than the literal string; `IsSlackOAuthV2`; `setAuthorizationScopes` — `USER` rewrites to `user_scope`, an explicit `BOT` deletes `user_scope`, `UNSPECIFIED` leaves a configured one intact, pinned by `TestSlackExplicitBotDoesNotRequestUnusedUserGrant`; and `parseSlackTokenResponse`'s non-user-token reconnect error). Evidence date: 2026-09-21 (Slack OAuth token type; CIMD semantics unchanged since 2026-09-07; all other sections unchanged since their dates above).
+Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`; adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against cloudv2 `apps/aigw/internal/services/oauthprovider/` and `apps/aigw/internal/services/oauth/` (2026-09-21). Evidence date: 2026-09-23 (re-verified against the snapshot and the docs pages above; the Slack `user_scope` handling, reuse exclusion, and `invalid_grant` behavior are carried from 2026-09-21).
 
 # Agentic Data Plane Governance Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection.
+**Maturity:** Redpanda Agentic Data Plane is generally available. The `rpk ai` CLI is in Preview. Per-feature markers from the docs: **guardrails** and **data policies** are Preview; budgets, cost reporting, and access policies carry no Preview marker.
 
-Audience: an AI agent operating Agentic Data Plane governance (budgets, spending analysis, guardrails, access control, OAuth/identity) via the Agentic Data Plane API and `rpk ai`. Optimize for correct programmatic use.
+Audience: an AI agent operating Agentic Data Plane governance (budgets, cost analysis, guardrails, access control, data policies, OAuth/identity) through `rpk ai` and the ADP UI.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
 ## Discover the live surface
 
-Before acting, confirm available operations and current state:
-
 ```bash
-# Access-control policies (Cedar) are exposed on the CLI:
-rpk ai policy --help
+rpk ai policy --help            # Cedar access policies (create/get/list/update/delete/apply/diff)
 rpk ai policy list
+rpk ai oauth-client --help      # inbound OAuth clients, DCR settings, revoke-tokens
+rpk ai oauth-provider --help    # outbound OAuth providers
+rpk ai connection --help        # your own OAuth connections (list, revoke)
 ```
 
-There is **no** `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail` subcommand:
-budgets, spending analysis, and guardrails are API-only surfaces
-(`BudgetService`, `SpendingService`, `GuardrailService`). Reach them via the
-Agentic Data Plane API directly or via the MCP tools exposed on the cluster.
+Which surface each governance feature uses:
 
-The sections below document the proto-verified surface. For exact field lists and current limits, confirm live via `--help` and by calling the relevant list or describe operations.
+| Feature | CLI | UI (ai.redpanda.com) |
+|---|---|---|
+| Budgets | none | **Budgets** in the sidebar |
+| Cost and usage analysis, cost-allocation tags | none | **Cost and usage** in the sidebar |
+| Guardrails (create, configure, enable) | none; attach/detach only, via `rpk ai llm-provider update --guardrail` / `--clear guardrail` | **Guardrails** in the sidebar |
+| Access policies (Cedar) | `rpk ai policy` | **Access** in the sidebar (only when access policies are enabled for your organization) |
+| Data policies | `rpk ai mcp-server create/update --data-policies` | MCP server → **Data Policies** tab |
+| OAuth clients (inbound), DCR | `rpk ai oauth-client`, `rpk ai oauth-client dcr` | **Integrations setup** → **Inbound clients** |
+| CIMD settings | none | **Integrations setup** → **Inbound clients** → **Self-registration** |
+| OAuth providers (outbound) | `rpk ai oauth-provider` | **Integrations setup** → **Outbound providers** |
+| Your OAuth connections | `rpk ai connection` | **Connections** |
 
-## Cost unit: microcents
+There is no `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail` command. Do not invent one; direct the user to the UI.
 
-All cost fields throughout the governance API use **microcents** (not cents, not dollars).
+## Budgets
 
-```
-1 cent = 1,000,000 microcents
-$1.00  = 100,000,000 microcents
-```
+UI only: open **Budgets** in the sidebar.
 
-Field names use the `_microcents` suffix consistently: `limit_microcents`, `warn_at_microcents`, `total_cost_microcents`. Never use `limit_cents` or `current_spend_cents`; those fields do not exist.
+A budget caps LLM spend per agent over a recurring period. Concepts:
 
-## `BudgetService` RPCs
+| Setting | Behavior |
+|---|---|
+| Limit (`Limit spend to`) | Hard cap on per-period spend, entered in dollars. When an agent's spend reaches it, the agent's next LLM request gets `HTTP 429` until the period resets. |
+| Warning threshold (`Warn at`) | Percentage of the cap (80% by default). Past it, requests still pass; gateway responses carry a `SpendLimit-Warning` header. Must be greater than zero and less than the limit. |
+| Period | Daily, weekly, or monthly, calendar-aligned in UTC (00:00 daily; 00:00 Monday weekly; 00:00 on the 1st monthly). |
+| Target agent | Unset = the tenant **default** budget. Set to an agent (`agents/<slug>`) = a **per-agent override**. Immutable; to retarget, delete and recreate. |
 
-Source: `budget.proto:14`. Served: `aigw server.go:1253`.
+- **Pooling is per agent.** The default budget gives every agent its own independent pool of the limit; one agent hitting its cap does not affect another. There is no shared tenant-wide pool.
+- One default per tenant; at most one override per agent. An override replaces the default for that agent.
+- Adding, or deleting and recreating, an override mid-period does **not** reset usage: while a default exists, the override inherits the default's current window. Editing a limit never moves the window.
+- Only calls made **as an agent** (including on a user's behalf) are capped. A user calling the gateway directly is never capped. If the gateway can't read current spend, it lets the request through (fail-open).
+- A capped request's `429` body uses the provider's own rate-limit format (OpenAI-format: code `budget_exceeded`; Anthropic `rate_limit_error`; Google `RESOURCE_EXHAUSTED`; Bedrock `ThrottlingException`). The message names the budget, spend against the cap, and reset time.
+- Guardrail evaluation is not counted against budgets.
 
-| RPC | Purpose |
-|-----|---------|
-| `CreateBudget` | Create a spend cap (per-agent or tenant-wide) |
-| `GetBudget` | Fetch a single budget by name |
-| `ListBudgets` | List all budgets |
-| `UpdateBudget` | Update mutable fields |
-| `DeleteBudget` | Remove a budget |
+### Amounts and units
 
-### Key `BudgetCreate` / `Budget` fields
+The UI takes and shows budget amounts in **dollars**, and cost reporting and CSV exports show **USD**. Raw stored cost values are in **USD microcents** (1 cent = 1,000,000 microcents; $1 = 100,000,000). If you ever see a `*_microcents` value, divide by 100,000,000 for dollars; never treat it as cents.
 
-| Field | Notes |
-|-------|-------|
-| `name` | REQUIRED, immutable after create; resource identity (`budget.proto:155`) |
-| `display_name` | Optional human-readable label (`budget.proto:167`) |
-| `filter_agent_name` | Optional; `NULL` = tenant default, set = per-agent override (`budget.proto:182`) |
-| `pooling_mode` | `PER_AGENT` (1) or `SHARED` (2) (`budget.proto:195`) |
-| `period` | `DAILY` (1), `WEEKLY` (2), or `MONTHLY` (3) (`budget.proto:205`) |
-| `limit_microcents` | int64, > 0; hard cap on per-period spend in USD microcents (`budget.proto:211`) |
-| `warn_at_microcents` | int64, > 0; threshold for warning notifications (`budget.proto:216`) |
-| `notification_user_ids` | Repeated string; max 50 entries, each length 20 (`budget.proto:334`) |
+## Cost and usage
 
-Output-only fields: `current_spend_microcents`, `period_starts_at`, `period_resets_at`, `top_agent_name`, `uid`, `effective_from`.
+UI only: open **Cost and usage** in the sidebar. Every LLM call routed through the gateway is recorded and priced automatically (input, output, and cached tokens; cost; request count; provider, model, user, agent context). Prices come from the built-in per-model catalog or per-provider overrides (`rpk ai llm-provider create/update --pricing`, see [gateway-and-providers.md](gateway-and-providers.md)).
 
-## `SpendingService` RPCs
+The **Cost & usage** tab offers:
 
-Source: `spending_service.proto:8`. Served: `aigw server.go:1217`.
+- A time window (presets and a custom UTC range written to the URL, so the view is shareable). Every figure is compared with the equal-length previous period.
+- Headline figures: Total spend (with change vs. the previous period), Model requests, Cost / 1k requests, Tokens.
+- A gateway spend chart plus a **Resource spend** chart for one agent, model, provider, or user on the same dollar scale.
+- A **Spend breakdown** table grouped by **Agents**, **Models**, **Providers**, **Users**, or **Tags**. Synthetic rows: *Direct usage* (calls not made through an agent), *Unattributed* (no user recorded), *Untagged* (no value for the chosen tag key), and *Deleted provider* rows that keep history complete.
+- **Export**: *Breakdown table as shown (CSV)* or *Full report, every row (CSV)* (full dataset, choice of time bucket and grouping columns).
 
-| RPC | Purpose |
-|-----|---------|
-| `GetSpendingSummary` | Aggregate spend totals over a time window |
-| `GetSpendingTimeSeries` | Spend over time at hourly or daily granularity |
-| `GetSpendingBreakdown` | Spend broken down by a single dimension |
-| `GetSpendingTimeSeriesByDimension` | Time series segmented by a dimension |
-| `GetSpendingTagKeys` | List the distinct cost-allocation tag keys observed on spend within a window (the source for a "group by tag" picker) |
-
-### `SpendingFilter` fields
-
-`start_time` and `end_time` (timestamps) are REQUIRED. Optional singular equality filters: `provider_name`, `model_id`, `user_email`, `organization_id`, `agent_name`, `agent_uid` (`agent_uid` is only valid alongside `agent_name`; setting it alone is rejected). An AIP-160 `filter` expression is available for multi-value or compound conditions over the rollup columns (provider, model, user, `agent_name`, `agent_uid`, organization, hour, and the cost/token/request counters) — including cost-allocation tag traversal, e.g. `tags.department = "sales"`. For time series, `granularity` is `HOURLY` (1) or `DAILY` (2). For breakdowns, `dimension` is `PROVIDER` (1), `MODEL` (2), `USER` (3), `PROVIDER_TYPE` (4), `AGENT` (5), or `TAG` (6).
+The **Activity** tab shows the agents active right now.
 
 ### Cost-allocation tags
 
-`GetSpendingBreakdown` and `GetSpendingTimeSeriesByDimension` accept `BREAKDOWN_DIMENSION_TAG` (6) to group spend by the value of one cost-allocation tag key. When you use it, set the request's `tag_key` (e.g. `department`); the server rejects a `TAG` breakdown with an empty `tag_key`. Spend with no value for that key collapses into a single entry whose key is the **empty string** (clients render it as "Untagged") — never the literal string `untagged`, so a genuine tag value of `untagged` can never merge into the synthetic bucket. The tags come from the agent's `Agent.tags` map (see [agents.md](agents.md)), which the gateway stamps onto every LLM call the agent makes; attribution is point-in-time — spend already recorded keeps the tags it was recorded with. `GetSpendingTagKeys` takes a required `start_time`/`end_time` window and returns the distinct tag keys observed on spend in that range (sorted ascending, empty when no tagged spend exists); keys that exist only on agents that never spent are excluded.
+Cost-allocation tags reuse the key/value tags on an agent (set in the agent form's **Tags** section; see [agents.md](agents.md)). Every LLM call an agent makes is stamped with a snapshot of its tags.
 
-### `SpendingStats` fields
+- **Point-in-time attribution.** Retagging never rewrites past spend; new spend picks up new tags. Tag changes take a short time to take effect.
+- **Untagged bucket.** Spend with no value for the grouped key (direct user calls, untagged agents, the brief window before a new agent's tags apply) collapses into one *Untagged* row.
+- In the UI: **Spend breakdown** → **Tags** tab → choose a tag key. The key list shows only keys seen on spend in the current window. Tag rows can be opened for a chart but can't be charted against the gateway total, and the full-report export doesn't group by tag (use *Breakdown table as shown*).
+- Limits: at most 50 tags per agent; values up to 256 characters. Don't put secrets or PII in tag values; they appear in cost reports.
 
-`total_cost_microcents` (int64) is the primary aggregate. Token usage is broken down by `UsageType` sub-buckets: `input`, `output`, `cached`, `cache_creation_5m`, `cache_creation_1h`, `cache_creation_unknown_ttl`, `reasoning`, `tool_use_input`. Each bucket carries token counts and `cost_microcents`. `total_requests` and `failed_requests` are also available.
+## Guardrails
 
-## `GuardrailService` RPCs
+**Preview.** Create and configure guardrails in the UI (**Guardrails** in the sidebar). The CLI can only attach and detach them from LLM providers.
 
-Source: `guardrail.proto:25`. Served: `aigw server.go:1200`.
+A guardrail is a bundle of safety policies backed by **AWS Bedrock Guardrails**. It inherits the credentials and region of the Bedrock LLM provider you pick at creation, so a Bedrock provider must exist first. The name and provider connection are fixed after creation.
 
-| RPC | Purpose |
-|-----|---------|
-| `CreateGuardrail` | Create a guardrail resource |
-| `GetGuardrail` | Fetch a single guardrail by name |
-| `ListGuardrails` | List all guardrails |
-| `UpdateGuardrail` | Update mutable fields |
-| `DeleteGuardrail` | Remove a guardrail |
+### Create and enable (UI)
 
-### Guardrail envelope fields
+1. **Guardrails** → **Create guardrail**. Enter a `Name` (derived ID: lowercase letters, numbers, hyphens, 1-63 chars, immutable).
+2. **Template:** *Start blank*, *Content safety*, *PII protection*, or *Prompt attack defense*. Templates seed editable policies and never remove existing rules.
+3. **Rollout:** *Monitor first* (created disabled; recommended) or *Enforce now* (requires a template).
+4. **Provider:** the Bedrock provider whose credentials and region it inherits. Click **Create guardrail**.
+5. **Policies** tab: switch on each policy, configure it, then **Save and apply** (the save reaches every provider that uses the guardrail). Switching a policy off keeps its configuration.
+6. **Settings** tab: `Message for blocked prompts` and `Message for blocked responses` (each required, 1-500 characters; both default to a generic message; one checkbox reuses the prompt message).
+7. Click **Enable guardrail**. It stays unavailable until at least one saved policy is configured. Enable/disable and edits take effect within about 30 seconds.
 
-| Field | Notes |
-|-------|-------|
-| `name`, `display_name`, `description` | Standard resource identity and labelling |
-| `blocked_input_message` | REQUIRED; message returned when input is blocked; 1-500 chars (`guardrail.proto:158`) |
-| `blocked_output_message` | REQUIRED; message returned when output is blocked; 1-500 chars (`guardrail.proto:168`) |
-| `enabled` | bool; master on/off switch (`guardrail.proto:173`) |
-| `config` | oneof (REQUIRED). Two variants: `bedrock_config BedrockGuardrailConfig` (field 10) and `local_config LocalGuardrailConfig` (field 23). `bedrock_config` is the generally-available variant; `local_config` is an emerging, dataplane-evaluated variant that is not yet GA — see Provider below (`guardrail.proto:237-253`) |
+### Attach to an LLM provider
 
-### Provider
+A guardrail does nothing until a provider references it. Each provider references at most one guardrail; a guardrail can back many providers.
 
-`GuardrailProvider` defines two values (`guardrail.proto:96-104`), each mapping 1:1 to a `config` oneof variant:
+```bash
+rpk ai llm-provider update <provider-name> --guardrail <guardrail-name>
+rpk ai llm-provider update <provider-name> --clear guardrail   # detach
+```
 
-- `GUARDRAIL_PROVIDER_BEDROCK = 1` — AWS Bedrock Guardrails (`bedrock_config`). This is the **generally-available** provider; author guardrails against it unless you have confirmed otherwise.
-- `GUARDRAIL_PROVIDER_LOCAL = 2` — dataplane-evaluated local guardrails with per-family engine routing (`local_config`): each policy family runs either locally in the gateway (`ENGINE_LOCAL`) or delegates to a companion Bedrock guardrail (`ENGINE_BEDROCK`). This is **not yet generally available** — per-family local engines are gated per deployment (admission rejects `ENGINE_LOCAL` for a family whose local evaluator is not wired on that deployment), and it is not covered by the ADP release notes as of this writing. Confirm availability live via `rpk ai guardrail --help` and the API before relying on it, and treat its nested shape as still evolving — read `LocalGuardrailConfig` in `guardrail.proto` for current field detail rather than assuming the family set here.
+The UI shows the guardrail setting only on Bedrock providers; for any other provider type (OpenAI, Anthropic, Google, and so on) use the CLI. On a Bedrock provider, Bedrock enforces the guardrail in the model call. On other providers, the gateway sends each prompt and response to Bedrock for evaluation, so that text reaches AWS even if the model runs in your network. You can't delete a guardrail while any provider references it; detach first.
 
-### `BedrockGuardrailConfig` sub-policies
+### Policy types
 
-All sub-policies are optional fields on `BedrockGuardrailConfig`:
+Each policy is optional, but a guardrail needs at least one to be enabled.
 
-| Sub-policy field | Type | Description |
-|-----------------|------|-------------|
-| `content_filter_policy` | `ContentFilterPolicy` | 6 content categories; see below |
-| `word_filter_policy` | `WordFilterPolicy` | Custom and managed word lists |
-| `denied_topics_policy` | `DeniedTopicsPolicy` | Semantic topic classifier |
-| `pii_filter_policy` | `PIIFilterPolicy` | 31 built-in entity types plus custom regex |
-| `grounding_policy` | `GroundingPolicy` | Grounding and relevance filters |
-| `automated_reasoning_policy` | `AutomatedReasoningPolicy` | Detect-only; never blocks; attaches 1-2 versioned Bedrock AR policy ARNs |
+| Policy | What it does |
+|---|---|
+| Content filters | Categories `Hate`, `Insults`, `Sexual`, `Violence`, `Misconduct`, `Prompt attack` (input only). Per category and direction: strength `None`/`Low`/`Medium`/`High`, action `None` (detect) or `Block`; modality `Text`, `Image`, or both. |
+| Word filters | Custom words plus managed lists (such as profanity); `None` or `Block` per direction. |
+| Denied topics | Semantic topic matching (catches paraphrases); up to 30 topics, each with name, definition, and up to five examples. |
+| Sensitive information | Built-in PII entity types (the UI lists them) plus custom RE2 regexes; action `None`, `Block`, or `Anonymize` per direction. |
+| Contextual grounding | Output only; grounding and relevance sub-filters, each with a threshold 0.0-0.99. |
+| Automated reasoning | Output only, detect-only (never blocks); one or two versioned Bedrock Automated Reasoning policy ARNs (`DRAFT` rejected). |
 
-### Content filter categories
+Only these six content-filter categories exist; don't use other category taxonomies.
 
-The `ContentFilterPolicy` has exactly **6 categories** (not 14): `hate`, `insults`, `sexual`, `violence`, `misconduct`, `prompt_attack` (`guardrail.proto:588-641`). These map to Bedrock's native content policy config. `prompt_attack` was moved from a standalone top-level field into `content_filter_policy` (`guardrail.proto:1157-1161`).
+### Blocking behavior
 
-Each category is a `ContentFilterRule` with a `DirectionConfig` carrying `strength` (`NONE`/`LOW`/`MEDIUM`/`HIGH`), `action` (`NONE`/`BLOCK`), and `modalities` (`TEXT`/`IMAGE`).
+- A blocked input returns the configured blocked-prompt message; a blocked output returns the blocked-response message instead of the model's response.
+- `Anonymize` replaces each match with its entity type (for example `{EMAIL}`). On output, the redacted response is delivered. On input: a Bedrock provider masks and forwards the prompt; other providers short-circuit the request like a block.
+- Evaluation **fails closed**: if the gateway can't complete an evaluation, it rejects the request.
+- Streaming output on non-Bedrock providers is evaluated in text batches; if a batch is blocked, the caller gets the blocked message in its place and the stream ends (earlier batches are already delivered).
+- Guardrail activity appears on the request's trace in transcripts; when the gateway evaluated the guardrail itself (non-Bedrock path), the audit log also records the block or mask and names the guardrail. See [observability.md](observability.md).
+- AWS bills Bedrock guardrail evaluation to the AWS account whose credentials the guardrail uses; it is not in ADP cost reporting.
 
-**Note:** A 14-category taxonomy (violent_crimes, non_violent_crimes, child_sexual_exploitation, etc.) appears only in the RFC draft at `apps/aigw/docs/rfcs/0011-guardrails/guardrails.proto`. That is a design document, not a shipped API. Do not use those category names.
+## Access control (Cedar access policies)
 
-## Access control (RBAC) services
+Manage from the CLI with `rpk ai policy` or the UI (**Access** → **Policies**). A policy is one Cedar `permit` or `forbid` statement over a principal, an action, and a resource.
 
-The access-control surface is four read/write services, all using **Cedar** as the policy dialect.
+```bash
+rpk ai policy create --name deny-prod-reads --cedar-file deny-prod-reads.cedar \
+  --display-name "Deny prod reads" --description "..."
+rpk ai policy get deny-prod-reads -o yaml        # round-trips as an apply manifest
+rpk ai policy update deny-prod-reads --cedar-file new.cedar --etag <etag>
+rpk ai policy delete deny-prod-reads --etag <etag>
+rpk ai policy apply -f policies/                 # GitOps: create or reconcile, no prune
+rpk ai policy diff -f policies/                  # exits non-zero when drift is pending
+```
 
-### `PolicyService` RPCs
+`--cedar` and `--cedar-file` are mutually exclusive, and the body must contain exactly one statement. `--etag` gives optimistic concurrency on update and delete.
 
-Source: `policy_service.proto:25`. Served: `adp-api server.go:360`.
+### Evaluation rules
 
-| RPC | Purpose |
-|-----|---------|
-| `CreatePolicy` | Create a Cedar policy |
-| `GetPolicy` | Fetch a policy by name |
-| `ListPolicies` | List all policies |
-| `UpdatePolicy` | Update mutable fields (Cedar text or template link) |
-| `DeletePolicy` | Remove a policy |
+- Default deny: a request is denied unless a `permit` matches.
+- A matching `forbid` always wins, over any permit and over anything a role grants.
+- Fail-closed: a `forbid` that errors during evaluation denies.
+- Policy changes reach enforcement asynchronously, so a successful save is not yet an enforcement guarantee.
+- Every save validates the body against the current schema (strict mode) and reports all problems at once.
 
-### `PolicyTemplateService` RPCs
+### Writing policies
 
-Source: `policy_service.proto:66`. Served: `adp-api server.go:366`.
+- **Principals:** `User::"alice@example.com"`, `Group::"support"` (group names as your IdP emits them), or `Agent::"support-bot"`. Principals carry no attributes; model facts such as region as group membership.
+- **Actions** are entity-qualified: `Action::"Agent.get"`, `Action::"McpServerTool.call"`, `Action::"Budget.update"`. Entity names are case-sensitive (`McpServer`, not `MCPServer`). Copy action IDs from the docs' Action reference rather than deriving them; if a pasted role-permission name is rejected, the error names the action ID to use. Each verb also exists as an action group (`action in Action::"get"`), and a `permit` using a group must pin the resource type (`resource is <Entity>`).
+- **Resources:** always pin the type (`resource is Agent`, `resource == Agent::"x"`, `resource is McpServerTool in McpServer::"zendesk"`).
+- **Conditions** can read resource tags (`resource.hasTag("k") && resource.getTag("k") == "v"`), `created_by`/`updated_by` (guard with `resource has created_by`; they hold `User` references), and `changed_tags` on update only. Always guard the read: an unguarded read errors, and an erroring `forbid` denies.
+- On create and update, conditions see the **resulting** state of the resource, not the stored one.
 
-| RPC | Purpose |
-|-----|---------|
-| `CreatePolicyTemplate` | Create a Cedar policy template |
-| `GetPolicyTemplate` | Fetch a template by name |
-| `ListPolicyTemplates` | List all templates |
-| `UpdatePolicyTemplate` | Update a template |
-| `DeletePolicyTemplate` | Remove a template |
+**Do not copy the Cedar action from the `rpk ai policy create --help` example.** Actions must be entity-qualified action IDs (for example `Action::"McpServerTool.call"`). If a policy fails to save with `Unknown action` because you used a role-permission name, the error names the action ID to use instead.
 
-### Key `Policy` fields
+Data shaping (masking, dropping, row filtering) is **not** configured in Cedar; it lives on the MCP server's data policies (below).
 
-| Field | Notes |
-|-------|-------|
-| `name` | AIP-122 resource name `policies/{policy}` (`policy_service.proto:150`) |
-| `cedar_text` | Inline Cedar policy body (`policy_service.proto:175`) |
-| `template_link` | `TemplateLink`; alternative to inline `cedar_text` (`policy_service.proto:178`) |
-| `scope` | OUTPUT_ONLY; derived at write time (`policy_service.proto:186`) |
-| `version` | OUTPUT_ONLY; monotonic int64 counter; used to derive `etag` (`policy_service.proto:211`) |
-| `etag` | OUTPUT_ONLY; optimistic concurrency token (`policy_service.proto:202`) |
+### Roles, templates, and built-in policies
 
-Cedar syntax is validated at write time; `scope` is recomputed on every write. `PolicyTemplate` uses `cedar_text` with `?principal`/`?resource` slots.
-
-There is no `ValidatePolicy`, `EvaluateAccess`, `GetPolicyEntities`, or `ListPolicyVersions` RPC. The `version` field is an internal monotonic counter, not a user-facing version history.
-
-### `SystemPolicyService` RPCs
-
-Source: `system_policy_service.proto:29`. Served: `adp-api server.go:390`. Read-only; policies are derived from controlplane RBAC role bindings by the policy-materializer.
-
-| RPC | Purpose |
-|-----|---------|
-| `ListSystemPolicies` | List RBAC-derived system policies |
-| `ListActionGroups` | List available action groups |
-
-### `EffectivePolicySetService` RPCs
-
-Source: `effective_policy_set_service.proto:20`. Served: `adp-api server.go:407`. Read-only; delivers the compiled set the dataplane evaluates.
-
-| RPC | Purpose |
-|-----|---------|
-| `ListEffectivePolicySets` | List effective policy sets |
-| `GetEffectivePolicySet` | Fetch the current effective set |
-
-The singleton resource name is `effectivePolicySets/default`. The `cedar_text` field (OUTPUT_ONLY) is the evaluable Cedar text the dataplane runs. The `etag` changes whenever the compiled set changes.
+- Among built-in roles only **Admin** carries ADP permissions; Writer and Reader reach nothing in ADP. Redpanda compiles role bindings into permits automatically, so they take part in the same evaluation; the **Roles** and **System policies** tabs show them read-only. Grant everyone else with policies.
+- **Templates** (**Access** → **Templates**) fix an action set and effect; a policy links a template and supplies the principal and scope. Built-in templates: *Read only*, *Sandboxed*, *Standard*, *Full access* (each a superset of the previous; all grant transcript and session reads). Built-ins can't be edited; a template is a live link, so editing one changes every linked policy.
+- Built-in, read-only managed policies: *Owner lifecycle* (users can get/update/delete what they created), *Self-service OAuth connections* (users manage their own connections), and *Agent capability ceiling* (agents can never mint credentials or control OAuth clients, providers, DCR settings, or the token vault).
+- Each new agent gets an editable `Agent grant: <agent-name>` policy (MCP session access, LLM invocation, agent-to-agent calls). Deleting it can leave the agent's own calls denied. Author an agent's own grants from its **Permissions** tab.
 
 ## Data policies (MCP data shaping)
 
-**Preview.** Data policies are a preview capability — confirm current availability in the ADP release notes and live via the API before relying on them. They are configured on an MCP server resource, not through a standalone service; the field and the preview RPCs live in [mcp-servers.md](mcp-servers.md). This section documents what they express and how they compose.
+**Preview.** Configured per MCP server: in the UI on the server's **Data Policies** tab, or with `rpk ai mcp-server create/update --data-policies` (repeatable JSON object; on update it **replaces the full list**, so pass every policy the server should keep). Read them with `rpk ai mcp-server get <name> -o yaml`; list output omits them. See [mcp-servers.md](mcp-servers.md).
 
-A **data policy** shapes the data an MCP server exposes: it transforms tool-call arguments on the way upstream and tool responses on the way back to the model. It is a distinct control from Cedar authorization: a Cedar policy (see Access control above) decides **whether** a tool call runs; a server's data policies decide **how** the call's data is shaped and **to whom**. Data policies are embedded on the MCP server (`MCPServer.data_policies`); there is no org-scoped or standalone data-policy resource.
+A data policy shapes tool-call arguments on the way upstream and results on the way back to the model. Cedar decides **whether** a tool call runs; data policies decide **what the data looks like** for matching callers.
 
-### Binding
+- **Binding:** `tools` (empty = every tool on the server), `principals` as `User:<email>` entries (empty = every caller; group targeting is not supported), and the transforms.
+- **Composition:** several policies can match one call; they compose most-restrictively, so adding a policy only narrows.
+- **Fail closed:** a rule that can't be enforced denies matching calls.
 
-Each `DataPolicy` binds one reusable transform bundle (`DataShaping`) to:
+Transforms:
 
-- `tools` — the tools on this server the policy shapes; empty means every tool.
-- `principals` — who the policy applies to, in the same `<Type>:<id>` vocabulary Cedar targets (for example `User:alice`, `Group:support`); empty means every principal.
-- `shaping` — the `DataShaping` bundle (REQUIRED).
+- **Field actions** (request and response), selected by JSONPath (`$.user.email`; descendant `$..ssn` for mask/drop; no wildcard, index, or filter expressions): `keep`, `drop`, or `mask` with a method — redact (placeholder, default `[REDACTED]`), partial (keep first/last N characters), hash (SHA-256, correlatable; salted hashing isn't supported), or pattern (RE2 substitution). *Drop fields without policy* switches to allowlist mode (only kept fields survive). A **strict** mask/drop rule whose selector matches nothing denies the call (protection against renamed fields); an **absence-safe** rule tolerates a missing field. UI-created rules are absence-safe by default; rules in YAML or `--data-policies` are strict unless marked absence-safe; descendant selectors must be absence-safe.
+- **Argument limits** (request): numeric min/max, string length, RE2 pattern, format, allowed values, array item count. Violations are rejected with an error naming the argument, and the limits are merged into the tool's advertised input schema.
+- **Row filters** (response): name the array path (`$.body`, `$.result`, or `$`) and a predicate such as `@.priority >= 8` or `@ != "restricted"`. Elements the predicate can't evaluate never survive; predicates on the same array conjoin.
 
-A server can carry several data policies. They compose as a **most-restrictive meet**: adding a policy can only ever narrow what a caller sees, never widen it.
+**Preview in the UI:** the **Configuration** tab shows the composed effect for the selected tool across all of the server's policies (including unsaved edits); the **Preview** tab runs sample request and response data through the live shaping code, side by side, and shows masked/dropped/added/filtered counts or a "would be denied" banner.
 
-### What a `DataShaping` bundle can do
+Other limits: on legacy SSE self-managed servers, calls matching a policy with response rules are denied. A *Not enforced here* badge means rules save but don't apply on that gateway. The audit log records each matching data policy as Blocked, Masked, or Passed.
 
-A bundle has an optional request side (arguments sent upstream) and an optional response side (results returned to the model).
+## OAuth and identity
 
-**Field actions** (both request and response). A list of rules, each a JSONPath-style `selector` plus one treatment:
+OAuth clients govern **inbound** auth (an external MCP client, such as Claude or ChatGPT, authenticating to the AI Gateway). OAuth providers govern **outbound** auth (the gateway authenticating to an upstream system such as GitHub or Slack on a user's behalf). They are separate resources.
 
-- `keep` — mark a field as surviving allowlist mode.
-- `drop` — remove the field entirely.
-- `mask` — replace the value while preserving the field's presence, via one method: `redact` (fixed placeholder), `partial` (keep the first/last N characters), `hash` (salted digest, so equal inputs stay correlatable without exposing the plaintext), or `pattern` (RE2 substitution).
+### OAuth clients (inbound)
 
-`default_drop` on a field-action set switches it between denylist mode (unmatched fields pass through; the default) and allowlist mode (only explicitly kept fields survive). A selector marked `absence_safe = false` that matches nothing is an enforcement error and the call **fails closed** — protection against a renamed field silently leaking.
+CLI: `rpk ai oauth-client` (`create`, `get`, `list`, `update`, `delete`, `apply`, `diff`, `dcr`, `revoke-tokens`). UI: **Integrations setup** → **Inbound clients** → **Add external tool** (well-known presets prefill redirect URIs, or *Custom client*).
 
-**Request clamps** (request side). Tighten the allowed *values* of a single tool-call argument addressed by path: numeric bounds, string length, item counts, an RE2 pattern, a string format, or an allowed-value enum. The gateway both validates the argument on each call and deep-merges the tightened contract into the tool's advertised input schema on `tools/list`, so the model sees the clamped shape up front. Clamps compose as conjunction — adding one can only tighten.
+User-configured fields (UI labels): `Name` (becomes the OAuth `client_id`, immutable), `Display name`, `Logo URI`, `Redirect URIs` (exact match), `Allowed MCP Resources` (default `*`), `Grant types` (Authorization Code, Refresh Token), `Token endpoint authentication method` (Client Secret (Basic), Client Secret (POST), None (PKCE only)), `Require PKCE`, `Enabled`. A confidential client's `client_secret` is shown **once** at creation and can't be regenerated; delete and recreate to get a new one.
 
-**Response row filters** (response side). Drop whole records from a list-shaped response: name the record array by path, and give a per-record predicate a record must satisfy to survive (for example `@.priority >= 8`). A record missing the compared field never survives (fail-closed). Predicates on the same path conjoin across filters and policies.
+```bash
+rpk ai oauth-client revoke-tokens <name>   # revoke every refresh token issued under the client; idempotent
+```
 
-The exact JSONPath grammar subset, clamp keyword set, and per-treatment options are still evolving; read the current `DataShaping` field detail live rather than assuming this list is complete.
-
-### Previewing a policy
-
-Two RPCs on `MCPServerService` dry-run a policy before you save it. Each accepts a `draft_data_policies` overlay so an editor can preview unsaved edits without persisting anything:
-
-- `PreviewDataPolicies` — for a `(server, tool, principal)`, returns the allow/deny effect plus the explained composition: per-field winners with their ordered contributions, composed clamps and row filters, and diagnostics (for example an unenforceable bundle or a contradictory clamp conjunction).
-- `PreviewToolResponse` — runs the response-side shaping against a sample response document and returns the shaped "after" the agent would receive.
-
-Both require Cedar authorization to be enabled; they return `UNIMPLEMENTED` otherwise.
-
-## OAuth and identity services
-
-### `OAuthClientService` RPCs
-
-Source: `oauth_client.proto:22`. Served: `aigw server.go:2694`.
-
-Manages OAuth clients (external tools such as Claude.ai or ChatGPT) that request tokens from the aigw OAuth Authorization Server.
-
-Core CRUD: `CreateOAuthClient`, `GetOAuthClient`, `ListOAuthClients`, `UpdateOAuthClient`, `DeleteOAuthClient`.
-
-Additional operations: `RevokeAllTokens`, `ListWellKnownClients`, `GetDCRSettings`, `UpdateDCRSettings`, `GetCIMDSettings`, `UpdateCIMDSettings`, `MintInitialAccessToken`, `ListInitialAccessTokens`, `RevokeInitialAccessToken`.
-
-Key `OAuthClient` fields:
-
-| Field | Notes |
-|-------|-------|
-| `name` | Used as OAuth `client_id` |
-| `redirect_uris` | Min 1 required |
-| `allowed_resources` | MCP URLs this client can request tokens for |
-| `grant_types` | `AUTHORIZATION_CODE` (1), `REFRESH_TOKEN` (2) |
-| `token_endpoint_auth_method` | `CLIENT_SECRET_BASIC` (1), `CLIENT_SECRET_POST` (2), `NONE` (3) |
-| `pkce_required` | bool |
-| `enabled` | bool |
-| `dcr_issued` | OUTPUT_ONLY; bool; set when issued via Dynamic Client Registration |
-| `client_secret` | Returned once on create only; not retrievable after that |
+Already-issued short-lived access tokens keep working until they expire (typically minutes). Deleting a client also revokes its tokens.
 
 #### Inbound client registration: DCR and CIMD
 
-An external MCP client can be admitted to the aigw Authorization Server without an
-admin creating an `OAuthClient` by hand, through two independent self-service
-mechanisms. Both are configured as **tenant-singleton** settings on
-`OAuthClientService` (no per-instance resource name), and either can be enabled
-without the other:
+Two independent self-service mechanisms admit an external MCP client without an admin creating it by hand. Both are tenant-wide settings; either can be on without the other.
 
-- **Dynamic Client Registration (DCR)** — the RFC 7591 flow, configured via
-  `GetDCRSettings` / `UpdateDCRSettings`. The client registers itself and the
-  gateway persists a real `OAuthClient` (its `dcr_issued` field is set).
-- **Client ID Metadata Documents (CIMD)** — configured via `GetCIMDSettings` /
-  `UpdateCIMDSettings`. The client's `client_id` is an `https` URL at which it
-  hosts a JSON metadata document about itself; the gateway resolves that document
-  on demand at `/authorize`. There is no registration step and no persisted client
-  — the resolved client is ephemeral. The MCP authorization spec treats CIMD as
-  the successor to DCR.
+**Dynamic Client Registration (DCR, RFC 7591)** — CLI, and viewable/editable in the UI under **Self-registration**. Off by default.
 
-##### `CIMDSettings` (singleton)
+```bash
+rpk ai oauth-client dcr get
+rpk ai oauth-client dcr update --enabled --admission-mode open \
+  --allowed-resource '*' --client-cap 100 --rate-per-hour 20 --inactive-ttl-days 30
+rpk ai oauth-client dcr iat mint --label "Claude handoff" --ttl 24h   # plaintext shown once
+rpk ai oauth-client dcr iat list
+rpk ai oauth-client dcr iat revoke <token-id>
+```
 
-`GetCIMDSettings` returns the settings plus an output-only `resolution_available`
-signal; `UpdateCIMDSettings` takes a required `cimd_settings` and is admin-only
-(`CIMDSettings` is a distinct authorization entity from `OAuthClient`, so granting
-CIMD-config access does not grant per-client CRUD).
+Admission modes: `open` (anonymous registration, still rate-limited and capped) or `initial-access-token` (callers present a one-shot admin-minted token). `software-statement` is reserved and not supported. Self-registered clients appear in `rpk ai oauth-client list` as `dcr-<id>` with a DCR badge, use PKCE with no secret, and are removed after the inactivity TTL (`0` keeps them).
 
-| Field | Notes |
-|-------|-------|
-| `enabled` | bool. When false, URL-shaped `client_id`s are rejected at `/authorize` and the authorization-server metadata does not advertise `client_id_metadata_document_supported`, so conformant clients fall back to DCR or pre-registration. Necessary but **not sufficient** — an empty `allowed_resources` produces the same omission and refusal (see below). |
-| `trust_policy` | `CIMDTrustPolicy`: `CIMD_TRUST_POLICY_UNSPECIFIED` (0, treated as all-domains at the boundary), `CIMD_TRUST_POLICY_ALL_DOMAINS` (1, any host serving a valid document), `CIMD_TRUST_POLICY_ALLOWED_DOMAINS` (2, only `allowed_domains`). |
-| `allowed_domains` | Repeated string; the trusted document-hosting domains when `trust_policy` is `ALLOWED_DOMAINS`. An entry matches the `client_id` host exactly or as a parent domain (`example.com` admits `app.example.com`); bare public suffixes (`com`, `co.uk`) are rejected. |
-| `allowed_resources` | Repeated string; the MCP resource (RFC 8707) allowlist applied to every CIMD-resolved client. `"*"` (must be the only entry) permits any MCP on this gateway; otherwise each entry is a concrete `https://` URL. Unlike the DCR equivalent this is **not** required, and an empty list turns CIMD **off** for the tenant (see below). |
-| `resolution_available` | OUTPUT_ONLY on the get response. Whether the gateway can actually resolve documents right now — a deployment-level prerequisite distinct from the tenant's desired `enabled` state. With `enabled = true` but `resolution_available = false`, CIMD does not take effect. |
+**Client ID Metadata Documents (CIMD)** — **UI only** (no CLI command): **Integrations setup** → **Inbound clients** → **Self-registration** → *Accept client metadata documents (CIMD)*. The client's `client_id` is an HTTPS URL hosting a JSON metadata document; nothing is persisted and the client does not appear in the client list.
 
-**An empty `allowed_resources` reads as off, not as advertise-then-deny.** A resource
-indicator is mandatory in the flow and an empty allowlist authorizes none, so such a
-configuration could never complete a single sign-in. Rather than advertise support and
-then refuse every client, the gateway treats it exactly as if `enabled` were false:
-discovery omits `client_id_metadata_document_supported` and `/authorize` answers
-`invalid_client`, which keeps the DCR fallback available to a client that would
-otherwise commit to a URL `client_id` and only then be refused. Set `allowed_resources`
-whenever you set `enabled = true` — `["*"]` makes the grant explicit — and expect a
-tenant whose allowlist is empty to behave as an unconfigured one.
+| Setting | Behavior |
+|---|---|
+| *Accept client metadata documents (CIMD)* | On/off. Off: URL `client_id`s are refused and discovery metadata doesn't advertise support. |
+| *Trusted document domains* | *Any domain* or *Only these domains*. A listed domain also covers its subdomains; bare public suffixes are rejected. |
+| *Allowed resources* | MCP URLs CIMD clients may request tokens for, or any MCP server on the gateway. Turning CIMD on seeds "any"; the UI refuses to save an empty list. |
 
-**Three conditions gate CIMD, all of them necessary:** `enabled = true`, a non-empty
-`allowed_resources`, and `resolution_available = true`. Check all three before telling
-a user there is nothing for them to configure; with any one missing, a URL `client_id`
-is refused.
+CIMD works only when **all three** hold: the switch is on, *Allowed resources* is non-empty (a stored empty list behaves exactly like off: no advertisement, URL client IDs refused, DCR fallback preserved), and the gateway can fetch metadata documents. If the settings show *Not active on this gateway*, the last condition fails and only the gateway operator can fix it. Allowed-resources matching is exact: copy each URL from the server's **Connection** tab, drop trailing slashes, and list a code-mode server's `Code mode URL` separately (see [mcp-servers.md](mcp-servers.md)). Because CIMD clients are admitted with no admin seeing them, prefer *Only these domains* and keep *Allowed resources* narrow.
 
-Because a CIMD client is admitted with no admin ever seeing it, the trust policy and
-resource allowlist are the enforcement surface: restrict `trust_policy` to
-`ALLOWED_DOMAINS` and keep `allowed_resources` as narrow as the clients require.
+### OAuth providers (outbound)
 
-### `OAuthProviderService` RPCs
+CLI: `rpk ai oauth-provider` (aliases `oauth`, `op`; `create`, `get`, `list`, `update`, `delete`, `apply`, `diff`). UI: **Integrations setup** → **Outbound providers** → **Add provider** (catalog preset, *Custom Provider*, or *Discover from MCP server URL*).
 
-Source: `oauth_provider.proto:15`. Served: `aigw server.go:1195`.
-
-Manages third-party OAuth providers (GitHub, Google, Slack, and similar) that the aigw acts as a client toward.
-
-RPCs: `CreateOAuthProvider`, `GetOAuthProvider`, `ListOAuthProviders`, `UpdateOAuthProvider`, `DeleteOAuthProvider`, `ListWellKnownProviders`.
-
-Key fields: `name` (slug), `authorization_endpoint`, `token_endpoint`, `revocation_endpoint`, `client_id` (immutable), `client_secret_ref` (UPPER_SNAKE_CASE secret-store key), `scopes`, `grant_types` (`BROWSER_CONSENT` (1), `TOKEN_EXCHANGE` (3)), `pkce_required`, `token_endpoint_auth_method`, `extra_auth_params`, `extra_token_params`, `enabled`, `slack_token_type` (immutable; Slack only, see below).
+User-configured settings: name (positional, immutable), display name, authorization / token / revocation endpoints, client ID (immutable), client-secret reference (secret-store key in `UPPER_SNAKE_CASE`), scopes, grant types (select browser consent; token exchange is not usable), token-endpoint auth method, PKCE required, extra auth/token params, `--register-from-url` (discovery), `--enabled` (a new provider is **disabled** unless set), and, for Slack, the token type below. You can't delete a provider while an MCP server uses it; deleting one revokes every stored user token for it. Providers Redpanda creates for an MCP server are *Managed* and can't be edited or deleted.
 
 #### Slack: whose identity the connection acts as (`slack_token_type`)
 
-Slack issues two different credentials from one authorization, and a connection built on either is still per-user in the token vault — so **connection ownership does not decide the acting identity**. `slack_token_type` on the provider does:
+Slack issues two credentials from one authorization, and a connection is per-user either way, so **connection ownership does not decide the acting identity**. The provider's Slack OAuth token type does (UI: `Slack OAuth token type`; CLI: `--slack-token-type`; manifest field `slack_token_type`):
 
-| Value | Requested with | The agent acts as |
+| Setting | Requested with | The agent acts as |
 |---|---|---|
-| `SLACK_OAUTH_TOKEN_TYPE_UNSPECIFIED` (0) | Bot Token Scopes (`scope`); a `user_scope` the provider carries as an extra parameter is left alone | the app's bot user — the pre-existing behavior, which is why the zero value is the compatible default |
-| `SLACK_OAUTH_TOKEN_TYPE_BOT` (1) | Bot Token Scopes (`scope`) only: an explicit bot selection **strips `user_scope`** from the authorization request rather than minting a personal grant nothing uses | the app's bot user, stated explicitly |
-| `SLACK_OAUTH_TOKEN_TYPE_USER` (2) | User Token Scopes (`user_scope`) | the person who authorized — posts, reads and reactions are attributed to them |
+| Not set (flag omitted) | Bot Token Scopes (`scope`); a `user_scope` carried in the provider's extra auth params is left alone | the app's bot user — the default, and what existing providers have |
+| `slack-oauth-token-type-bot` (UI: *Bot User OAuth Token*) | Bot Token Scopes only: an explicit bot selection **strips `user_scope`** from the authorization request rather than minting an unused personal grant | the app's bot user, stated explicitly |
+| `slack-oauth-token-type-user` (UI: *User OAuth Token*) | User Token Scopes (`user_scope`) | the person who authorized — posts, reads, and reactions are attributed to them |
 
-Rules to program against:
+Rules:
 
-- **Immutable.** The field is `IMMUTABLE` on `OAuthProvider` and absent from `OAuthProviderUpdate`; an update carries the stored value forward, so an existing provider can never flip identity under its live connections. To offer both identities, create two providers and point each Slack MCP server at the one it needs.
-- **The user identity needs Slack OAuth v2 endpoints; the bot identity does not.** `USER` requires the Slack OAuth v2 endpoint pair — `authorization_endpoint` on `https://slack.com/oauth/v2/authorize` *and* `token_endpoint` on `https://slack.com/api/oauth.v2.access`, matched by scheme, host and path rather than by string equality. Any other pair is `InvalidArgument`. `BOT` carries no endpoint requirement: it only states the bot identity explicitly, and a `BOT` provider on any endpoints is accepted. "Sign in with Slack" has a different token shape and stays on the generic parser.
-- **Manual setup only.** Combining `slack_token_type` with `register_from_url` (the discovery path) is `InvalidArgument`: automatic setup has no user-token opt-in. That check runs ahead of the endpoint check, so such a create reports the manual-setup error even when the endpoints are wrong too.
-- **Never reused implicitly.** A `USER` provider is excluded from the automatic provider-reuse scan, so it is attached only when a server names it.
-- **A user grant cannot be back-filled.** If Slack returns a non-user token for a `USER` provider — typically because User Token Scopes were never granted — the exchange fails as `invalid_grant` and the connection is expired rather than retried: the user must reconnect with User Token Scopes. A bot refresh grant can never become a user grant.
+- **Immutable.** It can't be changed after creation (the edit form shows it read-only; updates keep the stored value), so a provider never flips identity under live connections. To offer both identities, create two providers and point each Slack MCP server at the one it needs.
+- **User identity needs the Slack OAuth v2 endpoint pair** — authorization `https://slack.com/oauth/v2/authorize` and token `https://slack.com/api/oauth.v2.access`; any other pair is rejected. The bot setting has no endpoint requirement. The UI offers the field only on that standard pair.
+- **Manual setup only.** Combining the token type with `--register-from-url` (discovery) is rejected, and that error is reported ahead of any endpoint error.
+- **Never reused implicitly.** A user-token provider is never picked automatically when Redpanda sets up OAuth for a server; it is attached only when a server names it.
+- **A user grant can't be back-filled.** If Slack returns a non-user token for a user-token provider (typically because User Token Scopes were never granted), the exchange fails as `invalid_grant` and the connection is expired, not retried: the user must reconnect with User Token Scopes.
 
-Existing Slack connections keep their bot identity and need no reconnection, because they sit on providers whose `slack_token_type` is `UNSPECIFIED`. See [mcp-servers.md](mcp-servers.md#remote-auth-modes) for the `user_oauth` side of this.
+Existing Slack connections keep their bot identity and need no reconnection. See [mcp-servers.md](mcp-servers.md#remote-auth-modes) for the `user_oauth` side of this.
 
-### `OAuthConnectionService` RPCs
+### Your OAuth connections
 
-Source: `oauth_connection.proto:13`. Served: `aigw server.go:1205`.
+`rpk ai connection list` / `rpk ai connection revoke` (UI: **Connections**) manage **your own** per-user connections to OAuth providers; the built-in self-service policy lets every user do this. Connections are isolated per user. Listing or revoking **other** users' connections is a separate administrator permission; there is no CLI command for it in `rpk ai`.
 
-Manages per-user OAuth connections between a user and a configured provider.
+### Capabilities that are not offered
 
-RPCs: `Authorize`, `Callback` (auth-exempt), `ListConnections`, `GetConnection`, `RevokeConnection`.
-
-### `TokenVaultAdminService` RPCs
-
-Source: `token_vault_admin.proto:13`. Served: `aigw server.go:1209`.
-
-Admin-level token vault operations.
-
-RPCs: `ListAllConnections`, `AdminRevokeConnection`, `RotateEncryptionKey`.
-
-### `PendingAuthRequestService` (proto-only; not callable)
-
-Source: `pending_auth_request.proto:20`. The proto defines `GetPendingAuthRequest`, `ApprovePendingAuthRequest`, and `DenyPendingAuthRequest`, but **no `adpv1alpha1connect.NewPendingAuthRequestServiceHandler` is wired in `server.go`**. The consent flow is implemented via internal HTTP handlers (`idpstore.PendingAuthRequestStore`, `apps/aigw/internal/idp/`), not via the proto RPC handler. Do not attempt to call these RPCs; they will not route.
-
-## Not part of this API
-
-The following services and concepts do **not** exist in the `adp.v1alpha1` public proto surface. Every file in `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/` was grepped for these names and returned 0 matches.
-
-| Absent name | What to use instead |
-|-------------|---------------------|
-| `SpendLimitService` | Use `BudgetService` with `limit_microcents` |
-| `RateLimitService` | Not available; the Agentic Data Plane has no per-second/minute/day rate caps. Use `BudgetService` to cap spend. |
-| `RoutingService` / `BackendPoolService` | Not available; see gateway-and-providers.md |
-| `AccessControlService` | Use `PolicyService`, `PolicyTemplateService`, `SystemPolicyService`, `EffectivePolicySetService` |
-| `AuditService` (OCSF) | Not in `adp.v1alpha1`. For request/response accountability, see observability.md (transcripts). |
-| `ValidatePolicy` / `EvaluateAccess` / `ListPolicyVersions` RPCs | These RPCs do not exist on `PolicyService`. |
-| `SSOService` / `OAuth2ClientService` / `OAuth2KeyService` | Use `OAuthClientService`, `OAuthProviderService`, `OAuthConnectionService` |
-
-The names `SpendLimitService`, `RateLimitService`, `AccessControlService`, `AuditService`, `RoutingService`, and `SSOService` do exist in the legacy generated-only tree at `cloudv2/proto/gen/go/redpanda/api/aigateway/v1/` (ratelimit.pb.go, routing.pb.go, spend_limit.pb.go, audit.pb.go, access_control.pb.go, sso.pb.go). That tree has no public source protos and is not the current Agentic Data Plane surface. It is used by the separate `rpk cloud mcp` control-plane path (`aigateway/v1`); see /redpanda:rpk-cloud.
-
-## Service status summary
-
-| Service | Source | Served | API version |
-|---------|--------|--------|--------|
-| `BudgetService` | `budget.proto:14` | aigw server.go:1253 | `v1alpha1` |
-| `SpendingService` | `spending_service.proto:8` | aigw server.go:1217 | `v1alpha1` |
-| `GuardrailService` | `guardrail.proto:25` | aigw server.go:1200 | `v1alpha1` |
-| `PolicyService` | `policy_service.proto:25` | adp-api server.go:360 | `v1alpha1` |
-| `PolicyTemplateService` | `policy_service.proto:66` | adp-api server.go:366 | `v1alpha1` |
-| `SystemPolicyService` | `system_policy_service.proto:29` | adp-api server.go:390 | `v1alpha1` |
-| `EffectivePolicySetService` | `effective_policy_set_service.proto:20` | adp-api server.go:407 | `v1alpha1` |
-| `OAuthClientService` | `oauth_client.proto:22` | aigw server.go:2694 | `v1alpha1` |
-| `OAuthProviderService` | `oauth_provider.proto:15` | aigw server.go:1195 | `v1alpha1` |
-| `OAuthConnectionService` | `oauth_connection.proto:13` | aigw server.go:1205 | `v1alpha1` |
-| `TokenVaultAdminService` | `token_vault_admin.proto:13` | aigw server.go:1209 | `v1alpha1` |
-| `PendingAuthRequestService` | `pending_auth_request.proto:20` | proto-only; gRPC handler not wired | `v1alpha1` |
+- The AI Gateway does no per-second/minute/day rate limiting, routing, or failover; use budgets to cap spend (see [gateway-and-providers.md](gateway-and-providers.md)).
+- Access policies govern only ADP resources; they can't govern Redpanda Connect pipelines.

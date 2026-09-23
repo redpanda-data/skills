@@ -1,171 +1,122 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto` (LLMProviderService RPCs lines 16-66, LLMProvider fields lines 82-260, provider config oneof lines 220-231, provider type enum lines 68-78, config messages lines 574-747, ProviderModelPricing lines 451-548), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/model.proto` (ModelService RPCs lines 10-23, Model fields, ModelCapabilities lines 26-36, ListModelsRequest lines 62-72), `cloudv2/apps/aigw/internal/server/server.go` (LLMProviderService registered lines 1054/1189; ModelService registered lines 1059/1213), `cloudv2/apps/aigw/internal/llm/provider/google/google.go:70` (Gemini x-goog-api-key injection). `cloudv2/apps/aigw/internal/services/llmprovider/service.go` (create-path `Transcripts` defaulting). `Model.max_input_tokens` (field 6) and `max_output_tokens` (field 7) re-verified against `model.proto` on 2026-07-06. The `CheckConnection` `target` oneof (`name` / `LLMProviderConnectionConfig`), its `dataplane_adp_llmprovider_check_connection` permission and `check_connection` Cedar action verified against `llm_provider.proto` on 2026-09-07. `ModelCapabilities.reasoning_efforts` (field 11, the provider-owned effort strings) and the deprecation of `supported_reasoning_efforts` (field 10) verified against `model.proto` on 2026-09-14. Failed-call investigation: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent_network_service.proto` (the `QueryLLMProviderCallFailures` RPC on `AgentNetworkService` with its `dataplane_adp_llmprovider_get` permission and `get`-on-`LLMProvider` Cedar action, `QueryLLMProviderCallFailuresRequest` scope/`Filter.caller`/paging bounds, `LLMProviderCallFailureEvidence` fields, and the `LLMProviderCallFailureReason` enum) verified on 2026-09-14. Authorization passthrough: `llm_provider.proto` (`OpenAIConfig.authorization_passthrough` field 3 and its `base_url` Codex guidance; the `llm_provider.openai_credential_required` and `llm_provider.openai_compatible_credentials_exclusive` message-level CEL rules beside the existing Anthropic XOR), `cloudv2/apps/aigw/internal/llm/provider/openai/openai.go` (`NewInstance` key/passthrough exclusion and the redirect-suppressing client, `serveProxy`'s `X-Redpanda-Cloud-Token` precondition and HTTP 400, the two forwarded headers, the 3xx-to-502 conversion, `CheckConnection`'s `FAILED_PRECONDITION` / not-configured verdict, and `resolveBaseURL`'s fallback to the OpenAI default when `base_url` is empty on either OpenAI-family type), `cloudv2/apps/aigw/internal/llm/provider/openai/passthrough_test.go` (upstream sees neither the gateway token nor a `Cookie`), `cloudv2/apps/aigw/internal/llm/provider/anthropic/anthropic.go` (the Anthropic passthrough header overlay, for the family comparison), `cloudv2/apps/aigw/internal/server/server.go` (`aigwTokenExtractor` header precedence) — verified 2026-09-21. Product-documentation evidence: `adp-docs/modules/gateway/pages/overview.adoc:10-52` (gateway scope and out-of-scope list). Evidence date: 2026-09-21 (provider types, pricing overrides, and the transcript-recording create default unchanged).
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model` groups), `cloudv2 apps/rpai/internal/cmd/llm/` (`check`), `cloudv2 apps/rpai/internal/cmd/model/` (`list`, `get`), `adp-docs modules/gateway/pages/configure-provider.adoc`, `adp-docs modules/gateway/pages/overview.adoc` — verified 2026-09-23. Behavioral claims carried over from earlier source verification (passthrough header handling, transcript create default, catalog token limits and reasoning efforts): 2026-09-21.
 
 # AI Gateway, LLM Providers, and Models Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection.
+**Maturity:** Redpanda Agentic Data Plane is generally available. The `rpk ai` CLI is in Preview, so confirm flags live with `--help` before relying on them.
 
-Audience: an AI agent operating the Agentic Data Plane AI Gateway via `rpk ai llm` / `rpk ai model` and the Agentic Data Plane API. Optimize for correct programmatic use.
+Audience: an AI agent operating the Agentic Data Plane AI Gateway through `rpk ai llm-provider` / `rpk ai model` and the ADP UI (ai.redpanda.com), or calling the gateway from an application.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
 ## Discover the live surface
 
-Before acting, confirm available operations and current provider/model state:
-
 ```bash
-# See all rpk ai llm subcommands and flags
-rpk ai llm --help
-
-# List all LLM providers registered on the cluster
-rpk ai llm list
-
-# List models known to the gateway
-rpk ai model list
-
-# Optional: filter models by provider type (e.g., bedrock, with AWS region)
-rpk ai model list --help
+rpk ai llm-provider --help          # verbs and flags (aliases: llm-providers, llm, provider, lp)
+rpk ai llm-provider create --help   # per-type flag groups
+rpk ai llm-provider list            # providers in the current environment
+rpk ai model list                   # the model catalog
+rpk ai model list --provider-type anthropic
 ```
 
-The sections below document the proto-verified surface. Provider type support and exact model identifiers change with catalog updates; always confirm live via `rpk ai model list` and the API before hardcoding values.
+In the UI, providers live under **LLM providers** in the sidebar (the **AI Gateway** group, alongside Guardrails, Cost and usage, and Budgets). Provider types, model identifiers, and prices change with catalog updates; read them live rather than hardcoding them.
 
-## `LLMProviderService` RPCs
+## Manage providers
 
-Source: `llm_provider.proto:16-66`. Service name: `redpanda.api.adp.v1alpha1.LLMProviderService`.
+| Task | CLI | UI |
+|---|---|---|
+| Create | `rpk ai llm-provider create NAME [flags]` or `-f manifest.yaml` | **LLM providers** → **Add provider** |
+| Read | `get NAME`, `list` (`-o table\|wide\|json\|yaml\|markdown`) | Provider detail page (Overview, Models, Connect, Playground when enabled, Settings tabs) |
+| Edit | `update NAME [flags]`; `--dry-run` prints the request and computed update mask without sending it | **Settings** tab → change fields → **Save changes** |
+| Enable / disable | `update NAME --enabled=false` (or `--enabled`) | **Settings** tab → **Disable provider**; or the row's actions menu in the list |
+| Delete | `delete NAME` | **Settings** tab → **Delete this provider** (type `delete`), or the list row's actions menu (type the display name) |
+| Test connectivity | `check NAME` | **Test connection** (see [Test a connection](#test-a-connection)) |
+| GitOps | `apply -f`, `diff -f` | — |
 
-| RPC | IAM permission |
-|-----|----------------|
-| `CreateLLMProvider` | `dataplane_adp_llmprovider_create` |
-| `GetLLMProvider` | `dataplane_adp_llmprovider_get` |
-| `ListLLMProviders` | `dataplane_adp_llmprovider_list` |
-| `UpdateLLMProvider` | `dataplane_adp_llmprovider_update` |
-| `DeleteLLMProvider` | `dataplane_adp_llmprovider_delete` |
-| `ListLLMProviderTypes` | none — `skip: true` (read-only static catalog; any authenticated caller) |
-| `CheckConnection` | `dataplane_adp_llmprovider_check_connection` |
+- `NAME` is the resource ID: starts with a lowercase letter, lowercase letters/digits/hyphens, ends alphanumeric, at most 63 characters, **immutable**. It is the `<provider-name>` in the proxy URL. The UI derives it from the display name without showing it on the create form.
+- The provider **type is immutable** after creation. In the CLI, the type is selected by which flag group you set (`--openai-config.*`, `--anthropic-config.*`, `--google-config.*`, `--bedrock-config.*`, `--openai-compatible-config.*`); setting flags from two groups is an error.
+- `update` with no field flags fails: `Error: no fields to update; pass at least one field flag or -f`.
+- `--provider-models` and `--tags` **replace** the full list/map on update.
+- A missing provider returns `Error: LLM provider not found (use 'rpai llm-provider list' to see what's available)` with `Code: not_found`.
+- A disabled provider rejects all requests to its proxy URL; its configuration is kept.
 
-`CheckConnection` fires a live upstream probe and returns `latency_ms` plus a `google.rpc.Status` (`OK` on success; otherwise a canonical code and a human-readable message). It carries its own permission — `dataplane_adp_llmprovider_check_connection`, Cedar action `check_connection` — so the ability to probe a provider is grantable separately from reading or writing one.
+## Provider types and credentials
 
-### Testing a connection before you save it
+Every credential field is a **secret-store reference** (an `UPPER_SNAKE_CASE` key name such as `OPENAI_API_KEY`), never the secret value. The UI create form can also store a new key inline (**Bring a new API key reference** → Key name + API key → **Save key**).
 
-`CheckConnectionRequest` carries a required `target` oneof, so the same RPC covers both a saved provider and a draft:
+| Type (UI label) | CLI flag group | Credential |
+|---|---|---|
+| OpenAI | `--openai-config.base-url`, `--openai-config.api-key-ref` | Exactly one of an API key reference or authorization passthrough. `base-url` defaults to `https://api.openai.com/v1`. |
+| Anthropic | `--anthropic-config.base-url`, `--anthropic-config.api-key-ref`, `--anthropic-config.authorization-passthrough` | Exactly one of an API key reference or authorization passthrough. |
+| Google AI | `--google-config.base-url`, `--google-config.api-key-ref` | API key reference required. Clients send their gateway token in `X-Redpanda-Cloud-Token`; the gateway sets `x-goog-api-key` to the stored key upstream (the gateway does not read a client's `x-goog-api-key`). |
+| AWS Bedrock | `--bedrock-config.region` (required), `--bedrock-config.base-url`, plus one credential mode | UI **Credential type**: *Default chain* (leave credentials unset; needs an ambient AWS identity, so it cannot work on an environment hosted outside AWS), *Static keys* (`--bedrock-config.static-credentials.access-key-id-ref` + `.secret-access-key-ref`), or *Assume IAM role* (`--bedrock-config.assume-role.role-arn`, optional `.external-id`, `.session-name`; the AssumeRole call itself still authenticates through the default chain). One mode per provider. |
+| OpenAI-compatible | `--openai-compatible-config.base-url`, `--openai-compatible-config.api-key-ref` | API key, passthrough, or **neither** (no-auth endpoints such as Ollama, vLLM, LM Studio, LocalAI); never both. **Always set the base URL**: the UI requires it. |
 
-| `target` arm | What it probes |
+Short aliases exist for the Bedrock flags (`--region`, `--access-key-id-ref`, `--secret-access-key-ref`, `--role-arn`); an unknown flag such as `--api-key-ref` errors with a "did you mean" list of the per-group flags.
+
+**Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google AI rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both.
+
+**Bedrock `base-url` caveat:** with a custom base URL every request goes to that URL, so models Bedrock serves only on its separate `bedrock-mantle` endpoint are not reachable through that provider.
+
+**Guardrail:** `--guardrail NAME` attaches an existing guardrail (validated at save; a missing or deleting guardrail is rejected). The UI shows the Guardrail field on Bedrock providers only; for other types use the CLI flag. See [governance.md](governance.md).
+
+## Test a connection
+
+| Where | What it tests |
 |---|---|
-| `name` | An existing, persisted provider, by resource name. Use this to re-test a provider whose credentials or endpoint may have changed. |
-| `provider_config` | An **unpersisted** `LLMProviderConnectionConfig` — connection settings only. Nothing is created or cached, so you can validate credentials before committing a `CreateLLMProvider`. |
+| UI create form, **Connection settings** → **Verify connection** → **Test connection** | The **unsaved** credential and endpoint you entered. Creates nothing. Needs a provider key for types that require one and a base URL starting with `http://` or `https://`. |
+| UI provider **Connect** tab → **Verify provider** → **Test connection** | The saved provider. |
+| `rpk ai llm-provider check NAME` | The saved provider only; there is no CLI way to test a draft config. |
 
-`LLMProviderConnectionConfig` is a bare `provider_config` oneof over the same config messages as the resource (`openai_config`, `anthropic_config`, `google_config`, `bedrock_config`, `openai_compatible_config`, and any type added since); exactly one arm is required. Resource identity, models, guardrails, tags, and every other persistence field are deliberately absent — a draft check answers "do these credentials reach this endpoint", nothing more. Credential references are still resolved through the secret store, so a probe can fail on a missing secret before any request leaves the gateway.
+`check` prints `OK  NAME  (<latency>)` on success. On failure it writes `FAIL  NAME  code=<N>  <message>` to stderr, followed by `reason=… domain=…` and any metadata lines, and exits non-zero — script on the exit code, not the latency.
 
-Read `status` for the verdict, not `latency_ms`: latency is `0` when the probe failed *before* a request went out (a missing secret, for example), which is indistinguishable from a very fast response if you only look at the number.
+What a green result proves: for most types, the gateway listed the upstream's models with your credential (authentication + network path, not access to any one model); for Bedrock, the AWS credentials work in the configured region (model access is granted separately by IAM).
 
-**A passthrough provider cannot be probed at all.** When `authorization_passthrough` is on there is no server-side credential to test, so `CheckConnection` returns `FAILED_PRECONDITION` with a not-configured reason and `latency_ms = 0` for both the Anthropic and the OpenAI families — a verdict about the configuration, not about reachability. Nothing is wrong with the provider; access is first verified by a real caller request. Do not gate a create or an update on a green check for these providers.
+**A passthrough provider cannot be probed.** There is no server-side credential, so the UI says the first real request verifies upstream access, and `check` reports a failed-precondition verdict. That is about the configuration, not reachability; do not gate a create or update on a green check for these providers.
 
-### Investigating calls that already failed
+## Investigate failed calls
 
-`CheckConnection` answers "can the gateway reach this provider *now*". To ask why calls failed over some past window, use `QueryLLMProviderCallFailures` — an on-demand telemetry drilldown, not a managed collection:
+This is a **UI-only** workflow; no `rpk ai` command exposes it.
 
-| Aspect | Detail |
+On a provider's **Overview** tab (which reports over one selectable time range, default last 7 days), a warning above **Who calls what** counts the callers with failed requests. Click **Inspect** on a caller — or its node in the graph, or its error count in the **Callers** table — to open the **Failed provider calls** panel: that caller's failed calls, newest first, with **Load more** for paging.
+
+Each entry shows the start time, a summary, model, latency, and trace / span / response IDs, plus a failure label. The panel reports the call's diagnostics only, never the prompt, model output, or the provider's raw error text. Labels and the remedy they point to:
+
+| Label | Points at |
 |---|---|
-| Service | `AgentNetworkService` (not `LLMProviderService`), `redpanda.api.adp.v1alpha1` |
-| Permission | `dataplane_adp_llmprovider_get`, Cedar action `get` on `LLMProvider` — reading a provider's failures is the same capability as reading the provider |
-| Scope | Required `llm_provider` (bare lowercase `LLMProvider.name`, ≤ 63 chars — this resource predates canonical AIP names), plus a required `start_time` (inclusive) / `end_time` (exclusive) window |
-| Narrowing | Optional `filter.caller` oneof: `agent_name` (`agents/{agent}`) or `user_email` (matches direct, non-agent calls only) |
-| Paging | `page_size` 0 → 50, values above 100 coerced to 100; `page_token` must be replayed against an identical scope and filter |
-| Order | `start_time` descending, then `span_id` descending |
+| Authentication failed, Permission denied | The provider's credential or endpoint (**Review connection**; re-test with **Test connection**) |
+| Resource not found | The requested model — commonly removed or renamed (**Review models**; re-check `rpk ai model list` and the provider's enabled models) |
+| Rate limited | Upstream capacity (**Review usage**; **Manage budgets** where enabled) |
+| Timed out, Provider unavailable, Provider internal error | Upstream health (a link to the upstream status page when known) |
+| Safety policy blocked | The attached guardrail (**Review guardrail**) |
+| Request too large, Invalid request, Provider error | The request itself / other provider-side failure |
 
-Each `LLMProviderCallFailureEvidence` entry is one deduplicated gateway-side failed span: `trace_id` / `span_id`, `start_time`, `latency`, `model`, the `caller` oneof (`agent_name` or `user_email`), `response_id`, `conversation_id`, and the classification pair below. Individual fields can be empty, each for its own reason: `trace_id` on older telemetry that recorded none, `latency` when telemetry carried no usable duration, `model` when telemetry did not record one, `response_id` when the upstream issued no response identifier, and `conversation_id` when telemetry omitted it or the call belongs to no transcript. Treat an empty field as "not recorded", not as a measured absence.
+**Open transcript** appears for agent calls that belong to a conversation. An empty panel suggests a wider range; recent telemetry can take a moment to arrive.
 
-**The classification is content-safe by construction.** `reason` is a stable `LLMProviderCallFailureReason` enum and `error_summary` is derived *only* from `reason`; provider-supplied error text is never returned by this RPC. Do not expect to read the upstream's own message here, and do not parse `error_summary` — switch on `reason`:
+## Transcript recording defaults to ON
 
-| `LLM_PROVIDER_CALL_FAILURE_REASON_…` | What it means |
-|---|---|
-| `UNSPECIFIED` | Could not be classified more precisely |
-| `RATE_LIMITED` | The provider rate limit was reached |
-| `AUTHENTICATION_FAILED` | The provider rejected its configured credentials |
-| `PERMISSION_DENIED` | The provider denied the requested operation |
-| `RESOURCE_NOT_FOUND` | The request referenced an upstream resource that does not exist — a removed or renamed model is the common case |
-| `TIMED_OUT` | The provider call exceeded its deadline |
-| `PROVIDER_UNAVAILABLE` | The provider was temporarily unavailable or overloaded |
-| `SAFETY_POLICY_BLOCKED` | A provider safety policy blocked the request |
-| `REQUEST_TOO_LARGE` | The request exceeded a provider size limit |
-| `INVALID_REQUEST` | The provider rejected the request shape or parameters |
-| `PROVIDER_INTERNAL` | The provider reported an internal failure |
-| `PROVIDER_ERROR` | Another provider-side failure; no text is exposed |
+Each provider has two independent toggles — UI **Record inputs** / **Record outputs** (create form and **Settings** → **Transcripts**), manifest fields `transcripts.record_input_messages` / `transcripts.record_output_messages`, CLI `--transcripts.record-input-messages` / `--transcripts.record-output-messages`. They control whether the gateway captures full request and response bodies on its own trace data for calls it proxies.
 
-The reason is what selects the remedy: `AUTHENTICATION_FAILED` points at the provider's credentials (re-probe with `CheckConnection`), `RESOURCE_NOT_FOUND` at the model the caller asked for (re-check against `rpk ai model list` and the provider's `provider_models`), `RATE_LIMITED` and `PROVIDER_UNAVAILABLE` at upstream capacity rather than at your configuration.
+- **Every create path defaults both to on.** The UI form starts with both toggles on, and a `create` (flags or manifest) that says nothing about transcripts records both.
+- To opt out on create, pass **both** flags: `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set both to `false` in the manifest). **Setting only one of the flags leaves the other off.**
+- Existing providers keep what they were saved with; changes apply to new requests only and do not redact content already recorded.
+- These are per-provider, not per-request. To split sensitive traffic, create two providers (recording on and off) and route each application to the matching proxy URL.
+- Token counts, latency, and spend are recorded regardless; cost reporting is unaffected.
+- These toggles do not control agent transcripts. A managed agent's own transcript recording mode does (see [agents.md](agents.md) and [observability.md](observability.md)).
 
-## Key `LLMProvider` fields
-
-Source: `llm_provider.proto:82-260`.
-
-| Field | Notes |
-|-------|-------|
-| `name` (field 2) | AIP-122 resource name; immutable after creation |
-| `display_name` (field 3) | Human-readable label |
-| `type` (field 4) | `LLMProviderType` enum; immutable after creation |
-| `provider_models` (field 19) | Canonical model list (`ProviderModel`); field 7 `models` is deprecated, do not use |
-| `enabled` (field 8) | Toggle; a disabled provider rejects all requests |
-| `url` (field 11) | OUTPUT_ONLY; computed proxy URL for this provider; not persisted |
-| `transcripts` (field 20) | `Transcripts.record_input_messages`, `record_output_messages`; OTel content capture. **Both default to enabled when you omit the message on create** — see below |
-| `guardrail` (field 21) | Optional; references a `Guardrail` resource evaluated before forwarding |
-
-The **provider config oneof** (`llm_provider.proto:220-231`) holds exactly one of: `openai_config`, `anthropic_config`, `google_config`, `bedrock_config`, `openai_compatible_config`. The set arm must match the `type` field.
-
-### Transcript recording defaults to ON
-
-`Transcripts` carries two plain (no-presence) bools: `record_input_messages` (field 1) and `record_output_messages` (field 2). They control whether the gateway populates `gen_ai.input.messages` and `gen_ai.output.messages` on call spans — that is, whether prompts and completions are captured verbatim for transcripts.
-
-On `CreateLLMProvider` the server distinguishes an **absent** `transcripts` message from a supplied one:
-
-- **Omit `transcripts`** → the server stamps both fields **true**. A provider created without saying anything about transcripts captures full request and response content.
-- **Supply `transcripts`** → the message is honoured as written, so a supplied `false` is a real opt-out.
-
-To create a provider that does *not* capture content, send the message explicitly:
-
-```json
-{
-  "transcripts": {
-    "record_input_messages": false,
-    "record_output_messages": false
-  }
-}
-```
-
-Existing providers are not backfilled — this defaulting applies to newly created providers only, and `UpdateLLMProvider` can flip either field at any time.
-
-**Privacy consequence.** Captured content may contain PII or secrets, and enabling capture is now the default for any programmatic create that leaves the field unset. If a provider must not record content, set the fields explicitly on create rather than relying on the zero value.
-
-## Supported provider types and auth schemes
-
-Source: `llm_provider.proto:68-78` (enum), config messages at lines 574-747.
-
-| Provider type | Enum value | Config message | Auth mechanism |
-|---------------|-----------|----------------|----------------|
-| OpenAI | `LLM_PROVIDER_TYPE_OPENAI` (1) | `OpenAIConfig` | XOR: `api_key_ref` (UPPER_SNAKE_CASE key name referencing a secret in the Redpanda secret store) OR `authorization_passthrough` (see [Authorization passthrough](#authorization-passthrough)); `base_url` optional |
-| Anthropic | `LLM_PROVIDER_TYPE_ANTHROPIC` (2) | `AnthropicConfig` | XOR: `api_key_ref` (server-side key) OR `authorization_passthrough` (see [Authorization passthrough](#authorization-passthrough)); `base_url` optional |
-| Google / Gemini | `LLM_PROVIDER_TYPE_GOOGLE` (3) | `GoogleConfig` | `api_key_ref` required; the proxy injects the resolved key as the `x-goog-api-key` header on outbound requests |
-| AWS Bedrock | `LLM_PROVIDER_TYPE_BEDROCK` (4) | `BedrockConfig` | SigV4 signing; credential source is one of: `StaticCredentials` (`access_key_id_ref` + `secret_access_key_ref`), `AssumeRole` (`role_arn`), or default credential chain (env vars / IRSA / EKS Pod Identity) when the credentials oneof is unset |
-| OpenAI-compatible | `LLM_PROVIDER_TYPE_OPENAI_COMPATIBLE` (5) | `OpenAIConfig` (reused) | `api_key_ref` or `authorization_passthrough`, never both; neither one is also valid (no-auth Ollama, vLLM, LM Studio, LocalAI); `base_url` is not validated — an empty value falls back to the OpenAI API endpoint, so always set it |
-
-
-**OpenAI-compatible note** (`llm_provider.proto:74-77`): the `LLM_PROVIDER_TYPE_OPENAI_COMPATIBLE` type tag is used for UI labelling and catalog routing. It reuses the `OpenAIConfig` payload. Nothing validates `base_url` for this type: the gateway resolves an empty value to the OpenAI API default (`https://api.openai.com/v1`) exactly as it does for the OpenAI type, so a compatible provider created without one silently targets OpenAI. Always set it.
+**Privacy consequence:** captured bodies may contain PII or secrets. If a provider must not record content, set both fields explicitly on create.
 
 ## Authorization passthrough
 
-`authorization_passthrough` is a per-provider boolean that makes the gateway forward the **caller's** upstream credential instead of injecting a server-side key, so no upstream API key is held in the Agentic Data Plane at all. It exists on `AnthropicConfig` and on the `OpenAIConfig` payload, which is shared by `LLM_PROVIDER_TYPE_OPENAI` and `LLM_PROVIDER_TYPE_OPENAI_COMPATIBLE`. The Google and Bedrock configs have no passthrough field — those types always authenticate with stored credentials.
+Passthrough makes the gateway forward the **caller's** upstream credential instead of a stored key, so no upstream API key is held in ADP. Available on OpenAI, Anthropic, and OpenAI-compatible providers; Google AI and Bedrock always use stored credentials.
 
-Credential rules, evaluated against the merged provider after the server applies your write, so the same rule set covers `CreateLLMProvider` and `UpdateLLMProvider`:
+- **UI:** the **Authorization passthrough** toggle in the type's configuration. Turning it on clears the API key reference and hides the credential picker.
+- **CLI:** `--anthropic-config.authorization-passthrough` on `create` / `update` (`=false` to disable).
+  <!-- TODO(human): the current CLI help shows no --openai-config.authorization-passthrough or --openai-compatible-config.authorization-passthrough flag, although the UI and docs support passthrough on both OpenAI types. Confirm whether a manifest (-f) with openai_config.authorization_passthrough / openai_compatible_config.authorization_passthrough works from the CLI, or whether the flags are missing from rpk ai. Until then, use the UI for OpenAI-family passthrough. -->
+- Omitting the API key does **not** imply passthrough: on OpenAI-compatible, no key and no passthrough means a no-auth upstream.
 
-| Provider type | Rule | Rejection message |
-|---|---|---|
-| Anthropic | exactly one of `api_key_ref` and `authorization_passthrough` | "Set an API key, or enable authorization passthrough." |
-| OpenAI | exactly one of `api_key_ref` and `authorization_passthrough` | "Set an API key, or enable authorization passthrough." |
-| OpenAI-compatible | the two are mutually exclusive; setting neither is valid, for a no-auth endpoint | "Use an API key or authorization passthrough, not both." |
+**What the gateway forwards.** On OpenAI and OpenAI-compatible, only `Authorization` and `ChatGPT-Account-ID` (a Codex workspace selector), and only when the caller sent them; no other caller header reaches the upstream. On Anthropic, `Authorization`.
 
-Omitting the API key does **not** imply passthrough: on an OpenAI-compatible provider an empty `api_key_ref` means a no-auth upstream, so the boolean has to be set explicitly. Because these are message-level rules, the violation arrives without a field path — read the message.
-
-**What the gateway forwards.** On the OpenAI family it forwards exactly two request headers, and only when the caller sent them: `Authorization` and `ChatGPT-Account-ID` (the Codex workspace selector). The upstream request is built fresh, so no other inbound header rides along. On Anthropic it forwards `Authorization`, on top of the `anthropic-version` / `anthropic-beta` overlay it already applies.
-
-**Gateway authentication has to travel in its own header.** The gateway's token extractor reads `X-Redpanda-Cloud-Token` first and only falls back to `Authorization`, which is what makes passthrough possible: your Redpanda Cloud token goes in `X-Redpanda-Cloud-Token`, the upstream credential in `Authorization`, and the gateway token is never forwarded upstream. On an OpenAI or OpenAI-compatible passthrough provider this is enforced — a request with no `X-Redpanda-Cloud-Token` is rejected with **HTTP 400** before the gateway contacts the upstream, precisely because its `Authorization` may be a gateway token rather than an upstream one. Send the gateway token in that header on every passthrough call, whatever the provider type; a client that cannot send two separate credentials cannot use this mode.
+**Gateway authentication travels in its own header.** With passthrough, `Authorization` carries the upstream credential, so the caller sends its Redpanda gateway token in `X-Redpanda-Cloud-Token`; the gateway token is never forwarded upstream. On OpenAI-family passthrough providers a request without `X-Redpanda-Cloud-Token` is rejected with **HTTP 400** (`authorization passthrough requires gateway authentication in X-Redpanda-Cloud-Token`) before the upstream is contacted. Send the header on every passthrough call regardless of type; a client that cannot send two separate credentials cannot use this mode.
 
 ```bash
 curl "$GATEWAY/llm/v1/providers/<provider-name>/chat/completions" \
@@ -175,86 +126,97 @@ curl "$GATEWAY/llm/v1/providers/<provider-name>/chat/completions" \
   -d '{"model":"<model>","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-**On the OpenAI family, redirects are refused rather than followed.** With passthrough on, the gateway does not follow an upstream redirect (which could carry the caller's credential to another host, subdomains included) and does not pass `Location` back: a 3xx from upstream becomes **HTTP 502** with an explanatory error body.
+**Redirects are refused on the OpenAI family.** An upstream 3xx becomes **HTTP 502** (`upstream redirects are not allowed with authorization passthrough`) and `Location` is not relayed, so credentials never follow a redirect to another host. Fix by pointing the base URL at the endpoint's final address.
 
-**Subscription endpoints need a `base_url`.** The flag never changes the default endpoint — plain OpenAI still resolves to `https://api.openai.com/v1`, the API-key endpoint. For ChatGPT/Codex subscription passthrough set `base_url` to `https://chatgpt.com/backend-api/codex` on the provider. Whether a given subscription tier or workspace policy permits this is an upstream entitlement question, not a gateway setting.
+**Codex subscriptions need the Codex base URL.** Passthrough never changes the default endpoint (plain OpenAI still resolves to `https://api.openai.com/v1`). For ChatGPT/Codex subscription passthrough, set the base URL to `https://chatgpt.com/backend-api/codex`. For such a provider, the UI **Connect** tab shows a passthrough setup guide (including a ready-to-paste Codex configuration) instead of the standard client instructions; use that manual setup rather than `rpk ai run codex`, which configures API-key authentication (see [rpk-ai.md](rpk-ai.md)). Whether a subscription tier permits this is an upstream entitlement question.
 
-## `ModelService` RPCs
+**Upstream 401 with passthrough on:** confirm the client sends its own `Authorization`, the provider's API key reference is empty, and (OpenAI) the base URL matches the credential type.
 
-Source: `model.proto:10-23`. Service name: `redpanda.api.adp.v1alpha1.ModelService`.
+## Models
 
-| RPC | IAM permission |
-|-----|----------------|
-| `ListModels` | none — `skip: true` (read-only static catalog; any authenticated caller) |
-| `GetModel` | none — `skip: true` (read-only static catalog; any authenticated caller) |
+### Models enabled on a provider
 
-Both `ModelService` RPCs bypass authorization (`skip: true`): the catalog is build-time static and identical for every caller, so `skip` bypasses authorization only — authentication still applies. Model *invocation* stays separately enforced via `dataplane_adp_llmprovider_invoke` at the LLM proxy, so catalog visibility does not imply the right to invoke.
+`--provider-models` (repeatable; a bare name, comma-split names, or a protojson object) sets the models a provider exposes; the CLI help says an empty list allows all models. The UI model picker starts with the full catalog selected for OpenAI, Anthropic, Google AI, and Bedrock (you can also type an identifier the catalog does not show); OpenAI-compatible takes a freeform list of the exact identifiers your upstream serves. On a saved provider, toggle models on the **Models** tab.
 
-`Model` is discovery-catalog metadata only (`model.proto:39`): "This is metadata only -- it does not affect runtime proxy behavior." There are no Create, Update, Delete, Enable, or Disable RPCs on `ModelService`. (Those RPCs existed only in the deprecated `aigateway/v1` `ModelsService`, which has no source proto in the current tree and is not registered in the aigw server.)
+A request for a model not enabled on the provider is rejected with **HTTP 403**, error type `model_not_allowed`, on every provider type. On Bedrock, the picker lists inference-profile IDs for profile-only models and bare model IDs for in-region models.
 
-**Key `Model` fields:** `name`, `label`, `provider_type` (`LLMProviderType`), `capabilities` (`ModelCapabilities`), `default_pricing` (`ProviderModelPricing`, sourced from `ai-sdk-go/pricing.Catalog`), `max_input_tokens` (field 6) and `max_output_tokens` (field 7). The two token limits are `optional int64`, OUTPUT_ONLY: the model's context-window (input) and single-response generation (output) caps, sourced from the ai-sdk-go per-model constraints catalog. Both are unset when the catalog declares no limit — absent means "unknown", never zero — so treat a missing value as unknown rather than zero.
+### The model catalog
 
-**`ModelCapabilities`**: `streaming`, `tools`, `json_mode`, `structured_output`, `vision`, `audio`, `multi_turn`, `system_prompts`, `reasoning` (field 9), `supported_reasoning_efforts` (field 10, **deprecated**), and `reasoning_efforts` (field 11).
+The catalog is read-only and Redpanda-maintained. New upstream models usually appear within a day or two without a Redpanda release, but are not enabled on any provider automatically. Retired models drop out of the list but still resolve by identifier, and providers already serving them keep working.
 
-`reasoning_efforts` is a repeated string, OUTPUT_ONLY, listing the **provider-owned, case-sensitive** effort values **this exact model** accepts, ordered from least to most computation (at most 32 values, each 1–64 characters). It is empty for a model that exposes no configurable reasoning control. The vocabulary is the provider's, not the platform's — it varies by provider and by model, so never assume a value exists: read the list live per model and send a value back exactly as spelled (labels and how a control is presented are the client's concern). It is the authoritative source for what you may set as an agent's `reasoning.effort`: the agent write path rejects a value that is not on the list of every effective model (see [agents.md](agents.md)). Note that `reasoning = true` and a non-empty `reasoning_efforts` are different facts — a model can reason without letting you dial the effort.
+```bash
+rpk ai model list                              # NAME, PROVIDER_TYPE, LABEL
+rpk ai model list -o wide                      # adds capabilities
+rpk ai model list --provider-type bedrock      # openai | openai-compatible | anthropic | google | bedrock
+rpk ai model get <name> -o yaml                # full entry
+rpk ai model get <name> --provider-type <t>    # disambiguate a model offered by several provider types
+```
 
-`supported_reasoning_efforts` is the deprecated predecessor: a repeated `ReasoningEffort` enum that can only carry the values representable by the legacy platform-owned enum (`LOW` … `MAX`), so it under-reports a provider whose vocabulary is wider. Read `reasoning_efforts` instead; the agent write path consults the legacy list only when the new one comes back empty from an older gateway.
+Aliases: `models`, `m`. There are no create/update/delete verbs for models. Catalog visibility does not grant the right to call a model.
 
-**`ListModelsRequest` filters** (`model.proto:62-72`): optional `provider_type` filter; optional `aws_region` for Bedrock regional filtering.
+Fields of a catalog entry (`model get -o yaml`):
+
+<!-- TODO(human): the current CLI help contains no `model get` output, so these field names come from the catalog schema (the CLI prints it with snake_case field names, as seen in `llm-provider get -o yaml`) rather than captured CLI output. Confirm against a live `rpk ai model get <name> -o yaml`. -->
+
+| Field | Meaning |
+|---|---|
+| `name`, `label`, `provider_type` | Identifier, display label, provider type |
+| `max_input_tokens` / `max_output_tokens` | Context window / most tokens in one response. **Absent means unknown**, never zero. |
+| `capabilities` | Booleans such as `streaming`, `tools`, `json_mode`, `structured_output`, `vision`, `audio`, `multi_turn`, `system_prompts`, `reasoning`, plus `reasoning_efforts` |
+| `default_pricing` | Catalog rates (same bucket fields as pricing overrides below) |
+
+`capabilities.reasoning_efforts` lists the **provider-owned, case-sensitive** effort values this exact model accepts, ordered least to most computation; empty when the model has no configurable reasoning control. It varies by provider and model, so read it live and send a value back exactly as spelled. It is the authority for an agent's `reasoning.effort`: agent writes reject a value not on the list of every effective model (see [agents.md](agents.md)). `reasoning: true` with an empty `reasoning_efforts` means the model reasons but the effort is not adjustable. Ignore the deprecated `supported_reasoning_efforts` list if present; it can under-report.
+
+In the UI, the provider **Models** tab shows capability icons, context-window limit, and input/output price per model; selecting a model opens its detail page (context window, max output, effective pricing with overrides applied, capabilities, and 7-day usage).
 
 ## Per-model pricing overrides
 
-Source: `llm_provider.proto:451-548`.
+Overrides replace catalog rates for one model on one provider, for negotiated rates, internal chargeback, or models the catalog does not price. They change what ADP cost reporting computes, not what the upstream charges.
 
-Pricing overrides are set per model on the `LLMProvider` resource. There is no separate `ModelPricingService`. Each entry in `provider_models` (field 19 on `LLMProvider`) is a `ProviderModel` message that carries an optional `custom_pricing` field of type `ProviderModelPricing`.
+**UI:** the pencil icon (Override pricing) on a model in the picker or on the **Models** tab. Rates are in **US dollars per million tokens**; a blank field keeps the catalog rate, `0` is an explicit free rate; **Reset** / **Reset all** clear overrides. Overridden models carry a dollar-sign badge.
 
-`ProviderModelPricing` fields (all `optional int64`; unit: microcents per million tokens):
+**CLI:** the repeatable `--pricing` flag on `create` / `update`, in USD per million tokens:
 
-| Field | Meaning |
-|-------|---------|
-| `input_per_million` | Standard prompt tokens; also covers tool-use input |
-| `output_per_million` | Completion and output tokens; also covers reasoning tokens |
-| `cached_input_per_million` | Prompt-cache read tokens |
-| `cache_creation_5m_per_million` | 5-minute TTL cache write (Anthropic family) |
-| `cache_creation_1h_per_million` | 1-hour TTL cache write |
+```bash
+rpk ai llm-provider update openai \
+  --pricing "model=<model-a>,input=<usd>,output=<usd>,cached=<usd>" \
+  --pricing "model=<model-b>,input=<usd>,output=<usd>"
+```
 
-Comment (`llm_provider.proto:469-472`): this mechanism handles negotiated contract rates and pricing for fine-tuned or private models not in the public catalog. Field 6 (`cache_creation_unknown_ttl_per_million`) is reserved and always uses the catalog rate.
+| `--pricing` key | UI bucket | Bills |
+|---|---|---|
+| `model` (required) | — | Model the entry applies to |
+| `input` | Input | Prompt tokens; also tool-use input |
+| `output` | Output | Completion tokens; also reasoning tokens |
+| `cached` | Cached input | Prompt-cache reads |
+| `cache_write_5m` | Cache write (5-minute TTL) | 5-minute cache writes |
+| `cache_write_1h` | Cache write (1-hour TTL) | 1-hour cache writes |
 
-From the CLI, set these overrides with the repeatable `--pricing` flag on `rpk ai llm create` / `rpk ai llm update`, which takes rates in **US dollars per million tokens** and converts to the stored microcent unit for you; hand-written `--provider-models` protojson carrying a `custom_pricing` object (in microcents) also works. See [rpk-ai.md](rpk-ai.md).
+Omitted rates keep the catalog default; set at least one rate per model. `--pricing` merges into `--provider-models` by model name, and **on `update` it replaces the whole model list**, so include every model the provider should keep. Cache writes with an unknown TTL always bill at the catalog rate.
+
+**In manifests and `get -o yaml`**, overrides appear as `provider_models[].custom_pricing` with fields `input_per_million`, `output_per_million`, `cached_input_per_million`, `cache_creation_5m_per_million`, `cache_creation_1h_per_million`, stored in **microcents** per million tokens (not dollars). Prefer `--pricing`, which converts for you; if you hand-write `custom_pricing`, use microcents. See [rpk-ai.md](rpk-ai.md).
 
 ## What the AI Gateway proxy does
 
-Source: the Agentic Data Plane documentation, gateway overview page (path in the provenance header above).
-
-The AI Gateway is a managed HTTP proxy. The per-provider URL pattern is:
+The AI Gateway is a managed HTTP proxy. Each provider has its own URL (copy it from the provider's **Proxy URL** or from the `url` field of `rpk ai llm-provider get`):
 
 ```
 <gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>
 ```
 
-What the proxy does:
-
-- Stores upstream API keys in the Redpanda secret store; calling applications never see them.
-- Injects the resolved credential (API key, SigV4 signature, or passthrough `Authorization`) on each outbound request.
-- Authenticates inbound clients via OIDC service accounts and short-lived tokens.
-- Records spend, request counts, and token counts per provider on OTel spans.
-- Optionally captures `gen_ai.input.messages` and `gen_ai.output.messages` content (controlled by `transcripts` fields on `LLMProvider`; enabled by default when the message is omitted on create — see [Transcript recording defaults to ON](#transcript-recording-defaults-to-on)).
-- Optionally evaluates a `Guardrail` resource before forwarding (`llm_provider.proto:243-258`).
+- Clients keep using the provider's native SDK and API, pointed at the proxy URL.
+- Upstream keys stay in the Redpanda secret store; applications never see them (except passthrough, where the client supplies its own).
+- The gateway injects the credential per request (API key, SigV4 signing for Bedrock, or the caller's passthrough `Authorization`).
+- Inbound clients authenticate with short-lived tokens: `rpk ai auth login` / `rpk ai auth token` for local use, OIDC client credentials for applications and self-managed agents.
+- Spend, requests, and tokens are recorded per provider (list view, provider Overview, **Cost and usage**).
+- Optionally captures message bodies — on by default for new providers; see [Transcript recording defaults to ON](#transcript-recording-defaults-to-on).
+- Optionally evaluates an attached guardrail before forwarding. On non-Bedrock providers, guardrail evaluation sends prompt and response text to AWS Bedrock Guardrails, even when the provider itself is self-hosted.
 
 ## Not in scope
 
-The following capabilities are absent from the Agentic Data Plane AI Gateway. Both the `adp/v1alpha1` proto tree and the Agentic Data Plane AI Gateway product documentation confirm this.
+The ADP gateway overview and provider docs list these as not provided by AI Gateway:
 
-**Proto evidence:** no `RoutingService`, `BackendPoolService`, `RateLimitService`, or routing/failover/load-balancing messages were found anywhere under `cloudv2/proto/public/cloud/redpanda/api/adp/` (v1alpha1 and experimental). No `requests_per_second`, `requests_per_minute`, or `requests_per_day` fields are defined on any `adp/v1alpha1` message.
+- **Multi-provider routing, failover, and retries.** There is no synthetic provider that fans requests across upstreams, and no cross-provider load balancing.
+- **Rate limits.** No requests-per-second, per-minute, or per-day caps. To cap spend instead, use budgets (per-agent hard caps; see [governance.md](governance.md)). Budgets apply only to agent-attributed requests, so a user calling the gateway directly is not capped.
 
-**Product documentation evidence** (the Agentic Data Plane gateway overview page):
-
-Lines 107-110 ("When to use" section):
-> "Need routing, failover, or cross-provider load balancing across providers. AI Gateway does not provide these capabilities."
-
-Lines 113-119 (`[[out-of-scope]]` Limitations section):
-> "Multi-provider routing, failover, and retries. A synthetic provider that fans requests to multiple upstreams is not part of AI Gateway."
-> "Rate limits. Requests-per-second, per-minute, or per-day caps are not available. To cap spend rather than request rate, use budgets, which enforce a per-agent hard cap."
-> "Managed MCP aggregation at the gateway. Register MCP tool servers separately under MCP Servers in ADP."
-
-Do not attempt to configure routing rules, failover policies, cross-provider load balancing, or request rate limits via `LLMProviderService` or any other Agentic Data Plane API. These features do not exist in the current API surface.
+Do not try to configure routing, failover, load balancing, or request rate limits through `rpk ai` or the UI; the features do not exist.
