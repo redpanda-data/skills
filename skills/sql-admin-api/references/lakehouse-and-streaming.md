@@ -77,7 +77,28 @@ When `access_key_id`/`secret_access_key` are omitted, the AWS default credential
 
 Oxla integrates with **Apache Iceberg via the Iceberg REST catalog protocol** (Polaris, AWS Glue/S3 Tables, Nessie, and other REST-compatible catalogs). This is the direct analog of Redpanda's Iceberg Topics differentiator: it exposes table data in the open Iceberg format for query engines across the lakehouse.
 
-The cluster gate `feature_flags.allow_iceberg_queries` (default `false`) controls whether direct `SELECT` from an Iceberg catalog is permitted. Transparent Kafka+Iceberg queries are unaffected by this flag (see source comment in `default_config.yml`). Enable with:
+The cluster gate `feature_flags.allow_iceberg_queries` (default `false`) controls
+every **direct** interaction with the tables and namespaces of an Iceberg catalog:
+
+- `SELECT` from an Iceberg table, and `INSERT` into one;
+- `CREATE TABLE` / `DROP TABLE` against the catalog;
+- `CREATE NAMESPACE` / `DROP NAMESPACE` against the catalog.
+
+With the flag off, each of those is refused with `FeatureNotSupported` and the
+message `Direct queries on iceberg tables are not supported.`
+
+Three things are deliberately **not** gated:
+
+- **`REFRESH <catalog>=><table>`.** A transparent Kafka+Iceberg query resolves its
+  Iceberg leg from the schema that `REFRESH` on the Iceberg catalog registers, and
+  the planner tells the user to run exactly that `REFRESH` when the schema is
+  missing — so `REFRESH` has to work on a default configuration.
+- **Transparent Kafka+Iceberg queries** themselves.
+- **Catalog-object DDL.** `CREATE`/`ALTER`/`DROP ICEBERG CATALOG` and
+  `CREATE`/`DROP STORAGE` are unaffected: the catalog can be defined with the flag
+  off, and only reading or writing its tables is refused.
+
+Enable direct access with:
 
 ```bash
 OXLA__FEATURE_FLAGS__ALLOW_ICEBERG_QUERIES=true
@@ -149,9 +170,13 @@ The Ansible Glue template configures an equivalent integration via cluster prope
 ### Refresh external metadata
 
 ```sql
-REFRESH catalog_name=>source_name;
-REFRESH ns.catalog_name=>ns2.table_name;
+REFRESH catalog_name=>source_name;              -- Kafka source: bare source name
+REFRESH ns.catalog_name=>ns2.table_name;        -- Iceberg: namespaced table path
 ```
+
+Only an Iceberg catalog takes a namespace path on the right of `=>`. A
+Kafka/Redpanda catalog has no namespaces, and a qualified path there is rejected
+(`kafka sources do not support namespace-qualified paths`).
 
 ---
 

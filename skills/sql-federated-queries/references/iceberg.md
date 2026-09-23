@@ -4,6 +4,18 @@ Oxla connects to Apache Iceberg REST catalogs (e.g., Apache Polaris, AWS Glue
 Data Catalog, Tabular) and can query Iceberg tables using the `catalog=>path.table`
 syntax. Partition pruning and predicate pushdown are applied automatically.
 
+> **Direct Iceberg access is gated at the cluster level.** One cluster setting
+> controls every direct interaction with an Iceberg catalog's tables and
+> namespaces — `SELECT`, `CREATE TABLE`/`DROP TABLE`, and
+> `CREATE NAMESPACE`/`DROP NAMESPACE`. Where it is not enabled, each of those is
+> refused with `FeatureNotSupported` and the message
+> `Direct queries on iceberg tables are not supported.` Defining the catalog is
+> **not** gated (`CREATE ICEBERG CATALOG`, `CREATE STORAGE`), and neither is
+> `REFRESH`: a transparent Kafka+Iceberg query resolves its Iceberg leg from the
+> schema that `REFRESH` registers, so `REFRESH` works regardless. Transparent
+> Kafka+Iceberg queries are unaffected throughout. For the parameter itself and
+> how an operator sets it, see `/redpanda:sql-admin-api`.
+
 Sources grounded in: `oxla/src/sqlparser/sql/CreateCatalogStatement.h`,
 `oxla/src/sqlparser/sql/connection_option_names.h`,
 `oxla/src/catalog/iceberg_catalog_parser.cpp`,
@@ -328,8 +340,17 @@ SELECT id, name FROM my_ice=>ns.orders;
 An Iceberg `map<K, V>` column resolves to an Oxla map column — for example a
 `map<string, long>` reads as `map(text,bigint)` — and is queried with the `m[key]`
 subscript. Both the key and the value type are translated by the same rules as any
-other Iceberg column, so an unsupported key or value type makes the column's schema
+other Iceberg column, so a type Oxla cannot represent makes the column's schema
 incompatible rather than silently degrading it.
+
+A key type that Oxla *can* represent but does not accept as a map key is a
+different case, and a **struct-keyed** Iceberg map is the one that occurs in
+practice (no Kafka schema format can express one). The column is not rejected:
+`REFRESH` registers it, `pg_typeof` reports a `map(...)` type over the synthesized
+key type, and projecting the whole column works. Only the subscript is refused, at
+planning time, with `map key type <key type> is not supported` — for any index
+expression, including one shaped like the key itself. Project the whole map and
+work with the entry text, or reshape the table, if you need those rows.
 
 ```sql
 SELECT id, vals['region'], vals['nope'] FROM my_ice=>ns.events;
