@@ -1,4 +1,4 @@
-Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`; adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against cloudv2 `apps/aigw/internal/services/oauthprovider/` and `apps/aigw/internal/services/oauth/` (2026-09-21). Evidence date: 2026-09-23 (re-verified against the snapshot and the docs pages above; the Slack `user_scope` handling, reuse exclusion, and `invalid_grant` behavior are carried from 2026-09-21).
+Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc` (roles and permissions); adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against `cloudv2` source (2026-09-21). Evidence date: 2026-09-23 (re-verified against the snapshot and the docs pages above; the Slack `user_scope` handling, reuse exclusion, and `invalid_grant` behavior are carried from 2026-09-21).
 
 # Agentic Data Plane Governance Reference
 
@@ -168,9 +168,47 @@ rpk ai policy diff -f policies/                  # exits non-zero when drift is 
 
 Data shaping (masking, dropping, row filtering) is **not** configured in Cedar; it lives on the MCP server's data policies (below).
 
-### Roles, templates, and built-in policies
+### Roles and permissions
 
-- Among built-in roles only **Admin** carries ADP permissions; Writer and Reader reach nothing in ADP. Redpanda compiles role bindings into permits automatically, so they take part in the same evaluation; the **Roles** and **System policies** tabs show them read-only. Grant everyone else with policies.
+ADP enforces fine-grained permissions: every operation checks exactly one permission. Permissions are the role-based access control (RBAC) vocabulary. Access policies use a different vocabulary, action IDs, so the two are never interchangeable.
+
+**Built-in roles.** Roles are Redpanda Cloud IAM roles, assigned through role bindings; see `/redpanda:rpk-cloud` for managing them.
+
+| Role | What it grants in ADP |
+|---|---|
+| Admin | Every ADP permission on every resource. Bind it to the people who administer the deployment and author policies; it is not a least-privilege role for day-to-day users |
+| Writer, Reader | Nothing in ADP. They keep their control-plane, Kafka, and Redpanda Connect pipeline permissions, so a Writer can manage clusters and pipelines and still gets permission denied from every agent, MCP server, and LLM provider operation |
+| PipelineInvoker, Kafka and Schema Registry roles | Nothing in ADP |
+
+There are no built-in invoker or transcript-reader roles for ADP. Grant runtime-only or read-only access with an access policy. Organizations created before that change may still carry legacy invoker and transcript-reader roles; don't build new grants on them. A **custom role** holding ADP permissions still works, for when you need a permission bundle bound at a control-plane scope. Until access policies are enabled for an organization, Admin or a custom role is the only way to reach ADP.
+
+**Permission families.** The full list with the operation each one gates is in the ADP roles and permissions reference.
+
+| Family | Gates |
+|---|---|
+| `dataplane_adp_mcpserver_*` | MCP server management (create, get, list, update, delete) and each MCP protocol call against a running server (`initialize`, `tools_list`, `tools_call`, `resources_read`, `prompts_get`, …) |
+| `dataplane_adp_llmprovider_*` | LLM provider management; `_invoke` proxies LLM requests at runtime; `_check_connection` tests a saved or draft provider |
+| `dataplane_adp_agent_*` | Agent configuration, plus `dataplane_adp_agent_credential_*`, `dataplane_adp_agent_trigger_*`, and `dataplane_adp_agent_session_*` for credentials, triggers, and conversation sessions |
+| `dataplane_adp_a2a_invoke` | All agent-to-agent (A2A) runtime calls to an agent |
+| `dataplane_adp_transcript_*` | Reading conversation transcripts |
+| `dataplane_adp_auditlog_list` | Reading the audit log |
+| `dataplane_adp_agentnetwork_get` | The Agent network view |
+| `dataplane_adp_spending_get`, `dataplane_adp_budget_*`, `dataplane_adp_guardrail_*` | Cost reporting, budgets, guardrails |
+| `dataplane_adp_policy_*`, `dataplane_adp_policytemplate_*` | Authoring access policies and templates; granting these is equivalent to granting everything a policy can grant |
+| `dataplane_aigateway_*` | OAuth clients, DCR and CIMD settings, OAuth providers (including attaching one to an MCP server), and OAuth connections (`connection_manage` for your own, `connection_admin` for everyone's) |
+
+Points worth knowing:
+
+- **The narrowest useful runtime grant** for an application or service account is LLM invocation alone (`dataplane_adp_llmprovider_invoke`). Grant it with a policy naming `Action::"LLMProvider.invoke"`. For MCP tool calls, the equivalent is `Action::"McpServerTool.call"`.
+- **Content access is separate from configuration access.** Reading an agent's configuration does not let you read its transcripts or sessions, and a session read or transcript read exposes full conversation content (prompts, tool inputs and outputs, model output). The built-in *Read only* template and every template above it include transcript, session, and audit-log reads. To grant configuration reads without conversation content, write your own template or policy that leaves those actions out.
+- **Testing a provider connection needs its own permission.** Neither read access nor create access alone allows it.
+- **Debugging a denial:** map the refused operation to its permission in the reference, then grant the matching action ID with a policy.
+
+**Identities.** Calls authenticate as a **user** (signed in through Redpanda's OIDC provider, as the UI and `rpk ai auth login` do), a **service account** (OIDC client credentials, for applications and CI), or an **agent** (with the credentials issued to it). All three can be policy principals. A service account is evaluated as a user, and an agent is named `Agent::"<agent-name>"`.
+
+### Templates and built-in policies
+
+- Redpanda compiles role bindings into permits automatically, so they take part in the same evaluation as your policies. The **Roles** and **System policies** tabs show them read-only.
 - **Templates** (**Access** → **Templates**) fix an action set and effect; a policy links a template and supplies the principal and scope. Built-in templates: *Read only*, *Sandboxed*, *Standard*, *Full access* (each a superset of the previous; all grant transcript and session reads). Built-ins can't be edited; a template is a live link, so editing one changes every linked policy.
 - Built-in, read-only managed policies: *Owner lifecycle* (users can get/update/delete what they created), *Self-service OAuth connections* (users manage their own connections), and *Agent capability ceiling* (agents can never mint credentials or control OAuth clients, providers, DCR settings, or the token vault).
 - Each new agent gets an editable `Agent grant: <agent-name>` policy (MCP session access, LLM invocation, agent-to-agent calls). Deleting it can leave the agent's own calls denied. Author an agent's own grants from its **Permissions** tab.

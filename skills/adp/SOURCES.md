@@ -3,23 +3,12 @@
 Maps each file in `skills/adp/` to the sources its claims derive from, so future syncs
 and human maintainers know where to verify them.
 
-## Scope: public surface only
+## Scope
 
-ADP has no public management API. The skill documents only the surfaces users operate:
-the `rpk ai` CLI, the ADP UI (ai.redpanda.com), and the endpoints applications call
-(AI Gateway LLM URLs, MCP server URLs, A2A endpoints). It must not document service or
-RPC names, IAM permission strings, internal components, or storage internals, even
-though the proto and application source is still where behavior can be confirmed.
-
-Sources are listed in priority order:
-
-1. **The `rpk ai` CLI help.** The golden snapshot is `cloudv2`
-   `apps/rpai/testdata/commands-snapshot.md`; command sources are under `apps/rpai/internal/cmd/`.
-   Confirm against live `rpk ai --help` where possible.
-2. **The ADP product docs** (`adp-docs`) for UI tasks and user-facing behavior.
-3. **`cloudv2` source (protos and application code)**, as secondary evidence for
-   user-observable behavior only. Never copy service names, field numbers, or internals
-   from it into the skill.
+The skill covers the `rpk ai` CLI, the ADP UI (ai.redpanda.com), and the endpoints
+applications call. Verify CLI claims against the `rpk ai` help output (golden snapshot:
+`cloudv2` `apps/rpai/testdata/commands-snapshot.md`, or live `rpk ai --help`) and UI and
+behavior claims against the ADP product docs (`adp-docs`).
 
 ## File-to-source table
 
@@ -30,7 +19,7 @@ Sources are listed in priority order:
 | `skills/adp/references/agents.md` | `cloudv2` `apps/rpai/testdata/commands-snapshot.md` (`agent`, `a2a`, `trigger`), `apps/rpai/internal/cmd/agent/`; `docs` `modules/reference/partials/rpk-ai/` (generated `rpk ai agent` flag tables); `adp-docs` `modules/connect/pages/` (`create-agent.adoc`, `self-managed-agents.adoc`, `concepts.adoc`, `triggers/`), `modules/monitor/pages/monitor-agents.adoc`, `modules/cli/pages/gitops.adoc` |
 | `skills/adp/references/mcp-servers.md` | `cloudv2` `apps/rpai/testdata/commands-snapshot.md` (`mcp-server` group); `adp-docs` `modules/connect/pages/` (`create-server.adoc`, `data-policies.adoc`, `user-delegated-oauth.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`, `managed/`), `modules/connect/partials/integrations/`, `modules/gateway/pages/code-mode.adoc`; `docs` `modules/reference/partials/rpk-ai/` (generated `rpk ai mcp-server` flag tables) |
 | `skills/adp/references/gateway-and-providers.md` | `cloudv2` `apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model`), `apps/rpai/internal/cmd/llm/`, `apps/rpai/internal/cmd/model/`; `adp-docs` `modules/gateway/pages/` (`configure-provider.adoc`, `overview.adoc`, `bedrock-setup.adoc`) |
-| `skills/adp/references/governance.md` | `cloudv2` `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client`, `oauth-provider`, `connection`, `--guardrail`, `--data-policies`); `adp-docs` `modules/control/pages/` (`budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/`, `access-policies.adoc`, `permissions-overview.adoc`), `modules/connect/pages/` (`data-policies.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`); `docs` `modules/reference/partials/rpk-ai/` (generated flag tables for `oauth-client dcr iat`, `oauth-provider --slack-token-type`, `--register-from-url`) |
+| `skills/adp/references/governance.md` | `cloudv2` `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client`, `oauth-provider`, `connection`, `--guardrail`, `--data-policies`); `adp-docs` `modules/control/pages/` (`budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc`), `modules/connect/pages/` (`data-policies.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`); `docs` `modules/reference/partials/rpk-ai/` (generated flag tables for `oauth-client dcr iat`, `oauth-provider --slack-token-type`, `--register-from-url`) |
 | `skills/adp/references/observability.md` | `cloudv2` `apps/rpai/internal/cmd/agent/` (transcript commands), `apps/rpai/testdata/commands-snapshot.md`; `adp-docs` `modules/monitor/pages/` (`transcripts.adoc`, `audit-log.adoc`, `agent-network.adoc`, `monitor-agents.adoc`), `modules/get-started/pages/adp-quickstart.adoc` |
 
 ## Usage

@@ -17,7 +17,7 @@ description: >-
 
 The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agents and MCP servers. It provides a managed runtime for AI agents and MCP servers, an AI Gateway that proxies LLM provider traffic, and governance controls (budgets, guardrails, Cedar access policies, data policies) to operate those workloads safely.
 
-**How to operate it.** ADP has two supported operator surfaces: the **`rpk ai` CLI** and the **ADP UI** (ai.redpanda.com). Applications and agents then call the endpoints ADP exposes: the AI Gateway's per-provider LLM URLs, each MCP server's URL, and each agent's A2A endpoint. There is no public ADP management API, so do not try to call ADP services directly. Use `rpk ai`, or send the user to the UI for tasks the CLI does not cover. Confirm the live surface with `--help` before acting.
+**How to operate it.** ADP has two supported operator surfaces: the **`rpk ai` CLI** and the **ADP UI** (ai.redpanda.com). Applications and agents then call the endpoints ADP exposes: the AI Gateway's per-provider LLM URLs, each MCP server's URL, and each agent's A2A endpoint. Operate ADP with `rpk ai`, and send the user to the UI for tasks the CLI does not cover. Confirm the live surface with `--help` before acting.
 
 **Maturity.** The Agentic Data Plane is generally available. The `rpk ai` CLI is in Preview. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, and MCP output format are Preview. Each reference file names these markers.
 
@@ -31,6 +31,7 @@ The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agen
 | LLM providers, connection test, pricing overrides | `rpk ai llm-provider` | LLM providers |
 | Model catalog | `rpk ai model` | LLM provider → Models tab |
 | Cedar access policies | `rpk ai policy` | Access (when enabled for your organization) |
+| Roles and permissions (RBAC) | role bindings via `/redpanda:rpk-cloud` | Access → Roles (read-only view) |
 | Data policies on an MCP server | `rpk ai mcp-server create/update --data-policies` | MCP server → Data Policies tab |
 | OAuth clients (inbound) and providers (outbound) | `rpk ai oauth-client`, `rpk ai oauth-provider` | Integrations setup |
 | Your own OAuth connections | `rpk ai connection` | Connections |
@@ -67,6 +68,7 @@ See [references/gateway-and-providers.md](references/gateway-and-providers.md).
 - **Cost and usage** (UI): spend and token reporting, groupable by cost-allocation tags taken from agent tags.
 - **Guardrails** (Preview; UI to author, `rpk ai llm-provider update --guardrail` to attach): content safety backed by AWS Bedrock Guardrails. Policy types are content filters, word filters, denied topics, sensitive information (PII), contextual grounding, and automated reasoning.
 - **Access policies** (`rpk ai policy`, UI): Cedar policies that decide *whether* a call runs.
+- **Roles and permissions**: every operation checks one fine-grained permission (`dataplane_adp_*`, `dataplane_aigateway_*`). Among built-in roles only Admin carries ADP permissions; everyone else gets access through policies, which name action IDs such as `Action::"LLMProvider.invoke"`, not permission strings.
 - **Data policies** (Preview): shape *what data* a permitted MCP call exposes, and to whom.
 - **OAuth**: inbound clients (including Dynamic Client Registration), outbound providers, and per-user connections.
 
@@ -113,7 +115,7 @@ rpk ai model list                      # model catalog (optionally --provider-ty
 
 ## Key patterns and gotchas
 
-- **No public management API.** Operate ADP through `rpk ai` or the UI. When a task has no CLI command (budgets, cost reporting, guardrail authoring, the audit log), direct the user to the UI instead of inventing a command. There is no `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail`.
+- **Use `rpk ai` or the UI.** When a task has no CLI command (budgets, cost reporting, guardrail authoring, the audit log), direct the user to the UI instead of inventing a command. There is no `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail`.
 - **Cost unit.** The UI shows dollars. Raw cost values in manifests or `-o yaml` output are **USD microcents** ($1 = 100,000,000 microcents). Never treat them as cents.
 - **Creating an LLM provider turns transcript content capture ON.** If the create does not mention transcripts, prompts and completions are recorded verbatim. To opt out, pass `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set them in the manifest). Existing providers are not changed. See [gateway-and-providers.md](references/gateway-and-providers.md#transcript-recording-defaults-to-on).
 - **A passthrough provider takes two credentials and cannot be health-checked.** With authorization passthrough, the caller's upstream credential goes in `Authorization` and the Redpanda Cloud token in `X-Redpanda-Cloud-Token`. On OpenAI-family providers, a call without the gateway header is refused with **HTTP 400**, and an upstream redirect becomes **HTTP 502**. A connection check reports it as not configured, which is expected; don't gate a create on it. See [gateway-and-providers.md](references/gateway-and-providers.md#authorization-passthrough).
@@ -137,6 +139,6 @@ For the `rpk cloud mcp` control-plane server, which manages Redpanda Cloud clust
 - [references/agents.md](references/agents.md): agent commands, managed agent spec, validation, reasoning effort, subagents, A2A, sessions, credentials, triggers.
 - [references/mcp-servers.md](references/mcp-servers.md): MCP server commands and fields, remote auth modes, `user_oauth` behavior, code mode, output format, data policies, managed catalog.
 - [references/gateway-and-providers.md](references/gateway-and-providers.md): provider management, provider types and credentials, connection tests, failed-call investigation, transcript capture default, authorization passthrough, models, pricing overrides, gateway scope.
-- [references/governance.md](references/governance.md): budgets, cost and usage, guardrails, Cedar access policies, data policies, OAuth clients, providers, and connections.
+- [references/governance.md](references/governance.md): budgets, cost and usage, guardrails, Cedar access policies, roles and permissions, data policies, OAuth clients, providers, and connections.
 - [references/observability.md](references/observability.md): transcripts (CLI and UI), audit log, and other monitoring views.
 - [references/rpk-ai.md](references/rpk-ai.md): `rpk ai` install and lifecycle, authentication, global flags, command tree, per-group details, GitOps `apply`/`diff`, `run claude` / `run codex`, common errors.

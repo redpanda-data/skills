@@ -145,3 +145,7 @@ A transcript tells you what an agent did. The audit log tells you what any princ
 - **Home**: the landing page after sign-in. It shows items needing attention, an overall health status, recent AI Gateway traffic (tokens and spend over time), month-to-date spend and token totals, budget status, top spenders, and quick actions. No CLI equivalent.
 - **Agents > Agent network**: a live graph of agents, the LLM providers they call, and the MCP servers and tools they use, with usage, cost, tokens, and health for a chosen window (last hour to last year, or custom). Select a node for its detail panel. Health (agent: Active / Degraded / Error / Pending; MCP server: Connected / Degraded / Error) derives from error rate in the window, and servers with credential or tool-call failures are flagged. Budget-blocked and provider-failed requests count as errors. View state is in the URL.
 - **Agent Playground**: see [agents.md](agents.md) for live testing, session history, and the token/context estimate.
+
+## Permissions
+
+Transcript reads (`dataplane_adp_transcript_*`) are separate from agent configuration reads and expose full conversation content. The audit log needs `dataplane_adp_auditlog_list`, and the Agent network view `dataplane_adp_agentnetwork_get`. The built-in *Read only* policy template and every template above it include transcript and audit-log reads. See [governance.md](governance.md#roles-and-permissions).

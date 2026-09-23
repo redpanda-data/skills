@@ -237,3 +237,7 @@ rpk ai trigger delete agents/<agent>/triggers/<id>            # idempotent
 - `rpk ai trigger create` defaults `--enabled` to true (pass `--enabled=false` to create it paused).
 - In a GitOps manifest an omitted `enabled` means **false**, so `rpk ai trigger apply` of a manifest without `enabled: true` creates or leaves a paused trigger.
 - A disabled schedule trigger fires no runs. A disabled Teams trigger stops delivering messages, and its credential check and status stop updating — the Teams card shows no disabled indicator, so confirm with `rpk ai trigger list`.
+
+## Permissions
+
+Agent operations are gated by `dataplane_adp_agent_*`, with separate families for credentials (`dataplane_adp_agent_credential_*`), triggers (`dataplane_adp_agent_trigger_*`), and conversation sessions (`dataplane_adp_agent_session_*`). Reading a session exposes its full conversation content, so grant it as deliberately as transcript access. Every A2A call to an agent is covered by one permission, `dataplane_adp_a2a_invoke`; grant it with a policy on `Action::"Agent.invoke"`. See [governance.md](governance.md#roles-and-permissions).

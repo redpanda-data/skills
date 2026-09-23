@@ -220,3 +220,7 @@ The ADP gateway overview and provider docs list these as not provided by AI Gate
 - **Rate limits.** No requests-per-second, per-minute, or per-day caps. To cap spend instead, use budgets (per-agent hard caps; see [governance.md](governance.md)). Budgets apply only to agent-attributed requests, so a user calling the gateway directly is not capped.
 
 Do not try to configure routing, failover, load balancing, or request rate limits through `rpk ai` or the UI; the features do not exist.
+
+## Permissions
+
+`dataplane_adp_llmprovider_*` gates provider management. `dataplane_adp_llmprovider_invoke` is all an application needs to send traffic through the gateway, which makes it the narrowest useful grant for a service account; grant it with a policy on `Action::"LLMProvider.invoke"`. Testing a connection needs `dataplane_adp_llmprovider_check_connection`: neither read nor create access alone allows it. See [governance.md](governance.md#roles-and-permissions).

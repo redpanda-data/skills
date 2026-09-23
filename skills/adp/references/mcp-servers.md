@@ -190,3 +190,7 @@ On a managed connector that supports user-delegated OAuth, the per-user connecti
 - The setting is chosen at provider creation and is immutable, so serving both identities means two providers (they can share one Slack app). See [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
 
 Some Slack tools accept only one identity: search needs a user token, and a bot token comes back as `not_allowed_token_type` or `user_token_required`. That is a provider token-type problem, not a missing connection or scope.
+
+## Permissions
+
+`dataplane_adp_mcpserver_*` gates both server management and each MCP protocol call against a running server (`initialize`, `tools_list`, `tools_call`, `resources_read`, `prompts_get`, and so on). Grant tool calls with a policy on `Action::"McpServerTool.call"`, scoped to one server where possible (`resource is McpServerTool in McpServer::"<name>"`). Attaching an OAuth provider to a server needs `dataplane_aigateway_oauthprovider_attach`. See [governance.md](governance.md#roles-and-permissions).
