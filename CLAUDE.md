@@ -107,8 +107,9 @@ Skills grounded in private or versioned source carry a `SOURCES.md` mapping each
 file to the exact source paths its claims derive from. **Read the relevant `SOURCES.md`
 before editing or verifying any file**, and open the cited paths first.
 
-- ADP: `skills/adp/SOURCES.md` (grounded in `proto/public/cloud/redpanda/api/adp/`,
-  `apps/rpai/`, `apps/aigw/`, `apps/adp-api/`; primary changelog `adp/RELEASE_NOTES.md`).
+- ADP: `skills/adp/SOURCES.md` (grounded in the `rpk ai` CLI help and the ADP product docs;
+  primary changelog `adp/RELEASE_NOTES.md`). The skill covers the `rpk ai` CLI, the ADP UI,
+  and the endpoints applications call.
 - Cloud: `skills/cloud-serverless/references/SOURCES.md`,
   `skills/cloud-byoc/references/SOURCES.md`,
   `skills/cloud-dedicated/references/SOURCES.md` (grounded in
