@@ -1,8 +1,10 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/mcp_server.proto` (MCPServerService RPCs, MCPServer fields, code-mode comment, tool-naming comment, `data_policies` field, `response_format` field and `MCPResponseFormat` enum, `PreviewDataPolicies`/`PreviewToolResponse` RPCs), `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/data_policy.proto` (DataShaping/DataPolicy), `cloudv2/proto/public/cloud/redpanda/mcps/v1/auth.proto` (auth mode messages), `cloudv2/apps/aigw/internal/mcp/managed/defaults.go` (managed catalog registrations), `cloudv2/apps/aigw/internal/mcp/proxy.go` (shared hook chain above the managed/remote/code-mode dispatch), `cloudv2/apps/aigw/internal/mcp/response_format_hook.go` (encoder scope, `tools/list` `outputSchema` strip, fail-open outcomes, code-mode alias trimming), `cloudv2/apps/aigw/internal/mcp/tokenvaulthook.go` (the per-method `user_oauth` gating: the handshake/liveness best-effort set, the managed-vs-remote capability-list split, the sign-in-remediable-only token-less forward, and the strictly-gated remainder whose refusal carries the authorize URL in the tool result's text). Product-documentation evidence: `adp-docs/modules/connect/partials/integrations/{continue,cursor,cline}-admin.adoc` (the 80-90% token-reduction figure) and the code-mode page. The managed-connector identity rule (Slack) verified 2026-09-21 against `cloudv2/proto/mcps/redpanda/mcps/slack/v1/slack_config.proto` (the `bot_token` / `user_oauth` oneof and its field help: a `user_oauth` connection's identity follows the provider's Slack OAuth token type) and `cloudv2/apps/aigw/internal/mcp/managed/mcps/slack/search.go` (`searchError`: `not_allowed_token_type` / `user_token_required` are user-token requirements). Evidence date: 2026-09-21 (the `user_oauth` per-method gating verified against the aigw token-vault hook on 2026-09-14; `response_format` scope and failure behavior verified against the aigw MCP proxy and response-format hook on 2026-08-31; `response_format`/`MCPResponseFormat` field and enum, MCPServerService RPCs, and data policies unchanged since 2026-08-03; managed catalog unchanged since 2026-06-29).
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`mcp-server`, `mcp-server create`, `mcp-server tools list|call`, `mcp-server types`, `mcp-server get` and error sections), `adp-docs modules/connect/pages/create-server.adoc`, `data-policies.adoc`, `user-delegated-oauth.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`, `managed/slack.adoc`, `managed/managed-catalog.adoc`, `adp-docs modules/gateway/pages/code-mode.adoc` — verified 2026-09-23. The per-method `user_oauth` gating and `response_format` fail-open behavior are carried forward from the earlier source-verified revision and cross-checked against `user-delegated-oauth.adoc` and `create-server.adoc` on 2026-09-23.
 
 # Agentic Data Plane MCP Servers Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Individual managed-catalog entries carry their own per-type maturity badges; see the managed catalog section below. Audience: an AI agent operating Agentic Data Plane MCP servers via `rpk ai mcp` and the Agentic Data Plane API.
+**Maturity:** Redpanda Agentic Data Plane is generally available. The `rpk ai` CLI is Preview. Output format and data policies are Preview capabilities, and individual managed types carry their own maturity badges in the managed catalog; confirm the badge in the UI or docs rather than assuming GA.
+
+Audience: an AI agent operating Agentic Data Plane MCP servers through `rpk ai mcp-server` and the ADP UI (ai.redpanda.com), and connecting MCP clients to them.
 
 Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
@@ -10,183 +12,185 @@ For the separate `rpk cloud mcp` control-plane server, see /redpanda:rpk-cloud.
 
 ## Discover the live surface
 
-Before acting, confirm the available operations and fields:
-
 ```bash
-# See all rpk ai mcp subcommands and flags
-rpk ai mcp --help
-
-# List MCP servers on the cluster
-rpk ai mcp list
-
-# List tools exposed by a specific server
-rpk ai mcp tools list <server-name>
+rpk ai mcp-server --help                    # aliases: mcp-servers, mcp
+rpk ai mcp-server create --help             # flags grouped by backend (remote.*, managed.*)
+rpk ai mcp-server list                      # NAME, TYPE, URL, ENABLED
+rpk ai mcp-server get <name> -o yaml        # full manifest, including data policies
+rpk ai mcp-server types                     # managed types available to you (-o wide adds type URLs)
+rpk ai mcp-server tools list <name>         # live tools/list through the gateway
+rpk ai mcp-server tools call <name> <tool> --args '{"k":"v"}'
 ```
 
-The sections below document the proto-verified surface. For exact field lists and current limits, confirm live via `--help` and by listing or describing MCP tools on the cluster.
+In the UI: **MCP servers** in the sidebar → **Add MCP server**. A server's detail page has **Overview**, **Data Policies**, **Connection** (the `Server URL`, the `Code mode URL`, and client snippets), and **Inspector** tabs, plus **Access** and **Activity** where enabled.
 
-## API layers
+## Commands
 
-There are two `MCPServerService` definitions in the cloudv2 service tree. Know which layer you are targeting:
+| Command | Purpose |
+|---|---|
+| `create NAME` | Create a server; the name is positional (`--name` is rejected as an unknown flag) |
+| `get NAME` / `list` | Read one (`-o yaml` for the manifest) / list all |
+| `update NAME` | Change only the flags you pass; list/map flags replace wholesale |
+| `delete NAME` | Delete the record |
+| `types` | Managed types you can create |
+| `tools list NAME` / `tools call NAME TOOL` | Call `tools/list` / a tool through the gateway, with the same auth and per-user token path a client uses. `--code-mode` targets the code-mode endpoint |
+| `apply -f` / `diff -f` | GitOps reconcile / dry-run (see [rpk-ai.md](rpk-ai.md)) |
 
-| Layer | Package | Description |
-|-------|---------|-------------|
-| Agentic Data Plane management plane | `redpanda.api.adp.v1alpha1.MCPServerService` | 9 RPCs; the aigw app implements this directly. Use this layer to create, update, and manage MCP server records. |
-| Cloud dataplane (public API) | `redpanda.api.dataplane.v1alpha3.MCPServerService` | 9 RPCs (adds `StartMCPServer`, `StopMCPServer`, `GetMCPServerServiceConfigSchema`, `LintMCPConfig`); exposed via the public Cloud data-plane API and Cloud UI MCP tools. |
+`create` and `update` also accept `-f <manifest>` (flags override file values) and `--dry-run` (print the request, including the computed update mask, without sending it).
 
-The skill operates against the `v1alpha1` Agentic Data Plane management-plane layer unless the context explicitly targets the `v1alpha3` public API.
+A missing server reads `Error: MCP server not found (use 'rpk ai mcp-server list' to see what's available)` followed by `Code: not_found`. An invalid enum value lists the valid ones, for example `--remote.transport: invalid value "websocket"; valid values: sse, streamable-http`.
 
-## `MCPServerService` RPCs (`adp.v1alpha1`)
+## Server fields
 
-| RPC | Purpose |
-|-----|---------|
-| `CreateMCPServer` | Create a new MCP server record (remote or managed) |
-| `GetMCPServer` | Fetch a single server by name |
-| `ListMCPServers` | List all servers in the namespace |
-| `UpdateMCPServer` | Update a server's mutable fields |
-| `DeleteMCPServer` | Delete a server record |
-| `ListManagedMCPTypes` | List available managed integration types |
-| `ListMCPServerTools` | List the tools exposed by a server (live call; proxies upstream for remote servers when OAuth connection exists; returns `FAILED_PRECONDITION` with `OAuthConnectionRequired` detail when no OAuth connection is present) |
-| `PreviewDataPolicies` | Preview (data policies, see below): dry-run a server's data policies for a `(server, tool, principal)`; returns the allow/deny effect and the explained composition (per-field winners, composed clamps, row filters, diagnostics). Accepts a `draft_data_policies` overlay for unsaved edits. Requires Cedar authorization enabled; else `UNIMPLEMENTED` |
-| `PreviewToolResponse` | Preview (data policies, see below): dry-run response shaping against a sample response document; returns the shaped result the agent would receive. Requires Cedar authorization enabled; else `UNIMPLEMENTED` |
+As they appear in flags and `get -o yaml`:
 
-## Key `MCPServer` fields
+| Field | Flag | Notes |
+|---|---|---|
+| `name` | positional | 1–63 characters, lowercase letter first, then lowercase letters, digits, hyphens. Immutable; it is the URL path segment. To rename, delete and recreate |
+| backend | `--remote.*` or `--managed.config` | Remote (a server you host, proxied by the gateway) or managed (hosted by Redpanda). The flag group you use selects it; mixing groups is an error. Immutable |
+| `enabled` | `--enabled` | **The CLI creates a server disabled unless you pass `--enabled`**; the UI creates it enabled. A disabled server rejects every request, connection attempts included |
+| `description` | `--description` | Up to 256 characters |
+| `tags` | `--tags key=value` (repeatable) | Up to 50 pairs, values up to 256 characters; for filtering and tag-based access-policy conditions. An update replaces the whole map. No UI field. No secrets or PII |
+| `code_mode` | `--code-mode` | See [Code mode](#code-mode) |
+| `response_format` | `--response-format jton\|toon` | See [Output format](#output-format-token-optimization). Omitted = JSON |
+| `data_policies` | `--data-policies` (repeatable) | See [Data policies](#data-policies-preview). Returned by `get`, omitted by `list` |
+| `url` | read-only | `<gateway-base>/mcp/v1/<name>`, the endpoint MCP clients connect to |
+| `tools` | read-only | Populated by a live `tools/list` when you `get` a server |
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `name` | `string` | AIP-122 identifier; 1-63 chars; pattern `^[a-z][a-z0-9-]*$`; immutable after create |
-| `type` | `MCPServerType` | `REMOTE` or `MANAGED`; immutable after create |
-| `backend` | oneof | `RemoteMCPConfig` or `ManagedMCPConfig` |
-| `enabled` | `bool` | Whether the server is active |
-| `description` | `string` | Max 256 chars |
-| `code_mode` | `bool` | When true, adds `{name}_search` and `{name}_execute` tools alongside the server's existing tools |
-| `url` | `string` | OUTPUT_ONLY; computed server URL, not persisted |
-| `code_mode_url` | `string` | OUTPUT_ONLY; computed URL for the code-mode endpoint (`-code` suffix convention); not persisted |
-| `tools` | `repeated MCPTool` | OUTPUT_ONLY; populated by a live `tools/list` call |
-| `data_policies` | `repeated DataPolicy` | OPTIONAL; preview. Data-shaping policies for this server's tool calls (mask/redact/hash/drop fields, clamp argument values, filter response rows), composed most-restrictive. Also settable on create/update. Omitted from `ListMCPServers` responses to bound payload size; read via `GetMCPServer`. See Data policies below and [governance.md](governance.md) |
-| `response_format` | `MCPResponseFormat` | OPTIONAL; output encoding for this server's tool results on the MCP→agent leg (token optimization). `UNSPECIFIED` = JSON passthrough (the default). Also settable on create/update. See Output format below |
-| `created_at`, `updated_at`, `created_by`, `updated_by` | OUTPUT_ONLY | Audit fields |
-
-`MCPServerType` enum values: `MCP_SERVER_TYPE_UNSPECIFIED` (0), `MCP_SERVER_TYPE_REMOTE` (1), `MCP_SERVER_TYPE_MANAGED` (2).
-
-Transport options (`MCPTransport`): `MCP_TRANSPORT_SSE` (1), `MCP_TRANSPORT_STREAMABLE_HTTP` (2).
+Remote servers take `--remote.url` (alias `--url`) and `--remote.transport` (alias `--transport`): `streamable-http` (recommended for new servers) or `sse`. Service-account OAuth and user-delegated OAuth generally require an HTTPS URL.
 
 ## Remote auth modes
 
-Remote MCP servers (`type = REMOTE`) configure auth via the `RemoteMCPConfig.auth` oneof. There are exactly 5 wired modes:
+A remote server uses exactly one of five auth modes; the flag group you set selects it. Managed types show only the modes that make sense for that type (SQL, for example, never offers user OAuth) and carry their auth shape inside `--managed.config`.
 
-| Mode | Field in oneof | Description |
-|------|---------------|-------------|
-| No auth | `none` | Unauthenticated; empty message |
-| Token passthrough | `token_passthrough` | Forwards the caller's inbound bearer token upstream unchanged |
-| Static key | `static_key` | Sends a static secret as the auth header; field name is `key_secret_ref` (UPPER_SNAKE_CASE secret-store reference) with an optional `header_name` that defaults to `"Authorization"` |
-| Service-account OAuth | `service_account_oauth` | Client-credentials OAuth flow; fields: `client_id`, `client_secret_ref`, `token_url`, `scopes` |
-| User-delegated OAuth | `user_oauth` | Per-user OAuth delegation; fields: `provider_name`, `required_scopes`, `injection` (TokenInjection) |
+| Mode | UI label | CLI flags | Behavior |
+|---|---|---|---|
+| None | `No Authentication` | `--remote.none` | Unauthenticated upstream |
+| Token passthrough | `Token Passthrough` | `--remote.token-passthrough` | Forwards the caller's `Authorization` header upstream unchanged |
+| Static key | `Static Key` | `--remote.static-key.key-secret-ref`, optional `--remote.static-key.header-name` (default `Authorization`) | One shared API key from the secret store. The field is `key_secret_ref` (UI label `Key reference`); some docs call it `key_ref`, which is wrong |
+| Service-account OAuth | `OAuth (Service Account)` | `--remote.service-account-oauth.client-id`, `.client-secret-ref`, `.token-url`, `.scopes` | Client-credentials flow; every caller shares one upstream identity |
+| User-delegated OAuth | `User OAuth (Per-User Delegated)` | `--remote.user-oauth.provider-name`, `.required-scopes`, `.injection.header-name` (default `Authorization`), `.injection.header-prefix` (default `Bearer`; empty for none), `.client-id`, `.client-secret-ref`, `.automatic-setup` | Each end user connects their own upstream account; the gateway injects that user's token per call |
 
-**Important:** The static-key field is named `key_secret_ref` in the proto source (`auth.proto:26`). Published docs in some places incorrectly call it `key_ref`. The proto is authoritative; use `key_secret_ref`.
+Secret references are `UPPER_SNAKE_CASE` names in the ADP secret store, never the secret value.
+
+**User-delegated OAuth setup.** Name an existing OAuth provider with `--remote.user-oauth.provider-name`, or leave it empty to have the gateway set OAuth up automatically from the server URL. `--remote.user-oauth.client-id` / `.client-secret-ref` are only for automatic setup against a server without dynamic client registration (the secret only for a confidential app). On `update`, `--remote.user-oauth.automatic-setup` re-runs automatic setup instead of keeping the attached provider; do not combine it with a provider name. A connection with fewer scopes than `--remote.user-oauth.required-scopes` fails with `scope_upgrade_required`. See [governance.md](governance.md) for OAuth providers and connections.
+
+**Before a user connects**, `rpk ai mcp-server get <name>` on a user-OAuth server prints the authorize link instead of a tool list:
+
+```
+Tool discovery requires OAuth connection to "<provider>".
+Connect: <gateway-base>/oauth/v1/authorize?provider_name=<provider>&scopes=...
+```
 
 ### What a caller without a connection can do (`user_oauth`)
 
-A `user_oauth` server needs a per-user token from the gateway's token vault, but the gateway does **not** refuse everything until the user connects. The gating is per JSON-RPC method, and the differences matter when you point an MCP client (Claude Code, Cursor, an agent at startup) at the endpoint:
+A client pointed at a user-OAuth server's gateway URL (Claude Code, Cursor, an agent at startup) is not refused wholesale before the user connects. Behavior differs by JSON-RPC method:
 
-| Method group | Methods | Behavior when the caller has no usable connection |
+| Method group | Methods | Without a usable connection |
 |---|---|---|
-| Session setup and liveness | `initialize`, `notifications/initialized`, `notifications/cancelled`, `ping` | Resolved best-effort, never fatal: a token is attached when one is available, otherwise the call is forwarded token-less. A client can always open the session before connecting OAuth |
-| Capability listing | `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list` | **Managed** servers bypass the vault entirely (the schema is gateway-owned and carries no per-user data). **Remote** servers resolve first — a connected caller still gets their own token, so a per-user list stays per-user — and only on a sign-in-remediable failure is the list forwarded token-less for the upstream to answer |
-| Everything that reads content or acts | `tools/call`, `resources/read`, `prompts/get`, `resources/subscribe`, `completion/complete`, and any method a future spec revision adds | Strictly gated (deny-by-default). This is where the refusal surfaces, and it surfaces usefully: an `isError` tool result whose **text** carries the authorize URL |
+| Session setup and liveness | `initialize`, `notifications/initialized`, `notifications/cancelled`, `ping` | Always proceed; a client can open the session before connecting |
+| Capability listing | `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list` | **Managed** servers answer from the schema Redpanda holds for the type, the same for every user — except a managed type whose tool list depends on the signed-in user, which needs a connection first. **Remote** servers: a connected caller gets their own per-user list; a caller without a connection is forwarded token-less, and the upstream decides whether to answer |
+| Reading content or acting | `tools/call`, `resources/read`, `prompts/get`, `resources/subscribe`, `completion/complete`, and any other method | Refused until the user connects. The refusal is an `isError` tool result whose **text** carries the authorize URL |
 
-Two consequences worth planning around:
+Consequences:
 
-- **The tool list is not proof of access.** Listing what exists does not imply being able to read it — `resources/read` and `prompts/get` are deliberately outside the listing bypass. Expect a tool list to succeed and the first call to come back asking the user to sign in.
-- **The authorize link arrives on a call, not on the list.** Read it out of the tool result's text rather than relying on an error status or the `isError` bit: some MCP clients surface only the result content, so the text is what reaches the model and the user.
+- **The tool list is not proof of access.** Expect listing to succeed and the first call to come back asking the user to sign in.
+- **Read the authorize link from the tool result's text**, not from an error status or the `isError` bit: some MCP clients surface only the result content.
+- **Only sign-in-fixable failures** (no connection, an expired one, a missing scope) open the token-less listing path. An unresolvable provider, an unreachable token store, or a connection that does not verify fails listings too. So a `tools/list` that fails **hard** on a user-OAuth remote server is an infrastructure or configuration problem, **not** a missing user connection — do not prompt the user to sign in.
 
-Only a failure the *caller* can clear by signing in opens the token-less listing path — no connection, an expired one, or one missing a required scope. Every other resolution failure (an unresolvable provider reference, an unreachable vault, a destination binding that does not verify) stays fatal for listings too, deliberately: a connected user's list answered anonymously during an outage would be indistinguishable from the real one. So a `tools/list` that fails hard on a `user_oauth` remote is an infrastructure or configuration problem, **not** a missing user connection — do not treat it as a prompt to sign in.
+A connected caller is not automatically the *acting* identity: on a managed connector the provider can decide that, and for Slack it does — see [below](#user-delegated-oauth-on-a-managed-connector-whose-identity-acts).
 
-This is the gateway's MCP endpoint. The control-plane `ListMCPServerTools` RPC is a separate surface with its own behavior (see the RPC table above): it still returns `FAILED_PRECONDITION` with an `OAuthConnectionRequired` detail when no connection exists.
+## Connecting clients
 
-A connected caller is also not automatically the *acting* identity: on a managed connector the provider can decide that, and for Slack it does — see [User-delegated OAuth on a managed connector](#user-delegated-oauth-on-a-managed-connector-whose-identity-acts).
+A client connects to the `Server URL` on the **Connection** tab (`<gateway-base>/mcp/v1/<name>`), whose **Install in an AI client** card has ready-to-paste snippets. The gateway reports routing problems on the connection itself, so the client shows the reason:
 
-Two additional auth message types (`BasicAuth` and `APIKeyAuth`) are defined in the shared `auth.proto` package but are NOT wired into the `RemoteMCPConfig` oneof. They are not valid options for remote MCP server auth.
+- `MCP server "<name>" not found` — no server by that name in this environment.
+- `MCP server "<name>" is disabled` — turn the **Enabled** toggle on, or `rpk ai mcp-server update <name> --enabled`.
+- `MCP server "<name>" does not have code mode enabled` — the client used the `-code` URL of a server without code mode.
 
 ## Code mode
 
-When `code_mode = true` on a server, the Agentic Data Plane gateway adds two additional tools:
+Turn on **Enable code mode** in the UI, or pass `--code-mode`, to serve a **second endpoint** for the server: the server URL with a `-code` suffix (`Code mode URL` on the Connection tab). The primary endpoint is unchanged. The code-mode endpoint exposes exactly two tools instead of the full catalog:
 
-| Tool name (in full endpoint) | Tool name (in code-mode endpoint) | Description |
-|------------------------------|-----------------------------------|-------------|
-| `{name}_search` | `search` | Find tools in the server's catalog; accepts an optional `query` (Go RE2 regex) |
-| `{name}_execute` | `execute` | Run JavaScript in a sandbox with `call_tool({name, arguments})` and `search_tools(query)` host functions |
+| Tool | Behavior |
+|---|---|
+| `search` | Optional `query`, a Go RE2 regex matched against tool names and descriptions; returns each match's full schema, or null. Omitting the query returns the whole catalog, so use a narrow regex |
+| `execute` | Runs JavaScript in a sandbox with synchronous host functions `call_tool({name, arguments})` (throws on a tool error; parses JSON output) and `search_tools(query)`. The value of the last expression is the result |
 
-The `{name}_` prefix is the namespaced form when the tools are served alongside other tools in the full endpoint. In the dedicated code-mode endpoint (`code_mode_url`, which uses a `-code` suffix), the same tools appear as bare `search` and `execute`.
+Sandbox limits: code up to 64 KiB, at most 50 tool calls per `execute`, plus memory and runtime limits. Do not `await` the host functions; top-level `await` and `return` are syntax errors, promises are not awaited, and `console.log` output is discarded. Calls made through code mode run with the server's own identity and auth, including per-user tokens; code mode never widens what the server can reach.
 
-Code mode is a token-reduction technique for a single server with many tools. It is not a way to combine multiple servers behind one endpoint. Each code-mode server has exactly one `code_mode_url`; there is no multi-server aggregation endpoint.
+The `--code-mode` flag help still describes `{name}_search` / `{name}_execute` tools added alongside the existing ones; the product docs describe the separate `-code` endpoint with bare `search` and `execute`. Trust the docs, and confirm with `rpk ai mcp-server tools list <name> --code-mode`.
 
-### Token reduction
+```bash
+rpk ai mcp-server tools list <server> --code-mode
+rpk ai mcp-server tools call <server> search --code-mode --args '{"query":"(?i)pull.*create"}'
+rpk ai mcp-server tools call <server> execute --code-mode \
+  --args '{"code":"var r = call_tool({name:\"query\", arguments:{query:\"SELECT 1\"}}); JSON.stringify(r);"}'
+```
 
-Integration guides report that deferred tool loading (code mode) reduces token usage by 80-90% for configurations with many tools (source: the Continue, Cursor and Cline integration guides in the Agentic Data Plane documentation). The canonical code-mode page states the technique "cuts the token cost" but does not give a percentage. Use 80-90% as the documented figure; treat it as an approximation from integration-specific guides.
+Code mode is per server: it is a token-reduction technique for one server with many tools, not a way to combine servers behind one endpoint. The UI create form turns it on by default for some managed types; `rpk ai mcp-server create` leaves it off unless you pass `--code-mode`.
 
-### Tool name truncation
+**Token reduction.** Deferring tool loading this way substantially reduces token usage on tool-heavy configurations; measure it for your own workload rather than assuming a figure.
 
-The MCP protocol enforces a 64-character limit on tool names. For managed types whose generated names exceed this limit, the Agentic Data Plane truncates the prefix and replaces it with a hash (for example, `64ghux5adn_github_read_v1_GitHubReadService_GetAuthenticatedUser`). The version, service, and method suffix is always preserved, so the short tool name an agent sees (for example, `get_authenticated_user`) remains stable across truncations.
+**Tool name truncation.** MCP limits tool names to 64 characters. For managed types whose generated names exceed it, the prefix is truncated and replaced with a hash (for example `64ghux5adn_github_read_v1_GitHubReadService_GetAuthenticatedUser`). The method name is always preserved, so the short tool name an agent sees (for example `get_authenticated_user`) stays stable. This only matters when correlating logs or transcripts with full tool names.
 
 ## Output format (token optimization)
 
-A server's `response_format` selects how its tool results are encoded on the MCP→agent leg, before the model reads them. It is a field on the server (`response_format` on `MCPServer`, and on create/update) and defaults to JSON passthrough. It shapes only the *encoding*; it never changes which data a result contains.
+Preview. A server's output format selects how its tool results are encoded before the agent reads them. UI: **Output format → Encoding**. CLI: `--response-format jton|toon`; omitted means JSON.
 
-| `MCPResponseFormat` value | Encoding | Notes |
-|---|---|---|
-| `MCP_RESPONSE_FORMAT_UNSPECIFIED` (0) | JSON passthrough | Default and current behavior; results forwarded untouched |
-| `MCP_RESPONSE_FORMAT_JTON` (1) | JTON (JSON Tabular Object Notation) | Re-encodes tabular JSON in `content[].text` into a denser grid form and strips the duplicate `structuredContent`. A strict JSON superset; only arrays of homogeneous objects compress — other shapes pass through |
-| `MCP_RESPONSE_FORMAT_TOON` (2) | TOON (Token-Oriented Object Notation) | A leaner indentation-based encoding that also trims nested objects, not only arrays-of-objects. Same strip-`structuredContent` + lossless-round-trip contract as JTON |
+| Encoding | Effect |
+|---|---|
+| JSON (default) | Results forwarded unchanged |
+| JTON | Re-encodes tabular JSON (arrays of homogeneous objects) into a compact JSON superset |
+| TOON | A leaner indentation-based encoding that also compacts nested objects |
 
-Both JTON and TOON are optimizations only — they preserve a lossless round-trip and never alter the result's data. This is a newer capability; confirm it is active in your environment (and the encoded output is what you expect) via live introspection before relying on it.
+Both are lossless re-encodings and never change the data. Behavior a caller sees:
 
-### Scope and failure behavior
+- **Applies to managed and remote servers**, on either transport.
+- **Whole-server**, not per-tool; non-tabular results simply pass through.
+- **The code-mode endpoint inherits the server's format.**
+- **`tools/list` drops `outputSchema`** on an opted-in server, because the encoding strips the duplicate structured content a schema would promise. Expect no structured-output contract there; the data arrives in the encoded text block.
+- **It fails open, never closed.** Anything that cannot be safely re-encoded is forwarded unchanged: non-JSON text, error results, results the encoding would not shrink, very large results, and anything that does not round-trip exactly (high-precision decimals are a known case).
 
-- **Applies to both `REMOTE` and `MANAGED` servers.** The encoder sits in the shared MCP proxy chain, above the managed / remote / code-mode dispatch, so a remote server you own is encoded on the proxied leg just like a managed catalog entry. A managed server answers plain JSON; a remote server on the Streamable HTTP transport answers SSE, and both framings are handled.
-- **Whole-server, not per-tool.** The setting is a single field on the server; there is no per-tool granularity. A server mixing tabular and non-tabular tools simply passes the non-tabular results through.
-- **A code-mode endpoint inherits the parent server's format.** The `-code` alias reads `response_format` from the server whose config it shares, so you set it once on the parent.
-- **`tools/list` drops `outputSchema`.** On a server that has opted in, the advertised tools lose their `outputSchema`, because encoding strips the duplicate `structuredContent` a schema would promise. Expect no structured-output contract on the tools of an opted-in server; the tool still returns its data in the encoded text block.
-- **It fails open, never closed.** The encoder never denies a call and never truncates a result. Anything it cannot safely re-encode is forwarded byte-for-byte: a non-JSON (prose) payload, an error result or one with `isError` set, a payload whose encoding would not actually shrink it, a very large payload, and — critically — any encoding that does not round-trip exactly back to the source value. High-precision decimals are a known round-trip rejection, so they pass through unencoded.
-
-Because passthrough is silent and shape-dependent, do not assume a given tool's output is encoded; treat `response_format` as a best-effort token optimization rather than a guaranteed wire format.
+The selected encoding may not be active on every gateway; until it is, results are forwarded as JSON. Because passthrough is silent and shape-dependent, treat the format as a best-effort optimization, not a guaranteed wire format; check actual output with `rpk ai mcp-server tools call` before relying on it. In a GitOps manifest an omitted `response_format` reconciles the server back to JSON.
 
 ## Data policies (preview)
 
-A server can carry **data policies** that shape its tool traffic before the model sees it: mask, redact, hash, or drop fields; clamp the allowed values of tool-call arguments; and filter whole records out of list responses. They are configured on the server itself through the `data_policies` field (on `MCPServer` and on create/update), and apply to both remote and managed servers. Policies compose **most-restrictive** across every entry whose `tools` and `principals` match, and unenforceable rules fail closed.
+Data policies shape a server's tool traffic before the model sees it: mask, redact, hash, or drop result fields; restrict tool-call argument values; and filter elements out of list results. They apply to managed and remote servers, compose **most-restrictively** across every matching policy, and **fail closed** (a rule that cannot be enforced denies matching calls). Each policy names the `tools` it shapes and the `principals` (`User:<email>`) it applies to; an empty list means all. Data policies decide *how data looks*; access policies decide *whether* a call runs.
 
-Data policies are a distinct control from Cedar authorization: Cedar decides *whether* a tool call runs; data policies decide *how* its data is shaped and *to whom*. This is a preview capability — confirm current availability live before relying on it.
+- **UI:** server → **Data Policies** tab. Pick a tool, click **New policy**, choose **Keep / Mask / Drop** per field, or edit the rules as YAML.
+- **Preview before saving (UI):** the **Configuration** tab shows the composed effect for the selected tool across all of the server's policies, including unsaved edits, with each field's winning treatment. The **Preview** tab runs editable sample data (seeded from the tool's schema) through the rules and shows before/after for both the request and the response, with counts of masked, dropped, and filtered items, and a banner when matching calls would be denied. There is no CLI preview command.
+- **CLI:** `--data-policies` on `create` / `update` takes one policy per flag as a JSON object and **replaces the server's whole list**, so pass every policy the server should keep. This is also the only way to make one policy shape several tools. Read policies with `rpk ai mcp-server get <name> -o yaml`; `list` omits them.
+- Rules written in YAML or via `--data-policies` are **strict** unless marked absence-safe: a strict mask or drop whose selector matches nothing denies the call. Rules created in the UI form default to absence-safe.
 
-For the full transform vocabulary (field actions, clamps, row filters), the composition semantics, and the `PreviewDataPolicies` / `PreviewToolResponse` dry-run RPCs, see [governance.md](governance.md). `ListMCPServers` omits `data_policies` to bound payload size; read a server's policies via `GetMCPServer`.
+For the transform vocabulary (mask methods, selectors, allowlist mode, argument limits, row filters), limitations, and audit-log outcomes, see [governance.md](governance.md).
 
 ## Managed catalog
 
-The `type = MANAGED` backend connects to a pre-integrated service. The catalog is organized into 7 categories (the example lists below are illustrative, not exhaustive):
+A managed server connects to a service Redpanda hosts in-process: for example databases (SQL, MongoDB), work and messaging tools (Slack, Jira), and cloud services (AWS SNS, SQS). The set available to you changes, so never enumerate it from memory:
 
-| Category | Examples |
-|----------|---------|
-| AI | AWS Bedrock, Cohere, OpenAI |
-| AWS | AWS S3, AWS SNS, AWS SQS |
-| Communication | Discord, Freshservice, GitHub Read (GA), Jira, Pylon, ServiceNow, Slack, Zendesk |
-| Database | Elasticsearch, Metabase, MongoDB, Qdrant, Redis, SQL |
-| Google | GCP Pub/Sub, Gmail, Google Calendar (GA), Google Drive (GA) |
-| Streaming | Kafka, NATS |
-| Utility | Azure AD, BambooHR (GA), BILL, DocuSign, Grafana, Greenhouse, Ironclad, NetSuite, Okta, OpenAPI, Ramp, Salesforce (GA), Sentry, SharePoint, Text Chunker, Workday, and others |
+- `rpk ai mcp-server types` lists the short type names; `-o wide` adds each type's full type URL.
+- The UI **Add MCP server** picker shows the same types as cards, with maturity badges.
 
-There are ~50 managed types across these 7 categories; the exact set is gated per cluster, so use `ListManagedMCPTypes` to get the live list of available types for your cluster.
+Create one with `--managed.config`, JSON whose `@type` is a short name from `types` or a full type URL:
 
-Items without a maturity badge are GA. Items marked `badge:beta` are Beta. Confirm the current maturity of any specific type live via the API or UI.
+```bash
+rpk ai mcp-server create my-sql --enabled \
+  --managed.config '{"@type":"SQLMCP","driver":"sqlite3","dsn":":memory:"}'
+```
+
+Type-specific fields (including a `userOauth` block for types that support user-delegated OAuth) differ per type; take them from the type's setup guide or the UI form.
 
 ### User-delegated OAuth on a managed connector: whose identity acts
 
-A managed connector that supports user-delegated OAuth takes a `user_oauth` arm naming an OAuth provider, and the per-user connection decides **which** stored credential is used — not **whose identity** the upstream call carries. Slack is the case where the two come apart, because Slack issues a bot credential and a user credential from the same authorization: the acting identity is fixed by the provider's `slack_token_type`, not by who owns the connection.
+On a managed connector that supports user-delegated OAuth, the per-user connection decides **which** stored credential is used, not necessarily **whose identity** the upstream call carries. Slack is the case where these differ, because one Slack authorization can issue both a bot token and a user token. The acting identity is fixed by the OAuth provider's **Slack OAuth token type** (`slack_token_type`), not by who owns the connection:
 
-- With the default (or an explicitly bot-typed) provider, a `user_oauth` Slack server still posts, reads and reacts **as the app's bot user**.
-- Only a provider created with the user-token type acts **as the person who authorized**.
-- That choice is create-time and immutable on the provider, so serving both identities means two providers. See [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
+- **`Bot User OAuth Token`** (the default, and what providers created before the setting existed keep): tools post, read, and react **as the app's bot user**, even on a user-OAuth server.
+- **`User OAuth Token`**: tools act **as the person who authorized**. Offered only when the provider uses Slack's standard OAuth v2 authorize and token endpoints, so not on a provider set up by discovery.
+- The setting is chosen at provider creation and is immutable, so serving both identities means two providers (they can share one Slack app). See [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
 
-Some tools accept only one of the two: Slack search needs a user token, and a bot token comes back as `not_allowed_token_type` or `user_token_required` — a provider-identity problem, not a missing connection or a missing scope.
+Some Slack tools accept only one identity: search needs a user token, and a bot token comes back as `not_allowed_token_type` or `user_token_required`. That is a provider token-type problem, not a missing connection or scope.
 
-## Knowledge bases
+## Permissions
 
-Knowledge bases are a separate resource at the Cloud dataplane `v1alpha3` layer (`redpanda.api.dataplane.v1alpha3.KnowledgeBaseService`). They are NOT part of the `adp.v1alpha1` MCP server management API and are not a sub-resource of `MCPServer`. Manage knowledge bases via the `v1alpha3` API, not via `MCPServerService`.
+`dataplane_adp_mcpserver_*` gates both server management and each MCP protocol call against a running server (`initialize`, `tools_list`, `tools_call`, `resources_read`, `prompts_get`, and so on). Grant tool calls with a policy on `Action::"McpServerTool.call"`, scoped to one server where possible (`resource is McpServerTool in McpServer::"<name>"`). Attaching an OAuth provider to a server needs `dataplane_aigateway_oauthprovider_attach`. See [governance.md](governance.md#roles-and-permissions).

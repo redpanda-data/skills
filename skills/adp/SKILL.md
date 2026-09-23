@@ -2,154 +2,143 @@
 name: adp
 description: >-
   Redpanda's Agentic Data Plane: governance infrastructure for building, running,
-  and governing AI agents and MCP servers, plus a proxying AI Gateway for LLM providers,
-  operated via `rpk ai` and the ADP API. Use when creating or managing AI agents (managed
-  or self-managed) via `rpk ai agent` or `AgentRegistryService`; configuring MCP servers
-  (remote or managed catalog, code mode, auth); setting up LLM providers or querying
-  models via `rpk ai llm`/`rpk ai model` or the AI Gateway proxy; or configuring budgets,
-  guardrails, or Cedar access-control policies through the governance APIs. Also covers
-  reading agent transcripts and spending insights, and wiring OAuth clients or providers
-  to the aigw Authorization Server. For the separate rpk cloud mcp control-plane MCP
-  server, see `/redpanda:rpk-cloud`.
+  and governing AI agents and MCP servers behind a credential-injecting AI Gateway for
+  LLM providers, operated through the `rpk ai` CLI and the ADP UI at ai.redpanda.com.
+  Use when creating or managing managed or self-managed AI agents and their triggers
+  with `rpk ai agent` and `rpk ai trigger`, configuring remote or managed MCP servers
+  with `rpk ai mcp-server` (including code mode and user-delegated OAuth), setting up
+  LLM providers or discovering models with `rpk ai llm-provider` and `rpk ai model`,
+  writing Cedar access policies with `rpk ai policy`, or working with budgets,
+  guardrails, cost reporting, transcripts, and the audit log in the ADP UI. For the
+  separate rpk cloud mcp control-plane MCP server, see `/redpanda:rpk-cloud`.
 ---
 
 # Agentic Data Plane
 
-The Agentic Data Plane is Redpanda's governance infrastructure for AI agents and MCP servers. It is its own product surface: it runs on Redpanda and provisions its own environment when you add it. It provides a managed runtime for AI agents and MCP servers, a proxying AI Gateway for LLM providers, and governance surfaces (budgets, guardrails, Cedar access-control policies) to operate those workloads safely. This skill is written for an AI agent operating the platform programmatically via `rpk ai` and the Agentic Data Plane API or MCP tools. Optimize for correct field names and service names; confirm the live surface before acting.
+The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agents and MCP servers. It provides a managed runtime for AI agents and MCP servers, an AI Gateway that proxies LLM provider traffic, and governance controls (budgets, guardrails, Cedar access policies, data policies) to operate those workloads safely.
 
-## Component overview
+**How to operate it.** ADP has two supported operator surfaces: the **`rpk ai` CLI** and the **ADP UI** (ai.redpanda.com). Applications and agents then call the endpoints ADP exposes: the AI Gateway's per-provider LLM URLs, each MCP server's URL, and each agent's A2A endpoint. Operate ADP with `rpk ai`, and send the user to the UI for tasks the CLI does not cover. Confirm the live surface with `--help` before acting.
 
-Maturity note: Redpanda Agentic Data Plane is generally available. Its APIs are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live. The `rpk ai` CLI is in Preview; `InsightsService` is Experimental.
+**Maturity.** The Agentic Data Plane is generally available. The `rpk ai` CLI is in Preview. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, and MCP output format are Preview. Each reference file names these markers.
+
+## Where each task lives
+
+| Task | CLI | UI |
+|---|---|---|
+| Agents (managed and self-managed), credentials, A2A | `rpk ai agent` | Agents |
+| Agent triggers (Microsoft Teams, cron schedule) | `rpk ai trigger` | Agent → Triggers tab |
+| MCP servers, managed catalog, tool listing and calls | `rpk ai mcp-server` | MCP servers |
+| LLM providers, connection test, pricing overrides | `rpk ai llm-provider` | LLM providers |
+| Model catalog | `rpk ai model` | LLM provider → Models tab |
+| Cedar access policies | `rpk ai policy` | Access (when enabled for your organization) |
+| Roles and permissions (RBAC) | role bindings via `/redpanda:rpk-cloud` | Access → Roles (read-only view) |
+| Data policies on an MCP server | `rpk ai mcp-server create/update --data-policies` | MCP server → Data Policies tab |
+| OAuth clients (inbound) and providers (outbound) | `rpk ai oauth-client`, `rpk ai oauth-provider` | Integrations setup |
+| Your own OAuth connections | `rpk ai connection` | Connections |
+| Budgets, cost and usage, guardrail authoring | none | Budgets, Cost and usage, Guardrails |
+| Transcripts | `rpk ai agent transcript` | Agent → Transcripts |
+| Audit log, agent network, conversation sessions | none | Audit log, Agents → Agent network, Agent Playground history |
+| Coding tools through the gateway | `rpk ai run claude`, `rpk ai run codex` | — |
+
+## Components
 
 ### AI agents
 
-Managed agents run inside the Agentic Data Plane platform. Self-managed (user-hosted) agents are registered as metadata-only records. Both are managed through `AgentRegistryService` (proto) or the `AIAgentService` MCP tool group (v1alpha3). Key fields: `model`, `llm_provider`, `system_prompt`, `max_iterations` (0-200), `mcp_servers` (max 32 refs), `subagents` (max 16). A2A agent cards are published at `/.well-known/agent-card.json`. Triggers (Teams, Cron) fire agents on external events; a trigger can be paused and resumed via `Trigger.enabled` (toggled through `UpdateTrigger` with `update_mask = ["enabled"]`) without deleting it or losing its run history. From the CLI, triggers are a top-level `rpk ai trigger` group. A managed agent's conversation threads are a subresource — `SessionService` lists, reads and deletes `agents/{agent}/sessions/{session}`, where the session id is the A2A context id; self-managed agents have no session store and answer `FAILED_PRECONDITION`.
+A **managed** agent runs on ADP: you configure a model, an LLM provider, a system prompt, MCP servers, and optional subagents. A **self-managed** agent (`rpk ai agent create --self-managed`) is a metadata-only record for an agent you host yourself. Richer spec fields (subagents, reasoning effort, agent card) go in a manifest applied with `rpk ai agent apply -f` or `--spec-file`. Agents publish an A2A agent card at `/.well-known/agent-card.json`, and `rpk ai agent a2a` talks to a running agent. Triggers fire an agent from Microsoft Teams or on a cron schedule, and can be paused and resumed without losing their configuration or run history.
 
 See [references/agents.md](references/agents.md).
 
 ### MCP servers
 
-Each MCP server is either `REMOTE` (you own the upstream) or `MANAGED` (a pre-integrated catalog entry). The managed catalog covers 7 categories (AI, AWS, Communication, Database, Google, Streaming, Utility) with ~50 managed types; the exact set is gated per cluster, so use `ListManagedMCPTypes` for the live list. Enabling `code_mode` on a server adds `{name}_search` and `{name}_execute` tools, reducing token usage by 80-90% for large tool sets. Two API layers exist: `adp.v1alpha1.MCPServerService` (management plane, 9 RPCs) and `dataplane.v1alpha3.MCPServerService` (public Cloud API, 9 RPCs including Start/Stop/Lint). Knowledge bases are a separate `v1alpha3` resource, not a sub-resource of MCP servers.
+Each MCP server is either **remote** (you own the upstream and pick an auth mode) or **managed** (a pre-integrated catalog type). The catalog changes, so list it live with `rpk ai mcp-server types` rather than assuming it. **Code mode** serves a second `-code` endpoint that exposes just `search` and `execute` tools in place of the full tool list, which cuts tokens for servers with many tools. **Output format** (Preview) can re-encode tabular tool results into a denser form. **Data policies** (Preview) mask, drop, or clamp data in tool calls before the model sees it.
 
 See [references/mcp-servers.md](references/mcp-servers.md).
 
 ### AI Gateway and LLM providers
 
-The AI Gateway is a managed HTTP proxy. It stores upstream API keys in the Redpanda secret store and injects them on outbound requests; calling applications never see the raw keys. Per-provider URL pattern: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers via `LLMProviderService` (CreateLLMProvider, UpdateLLMProvider, CheckConnection) and discover available models via `ModelService` (ListModels, GetModel). `CheckConnection` probes either a saved provider by name or an unpersisted connection config, so you can verify credentials before creating the provider; it carries its own `dataplane_adp_llmprovider_check_connection` permission. Supported provider types: OpenAI, Anthropic, Google/Gemini, AWS Bedrock, OpenAI-compatible (confirm the live set with `rpk ai llm create --help`). Anthropic, OpenAI and OpenAI-compatible providers can instead run in `authorization_passthrough` mode, where the caller supplies the upstream credential in `Authorization` and authenticates to the gateway in `X-Redpanda-Cloud-Token`; such a provider stores no key and cannot be probed with `CheckConnection`. Pricing overrides use microcents per million tokens on the `provider_models` field. Transcript content capture (`transcripts.record_input_messages` / `record_output_messages`) is **enabled by default** when you create a provider without setting the `transcripts` message.
+The AI Gateway is a managed HTTP proxy. It stores upstream credentials in the Redpanda secret store and injects them on outbound requests, so calling applications never see raw keys. Per-provider URL: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers with `rpk ai llm-provider`, and discover models with `rpk ai model list`. Provider types include OpenAI, Anthropic, Google, AWS Bedrock, and OpenAI-compatible endpoints; confirm the current set with `rpk ai llm-provider create --help`.
 
-**Scope:** spend is capped by budgets (hard per-agent caps), and the gateway is a credential-injecting proxy, not a routing or load-balancing layer. Routing/failover, cross-provider load balancing, and per-second/minute/day rate limits are not part of the AI Gateway. To cap spend rather than request rate, use budgets.
+**Scope:** the gateway injects credentials. It does not do routing, failover, cross-provider load balancing, or request rate limiting. To cap spend, use budgets.
 
 See [references/gateway-and-providers.md](references/gateway-and-providers.md).
 
-### Governance: budgets, guardrails, and policies
+### Governance
 
-- **Budgets** (`BudgetService`): per-agent or tenant-wide spend caps. All cost fields use microcents (`limit_microcents`, `warn_at_microcents`). No `limit_cents` or `current_spend_cents` fields exist.
-- **Spending analysis** (`SpendingService`): GetSpendingSummary, GetSpendingTimeSeries, GetSpendingBreakdown, GetSpendingTimeSeriesByDimension. `start_time` and `end_time` are required.
-- **Guardrails** (`GuardrailService`): Bedrock-backed content safety. Six content filter categories: `hate`, `insults`, `sexual`, `violence`, `misconduct`, `prompt_attack`. Word filters, denied topics, PII filters, and grounding policies are additional sub-policies. Provider is always AWS Bedrock.
-- **Access control** (`PolicyService`, `PolicyTemplateService`, `SystemPolicyService`, `EffectivePolicySetService`): Cedar policy dialect. No `ValidatePolicy`, `EvaluateAccess`, or `ListPolicyVersions` RPCs exist.
-- **Data policies** (preview): per-MCP-server data shaping (`MCPServer.data_policies`) that masks, redacts, drops, or clamps fields and filters response rows before the model sees them. Cedar decides *whether* a call runs; data policies decide *how* the data is shaped and *to whom*.
-- **OAuth / identity** (`OAuthClientService`, `OAuthProviderService`, `OAuthConnectionService`): manage OAuth clients (for external tools calling the aigw Authorization Server) and OAuth providers (third-party identity sources).
-
-Services absent from the Agentic Data Plane v1alpha1 surface: `SpendLimitService`, `RateLimitService`, `RoutingService`, `BackendPoolService`, `AccessControlService`, `SSOService`. The names exist only in the legacy `aigateway/v1` generated tree used by `rpk cloud mcp`. OCSF-based authorization-decision accountability is served by the preview `AuditLogService` on `v1alpha1` — see the observability section.
+- **Budgets** (UI): per-agent spend caps over a daily, weekly, or monthly period, with a warning threshold. A capped agent's LLM calls get `HTTP 429` until the period resets.
+- **Cost and usage** (UI): spend and token reporting, groupable by cost-allocation tags taken from agent tags.
+- **Guardrails** (Preview; UI to author, `rpk ai llm-provider update --guardrail` to attach): content safety backed by AWS Bedrock Guardrails. Policy types are content filters, word filters, denied topics, sensitive information (PII), contextual grounding, and automated reasoning.
+- **Access policies** (`rpk ai policy`, UI): Cedar policies that decide *whether* a call runs.
+- **Roles and permissions**: every operation checks one fine-grained permission (`dataplane_adp_*`, `dataplane_aigateway_*`). Among built-in roles only Admin carries ADP permissions; everyone else gets access through policies, which name action IDs such as `Action::"LLMProvider.invoke"`, not permission strings.
+- **Data policies** (Preview): shape *what data* a permitted MCP call exposes, and to whom.
+- **OAuth**: inbound clients (including Dynamic Client Registration), outbound providers, and per-user connections.
 
 See [references/governance.md](references/governance.md).
 
-### Observability: transcripts, audit log, and insights
+### Observability
 
-- **TranscriptsService**: `ListTranscripts`, `GetTranscript`. Execution-level observability of an agent conversation. Conversations are grouped by OTel `gen_ai.conversation.id`. `TranscriptSummary` includes token counts and `estimated_cost_usd`. Supports managed and self-managed (BYOA) agents.
-- **AuditLogService** (Preview): `ListAuditLogEntries`, `GetAuditLogEntry`, `QueryAuditLog`. Read-only OCSF audit trail across the Agentic Data Plane (management API, LLM proxy, MCP gateway, A2A, spending). Entries carry a call-level `outcome` (`ALLOWED` / `DENIED` / `PARTIAL` / `MASKED`, where `DENIED` folds a guardrail block and a denial always outranks a mask), the attributed policies with their Cedar or guardrail decision, server-minted `correlation_id` for grouping a collection-filtered call's per-resource decisions, on-behalf-of fields (`invoked_by`, `agent_name`, `agent_uid`, `actor_type`), and redacted `entity_before`/`entity_after` diffs on config changes. Filtering goes through one shared `AuditLogFilter` whose per-field predicates are a `terms` list (negatable; an unfilterable field errors rather than being ignored), and `QueryAuditLog` answers entries, the verdict timeline and facet counts in one request against one snapshot. Reading the audit log is itself audited.
-- **InsightsService** (Experimental): single `GetInsights` RPC returning `active_agents`, `total_requests`, `total_cost_microcents` over a time window. May change or be removed without a version bump.
-
-Use `TranscriptsService` for what an agent *did* in a conversation, and `AuditLogService` for what any principal was *allowed or refused* to do against the platform's APIs.
+- **Transcripts** (`rpk ai agent transcript list|get`, UI): what an agent did in a conversation: turns, tool calls, models, timing.
+- **Audit log** (UI): who was allowed or refused what across ADP, which policy decided, and on whose behalf an agent acted.
+- **Home, Agent network, Playground history** (UI): headline metrics, agent-to-resource topology, and per-agent conversation sessions.
 
 See [references/observability.md](references/observability.md).
 
-## Operating the Agentic Data Plane: CLI and API
+## Auth model
 
-The primary CLI is `rpk ai`, delivered as an rpk managed plugin: rpk downloads and manages the `rpai` binary (install path `~/.local/bin/.rpk.managed-rpai`), so `rpk ai install`, `rpk ai upgrade`, and `rpk ai uninstall` manage that binary's lifecycle. You invoke it as `rpk ai`. There is no FIPS build of `rpai`.
+`rpk ai` owns its own credentials and ADP environment selection. It does not ride the `rpk cloud` session.
 
-Top-level subcommands: `agent`, `auth`, `connection`, `env`, `llm`, `mcp`, `model`, `oauth-client`, `oauth-provider`, `policy`, `run`, `trigger`, `version`.
+```bash
+rpk ai auth login             # OAuth device-authorization flow; always runs a fresh grant
+rpk ai env list               # list local and live ADP environments
+rpk ai env use <environment>  # select the environment whose AI Gateway becomes the target
+rpk ai agent list             # now works
+```
 
-Programmatic access uses the Agentic Data Plane API directly (gRPC/Connect) or via the MCP tools exposed on the cluster.
+`rpk ai auth status` shows token state; `rpk ai env show` prints the resolved environment. For headless use, pass `--token <bearer>`. Under `rpk ai` an ambient `RPAI_TOKEN` environment variable is **ignored**. To override the gateway endpoint for one invocation, pass `--rpai-endpoint <url>`; it is flag-only. Define a local gateway with `rpk ai env add <name> --ai-gateway-url <url> --auth-mode none`.
 
 See [references/rpk-ai.md](references/rpk-ai.md).
 
-## Auth model
-
-`rpk ai` is self-contained: it owns its own credentials and Agentic Data Plane environment selection, rather than riding the `rpk cloud` session. Sign in and pick a target:
-
-```bash
-rpk ai auth login          # OAuth device-authorization flow; caches creds in ~/.rpai/credentials (0600)
-rpk ai env list            # list local + live Agentic Data Plane environments
-rpk ai env use <environment>  # select the Agentic Data Plane environment whose AI Gateway becomes the active target
-rpk ai agent list          # now works
-```
-
-`rpk ai auth status` shows the current token state, and `rpk ai env show` prints the resolved environment. Selecting an Agentic Data Plane environment with `rpk ai env use` replaces the old `rpk cloud cluster select` step; the connection target is an Agentic Data Plane environment, not a cluster.
-
-Auth modes are `device|rpk|token|none` (default `device`). The `rpk cloud` token is one selectable fallback (`--auth-mode rpk`), not the primary path. Define a local or manual gateway with `rpk ai env add <name> --ai-gateway-url <url> --auth-mode none`.
-
-For headless or CI use, pass a static token via `--token` or the `RPAI_TOKEN` env var. To override the gateway endpoint for a single invocation, pass `--rpai-endpoint <url>`; this flag is intentionally not bound to any environment variable. Confirm available auth flows via `rpk ai auth --help`.
-
 ## Discover the live surface
 
-Before acting on the Agentic Data Plane, confirm the live API surface. Reference files document a point-in-time snapshot; the catalog and field defaults evolve:
+Reference files are a point-in-time snapshot. Command groups, catalogs, and defaults change, so confirm live:
 
 ```bash
-# Confirm all rpk ai subcommands and global flags
-rpk ai --help
-
-# Per-group help
+rpk ai --help                          # top-level command tree and global flags
 rpk ai agent --help
-rpk ai mcp --help
-rpk ai llm --help
-rpk ai model --help
-
-# Discover managed MCP catalog types
-rpk ai mcp types
-
-# List tools on a specific MCP server
-rpk ai mcp tools list <server-name>
-
-# List available models (optionally filter by provider type)
-rpk ai model list
+rpk ai mcp-server --help
+rpk ai llm-provider --help
+rpk ai mcp-server types                # managed MCP catalog
+rpk ai mcp-server tools list <server>  # tools on one server
+rpk ai model list                      # model catalog (optionally --provider-type)
 ```
 
-When using the Agentic Data Plane MCP tools: list the available tools for the target service, then describe the tool before calling it to confirm current field names.
-
-For **what changed / which release introduced a feature**, read the user-facing changelog at `adp/RELEASE_NOTES.md` in `cloudv2` (one section per release, e.g. `v0.2.9`) rather than relying on this skill — version and feature history is volatile and intentionally not duplicated here.
+`llm-provider` and `mcp-server` are the canonical group names; `llm` and `mcp` still work as aliases. For feature and version history, read the ADP product documentation rather than relying on this skill.
 
 ## Key patterns and gotchas
 
-- **Cost unit is microcents throughout.** `limit_microcents`, `warn_at_microcents`, `total_cost_microcents`: 1 cent = 1,000,000 microcents; $1.00 = 100,000,000 microcents. Never use `limit_cents`.
-- **Static-key auth field is `key_secret_ref`.** Some earlier docs called it `key_ref`. The proto (`auth.proto:26`) is authoritative: `key_secret_ref`.
-- **Guardrail content filter has 6 categories, not 14.** The 14-category taxonomy (`violent_crimes`, etc.) is an RFC draft; the shipped API has `hate`, `insults`, `sexual`, `violence`, `misconduct`, `prompt_attack`.
-- **Routing and rate limits do not exist in the Agentic Data Plane AI Gateway.** The docs explicitly call these out of scope. Do not attempt to configure `RoutingService`, `BackendPoolService`, or `RateLimitService` via the Agentic Data Plane; those are legacy `aigateway/v1` names.
-- **A2A agent card path.** The canonical path is `/.well-known/agent-card.json`. There is no bare `/agent.json` route.
-- **`subagents.mcp_servers` is independent, not a subset.** Each subagent's `mcp_servers` list is independent of the parent agent's list; a subagent may reference servers the parent does not.
-- **`tools` field does not exist on `ManagedAgentSpec`.** Agents access tools through `mcp_servers` references only. The `tools` field is on `mcp_server.proto`.
-- **MCP tool name truncation.** The MCP protocol enforces a 64-character limit on tool names. The Agentic Data Plane truncates long managed-catalog names with a hash prefix while preserving the method suffix.
-- **No `RPAI_ENDPOINT` env var.** `--rpai-endpoint` is flag-only and applies to one invocation only. Binding it to an env var would silently override the selected Agentic Data Plane environment.
-- **Creating an LLM provider turns transcript content capture ON.** Omitting the `transcripts` message on `CreateLLMProvider` makes the server stamp `record_input_messages` and `record_output_messages` to `true`, so prompts and completions are captured verbatim. A supplied `false` is honoured, so send the message explicitly to opt out. Existing providers are not backfilled. See [references/gateway-and-providers.md](references/gateway-and-providers.md).
-- **A passthrough provider takes two credentials and cannot be health-checked.** When `authorization_passthrough` is on (Anthropic, OpenAI, OpenAI-compatible), the upstream credential goes in `Authorization` and your Redpanda Cloud token in `X-Redpanda-Cloud-Token` — the gateway prefers that header and never forwards it upstream. An OpenAI-family passthrough call without it is refused with **HTTP 400** before the upstream is contacted, an upstream redirect becomes **HTTP 502**, and `CheckConnection` returns `FAILED_PRECONDITION` because there is no stored key to probe. Do not read that verdict as a broken provider, and do not gate a create on it. See [references/gateway-and-providers.md](references/gateway-and-providers.md).
-- **Agent writes are model-checked against the catalog.** `CreateAgent` / `UpdateAgent` reject a `(model, llm_provider)` pairing whose model the agent runtime could not build, with `InvalidArgument` and a field violation, for **every catalog provider** (Anthropic, OpenAI, Google, Bedrock) — exact IDs, aliases and dated snapshots all resolve. The additional "enabled on this provider" gate over `provider_models` is **Bedrock-only** (and skipped when that list is empty), and **OpenAI-compatible** providers have no catalog, so they are not model-checked at all. See [references/agents.md](references/agents.md).
-- **Reasoning effort is a provider-owned string, persisted on the agent and validated at write time.** Set `ManagedAgentSpec.reasoning.effort` (a string in the provider's own spelling), not the deprecated `reasoning_effort` enum — the enum is still accepted and kept in sync, but its value set is frozen. The setting applies to every run, not just the playground, and subagents inherit it. The write is rejected unless every effective model lists the value in `ModelCapabilities.reasoning_efforts` — so read that live per model, use the intersection across the agent's and its subagents' models, and never assume a level exists. On an OpenAI-compatible provider any explicit effort is rejected; leave it unset. See [references/agents.md](references/agents.md).
-- **`response_format` fails open and is whole-server.** Token-optimized output applies to remote and managed servers alike (a code-mode endpoint inherits the parent's setting), but any result it cannot losslessly re-encode is forwarded unchanged, and an opted-in server's `tools/list` no longer advertises `outputSchema`. Never treat the encoded form as a guaranteed wire format.
-- **A `user_oauth` MCP server's tool list is not proof of access.** The gateway gates per method, not per session: a caller with no connection can still open the session and list capabilities (forwarded token-less once resolution fails on something signing in would fix), but `tools/call`, `resources/read` and `prompts/get` stay gated. The refusal arrives as the tool result's **text**, carrying the authorize URL — read it from there, not from an error status. A capability list that fails *hard* is an infrastructure or configuration problem, not a missing user connection. See [references/mcp-servers.md](references/mcp-servers.md).
-- **A per-user Slack connection can still act as the bot.** On a `user_oauth` Slack server the acting identity comes from the OAuth provider's `slack_token_type`, not from who owns the connection: the default and the bot value post, read and react as the app's bot user, and only a user-typed provider acts as the person who authorized. The field is immutable and Slack-OAuth-v2-only, so serving both identities means two providers. See [references/governance.md](references/governance.md).
-- **The audit log records calls, not MCP session traffic.** On the MCP gateway, `initialize`, `ping`, `tools/list` and the `notifications/` family are recorded only when denied or errored, so a session that opens, lists tools and is kept alive leaves no entries until its first `tools/call`. Never count sessions or infer "no session" from the audit log. See [references/observability.md](references/observability.md).
-- **`connection` manages your own OAuth grants.** `rpk ai connection list` lists your personal OAuth connections to third-party providers and `rpk ai connection revoke <provider>` revokes one. Connections are created through the browser consent flow, not by these commands.
-- **A GitOps manifest is the complete desired state.** Every `rpk ai <resource> apply` / `diff` compares every writable field, including the ones the manifest omits: an omitted field is compared as its proto zero (what a `create` from that manifest would produce), so trimming a field out of a manifest is drift, not "leave it alone". Round-trip `get -o yaml` for a complete manifest. Neither command prunes resources absent from the manifests. See [references/rpk-ai.md](references/rpk-ai.md).
+- **Use `rpk ai` or the UI.** When a task has no CLI command (budgets, cost reporting, guardrail authoring, the audit log), direct the user to the UI instead of inventing a command. There is no `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail`.
+- **Cost unit.** The UI shows dollars. Raw cost values in manifests or `-o yaml` output are **USD microcents** ($1 = 100,000,000 microcents). Never treat them as cents.
+- **Creating an LLM provider turns transcript content capture ON.** If the create does not mention transcripts, prompts and completions are recorded verbatim. To opt out, pass `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set them in the manifest). Existing providers are not changed. See [gateway-and-providers.md](references/gateway-and-providers.md#transcript-recording-defaults-to-on).
+- **A passthrough provider takes two credentials and cannot be health-checked.** With authorization passthrough, the caller's upstream credential goes in `Authorization` and the Redpanda Cloud token in `X-Redpanda-Cloud-Token`. On OpenAI-family providers, a call without the gateway header is refused with **HTTP 400**, and an upstream redirect becomes **HTTP 502**. A connection check reports it as not configured, which is expected; don't gate a create on it. See [gateway-and-providers.md](references/gateway-and-providers.md#authorization-passthrough).
+- **Agent writes are model-checked.** Create and update reject a model the provider type does not know, and on Bedrock also a model not enabled on the provider. OpenAI-compatible providers are not model-checked. See [agents.md](references/agents.md#write-time-validation).
+- **Reasoning effort is a provider-owned string, validated per model.** Set `reasoning.effort` in the agent manifest using the exact spelling the model catalog lists for every model the agent and its subagents use. Never assume a level exists, and leave it unset on OpenAI-compatible providers. See [agents.md](references/agents.md#reasoning-effort).
+- **Subagent MCP servers are independent.** A subagent's MCP server list is not a subset of its parent's, and agents reach tools only through MCP server references.
+- **Code mode is a separate endpoint.** The primary server URL is unchanged. The `-code` URL exposes only `search` and `execute`. Code mode is per server; it does not combine servers.
+- **Output format fails open and applies to the whole server.** Results that can't be losslessly re-encoded are forwarded unchanged, and an opted-in server's tool list drops `outputSchema`. Never treat the encoded form as a guaranteed wire format.
+- **A `user_oauth` MCP server's tool list is not proof of access.** A caller with no connection can still open a session and list tools. The first tool call returns a result whose **text** carries the sign-in URL; read it from there, not from an error status. A tool list that fails *hard* is a configuration or infrastructure problem, not a missing connection. See [mcp-servers.md](references/mcp-servers.md#what-a-caller-without-a-connection-can-do-user_oauth).
+- **A per-user Slack connection can still act as the bot.** The acting identity comes from the OAuth provider's Slack token type, not from who owns the connection. Only a user-typed provider acts as the person who authorized. The setting can't be changed after creation, so serving both identities needs two providers. See [governance.md](references/governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
+- **The audit log records calls, not MCP session traffic.** MCP session setup and keep-alive messages are recorded only when denied or errored. Never count sessions, or conclude that no session happened, from the audit log.
+- **A GitOps manifest is the complete desired state.** `rpk ai <group> apply` / `diff` compare every writable field. A field left out of the manifest is compared as its empty value, so removing it from the manifest counts as drift; it does not mean "leave it alone". Start from `get -o yaml`. Neither command prunes resources missing from the manifests. See [rpk-ai.md](references/rpk-ai.md#gitops-apply-and-diff).
+- **`connection` manages your own OAuth grants.** `rpk ai connection list` / `revoke <provider>` act only on your connections. Connections are created through the browser consent flow, not the CLI.
 
 ## Control-plane MCP server
 
-For the `rpk cloud mcp` control-plane server (manages Redpanda Cloud clusters, networks, IAM, and legacy AI Gateway `aigateway/v1` surfaces), see /redpanda:rpk-cloud.
+For the `rpk cloud mcp` control-plane server, which manages Redpanda Cloud clusters, networks, and IAM, see /redpanda:rpk-cloud.
 
 ## Reference files
 
-- [references/agents.md](references/agents.md): `AgentRegistryService` RPCs, `ManagedAgentSpec` fields, subagents, A2A agent card, triggers, agent credentials.
-- [references/mcp-servers.md](references/mcp-servers.md): `MCPServerService` API layers, `MCPServer` fields, remote auth modes, code mode, managed catalog, knowledge bases.
-- [references/gateway-and-providers.md](references/gateway-and-providers.md): `LLMProviderService` RPCs, provider types and auth schemes, `ModelService`, pricing overrides, AI Gateway proxy behavior, explicit out-of-scope list.
-- [references/governance.md](references/governance.md): `BudgetService`, `SpendingService`, `GuardrailService` (Bedrock, 6 categories), Cedar access-control services, OAuth/identity services, absent service names.
-- [references/rpk-ai.md](references/rpk-ai.md): `rpk ai` subcommand tree, lifecycle management, global flags, common errors, per-group subcommand details including the `trigger` group, GitOps `apply`/`diff` semantics.
-- [references/observability.md](references/observability.md): `TranscriptsService` RPCs and fields, `AuditLogService` (Preview) RPCs, filters, verdicts, grouped-call semantics and delegation fields, `InsightsService` (Experimental), transcripts-vs-audit-log framing.
+- [references/agents.md](references/agents.md): agent commands, managed agent spec, validation, reasoning effort, subagents, A2A, sessions, credentials, triggers.
+- [references/mcp-servers.md](references/mcp-servers.md): MCP server commands and fields, remote auth modes, `user_oauth` behavior, code mode, output format, data policies, managed catalog.
+- [references/gateway-and-providers.md](references/gateway-and-providers.md): provider management, provider types and credentials, connection tests, failed-call investigation, transcript capture default, authorization passthrough, models, pricing overrides, gateway scope.
+- [references/governance.md](references/governance.md): budgets, cost and usage, guardrails, Cedar access policies, roles and permissions, data policies, OAuth clients, providers, and connections.
+- [references/observability.md](references/observability.md): transcripts (CLI and UI), audit log, and other monitoring views.
+- [references/rpk-ai.md](references/rpk-ai.md): `rpk ai` install and lifecycle, authentication, global flags, command tree, per-group details, GitOps `apply`/`diff`, `run claude` / `run codex`, common errors.

@@ -1,254 +1,243 @@
-Source: `cloudv2/proto/public/cloud/redpanda/api/adp/v1alpha1/agent.proto` (lines 16–699), `managed_agent_runtime.proto` (lines 18–114). Service registration confirmed at `cloudv2/apps/adp-api/internal/server/server.go:340–341`. A2A routing confirmed at `cloudv2/apps/aigw/internal/server/server.go:988–989`. Subagent `model`/`llm_provider` override fields re-verified against `agent.proto` `message Subagent` on 2026-07-06. `Agent.tags` (envelope metadata, three roles), the aggregate MCP-reference cap, and the `max_iterations` clamp re-verified against `agent.proto` on 2026-07-13. `Trigger.enabled` (field 15) / `TriggerUpdate.enabled` (field 4) pause-resume field and cron-scheduler semantics verified against `agent.proto` on 2026-08-24. Write-time reference and model/provider validation verified against `cloudv2/apps/adp-api/internal/service/agent/aigw_resolver.go` on 2026-08-31. `ManagedAgentSpec.system_prompt` / `Subagent.system_prompt` byte cap verified against `agent.proto` on 2026-09-07; the widened model-catalog check verified against `aigw_resolver.go` (`checkModelRefs`) on 2026-09-07. The `ManagedAgentSpec.reasoning` message (field 10) with its string `effort`, the deprecation of `reasoning_effort` (field 9) and the legacy status of the `ReasoningEffort` enum verified against `agent.proto` on 2026-09-14; the string-based write-time gate with its legacy fallback, the violation field path, the open-vs-legacy write normalization and the conflict error verified against `cloudv2/apps/adp-api/internal/service/agent/aigw_resolver.go` (`checkReasoningEffortRefs`, `supportedReasoningEfforts`, `ValidateReasoningEffort`), `cloudv2/apps/adp-api/internal/service/agent/reasoning_effort_compat.go` and `cloudv2/apps/adp-api/internal/agent/reasoningeffort/reasoning_effort.go` on 2026-09-14. Product-documentation evidence from `adp-docs`: `self-managed-agents.adoc` (self-managed agents page) and `a2a-concepts.adoc:44–46` (agent-card path). Evidence date: 2026-09-14. Conversation sessions: `proto/public/cloud/redpanda/api/adp/v1alpha1/session.proto` (`SessionService` read/delete RPCs with their `dataplane_adp_agent_session_*` permissions and Cedar `Session`/parent-`Agent` entities, the `agents/{agent}/sessions/{session}` pattern, the managed-only `FAILED_PRECONDITION` and session-id-is-A2A-context-id contract, `Session` field behaviors incl. `session_id` field 5 and the Get-only `messages` blob, and `ListSessionsRequest`'s fixed ordering, `[1,100]` page clamp and two-field AIP-160 filter grammar) and `apps/adp-api/internal/server/server.go` (SessionService registration; an unconfigured store answers Unimplemented) — verified 2026-09-21.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent`, `agent a2a`, `agent a2a send`, `agent a2a task watch`, `trigger` sections), `cloudv2 apps/rpai/internal/cmd/agent/` (positional arguments), `docs modules/reference/partials/rpk-ai/` (`rpk-ai-agent-create`, `-update`, `-credential-create`, `-transcript-list` flag tables), `adp-docs modules/connect/pages/create-agent.adoc`, `self-managed-agents.adoc`, `concepts.adoc`, `triggers/overview.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc` (session history), `adp-docs modules/cli/pages/gitops.adoc` — verified 2026-09-23. Write-time validation, subagent, tag and agent-card behavior carried forward from the earlier source-verified revision and cross-checked against `create-agent.adoc` on 2026-09-23.
 
 # Agentic Data Plane Agents Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available. The services in this file are on the `v1alpha1` version path and carry no `LaunchStage` annotation in the protos, so treat field-level details as still evolving and confirm them live via `--help` and live introspection. Triggers (Teams, Cron) are newer fast-follow features.
+**Maturity:** Redpanda Agentic Data Plane is generally available. The `rpk ai` CLI is Preview: confirm flags with `--help` before relying on them.
 
-Audience: an AI agent operating the Agentic Data Plane via `rpk ai` and its MCP tools. Optimize for correct programmatic use.
+Audience: an AI agent operating Agentic Data Plane agents through `rpk ai` and the ADP UI (ai.redpanda.com). Optimize for correct programmatic use.
 
 Related references: [SKILL.md](../SKILL.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
 ## Discover the live surface
 
-Before acting, confirm the available operations and fields:
-
 ```bash
-# See all rpk ai agent subcommands and flags
-rpk ai agent --help
-
-# List MCP tool groups served on the cluster
-# (use the Agentic Data Plane MCP tools for the authoritative tool list)
+rpk ai agent --help                 # a2a, apply, create, credential, delete, diff, get, list, start, stop, transcript, update
+rpk ai agent create --help          # current create flags
+rpk ai agent get <name> -o yaml     # the complete manifest shape for an existing agent
+rpk ai trigger --help               # triggers are a top-level group
+rpk ai model list                   # models the gateway can route to
 ```
 
-The sections below document the proto-verified surface. For exact field lists and current limits, confirm live via `--help` and by calling the relevant MCP describe or schema tools.
-
-## `AgentRegistryService` RPCs
-
-Both managed and self-managed agents share this unified service (`agent.proto:15`).
-
-| RPC | IAM permission |
-|-----|----------------|
-| `CreateAgent` | `dataplane_adp_agent_create` |
-| `GetAgent` | `dataplane_adp_agent_get` |
-| `ListAgents` | `dataplane_adp_agent_list` |
-| `UpdateAgent` | `dataplane_adp_agent_update` |
-| `DeleteAgent` | `dataplane_adp_agent_delete` |
-| `StartAgent` | `dataplane_adp_agent_update` |
-| `StopAgent` | `dataplane_adp_agent_update` |
-| `CreateAgentCredential` | `dataplane_adp_agent_credential_create` |
-| `ListAgentCredentials` | `dataplane_adp_agent_credential_list` |
-| `DeleteAgentCredential` | `dataplane_adp_agent_credential_delete` |
-| `CreateTrigger` | `dataplane_adp_agent_trigger_create` |
-| `GetTrigger` | `dataplane_adp_agent_trigger_get` |
-| `ListTriggers` | `dataplane_adp_agent_trigger_list` |
-| `UpdateTrigger` | `dataplane_adp_agent_trigger_update` |
-| `DeleteTrigger` | `dataplane_adp_agent_trigger_delete` |
-| `ListTriggerRuns` | `dataplane_adp_agent_trigger_run_list` |
-
-`ListTriggerRuns` lists the recorded runs of a cron trigger (newest first); its parent is `agents/{agent}/triggers/{trigger}`.
-
-`TriggerInternalService` (`ReportTriggerHealth`, permission `dataplane_adp_agent_trigger_report_health`) is registered on an internal-listener only and is never a public API.
+In the UI, agents live under **Agents** in the sidebar. A managed agent's detail page has **Settings**, **Triggers**, **Playground**, **Cost & Usage**, **Transcripts**, and (when access policies are enabled) **Permissions** tabs. A self-managed agent has **Setup** and **Credentials** tabs (plus Cost & Usage, Transcripts, and a Settings tab with only Integration and Identity), and no Triggers or Playground tab.
 
 ## Agent types: managed vs. self-managed
 
-The Agentic Data Plane supports two agent types through a single service.
+| | Managed | Self-managed |
+|---|---|---|
+| Who runs it | Redpanda deploys, runs, and observes it | You do, on your own runtime and framework |
+| How it is defined | Declaratively: model, LLM provider, system prompt, MCP servers, subagents | Already coded; ADP holds only an identity record (name, description, tags) |
+| Create | UI: **Agents → Create agent → Managed by Redpanda**. CLI: `rpk ai agent create <name> ...` (managed is the default) | UI: **Create agent → Self-managed**. CLI: `rpk ai agent create <name> --self-managed` |
+| Connects to ADP through | The managed runtime wires the gateway | A client credential it exchanges for a gateway token; its code points LLM and MCP clients at the gateway |
+| Triggers, Playground, sessions | Yes | No |
 
-**Managed agent** (`agent_type.managed` oneof): the Agentic Data Plane runs the agent container. Set the `managed` arm of the `agent_type` oneof on `AgentCreate` to register a managed agent. The agent runtime, scaling, and lifecycle are handled by the platform.
+Both types share one registry, the same governance views, and the same cost attribution. The managed-or-self-managed kind is create-only: changing it means delete and recreate. For self-managed wiring (token endpoint, `/llm/v1/providers/<name>`, `/mcp/v1/<server>`, span export for transcripts), see [gateway-and-providers.md](gateway-and-providers.md) and [observability.md](observability.md).
 
-**Self-managed (user-hosted) agent**: leave the `agent_type` oneof unset on `AgentCreate`. The registry creates a metadata-only record that the platform does not run. Use this to track user-hosted agents alongside managed ones in the same registry. Read responses for self-managed agents return a nil (unset) `agent_type` oneof, not a stub `managed` field. Self-managed agents are a first-class feature with a full UI and a dedicated page in the Agentic Data Plane documentation.
+## Agent commands
 
-There is no separate proto arm for self-managed agents; the explicit oneof variant is future work. The functional capability (omit the oneof) is current.
+`<name>` is the agent ID (for example `support-bot`); the commands below take it as a positional argument.
 
-## Agent metadata and `tags`
+| Command | Purpose |
+|---|---|
+| `create <name>` | Create a managed agent (default) or, with `--self-managed`, a metadata-only record |
+| `get <name>` / `list` | Read one agent (`-o yaml` for the full manifest) / list agents |
+| `update <name>` | Change only the fields whose flags you pass |
+| `delete <name>` | Delete the agent |
+| `start <name>` / `stop <name>` | Set a managed agent's desired state to running / stopped. Stopping keeps configuration, transcripts, and cost history, and stops serving callers and triggers |
+| `apply -f` / `diff -f` | GitOps reconcile / dry-run from YAML manifests (see [rpk-ai.md](rpk-ai.md)) |
+| `credential create\|list\|delete` | Client credentials for the agent (see [Agent credentials](#agent-credentials)) |
+| `transcript list\|get` | Conversation transcripts (see [observability.md](observability.md)) |
+| `a2a card\|send\|task` | Talk to a running agent over A2A (see [A2A](#a2a-endpoint-and-agent-card)) |
 
-Independent of the type-specific spec, every agent carries envelope metadata on the `Agent` message: `name` (immutable resource identity, `agents/<slug>`), `display_name` (max 128 chars), `description` (max 1024 chars), and `tags`. `created_at` / `updated_at` are OUTPUT_ONLY (`agent.proto:296–345`).
+Scalar flags on `create` / `update`: `--display-name`, `--description`, `--model`, `--llm-provider`, `--system-prompt`, `--max-iterations`, `--mcp-server` (repeatable), `--tag key=value` (repeatable; on `update` it replaces the whole tag map). `create` also takes `--self-managed` and `--spec-file <json|yaml>`, which loads a complete managed spec and is the only create-time way to set subagents or an agent card; `--spec-file` is mutually exclusive with `--self-managed` and the scalar spec flags. For anything the flags cannot express on an existing agent (subagents, agent card, reasoning effort), edit the manifest and `rpk ai agent apply -f`.
 
-`tags` is a `map<string, string>` (max 50 pairs; each value max 256 chars) that serves **three roles at once** — adding or removing a key affects all three:
+Updates roll out without interrupting the agent: the new version starts and becomes ready before the old one stops.
 
-- **ABAC authorization** — tenant Cedar policies condition on tags via `resource.getTag("k")` / `resource.hasTag("k")` (for example, gate `CreateAgent` on `resource.getTag("team")`; see [governance.md](governance.md)).
-- **`ListAgents` filtering** — AIP-160 map traversal: `tags.env = "prod"` (value match) or `tags:env` (has-key).
-- **Cost grouping** — the gateway stamps the agent's tags onto every LLM call it makes, and `SpendingService` can group and filter spend by them (see the cost-allocation-tags section in [governance.md](governance.md)). Attribution is point-in-time: spend already recorded keeps the tags it had when it was recorded.
+## Agent metadata and tags
 
-Do not put secrets or PII in tag values — they surface in cost reports.
+Every agent carries, independent of type:
 
-## `ManagedAgentSpec` fields
+| Manifest field | Constraint |
+|---|---|
+| `name` | Immutable ID, a lowercase slug up to 63 characters. The UI derives it from the display name (adding a suffix on collision); check it on the Settings tab after create |
+| `display_name` | Up to 128 characters |
+| `description` | Up to 1,024 characters; an internal note, not the system prompt |
+| `tags` | Key/value map, up to 50 pairs, each value up to 256 characters |
 
-These are the fields a builder sets when creating or updating a managed agent (`agent.proto:448–666`).
+`tags` does three jobs at once, so adding or removing a key affects all three:
 
-| Field | Required | Constraint |
-|-------|----------|------------|
-| `model` | yes | min 1 char, max 128 chars |
-| `llm_provider` | yes | min 1 char, max 63 chars, pattern `^[a-z][a-z0-9-]*$` |
-| `system_prompt` | no | max 50,000 **UTF-8 bytes** (a byte cap, not a character count — multi-byte text costs more than one byte per character) |
-| `max_iterations` | no | 0 to 200; `0` (or omitted) means "use the runtime default" — the server clamps it to a positive cap before persist, so the value read back is never `0`; negatives are rejected |
-| `mcp_servers` | no | max 32 items per list; each min 1 char, max 63 chars, pattern `^[a-z][a-z0-9-]*$` (an aggregate cap also applies — see below) |
-| `subagents` | no | max 16 pairs; key pattern `^[a-z][a-z0-9-]*$` |
-| `agent_card` | no | see A2A agent card section below |
-| `reasoning` | no | `Reasoning` message with one string field, `effort` (max 64 chars, the provider's own spelling); omit it to keep the provider/runtime default — see [Reasoning effort](#reasoning-effort) |
-| `reasoning_effort` | no | **Deprecated** `ReasoningEffort` enum, still accepted and kept in sync; prefer `reasoning.effort` — see [Reasoning effort](#reasoning-effort) |
+- **Access policies** — Cedar policies can condition on an agent's tags (`resource.getTag("team")`, `resource.hasTag("team")`); see [governance.md](governance.md).
+- **Organization** — filter agents in the registry by tag.
+- **Cost grouping** — the gateway stamps the agent's tags on each LLM call it makes, so spend can be grouped and filtered by tag (see [governance.md](governance.md)). Attribution is point-in-time: spend already recorded keeps the tags it had.
 
-There is no `tools` field on `ManagedAgentSpec`. Agents access tools exclusively through `mcp_servers` references. (The `tools` field exists on `mcp_server.proto`, not on the agent proto.)
+Do not put secrets or PII in tag values; they surface in cost reports.
 
-**Aggregate MCP-reference cap.** The `max 32 items` bound is *per list*. Beyond it, the server rejects (with `InvalidArgument`) any spec whose *total* MCP references — the root agent's `mcp_servers` plus every subagent's `mcp_servers` — exceed **32 per agent**. The total counts references, not distinct servers: a server named by both the root agent and a subagent counts twice, because the runtime dials one connection per (registry, server) reference (`agent.proto:507–514`). So 16 subagents each referencing 32 servers is per-list-valid but exceeds the aggregate cap and is rejected.
+## Managed agent spec
 
-## Write-time validation of references and models
+Manifest fields under `managed.spec` (also the shape `--spec-file` accepts). The UI create canvas has **Identity**, **Model**, **Instructions**, **Tools**, and a collapsible **Advanced** area (subagents, tags, transcript recording); everything is editable later on the **Settings** tab.
 
-`CreateAgent` and `UpdateAgent` validate a managed spec's outbound references before persisting it, so a bad reference fails the write instead of surfacing later as a broken agent. Two independent checks run here; an explicit `reasoning.effort` adds a third (see [Reasoning effort](#reasoning-effort)).
+| Field | Required | Constraint / behavior |
+|---|---|---|
+| `model` | yes | Up to 128 characters; must be valid for the provider (see [Write-time validation](#write-time-validation)) |
+| `llm_provider` | yes | Name of an LLM provider resource (lowercase slug, up to 63 characters) |
+| `system_prompt` | no (strongly recommended) | Up to 50,000 **UTF-8 bytes** — a byte cap, so accented, non-Latin, or emoji text fits fewer characters. The UI disables **Create agent** when the prompt is too long |
+| `max_iterations` | no | 0–200. `0` or omitted means the runtime default (100); the server fills the value in, so `get -o yaml` never shows `0`. Values above 200 are rejected. No UI control: set it with `--max-iterations` or in a manifest |
+| `mcp_servers` | no | Up to 32 names per list (see the aggregate cap below). The agent discovers each server's tools at runtime; there is no per-tool selection |
+| `subagents` | no | Map keyed by subagent name, up to 16 entries (see [Subagents](#subagents)) |
+| `agent_card` | no | A2A discovery metadata (see [A2A](#a2a-endpoint-and-agent-card)) |
+| `reasoning.effort` | no | Provider-owned string; omit for the provider default (see [Reasoning effort](#reasoning-effort)) |
+| `reasoning_effort` | no | **Deprecated**; use `reasoning.effort` |
 
-**Reference existence.** Every `llm_provider` and `mcp_servers` name on the spec — the root agent's plus each subagent's, deduped — is resolved against the service of record. A name that does not exist fails with `InvalidArgument` carrying a `BadRequest.FieldViolation` whose `field` is the offending path (for example `agent.managed.spec.subagents.<name>.mcp_servers`), so you can map the rejection back to the exact spec element. If the reference lookup itself cannot be completed, the RPC fails `Unavailable` instead — that distinguishes "your spec is wrong" from "we cannot tell right now", and only the former means you should edit the spec.
+There is no `tools` field on an agent: agents reach tools only through `mcp_servers`.
 
-**Model / provider pairing.** Each effective `(model, llm_provider)` pairing — including every subagent pairing, after inheritance is applied — is checked against the resolved provider. Two gates apply, with different scopes:
+**Aggregate MCP-reference cap.** An agent can reference at most **32 MCP servers in total**, counting the root agent's `mcp_servers` plus every subagent's. The cap counts references, not distinct servers: a server named by the root and by a subagent counts twice. So 16 subagents each listing 32 servers is valid per list but rejected overall.
 
-1. **Catalog validity — every catalog provider (Anthropic, OpenAI, Google, Bedrock).** The model name must construct through the same model constructor the agent runtime runs at boot, so a name the runtime would reject fails the write instead of crash-looping the agent after it is saved. The check runs offline against the compiled-in catalog (no credentials, no upstream call), and it accepts everything the runtime accepts: exact model IDs, official aliases, dated snapshots, models that are retired but still known, and — for Bedrock — the region's inference-profile routing. A rejection is `InvalidArgument` with a `BadRequest.FieldViolation` on the offending path and a message of the form `model "…" is not a known <provider> model, so a managed agent could not start with it; pick a model from the provider's model list or check the spelling`; on Bedrock it also suggests the full inference-profile form for the provider's region.
-2. **Enabled on the provider — Bedrock only.** The model must additionally appear in the provider's `provider_models` list, which the gateway enforces on every proxied request. Failing this gate returns `InvalidArgument` with a message of the form `model "…" is not enabled on llm_provider "…"; enable it on the provider or pick one of its models`. An **empty** `provider_models` list is not a rejection: it means the provider serves whatever its SDK accepts, so the gate is skipped.
+**Transcript recording.** Under **Advanced → Transcripts** the UI offers **Full transcripts** (default), **Metadata only** (no message or tool content), and **Off** (no traces; the Transcripts tab stays empty). This setting alone decides what the agent's transcripts hold; the LLM provider's record-inputs/outputs toggles are separate. It does not affect cost and usage reporting. <!-- TODO(human): confirm the manifest field name for the agent-level transcript recording mode; it is documented as a UI setting only and is not in the CLI flag tables. -->
 
-Two scoping rules follow from this:
+**Bedrock output cap.** For a Claude model on an AWS Bedrock provider, a managed agent caps each model call's output at 16,384 tokens (not configurable), so a long answer can be truncated. The same applies to subagent overrides.
 
-- **OpenAI-compatible providers are not model-checked at all.** They have no catalog to check against, so any model name is accepted at write time and the gateway's request-time behavior is the only gate.
-- **Non-Bedrock catalog providers get gate 1 but not gate 2.** Their allowlist matching uses family-prefix rules that live in the gateway, so replicating them at write time would reject configurations the gateway accepts. They keep the gateway's request-time allowlist as their only allowlist gate.
+## Write-time validation
 
-A provider the gateway does not know is skipped by the model check entirely — the reference-existence check above owns the verdict on references you actually wrote.
+Create and update validate a managed spec's references before saving, so a bad reference fails the write instead of producing a broken agent. The error names the offending field path (for example `agent.managed.spec.subagents.<name>.mcp_servers`), so you can map a rejection back to the spec element. <!-- TODO(human): confirm that `rpk ai` output includes the field-violation path, not only the message text. -->
 
-**Update-path scoping.** `UpdateAgent` validates only the pairings the update actually *changes*, so a pre-existing spec that already holds a bad model stays editable — you can edit the prompt beside it without the write being rejected for the stale model. Rarely, a provider referenced by a changed pairing can be resolved before the row lock and then vanish; that surfaces as `Aborted` with a "changed while the update was in flight; retry" message, and the correct response is to retry the update.
+**References must exist.** Every `llm_provider` and `mcp_servers` name — root and subagents — must resolve. A missing name is an invalid-argument error. If the lookup itself cannot complete, the call fails as unavailable instead: that means "cannot tell right now", so retry rather than edit the spec.
 
-Because the check runs on the *merged* spec, a partial update whose field mask names only a model (a subagent model edit, or a leaf-path config apply) is still validated against the provider it inherits, even when the mask does not carry `llm_provider`.
+**Model must be valid for the provider.** Each effective `(model, llm_provider)` pair, including every subagent after inheritance, is checked:
+
+1. **Catalog check — OpenAI, Anthropic, Google, and AWS Bedrock providers.** The model must be one the agent runtime can resolve: an exact model ID, an official alias, a dated version, or a retired model the catalog still knows. A plausible-looking but unpublished name is rejected with a message like `model "…" is not a known <provider> model, so a managed agent could not start with it; pick a model from the provider's model list or check the spelling`. On Bedrock the check depends on the provider's region and suggests the full inference-profile form (for example `us.anthropic.<model>` rather than a bare model name).
+2. **Enabled on the provider — Bedrock only.** The model must also be in the provider's `provider_models` list: `model "…" is not enabled on llm_provider "…"; enable it on the provider or pick one of its models`. A provider with an **empty** `provider_models` list serves whatever Bedrock accepts, so this check is skipped.
+
+Scoping rules:
+
+- **OpenAI-compatible providers are not model-checked** at write time; any identifier saves, and the gateway enforces the model per request.
+- **Non-Bedrock catalog providers get only the catalog check.** Their allowlist is enforced by the gateway at request time (`403 model_not_allowed`).
+- **Updates validate only the pairings they change**, so an agent that already stores an out-of-catalog model stays editable. A partial update that changes only a model is still checked against the provider it inherits.
+- Rarely, an update fails with a `changed while the update was in flight; retry` message; retry the update.
+
+A retired model disappears from the provider's catalog, but an agent already using it keeps running, and the stored model still resolves when you edit the agent.
 
 ## Reasoning effort
 
-`ManagedAgentSpec.reasoning.effort` — the `Reasoning` message (field 10) with its single string field `effort` — sets how much computation a reasoning-capable model spends before answering. It is a persisted property of the agent, not a per-request or playground-only knob, so it applies to every run of the agent. A higher level costs more per request.
+`managed.spec.reasoning.effort` sets how much computation a reasoning-capable model spends before answering. It is persisted on the agent and applies to every run — Playground, A2A callers, and triggers. Higher levels cost more. The UI shows the current level (or `Provider default`) read-only in the Playground composer; set it in a manifest and `rpk ai agent apply -f`.
 
-**The value is a provider-owned string, not a platform enum.** Effort vocabularies are open and differ by provider and by model, so `effort` carries the provider's own spelling — case-sensitive, at most 64 characters, sent back exactly as the model catalog advertises it. Leaving it empty (or omitting the `reasoning` message) uses the provider's or runtime's default; it does not mean "no reasoning".
+- **Provider-owned string, not a platform enum.** Use the provider's own spelling, case-sensitive, up to 64 characters. Empty or omitted means the provider's default, not "no reasoning".
+- **Which values a model accepts is a live fact.** Read them from the model catalog (`rpk ai model get <model> -o yaml`, or the model's detail page in the UI), least to most computation; an empty list means the model has no configurable effort. Because subagents may run different models, the values safe to set are the **intersection** across the agent's model and every subagent's model. See [gateway-and-providers.md](gateway-and-providers.md). <!-- TODO(human): confirm the key name under which `rpk ai model get -o yaml` prints a model's accepted reasoning efforts. -->
+- **Subagents inherit it.** There is no per-subagent effort, including for a subagent that overrides its model.
 
-**Which values a model accepts is a live fact, not a fixed list.** Read it from the catalog rather than assuming: `ModelCapabilities.reasoning_efforts` on `ModelService.GetModel` / `ListModels` lists the values that exact model accepts, least to most computation, and it is empty for a model with no configurable reasoning control (see [gateway-and-providers.md](gateway-and-providers.md)). Because a subagent may run a different model, the values safely settable on an agent are the **intersection** across the parent's model and every subagent's model.
+**Validation.** When an effort is set, every effective model pairing must accept it:
 
-**Subagents inherit it.** There is no per-subagent reasoning field: the parent's setting applies to every subagent, including a subagent that overrides `model` or `llm_provider`.
+- A model that does not list the value fails with `model "…" does not support reasoning effort <value>`; several offending models are reported together. The error addresses whichever field you wrote (`agent.managed.spec.reasoning.effort` or the deprecated `agent.managed.spec.reasoning_effort`).
+- On an **OpenAI-compatible** provider any explicit effort is rejected; leave it unset.
+- A model the gateway cannot resolve is an invalid-argument error; a lookup that cannot complete fails as unavailable (retry).
+- Updates check only the pairings they change. Leaving the effort unset is always accepted.
 
-**Write-time validation.** When an effort is set, `CreateAgent` / `UpdateAgent` check it against every effective model pairing (parent plus subagents, after inheritance) before persisting:
-
-- A model whose `reasoning_efforts` does not contain the value fails with `InvalidArgument`, one `BadRequest.FieldViolation` per offending model with the message `model "…" does not support reasoning effort <value>`, and an `ErrorInfo` whose reason is `REASONING_EFFORT_UNSUPPORTED`. Several offending models are reported together in one error rather than one at a time. The violation's `field` is `agent.managed.spec.reasoning.effort` when the request wrote the new field (or its update mask names `managed.spec.reasoning`), and `agent.managed.spec.reasoning_effort` when it wrote the deprecated one — the error addresses whichever representation you used.
-- A pairing on an **OpenAI-compatible** provider always fails the same way: those providers have no catalog, so no effort can be confirmed supported. Leave the effort unset for an agent on an OpenAI-compatible provider.
-- A model the gateway cannot resolve fails with `InvalidArgument` (`model "…" not found in aigw`); a lookup that cannot be completed fails `Unavailable`, which means "we cannot tell right now" and should be retried rather than edited around.
-- On `UpdateAgent` the effort is validated only against the model pairings the update actually changes, so an untouched, already-stored model does not block an unrelated edit.
-
-Leaving the effort unset is always accepted, on every provider type.
-
-**The deprecated `reasoning_effort` enum (field 9).** Older clients set `ManagedAgentSpec.reasoning_effort`, a closed `ReasoningEffort` enum (`LOW`, `MEDIUM`, `HIGH`, `XHIGH`, `MAX`; `UNSPECIFIED` means default) whose value set is frozen. The server still accepts it and keeps the two fields coherent:
-
-- **Reading:** `reasoning.effort` wins when both are set; a legacy-only agent's enum is read as its lowercase provider spelling (`LOW` → `low`, and so on).
-- **Writing:** a value written through either field is mirrored into the other when the enum can represent it. A provider-owned value the enum cannot represent leaves `reasoning_effort` at `UNSPECIFIED` rather than misreporting it, and a legacy-form write can overwrite or clear an effort the enum can represent but never erases a provider-owned value it cannot. On `UpdateAgent` the field mask decides which representation is authoritative.
-- **Conflict:** a write that sets the two fields to different values fails `InvalidArgument` (`reasoning effort fields must not conflict`, `ErrorInfo` reason `REASONING_EFFORT_FIELDS_CONFLICT`).
-
-Use `reasoning.effort` for new work and treat the enum as a compatibility shim. A value such as a provider's lowest or highest setting may have no enum equivalent at all, which is exactly why the string field exists.
+**Deprecated `reasoning_effort`.** Older manifests may set the closed `reasoning_effort` enum. It is still accepted and kept in step with `reasoning.effort` (`reasoning.effort` wins on read; a provider value the enum cannot represent leaves the enum unspecified). Setting the two to different values fails with `reasoning effort fields must not conflict`. Use `reasoning.effort` for new work.
 
 ## Subagents
 
-`subagents` is `map<string, Subagent>` inside `ManagedAgentSpec`, keyed by a name matching `^[a-z][a-z0-9-]*$`, with a maximum of 16 pairs.
+Subagents are internal specialists inside one agent; the root agent delegates to them. Up to 16 per agent. UI: **Advanced → Add subagent**.
 
-| Field | Required | Constraint |
-|-------|----------|------------|
-| `system_prompt` | yes | min 1 char, max 50,000 **UTF-8 bytes** |
-| `description` | yes | min 1 char, max 1,024 chars |
-| `mcp_servers` | no | max 32 items; each min 1 char, max 63 chars |
-| `model` | no | max 128 chars; empty = inherit the parent agent's `model` |
-| `llm_provider` | no | max 63 chars, pattern `^[a-z][a-z0-9-]*$`; empty = inherit the parent agent's `llm_provider` |
-
-Two important corrections from earlier documentation:
-
-- **`mcp_servers` is independent, not a subset.** Each subagent runs under its own set of MCP servers, independent of the parent agent's set. There is no subset constraint. Referencing a server the parent does not have is valid (`agent.proto:511–513`; confirmed in `service_test.go:779`).
-- **`skills` is not a field on `Subagent`.** The `Skill` message and the `skills` repeated field live on `ManagedAgentSpec.AgentCard` (`agent.proto:603–664`), not on `Subagent`. `Subagent` has only `system_prompt`, `description`, `mcp_servers`, `model`, and `llm_provider`.
-
-**Per-subagent model and provider.** A subagent can override the parent agent's model and provider via its own `model` (field 4) and `llm_provider` (field 5) fields. Both are optional; an empty value means inherit the parent's. A message-level CEL constraint (`subagent.model_required_with_llm_provider`) requires `model` to be set whenever `llm_provider` is set: model names are provider-specific, so switching provider without also naming a model for it would only fail at request time. Overriding `model` alone (same provider — for example, a cheaper model) is allowed.
-
-## A2A agent card
-
-The `agent_card` field on `ManagedAgentSpec` populates A2A discovery metadata.
-
-The canonical public path for an agent's card is:
-
-```
-https://<agent-url>/.well-known/agent-card.json
-```
-
-`/.well-known/agent.json` is also served as an alias from the same handler (`aigw/internal/server/server.go:988–989`). There is no bare `/agent.json` route registered; use the `.well-known` prefix.
-
-The Agentic Data Plane documentation (A2A concepts page) confirms that agents expose their agent cards at the `/.well-known/agent-card.json` subpath of the agent URL.
-
-The `skills` repeated field on `AgentCard` accepts `Skill` messages with `tags`, `examples`, `input_modes`, and `output_modes` (`agent.proto:618–664`).
-
-## Conversation sessions (`SessionService`)
-
-Service name: `redpanda.api.adp.v1alpha1.SessionService`, served by adp-api; audit subsystem `agents`. A **session** is a managed agent's persisted conversation thread, stored by the agent runtime. Because the runtime keys its sessions by the A2A context id, **a session id *is* an A2A context id** — the `context-id` that `rpk ai agent a2a send` prints and accepts back via `--context-id` is the last segment of the session's resource name.
-
-| Aspect | Detail |
-|---|---|
-| Resource name | `agents/{agent}/sessions/{session}` — a subresource of the agent. The session segment is the runtime-assigned, opaque session/context id, not a slug |
-| Scope | **Managed agents only.** A self-managed (BYOA) agent has no session store, and the RPCs answer `FAILED_PRECONDITION` rather than an empty list — so an empty result means "no sessions", never "wrong agent type". An environment with no managed-agent store configured answers `Unimplemented` |
-| Read and delete RPCs | `ListSessions` (`dataplane_adp_agent_session_list`), `GetSession` (`..._get`), `DeleteSession` (`..._delete`). All three carry `resource_type: "agents"` — `ListSessions` authorizes against `parent`, `GetSession` and `DeleteSession` against the session's own name — with Cedar entity `Session` and parent entity `Agent` |
-| Ordering | Fixed: newest first — `updated_at` descending, `name` ascending as tie-breaker. There is no `order_by` |
-| Paging | `page_size` is clamped server-side to `[1, 100]`; `total_size` is an AIP-158 estimate |
-| Deletion | Idempotent — deleting a session that does not exist succeeds |
-
-**The transcript rides only on `GetSession`.** `Session.messages` is the full persisted thread as marshalled ai-sdk-go `[]llm.Message` JSON — an opaque blob the server does not introspect. `ListSessions` returns summaries with `messages` empty, deliberately, because the blob is unbounded. Read `metadata` (a JSON object from the runtime's session state) and `updated_at` (the time the session was last persisted) from either. `metadata`, `updated_at`, `messages` and `session_id` are all OUTPUT_ONLY. `session_id` is the same opaque id without the resource-name prefix, and is the field to filter on for an exact match.
-
-**Filtering (`ListSessions.filter`).** An optional AIP-160 expression, at most 4,096 bytes, over exactly two fields:
-
-| Field | Type | Supported operators |
+| Manifest field | Required | Constraint |
 |---|---|---|
-| `session_id` | string, **case-sensitive** | `=`, `!=`, `<`, `<=`, `>`, `>=`, plus `:` for a case-insensitive substring match |
-| `updated_at` | timestamp, written as `timestamp("<RFC 3339>")` | `=`, `!=`, `<`, `<=`, `>`, `>=` |
+| map key (UI **Name**) | yes | Lowercase letter first, then lowercase letters, digits, hyphens; up to 63 characters; unique within the agent |
+| `description` (UI **When should the parent use it?**) | yes | Up to 1,024 characters; the delegation hint the parent reads |
+| `system_prompt` (UI **Instructions**) | yes | Up to 50,000 UTF-8 bytes, counted separately from the parent's |
+| `mcp_servers` (UI **Tools**) | no | Up to 32 names; counts toward the agent's aggregate cap |
+| `model` | no | Empty = inherit the parent's model |
+| `llm_provider` | no | Empty = inherit the parent's provider. Setting it requires `model` too, because model names are provider-specific |
 
-`AND`, `OR`, `NOT` and parentheses compose them. Wildcards, bare search terms, and filtering on `metadata`, a title, or message content are **not** supported: an unsupported or malformed filter is `INVALID_ARGUMENT`, not a silently ignored clause. Keep the filter byte-identical while walking `page_token`s — a page token is bound to the filter it was issued under.
+- **`mcp_servers` is independent of the parent's**, not a subset: a subagent may reference a server the parent does not.
+- **There is no `skills` field on a subagent.** `skills` belongs to the agent card.
+- **The UI overrides only the model**; a per-subagent provider override is manifest-only. Opening a subagent that carries a manifest-set provider override in the UI clears that override along with its model when you save.
+- Subagents share the parent's provider credentials, gateway endpoint, and execution settings.
 
+## A2A endpoint and agent card
+
+A running managed agent serves an A2A endpoint. Copy it from the **Endpoint** field on the agent's Settings tab (Runtime section), or let `rpk ai agent a2a` resolve it from the agent name.
+
+- **Agent card:** `https://<agent-url>/.well-known/agent-card.json` (`/.well-known/agent.json` is served as an alias; there is no bare `/agent.json`). The card is public; every other request needs `Authorization: Bearer <token>` and permission to invoke the agent.
+- **Card content** comes from `managed.spec.agent_card`; its `skills` list takes entries with `tags`, `examples`, `input_modes`, and `output_modes`. Set it through `--spec-file` or a manifest.
+
+```bash
+rpk ai agent a2a card <agent>                                  # fetch the card
+rpk ai agent a2a send <agent> "question"                       # blocks until the reply (default --timeout 5m)
+rpk ai agent a2a send <agent> --context-id CTX "follow-up"     # continue the same conversation
+rpk ai agent a2a send <agent> --task-id T --context-id CTX "…" # answer an input-required task
+rpk ai agent a2a send <agent> --stream "…"                     # stream events (JSONL under -o json|yaml)
+rpk ai agent a2a send <agent> --no-block "…"                   # return the task id immediately
+rpk ai agent a2a task get|watch|cancel <agent> <task-id>
 ```
-ListSessions({ parent: "agents/<agent>", filter: "session_id = \"ctx-123\"" })
-ListSessions({ parent: "agents/<agent>",
-               filter: "updated_at >= timestamp(\"2026-09-01T00:00:00Z\") AND updated_at < timestamp(\"2026-10-01T00:00:00Z\")" })
-```
 
-**Sessions are not transcripts.** A session is the agent's own conversation state — managed agents only, deletable, and what the runtime replays on the next turn. A transcript is the observability record assembled from OTel spans, grouped by `gen_ai.conversation.id`, and it covers self-managed agents too. Use sessions to answer "what thread does this agent still hold, and drop this one"; use transcripts to answer "what happened on this conversation, what did it cost, how long did it take" (see [observability.md](observability.md)). The CLI's published command surface covers transcripts (`rpk ai agent transcript`) and not sessions, so reach sessions over the API — and confirm the current command tree with `rpk ai agent --help` before concluding a command is missing.
+`<agent>` is a registry agent name or a full `http(s)://` A2A URL. Your token is attached for registry agents and for URLs on your environment's dataplane host; other hosts are called without credentials (stderr says so). Reply text goes to stdout; `context-id`, task id, and state go to stderr as `key: value` lines. Exit codes: `0` success or input-required, `4` task failed/canceled/rejected, `1` anything else. `task watch` (alias `resubscribe`) waits with no timeout unless `--timeout` is set.
+
+An agent's context lasts one conversation (one A2A context). There is no built-in memory across conversations; expose earlier information through a tool instead.
+
+## Conversation sessions (UI)
+
+A **session** is a managed agent's saved conversation thread. **There is no `rpk ai` command for sessions** (`rpk ai agent --help` lists none); work with them in the UI:
+
+- **Agent → Playground → History** opens Session history, newest first, with **Show more** for older sessions. Once a conversation has messages, the control reads *Session* plus the session ID, with a copy control.
+- **Filter:** **Session ID (exact)**, or **Updated from** / **Updated through** (local timezone, both ends inclusive), then **Apply filters**; **Clear filters** resets.
+- **Reopen** a session to replay it (including attached files and data); the next message continues that session.
+- **Delete** a session from its row's actions; the UI says this permanently removes the session and its transcript. <!-- TODO(human): confirm whether deleting a session in the Playground also removes the matching entry on the agent's Transcripts tab, or only the Playground's stored copy. -->
+- **New session** and **Clear context** both start a fresh session; the previous one stays in history.
+
+**A session ID is the A2A context ID.** The `context-id` that `rpk ai agent a2a send` prints and accepts via `--context-id` is the same ID Session history shows, so you can resume a CLI conversation from the Playground and vice versa.
+
+Sessions exist for managed agents only. They are not transcripts: a session is the agent's own conversation state; a transcript is the observability record (timing, tool calls, tokens, cost), which also covers self-managed agents and is readable from the CLI with `rpk ai agent transcript`. See [observability.md](observability.md).
 
 ## Agent credentials
 
-`CreateAgentCredential`, `ListAgentCredentials`, and `DeleteAgentCredential` manage API credentials scoped to a single agent. Credentials allow external systems to authenticate as the agent without using user-level tokens.
+Client-ID/secret pairs an agent uses to authenticate to the gateway (the self-managed path; see [gateway-and-providers.md](gateway-and-providers.md)).
+
+```bash
+rpk ai agent credential create <agent> [--description TEXT] [--ttl 8760h]
+rpk ai agent credential list <agent>
+rpk ai agent credential delete <credential-name>   # full name from list, e.g. agents/my-agent/credentials/abc123
+```
+
+- The client ID is `serviceaccounts/<agent-name>`, shared by every secret on the agent. The secret is shown **once**; store it immediately.
+- A secret created without `--ttl` (and every secret created on the UI **Credentials** tab) expires after 90 days. `--ttl` sets another lifetime with no enforced maximum. The product docs state every secret has an expiry, so do not rely on `--ttl 0` for a non-expiring secret. <!-- TODO(human): the flag help says "0 means no expiry" but the product docs say every secret expires; confirm what --ttl 0 actually produces. -->
+- Up to 10 unexpired secrets per agent; the next create fails with `secret cap exceeded`. Expired secrets do not count.
+- Rotate without downtime: create a new secret, deploy it, then revoke the old one.
 
 ## Triggers
 
-Triggers attach to an agent and fire it on an external event. Two trigger types are supported.
+Triggers invoke a **managed** agent without a direct API call. Two kinds:
 
-**`TeamsTrigger`**: fires the agent from a Microsoft Teams event.
+- **Microsoft Teams** — people chat with the agent in Teams; replies stream back.
+- **Schedule (cron)** — each run sends a fixed message to the agent and is recorded as a transcript, with no reply path.
 
-**`CronTrigger`**: fires the agent on a schedule (cron expression).
+**UI:** agent → **Triggers** tab → **Add trigger**. Edit a trigger on its card; pause/resume icons exist only for schedule triggers. Teams triggers show **Pending**, **Connected**, or **Error** from a background credential check (about every 30 seconds); schedule triggers show the last run outcome and next run time, or **Paused** / **Failing**.
 
-The trigger lifecycle RPCs (`CreateTrigger` through `DeleteTrigger`) operate as a sub-resource on the agent. The internal `ReportTriggerHealth` RPC is used by the runtime only and is never called by external clients.
+**CLI:** the **top-level** `rpk ai trigger` group (aliases `triggers`, `agent-trigger`), not `rpk ai agent trigger`. See [rpk-ai.md](rpk-ai.md#trigger-subcommands).
 
-From the CLI, triggers are managed with the **top-level** `rpk ai trigger` group (`create`, `get`, `list`, `update`, `delete`, `runs`, plus GitOps `apply`/`diff`), not under `rpk ai agent`. The registry stores the trigger configuration but never validates the Teams credentials or resolves the secret refs, so an accepted trigger can still be reported unhealthy by the component that operates it. See [rpk-ai.md](rpk-ai.md#trigger-subcommands).
+```bash
+rpk ai trigger create <agent> --cron-schedule "0 9 * * 1-5" --cron-timezone Europe/Prague --cron-input "Daily report"
+rpk ai trigger create <agent> --teams-bot-app-id <id> --teams-bot-tenant-id <tenant> --teams-bot-app-secret-ref TEAMS_BOT_SECRET
+rpk ai trigger list <agent>                                   # alias ls; shows whether each trigger is enabled
+rpk ai trigger get agents/<agent>/triggers/<id> -o yaml       # kind config and reported health
+rpk ai trigger update agents/<agent>/triggers/<id> --enabled=false
+rpk ai trigger runs agents/<agent>/triggers/<id>              # schedule runs, newest first
+rpk ai trigger delete agents/<agent>/triggers/<id>            # idempotent
+```
+
+- `create` and `list` take the parent agent (`my-agent` or `agents/my-agent`); `get`, `update`, `delete`, and `runs` take the **full** name. A bare ID fails: `invalid trigger name "teams1": expected 4 path segments, got 1 (want agents/{agent}/triggers/{trigger}, …)`.
+- Exactly one kind per trigger, fixed at creation (`a trigger needs a kind: pass the --teams-* flags … or the --cron-* flags …`). To change kind, delete and recreate.
+- `--cron-timezone` is required for a schedule trigger; the server never falls back to UTC. `--cron-schedule` is a standard 5-field expression.
+- The Teams secret flag takes a secret-store key (bare `UPPER_SNAKE_CASE`), never the secret itself.
+- The trigger ID is server-assigned unless you pass `--id` (a DNS-1123 label). The UI derives it from the display name.
+- Creating a trigger does not validate its credentials or secret references; an accepted trigger can still report unhealthy afterwards.
+- `runs` returns an empty history for a Teams trigger. Each run's `conversation_id` joins it to its transcript (`rpk ai agent transcript get`).
 
 ### Pause and resume a trigger
 
-`Trigger.enabled` (bool, positive polarity) toggles a trigger live/paused without deleting it, so its configuration and run history stay intact. A trigger is created enabled; the server stamps the field and it is not settable via `TriggerInput` at create time.
+`enabled` pauses a trigger without deleting it, keeping its configuration and run history.
 
-Toggle it through the existing `UpdateTrigger` RPC with a field mask over `enabled` only:
+- `rpk ai trigger update <name> --enabled=false` pauses; `--enabled=true` resumes from the next scheduled instant — **missed ticks are never backfilled**.
+- `rpk ai trigger create` defaults `--enabled` to true (pass `--enabled=false` to create it paused).
+- In a GitOps manifest an omitted `enabled` means **false**, so `rpk ai trigger apply` of a manifest without `enabled: true` creates or leaves a paused trigger.
+- A disabled schedule trigger fires no runs. A disabled Teams trigger stops delivering messages, and its credential check and status stop updating — the Teams card shows no disabled indicator, so confirm with `rpk ai trigger list`.
 
-```
-UpdateTrigger({
-  trigger: { name: "agents/<agent>/triggers/<trigger>", enabled: false },
-  update_mask: ["enabled"]
-})
-```
+## Permissions
 
-Semantics for the cron scheduler:
-
-- Setting `enabled = false` (pause) drops the trigger from the scheduler's cross-tenant scan so it stops firing; the schedule and its recorded runs are preserved.
-- Setting `enabled = true` (resume) re-registers it from the next scheduled instant onward — ticks missed while paused are **never** backfilled.
-
-The field is generic across trigger kinds, but only the cron scheduler honors it today. The CLI form is `rpk ai trigger update agents/<agent>/triggers/<trigger> --enabled=false`, and `--enabled=true` to resume.
-
-## `ManagedAgentRuntime` (orchestrator-internal)
-
-`ManagedAgentRuntime` is stored separately from the agent record and is never exposed directly via the API. It is projected onto `ManagedAgentStatus` in read responses. Status fields include: `state`, `state_reason`, `desired_state`, `url`, `retry_count`, `next_retry_at`, `last_error`, `container_id`, `config_hash`, `created_at`, `updated_at` (`managed_agent_runtime.proto:40–114`).
-
-Two access contracts govern the runtime: a tenant pool (reads and desired-state writes) and an admin pool (cross-tenant orchestrator, observed-state writes).
-
-## MCP tool group name vs. proto service name
-
-The MCP tool group exposed to AI clients is named `AIAgentService` (v1alpha3). The underlying proto service is `AgentRegistryService`. Both names are correct in their respective contexts. When operating via MCP tools, use the `AIAgentService` tool names (for example, `CreateAIAgent`). When working with the raw API or proto, use `AgentRegistryService` RPC names.
+Agent operations are gated by `dataplane_adp_agent_*`, with separate families for credentials (`dataplane_adp_agent_credential_*`), triggers (`dataplane_adp_agent_trigger_*`), and conversation sessions (`dataplane_adp_agent_session_*`). Reading a session exposes its full conversation content, so grant it as deliberately as transcript access. Every A2A call to an agent is covered by one permission, `dataplane_adp_a2a_invoke`; grant it with a policy on `Action::"Agent.invoke"`. See [governance.md](governance.md#roles-and-permissions).
