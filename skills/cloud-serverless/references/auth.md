@@ -18,9 +18,11 @@ All values below are grounded in the rpk source:
 ## Step 1: Get a Service Account Client ID and Secret
 
 Service accounts are created either through the Redpanda Cloud console or via
-the IAM API. The `client_id` and `client_secret` come from the
-`ServiceAccountCredentials` embedded in the create response, or retrieved via
-`GET /v1/service-accounts/{id}/credentials`.
+the IAM API. Both the `client_id` and the `client_secret` come from the
+`ServiceAccountCredentials` embedded in the create response. Only create and
+rotate-secret ever return the secret:
+`GET /v1/service-accounts/{id}/credentials` returns the client ID alone, so
+treat the secret as write-once and store it when you create the account.
 
 **Create a service account via API** (you need an existing token for this
 bootstrap call, or use the Cloud console):
@@ -40,15 +42,22 @@ curl -s -X POST https://api.redpanda.com/v1/service-accounts \
   }'
 ```
 
-The `client_secret` is returned **only on creation**. Save it immediately.
-To retrieve credentials for an existing service account:
+Save the `client_secret` from that response immediately.
+
+To look up the client ID of an existing service account, call the credentials
+endpoint. The response carries `credentials.client_id`;
+`credentials.client_secret` is omitted, so this call cannot recover a lost
+secret:
 
 ```bash
 curl -s "https://api.redpanda.com/v1/service-accounts/${SA_ID}/credentials" \
   -H "Authorization: Bearer ${TOKEN}" | jq .credentials
 ```
 
-To rotate the secret:
+If the secret is lost, rotate it. Rotation returns the updated service account
+with a new secret at
+`service_account.auth0_client_credentials.client_secret`; point every caller at
+the returned value:
 
 ```bash
 curl -s "https://api.redpanda.com/v1/service-accounts/${SA_ID}/rotate-secret" \
@@ -147,7 +156,7 @@ No separate token is needed for the data plane.
 | `name` | 3–128 chars, no `<>` |
 | `description` | **required**, max 140 chars |
 | `auth0_client_credentials.client_id` | The client ID to use for OAuth |
-| `auth0_client_credentials.client_secret` | Returned only on creation and rotation |
+| `auth0_client_credentials.client_secret` | Optional field, populated only by create and rotate-secret; omitted from the `GET .../credentials` response |
 
 ## Troubleshooting
 
@@ -157,3 +166,4 @@ No separate token is needed for the data plane.
 | 403 Forbidden | Service account lacks required IAM permission |
 | "invalid Redpanda Cloud token" | Audience mismatch or malformed JWT |
 | "client secret not available for token refresh" | Secret not in config; re-authenticate |
+| `credentials.client_secret` missing from `GET .../credentials` | Expected: that call returns the client ID only. Rotate the secret to get a usable one |

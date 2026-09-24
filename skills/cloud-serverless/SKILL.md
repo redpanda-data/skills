@@ -104,6 +104,9 @@ See [Authentication Reference](references/auth.md) for full details.
 Credentials come from a **ServiceAccount** created in the Redpanda Cloud console
 or via `POST /v1/service-accounts`. The response includes a `client_id` and
 `client_secret` (the secret is only shown once on creation; save it securely).
+`GET /v1/service-accounts/{id}/credentials` returns the client ID only, so a
+lost secret must be rotated with
+`GET /v1/service-accounts/{id}/rotate-secret` — it cannot be read back.
 
 ## Control Plane Resources
 
