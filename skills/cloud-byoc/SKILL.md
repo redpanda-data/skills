@@ -162,10 +162,8 @@ All mutating operations (CreateNetwork, CreateCluster, DeleteCluster, DeleteNetw
 | Networks | `POST /v1/networks`, `GET /v1/networks/{id}`, `GET /v1/networks`, `PATCH /v1/networks/{id}?update_mask=...`, `DELETE /v1/networks/{id}` |
 | Clusters | `POST /v1/clusters`, `GET /v1/clusters/{id}`, `GET /v1/clusters`, `PATCH /v1/clusters/{id}?update_mask=...`, `DELETE /v1/clusters/{id}` |
 | Network Peerings | `POST /v1/network/{network_id}/network-peerings`, `GET`/`DELETE /v1/network/{network_id}/network-peerings/{id}`, `GET /v1/network/{network_id}/network-peerings` |
-| Cloud Provider Access (PREVIEW) | `GET /v1/cloud-provider-accesses/prerequisites`, `POST /v1/cloud-provider-accesses`, `GET`/`DELETE /v1/cloud-provider-accesses/{id}`, `GET /v1/cloud-provider-accesses` |
 | Shadow Links | `POST /v1/shadow-links`, `GET`/`DELETE /v1/shadow-links/{id}`, `GET /v1/shadow-links`, `PATCH /v1/shadow-links/{id}?update_mask=...` |
 | Operations | `GET /v1/operations/{id}`, `GET /v1/operations` |
-| Scheduled Operations (PREVIEW) | `GET /v1/scheduled-operations` (list only) |
 | Resource Groups | `POST /v1/resource-groups`, `GET /v1/resource-groups/{id}`, `GET /v1/resource-groups` |
 | Regions | `GET /v1/regions/{cloud_provider}`, `GET /v1/regions/{cloud_provider}/{name}` |
 
@@ -206,7 +204,7 @@ Full rules, examples, and migration semantics: [Clusters and Agent](references/c
 
 ## Cluster State Machine
 
-BYOC clusters move through these states (grounded in `cluster.proto`):
+BYOC clusters move through these states:
 
 ```
 STATE_CREATING_AGENT → STATE_CREATING → STATE_READY
@@ -300,6 +298,6 @@ Key features and their nested keys (full detail in [Enterprise Features](referen
 ## Reference Directory
 
 - [BYOC Model and Auth](references/byoc-model-and-auth.md): What BYOC is vs Serverless, OAuth2 client-credentials flow, and the end-to-end provisioning sequence.
-- [Networks](references/networks.md): Creating the Network resource per cloud provider — AWS (VPC/subnet/IAM ARNs), GCP (network name, project, GCS bucket), Azure (VNet, subnets, resource groups). Plus VPC/VNet peering (NetworkPeeringService), Cloud Provider Access cross-account AWS provisioning (PREVIEW), and private connectivity / centralized egress (AWS PrivateLink incl. cross-region, GCP PSC, Azure Private Link, Transit Gateway egress). Field-level reference grounded in network.proto, network_peering.proto, cloud_provider_access.proto, and common.proto.
-- [Clusters and Agent](references/clusters-and-agent.md): ClusterCreate fields for BYOC (TYPE_BYOC, network_id, throughput_tier, customer_managed_resources, zones, cloud_provider_tags), dual listener mode (per-service `connections`, endpoints, and migration semantics), the cluster PATCH/update_mask form, Operation lifecycle, Scheduled Operations (PREVIEW), control-plane Shadow Linking (ShadowLinkService, including the two Schema Registry replication modes and Confluent Schema Registry migration), and the full rpk cloud byoc install/apply/destroy/validate flow.
+- [Networks](references/networks.md): Creating the Network resource per cloud provider — AWS (VPC/subnet/IAM ARNs), GCP (network name, project, GCS bucket), Azure (VNet, subnets, resource groups). Plus VPC/VNet peering (NetworkPeeringService) and private connectivity / centralized egress (AWS PrivateLink incl. cross-region, GCP PSC, Azure Private Link, centralized egress through your own hub network).
+- [Clusters and Agent](references/clusters-and-agent.md): ClusterCreate fields for BYOC (TYPE_BYOC, network_id, throughput_tier, customer_managed_resources, zones, cloud_provider_tags), dual listener mode (per-service `connections`, endpoints, and migration semantics), the cluster PATCH/update_mask form, Operation lifecycle, control-plane Shadow Linking (ShadowLinkService, including the two Schema Registry replication modes and Confluent Schema Registry migration), and the full rpk cloud byoc install/apply/destroy/validate flow.
 - [Enterprise Features](references/enterprise-features.md): Enabling Redpanda Enterprise differentiators on a BYOC cluster (license included with the Cloud subscription) via `cluster_configuration.custom_properties` and topic properties — Tiered Storage, Cloud Topics, Iceberg Topics, Continuous Data Balancing, Shadow Linking DR, Remote Read Replicas, Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/Kerberos, FIPS, Server-Side Schema ID Validation, and Leadership Pinning — with their nested config keys and license-expiration behavior, grounded in the licensing overview and per-feature docs.

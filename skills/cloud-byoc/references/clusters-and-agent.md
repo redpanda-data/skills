@@ -1,8 +1,8 @@
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (field names and constraints, incl. `Cluster.RedpandaConnect`, `Cluster.CidrPort`), cloudv2 `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (dual-listener `connections` rules, verified 2026-09-17), cloudv2 `apps/cloud-ui/src/utils/rpk.utils.ts` (per-provider `rpk cloud byoc` account flags); redpanda `src/go/rpk/pkg/cli/cloud/byoc/` (`byoc.go`, `install.go`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Clusters and Agent
 
 This reference covers creating and managing BYOC clusters via the Control Plane API, plus the full `rpk cloud byoc` agent plugin flow.
-
-All field names and constraints are grounded in `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` and `pkg/cli/cloud/byoc/`. The dual-listener `connections` rules are grounded additionally in `cloudv2/apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (verified 2026-09-17).
 
 ---
 
@@ -396,8 +396,6 @@ Maximum 16 entries; each `cidr:port_start:port_end` tuple must be unique. On rea
 }
 ```
 
-Source: `cluster.proto` (`Cluster.RedpandaConnect.allowed_destination_cidr_ports`, `Cluster.CidrPort`; `ClusterCreate.redpanda_connect`, `ClusterUpdate.redpanda_connect`).
-
 ---
 
 ## Cluster State Machine
@@ -449,10 +447,6 @@ The Operation object has:
 - `resource_id` — the ID of the created/deleted resource (once available)
 - `error` — set only if `state` is `STATE_FAILED`
 - `started_at`, `finished_at` — RFC3339 timestamps
-
-### Scheduled Operations (PREVIEW, read-only)
-
-`GET /v1/scheduled-operations` lists scheduled cluster operations such as suspend/resume schedules and pending maintenance. This is **PREVIEW** and **read-only** — only `ListScheduledOperations` is enabled (the planned update RPC is not). Filters: `filter.cluster_id`, `filter.states[]` (`STATE_SCHEDULED/IN_PROGRESS/COMPLETED/FAILED`), and a `filter.schedule_time_start`/`filter.schedule_time_end` range. Source: `scheduled_operation.proto`.
 
 ---
 
@@ -532,7 +526,7 @@ These are **control-plane** paths under `api.redpanda.com` (not the per-cluster 
 |---|---|---|
 | `shadow_redpanda_id` | Yes | The target (shadow) cluster where the link is created. Immutable. |
 | `name` | Yes | DNS-1123 subdomain, max 63 chars, pattern `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`. Unique. |
-| `source_redpanda_id` **XOR** `client_options.bootstrap_servers` | Yes | Mutually exclusive, CEL-enforced — supply exactly one. `source_redpanda_id` auto-derives bootstrap servers from a known cluster; `bootstrap_servers` points at an external source. |
+| `source_redpanda_id` **XOR** `client_options.bootstrap_servers` | Yes | Mutually exclusive — supply exactly one. `source_redpanda_id` auto-derives bootstrap servers from a known cluster; `bootstrap_servers` points at an external source. |
 | `client_options` | No | Kafka client config: `bootstrap_servers`, `tls_settings`, `authentication_configuration`, fetch/retry timing. SCRAM/PLAIN passwords must reference a data-plane secret as `${secrets.<SECRET_ID>}`. |
 | `topic_metadata_sync_options` | No | What topic metadata to mirror. |
 | `consumer_offset_sync_options` | No | Consumer group offset replication. |
@@ -569,7 +563,7 @@ curl -s -X POST "${BASE}/v1/shadow-links" \
 
 | Key | Notes |
 |---|---|
-| `source_url` | Source Schema Registry HTTP endpoint. **Required on create** (CEL-enforced); omit it on a masked `PATCH` that rotates only a credential. |
+| `source_url` | Source Schema Registry HTTP endpoint. **Required on create**; omit it on a masked `PATCH` that rotates only a credential. |
 | `auth_options.basic.{username,password}` | HTTP basic auth; `basic` is the only accepted arm. `password` must reference a data-plane secret as `${secrets.<SECRET_ID>}` — inline plaintext is rejected. For Confluent Cloud, username/password are the Schema Registry API key and secret. Omit `auth_options` for mTLS or an unauthenticated source registry. |
 | `tls_settings` | **Nested** shape here, unlike the flat `client_options.tls_settings`: `enabled`, `do_not_set_sni_hostname`, and a oneof of `tls_pem_settings` (`ca`, `key`, `cert`) or `tls_file_settings`. Cloud **rejects** `tls_file_settings`; in `tls_pem_settings`, `key` must be a `${secrets.<SECRET_ID>}` reference and `key`/`cert` are both-or-neither (mTLS to the source registry). |
 | `tail_interval` / `full_sync_interval` | Incremental poll interval and full-scan interval. Cluster defaults apply when unset or zero (10s and 5m). |
@@ -623,7 +617,7 @@ The same settings are available in the Cloud UI create-shadow-link wizard, in th
 
 The byoc plugin is a downloaded binary managed by rpk. It wraps Terraform calls to provision/destroy the agent infrastructure in your cloud account.
 
-Source: `pkg/cli/cloud/byoc/byoc.go` and `install.go`
+Source: rpk `src/go/rpk/pkg/cli/cloud/byoc/` (`byoc.go`, `install.go`) in the public `redpanda` repo.
 
 ### Commands
 
@@ -653,7 +647,7 @@ rpk cloud byoc azure destroy --redpanda-id <cluster-id> --subscription-id <azure
 # Note: aws and gcp validate are confirmed; azure validate is not separately attested.
 ```
 
-The per-provider account flags (`--project-id` for GCP, `--subscription-id` for Azure) identify the target cloud account for the Terraform run. Source: `apps/cloud-ui/src/utils/rpk.utils.ts` (the UI builds the destroy command with these flags; apply takes the same flags).
+The per-provider account flags (`--project-id` for GCP, `--subscription-id` for Azure) identify the target cloud account for the Terraform run. The Cloud console builds the destroy command with these flags, and apply takes the same flags.
 
 ### Plugin Version Pinning
 

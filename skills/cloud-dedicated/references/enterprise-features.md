@@ -1,3 +1,5 @@
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`, Cloud-only Schema Registry API-mode validation), `operation.proto` (shadow-link operation types); the Redpanda docs pages cited per section. File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Enterprise Features on Dedicated Clusters
 
 Redpanda Cloud is a managed deployment of Redpanda **Enterprise Edition**. On a Dedicated cluster, enterprise features are part of the managed subscription — you do **not** apply a separate license key. You enable and tune them with **topic properties** (via the Data Plane `TopicService`, `rpk topic`, or Kafka `AlterConfigs`) and **cluster configuration properties** (via `ClusterCreate.cluster_configuration.custom_properties`, `PATCH /v1/clusters/{id}` with `cluster_configuration`, or `rpk cluster config set`).
@@ -197,7 +199,7 @@ Asynchronous, offset-preserving replication between distinct Redpanda clusters f
 
 > The control-plane `ShadowLinkService` is keyed by **shadow link ID** (`/v1/shadow-links/{id}`, a 20-char XID). A separate data-plane `ShadowLinkService` (keyed by link **name**, `/v1/shadow-links/{name}`) on the cluster's Data Plane URL exposes per-link operational endpoints (`failover`, `metrics`, per-topic). Create/manage links through the control plane.
 
-**Control Plane API paths** (`shadow_link.proto`):
+**Control Plane API paths**:
 
 | Method | Path | Returns |
 |---|---|---|
@@ -252,7 +254,7 @@ System-topic rules: literal filters for `__consumer_offsets` and `_redpanda.audi
 
 | Key | Notes |
 |---|---|
-| `source_url` | Source Schema Registry HTTP endpoint. **Required on create** (CEL-enforced). Omit it on a masked `PATCH` that rotates only a credential. |
+| `source_url` | Source Schema Registry HTTP endpoint. **Required on create**. Omit it on a masked `PATCH` that rotates only a credential. |
 | `auth_options.basic.{username,password}` | HTTP basic auth. `basic` is the **only** accepted arm — any other auth arm is a 400. `password` must reference a data-plane secret as `${secrets.<SECRET_ID>}`; inline plaintext is rejected. For Confluent Cloud, username/password are the Schema Registry API key and secret. Omit `auth_options` entirely for mTLS or an unauthenticated source registry. |
 | `tls_settings` | **Nested** shape here (unlike the flat `client_options.tls_settings` above): `enabled`, `do_not_set_sni_hostname`, and a oneof of `tls_pem_settings` (`ca`, `key`, `cert`) or `tls_file_settings`. In Cloud, `tls_file_settings` is **rejected** — use `tls_pem_settings`, whose `key` must be a `${secrets.<SECRET_ID>}` reference, with `key` and `cert` both set or both empty (mTLS to the source registry). |
 | `tail_interval` | Duration between incremental polls for new subjects/versions. Cluster default applies when unset or zero (10s). |
@@ -341,7 +343,7 @@ rpk shadow failover <link-name> --topic orders                 # per-topic failo
 
 License expiration: new shadow links cannot be created; existing links keep operating and can be updated.
 
-Source: `controlplane/v1/shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`, and the Cloud-only CEL rules on the Schema Registry API mode: `source_url` required on create, basic-only auth, secret-ref password/key, PEM-only TLS); `redpanda` `proto/redpanda/core/admin/v2/shadow_link.proto` (`SchemaRegistrySyncOptions` oneof, `ShadowSchemaRegistryApi` fields and defaults, `SchemaRegistrySourceFilter`, `SchemaRegistryContextDestination`, `UnsupportedSchemaFeaturePolicy`) and `proto/redpanda/core/common/v1/tls.proto` (nested `TLSSettings`); `controlplane/v1/operation.proto` (`TYPE_CREATE/UPDATE/DELETE_SHADOW_LINK = 15/16/17`); the Shadowing docs pages on migrating schemas from Confluent (workflow, prerequisites, limitations, monitoring) and on setup (rpk/self-managed `ShadowLinkConfig` YAML, filter/pattern/auth keys, service-account ACLs, system-topic rules); the `rpk shadow create` and `rpk shadow failover` reference pages.
+Source: `redpanda` `proto/redpanda/core/admin/v2/shadow_link.proto` (`SchemaRegistrySyncOptions` oneof, `ShadowSchemaRegistryApi` fields and defaults, `SchemaRegistrySourceFilter`, `SchemaRegistryContextDestination`, `UnsupportedSchemaFeaturePolicy`) and `proto/redpanda/core/common/v1/tls.proto` (nested `TLSSettings`); the Shadowing docs pages on migrating schemas from Confluent (workflow, prerequisites, limitations, monitoring) and on setup (rpk/self-managed `ShadowLinkConfig` YAML, filter/pattern/auth keys, service-account ACLs, system-topic rules); the `rpk shadow create` and `rpk shadow failover` reference pages.
 
 ---
 

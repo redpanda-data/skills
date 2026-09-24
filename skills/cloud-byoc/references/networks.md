@@ -1,8 +1,8 @@
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/network.proto`, `network_peering.proto`, `common.proto` (field names and constraints). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Networks
 
 A **Network** resource registers your VPC or VNet with Redpanda's control plane so a BYOC cluster can be placed inside it. The network must exist and be in `STATE_READY` before you create a cluster.
-
-All field names and constraints in this document are grounded in `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/network.proto` and `common.proto`.
 
 ## Network States
 
@@ -29,8 +29,6 @@ Returns a `CreateNetworkOperation` with an `operation.id` (20-char alphanumeric)
 | `cluster_type` | enum | Yes | `TYPE_BYOC` (or `TYPE_DEDICATED` for dedicated clusters) |
 | `cidr_block` | string | Yes* | Min /21 CIDR. Required unless `customer_managed_resources` is set |
 | `customer_managed_resources` | object | Conditional | Set this instead of `cidr_block` if using BYOVPC (customer-owned VPC) |
-| `cloud_provider_access_id` | string (20-char) | Conditional | **PREVIEW.** Reference to a `CloudProviderAccess` for cross-account provisioning. Valid only with `cluster_type=TYPE_BYOC` and `cloud_provider=CLOUD_PROVIDER_AWS`. Mutually exclusive with `customer_managed_resources`. See [Cloud Provider Access](#cloud-provider-access-preview-aws-only). |
-| `egress_spec` | object | Conditional | **PREVIEW.** Configures how outbound traffic leaves the network (e.g. AWS Transit Gateway centralized egress). See [Centralized egress](#centralized-egress-transit-gateway--hub-vpc-preview). |
 
 ### Option A: Redpanda-Managed Network (CIDR-based)
 
@@ -70,7 +68,7 @@ When creating an AWS network with BYOVPC, the `customer_managed_resources.aws` o
 | `dynamodb_table.arn` | ARN of pre-created DynamoDB table for Terraform locks |
 | `vpc.arn` | ARN of your pre-created VPC (pattern: `arn:aws:ec2:<region>:<account>:vpc/<vpc-id>`) |
 | `private_subnets.arns` | List of private subnet ARNs (pattern: `arn:aws:ec2:<region>:<account>:subnet/<subnet-id>`) |
-| `public_subnets.arns` | **Optional, beta (PREVIEW in the API).** Public subnet ARNs, same pattern. Required only for a **dual-listener** cluster, whose public seed NLB is placed in these subnets — provide one public subnet per availability zone that has a private (broker) subnet. Enabled per organization: without it, a request carrying this field is refused with a permission error telling you to contact Support. **Write-once:** it may be set on a network that has none (see [Updating a Network](#updating-a-network)), but not changed or cleared afterwards. |
+| `public_subnets.arns` | **Optional, beta.** Public subnet ARNs, same pattern. Required only for a **dual-listener** cluster, whose public seed NLB is placed in these subnets — provide one public subnet per availability zone that has a private (broker) subnet. Enabled per organization: without it, a request carrying this field is refused with a permission error telling you to contact Support. **Write-once:** it may be set on a network that has none (see [Updating a Network](#updating-a-network)), but not changed or cleared afterwards. |
 
 ```bash
 curl -s -X POST "${BASE}/v1/networks" \
@@ -245,11 +243,10 @@ parameter is `network.id` — this differs from GET/DELETE, which use
 `update_mask` is a separate required top-level parameter, passed in the query
 string rather than the body. This is the same shape as the cluster PATCH.
 
-Only two fields are settable after create, and **both are PREVIEW in the API and require per-organization enablement**:
+The update this reference covers is `customer_managed_resources`, which belongs to dual listener mode (**beta, enabled per organization**):
 
 | Field | Notes |
 |---|---|
-| `egress_spec` | Centralized-egress configuration; see [Centralized egress](#centralized-egress-transit-gateway--hub-vpc-preview). |
 | `customer_managed_resources` | Typed as `Network.UpdatableCustomerManagedResources`, whose only member is `aws.public_subnets` — so this exists to let an existing BYOVPC network adopt dual listeners. Write-once. |
 
 `public_subnets` is the only member of the update message, so the mask accepts three equivalent
@@ -316,7 +313,7 @@ The `Network` object returned by Get/List contains:
 
 ## Network Peering (VPC/VNet peering)
 
-`NetworkPeeringService` connects a Redpanda BYOC network to one of your own VPCs/VNets via cloud-provider peering. Grounded in `network_peering.proto`. Note these endpoints are nested under `/v1/network/...` (singular `network`).
+`NetworkPeeringService` connects a Redpanda BYOC network to one of your own VPCs/VNets via cloud-provider peering. Note these endpoints are nested under `/v1/network/...` (singular `network`).
 
 | Operation | Endpoint | Returns |
 |---|---|---|
@@ -334,7 +331,7 @@ There is **no Update RPC** — to change a peering, delete and recreate it.
 | `network_id` | Yes | The Redpanda network this peering applies to (also in the URL path). |
 | `display_name` | Yes | Max 128 chars, pattern `^[A-Za-z0-9-_: ]+$`. Unique within the org. |
 | `cloud_provider` | Yes | `CLOUD_PROVIDER_AWS/GCP/AZURE` (non-zero). |
-| `cloud_provider_spec` (oneof) | Yes | Exactly one provider block, matching `cloud_provider` (CEL-enforced). |
+| `cloud_provider_spec` (oneof) | Yes | Exactly one provider block, matching `cloud_provider`. |
 
 Provider spec blocks:
 
@@ -367,71 +364,6 @@ curl -s -X POST "${BASE}/v1/network/${NET_ID}/network-peerings" \
 
 ---
 
-## Cloud Provider Access (PREVIEW, AWS-only)
-
-`CloudProviderAccessService` is a **PREVIEW** alternative to `customer_managed_resources` for cross-account AWS provisioning. A `CloudProviderAccess` is a reusable credential — an AWS IAM role Redpanda assumes (via STS) to provision infrastructure in your account. One access config can back multiple BYOC networks in the same AWS account. Grounded in `cloud_provider_access.proto`.
-
-Unlike most control-plane mutations, **create/delete here are synchronous** — they return the resource (or 204) directly, not an `Operation`.
-
-| Operation | Endpoint | Returns |
-|---|---|---|
-| Prerequisites | `GET /v1/cloud-provider-accesses/prerequisites` | The values you need to build the IAM trust policy — see below |
-| Create | `POST /v1/cloud-provider-accesses` | `CloudProviderAccess` (201, synchronous) |
-| Get | `GET /v1/cloud-provider-accesses/{id}` | `CloudProviderAccess` |
-| List | `GET /v1/cloud-provider-accesses` | `CloudProviderAccess[]` (`filter.cloud_provider`, `page_size` ≤ 1000, `page_token`) |
-| Delete | `DELETE /v1/cloud-provider-accesses/{id}` | 204; **409** if still referenced by a network |
-
-### Step 1: fetch the prerequisites
-
-The IAM role must already trust Redpanda **before** you register it, so start
-here rather than at create. Pass the cloud provider as a query parameter:
-
-```bash
-curl -s "${BASE}/v1/cloud-provider-accesses/prerequisites?cloud_provider=CLOUD_PROVIDER_AWS" \
-  -H "Authorization: Bearer ${TOKEN}" | jq '.aws'
-# → { "external_id": "...", "principal_arn": "arn:aws:iam::...:role/..." }
-```
-
-| Response field | Use it for |
-|---|---|
-| `external_id` | The `sts:ExternalId` condition on your role's trust policy (confused-deputy protection). Derived from your organization ID. |
-| `principal_arn` | The `Principal` on your role's trust policy — the Redpanda role that will assume yours. |
-
-Build the role with both values, then continue to create.
-
-### Step 2: create the access (CloudProviderAccessCreate fields)
-
-| Field | Required | Notes |
-|---|---|---|
-| `name` | Yes | Max 128 chars, pattern `^[A-Za-z0-9-_: ]+$`. |
-| `cloud_provider` | Yes | **AWS only** this release. |
-| `config.aws.role_arn` | Yes | ARN of the IAM role Redpanda assumes. Pattern `^arn:aws:iam::\d{12}:role/.+$`. |
-
-The response echoes `config.aws.external_id` (output-only) — the same value the
-prerequisites call returned. Use it to confirm the role's trust policy matches;
-it is not new information at this point.
-
-```bash
-# Register a cross-account AWS access (PREVIEW)
-curl -s -X POST "${BASE}/v1/cloud-provider-accesses" \
-  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d '{
-    "cloud_provider_access": {
-      "name": "prod-aws-account",
-      "cloud_provider": "CLOUD_PROVIDER_AWS",
-      "aws": { "role_arn": "arn:aws:iam::123456789012:role/redpanda-provisioner" }
-    }
-  }' | jq '.cloud_provider_access | {id, state, aws: .aws.external_id}'
-```
-
-**States:** `STATE_PENDING` → `STATE_ACTIVE`; plus `STATE_FAILED` and `STATE_DELETED`.
-
-### Tie-in: referencing it from a network
-
-Set `NetworkCreate.cloud_provider_access_id` (PREVIEW) to the 20-char access ID. It is valid only when `cluster_type=TYPE_BYOC` and `cloud_provider=CLOUD_PROVIDER_AWS`, and is **mutually exclusive** with `customer_managed_resources`. When set, Redpanda provisions the network infrastructure in your AWS account using the referenced role instead of customer-managed IAM resources.
-
----
-
 ## Private connectivity and egress
 
 BYOC supports a range of private-connectivity options. Most are configured as cluster-level fields on `ClusterCreate`/`ClusterUpdate` (see `clusters-and-agent.md`); VPC peering and centralized egress are network-level.
@@ -442,17 +374,20 @@ BYOC supports a range of private-connectivity options. Most are configured as cl
 | GCP Private Service Connect | cluster `gcp_private_service_connect` (`GCPPrivateServiceConnectSpec`) | `enabled`, `global_access_enabled`, `consumer_accept_list`. |
 | Azure Private Link | cluster `azure_private_link` (`AzurePrivateLinkSpec`) | `enabled`, `allowed_subscriptions`, `connect_console`. |
 | VPC / VNet peering | network `NetworkPeeringService` | See [Network Peering](#network-peering-vpcvnet-peering) above. |
-| Centralized egress | network `egress_spec` (PREVIEW) | AWS Transit Gateway / GCP hub-VPC peering / Azure hub-VNet peering — see below. |
+| Centralized egress | network (beta) | AWS Transit Gateway / GCP hub-VPC peering / Azure hub-VNet peering — see [Centralized egress](#centralized-egress-beta) below. |
 | Dual listener mode | cluster `kafka_api`/`http_proxy`/`schema_registry` `connections[]` | One public and one private listener per service, each with its own endpoint and its own SASL or mTLS auth (beta, AWS only). On a BYOVPC network it also needs the network's `public_subnets`. See [Dual Listener Mode](clusters-and-agent.md#dual-listener-mode-public--private-listeners-per-service-beta-aws). |
 
 See the [Redpanda Cloud networking docs](https://docs.redpanda.com/cloud-data-platform/networking/) for the full guidance, including **BYOVPC on AWS (GA, March 2026)** as a fully customer-managed networking variant.
 
-### Centralized egress (Transit Gateway / hub VPC, PREVIEW)
+### Centralized egress (beta)
 
-`NetworkCreate.egress_spec` (PREVIEW, `Network.EgressSpec`) controls how outbound internet traffic leaves the network. Exactly one provider block is set, matching the network's `cloud_provider` (CEL-enforced):
+Centralized egress routes all of a BYOC cluster's internet-bound traffic through a hub network you own, instead of a Redpanda-managed NAT Gateway (AWS, Azure) or Cloud NAT (GCP) in the Redpanda network:
 
-| Provider | `egress_spec` field | Key field | Behavior |
-|---|---|---|---|
-| AWS | `aws` | `transit_gateway_id` (req, pattern `^tgw-[0-9a-f]{8,}$`) | **AWS Transit Gateway centralized egress for BYOC (beta, May 2026).** The spoke VPC attaches to your existing TGW; no NAT Gateway / IGW is created and all internet-bound traffic routes through your hub VPC via the TGW. |
-| GCP | `gcp` | `hub_vpc_project`, `hub_vpc_name` (both req) | **GCP hub-VPC centralized egress for BYOC (beta, June 2026).** Peers the Redpanda VPC to your hub/egress VPC (with `import_custom_routes=true`); Cloud Router / Cloud NAT creation is skipped. The hub owner must create the mirror peering with `export_custom_routes=true` for the default route (`0.0.0.0/0`) to be advertised. |
-| Azure | `azure` | `hub_vnet_id`, `firewall_private_ip` (both req) | **Azure hub-VNet centralized egress for BYOC (beta, July 2026).** Routes all Azure BYOC egress through your own Azure Firewall and hub VNet instead of a per-cluster NAT Gateway. `hub_vnet_id` is the full Azure resource ID of your customer-managed hub VNet; `firewall_private_ip` is the private IP of the Azure Firewall in that hub VNet (used as the next-hop for the default UDR route). When set, a VNet peering is created from the spoke VNet to the hub VNet, NAT Gateways are skipped, and a UDR routes internet-bound traffic to the hub firewall. Both fields are required together — a partial config is treated as disabled. Enabled per organization; contact your account team for access. |
+- **AWS:** through your own AWS Transit Gateway and hub VPC.
+- **GCP:** through your own hub VPC and NAT VM, over VPC peering.
+- **Azure:** through your own Azure Firewall and hub VNet, over VNet peering.
+
+It is a **beta** feature, enabled per organization (contact your account team for access), and it is configured on the network. The hub network must be provisioned first. Follow the Redpanda Cloud docs for the prerequisites and the configuration steps rather than scripting against the API fields directly:
+[AWS](https://docs.redpanda.com/cloud-data-platform/networking/byoc/aws/nat-free-egress/),
+[GCP](https://docs.redpanda.com/cloud-data-platform/networking/byoc/gcp/nat-free-egress/),
+[Azure](https://docs.redpanda.com/cloud-data-platform/networking/byoc/azure/nat-free-egress/).

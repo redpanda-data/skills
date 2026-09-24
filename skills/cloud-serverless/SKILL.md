@@ -161,7 +161,7 @@ GET    /v1/serverless/clusters/{id}/prometheus/credentials
 | `STATE_DELETING` | Removal in progress |
 | `STATE_FAILED` | Could not reach READY from PLACING or CREATING |
 
-**Create request fields** (grounded in `serverless.proto`):
+**Create request fields**:
 
 | Field | Required | Notes |
 |---|---|---|
@@ -218,7 +218,7 @@ DELETE /v1/serverless/private-links/{id}   → 202 Operation
 ```
 
 Required create fields: `name`, `resource_group_id`, `cloudprovider`
-(`CLOUD_PROVIDER_AWS` only — CEL-enforced with `aws_config`),
+(`CLOUD_PROVIDER_AWS` only, set together with `aws_config`),
 `aws_config.allowed_principals` (min 1 AWS principal ARN), and
 `serverless_region`. See
 [Control Plane: Serverless](references/control-plane-serverless.md#serverlessprivatelink)
@@ -229,10 +229,10 @@ for the full field-level reference and the private-networking workflow.
 Once your cluster is `STATE_READY`, use `dataplane_api.url` as the base URL.
 The same bearer token is valid. Base path is `/v1`. Always read the URL from
 the API response — do not construct it manually. The real DNS pattern (from
-`openapi.controlplane.yaml` examples) is
+the Control Plane API reference examples) is
 `https://<cluster-id>.any.<region>.mpx.prd.cloud.redpanda.com`.
 
-Available services (grounded in `dataplane.go` and `openapi.dataplane.yaml`):
+Available services:
 
 | Service | Endpoint prefix |
 |---|---|

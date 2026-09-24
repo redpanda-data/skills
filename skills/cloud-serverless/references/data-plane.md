@@ -1,3 +1,5 @@
+Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Data Plane API for Serverless Clusters
 
 Once your ServerlessCluster is in `STATE_READY`, use the `dataplane_api.url`
@@ -6,12 +8,6 @@ used for the Control Plane is valid here.
 
 All data plane services use base path `/v1`. The API follows ConnectRPC/REST
 conventions with JSON bodies.
-
-**Grounding**: service client names are derived from
-`publicapi/dataplane.go` (`DataPlaneClientSet`). Endpoint paths, HTTP methods,
-request/response body schemas, and field names are grounded in the generated
-OpenAPI spec at
-`cloudv2/proto/gen/openapi/openapi.dataplane.yaml`.
 
 ---
 
@@ -500,9 +496,8 @@ curl -s -X POST "${DP_URL}/v1/acls" \
 
 ## Available Data Plane Services
 
-The following services exist in the Data Plane API client set (grounded in
-`DataPlaneClientSet` in `dataplane.go` and `openapi.dataplane.yaml`). Services
-marked **[Serverless: confirmed]** are verified against the generated OpenAPI.
+The following services exist in the Data Plane API client set. Services
+marked **[Serverless: confirmed]** are verified against the Data Plane API spec.
 Services marked **[Serverless: availability unconfirmed]** exist in the API
 surface but their availability on Serverless (shared-infrastructure) clusters
 is not established by the source files — verify with the Redpanda Cloud
