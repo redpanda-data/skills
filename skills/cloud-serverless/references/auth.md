@@ -148,7 +148,7 @@ e.g. `https://d1d9risv0c3i7qbbeoc0.any.us-east-1.mpx.prd.cloud.redpanda.com`
 
 No separate token is needed for the data plane.
 
-## ServiceAccount IAM Fields (grounded in `service_account.proto`)
+## ServiceAccount IAM Fields
 
 | Field | Notes |
 |---|---|

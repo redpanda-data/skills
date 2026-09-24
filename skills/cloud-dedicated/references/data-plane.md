@@ -1,3 +1,5 @@
+Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (verified `/v1` paths), cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`Cluster.DataplaneAPI.url`); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Data Plane API: Topics, ACLs, Users, and Secrets
 
 ## Overview
@@ -6,7 +8,7 @@ After a Dedicated cluster reaches `STATE_READY`, call `GET /v1/clusters/{id}` to
 
 The Data Plane API is a ConnectRPC/HTTP service at the cluster-specific URL. All calls use the same Bearer token obtained from the Auth0 client-credentials flow.
 
-Source: `dataplane.go` (the shared `DataPlaneClientSet` struct, used by Dedicated, BYOC, and Serverless clusters, with `ACL`, `Topic`, `User`, `Secret`, `Security`, `Pipeline`, etc. clients); `cluster.proto` (`Cluster.DataplaneAPI.url`, example: `"https://api-ab1234l0.cjb69h1c4vs42pca89s0.fmc.prd.cloud.redpanda.com"`).
+Source: `dataplane.go` (the shared `DataPlaneClientSet` struct, used by Dedicated, BYOC, and Serverless clusters, with `ACL`, `Topic`, `User`, `Secret`, `Security`, `Pipeline`, etc. clients).
 
 ## Getting the Data Plane URL
 
@@ -70,7 +72,7 @@ The verified `/v1` data-plane OpenAPI does **not** include `AIAgentService` or `
 
 This skill documents Topics, ACLs, Users, Secrets, Security Roles, and Quotas in detail. Other services follow the same Bearer-auth pattern.
 
-Source: `openapi.dataplane.yaml` (verified `/v1` paths); `dataplane.go` (`DataPlaneClientSet` struct fields).
+Source: `dataplane.go` (`DataPlaneClientSet` struct fields); `/v1` paths verified against the Data Plane API spec.
 
 ## Topics
 

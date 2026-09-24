@@ -1,9 +1,9 @@
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` (`resource_group.proto`, `serverless_region.proto`, `serverless.proto`, `serverless_private_link.proto`, `operation.proto`, `common.proto`); redpanda `src/go/rpk/pkg/publicapi/controlplane.go`, `publicapi.go`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Control Plane: Serverless Cluster Management
 
 This reference covers ResourceGroup, ServerlessRegion, ServerlessCluster, and
-Operations. All endpoint paths and field names are grounded in the proto files
-at `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/` and the rpk Go
-client in `publicapi/controlplane.go`.
+Operations.
 
 Base URL for all calls: `https://api.redpanda.com`
 Auth: `Authorization: Bearer <token>` (see `auth.md`)
@@ -148,7 +148,7 @@ echo "${OP}" | jq .operation.id
 OP_ID=$(echo "${OP}" | jq -r .operation.id)
 ```
 
-**Create request fields** (grounded in `serverless.proto` `ServerlessClusterCreate`):
+**Create request fields** (`ServerlessClusterCreate`):
 
 | Field | Required | Constraints |
 |---|---|---|
@@ -173,7 +173,7 @@ curl -s "https://api.redpanda.com/v1/serverless/clusters/${CLUSTER_ID}" \
   -H "Authorization: Bearer ${TOKEN}" | jq .serverless_cluster
 ```
 
-**ServerlessCluster output fields** (grounded in `serverless.proto`):
+**ServerlessCluster output fields**:
 
 | Field | Notes |
 |---|---|
@@ -294,11 +294,9 @@ curl -s "https://api.redpanda.com/v1/serverless/clusters/${CLUSTER_ID}/prometheu
 ## ServerlessPrivateLink
 
 A ServerlessPrivateLink is the AWS PrivateLink resource that backs the
-`private_link_id` field on a ServerlessCluster. It is **AWS-only**: a CEL rule
-on `ServerlessPrivateLinkCreate` enforces `cloudprovider == CLOUD_PROVIDER_AWS`
-with `aws_config` set (`"this.cloudprovider == 1 && has(this.aws_config)"`).
-Serverless on AWS went GA in Feb 2026 with PrivateLink support. Grounded in
-`serverless_private_link.proto` and `operation.proto`.
+`private_link_id` field on a ServerlessCluster. It is **AWS-only**: the create request must set `cloudprovider` to
+`CLOUD_PROVIDER_AWS` and include `aws_config`, or the API rejects it.
+Serverless on AWS went GA in Feb 2026 with PrivateLink support.
 
 ```
 POST   /v1/serverless/private-links          → 202 CreateServerlessPrivateLinkOperation
@@ -334,15 +332,9 @@ PL_OP_ID=$(echo "${OP}" | jq -r .operation.id)
 |---|---|---|
 | `name` | yes | Private link name |
 | `resource_group_id` | yes | UUID of an existing ResourceGroup |
-| `cloudprovider` | yes | **AWS only** — must be `CLOUD_PROVIDER_AWS` (CEL-enforced together with `aws_config`) |
+| `cloudprovider` | yes | **AWS only** — must be `CLOUD_PROVIDER_AWS`, set together with `aws_config` |
 | `aws_config.allowed_principals[]` | yes | Min 1 AWS principal ARN (for example, an account ARN) allowed to access the PrivateLink endpoint service |
 | `serverless_region` | yes | Region name string, e.g. `"us-east-1"` |
-
-> `aws_config.allowed_regions[]` (cross-region PrivateLink) is defined in the
-> proto but currently constrained to `max_items = 0` and marked PREVIEW —
-> cross-region links are **not yet enabled** in this proto version, despite the
-> field existing. Treat cross-region as not-yet-available until the constraint
-> is lifted.
 
 ### Get / List
 
