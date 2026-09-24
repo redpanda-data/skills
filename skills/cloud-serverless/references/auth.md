@@ -38,7 +38,8 @@ curl -s -X POST https://api.redpanda.com/v1/service-accounts \
     }
   }' | jq '{
     id: .service_account.id,
-    client_id: .service_account.auth0_client_credentials.client_id
+    client_id: .service_account.auth0_client_credentials.client_id,
+    client_secret: .service_account.auth0_client_credentials.client_secret
   }'
 ```
 
