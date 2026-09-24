@@ -1,10 +1,10 @@
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `cluster.proto` (`ClusterCreate`, `Cluster`, `ClusterService`, `UpdateCluster` RPC and `UpdateClusterRequest.update_mask`, `ConnectionType`, PrivateLink specs, `ListClustersRequest.Filter`, `ClusterConfiguration.custom_properties`, `RedpandaConnect`, `cloud_provider_tags`), `network.proto` (`NetworkCreate`, `cluster_type` validation), `region.proto`, `operation.proto` (`Operation.State`, `Operation.Type`, `ListOperationsRequest.Filter`), `network_peering.proto`; cloudv2 `proto/gen/openapi/openapi.controlplane.yaml` (cluster PATCH body schema); redpanda `src/go/rpk/pkg/publicapi/controlplane.go` (`ClusterForID`, `Clusters`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Create Cluster: Dedicated Cluster Lifecycle
 
 ## Overview
 
 Creating a Dedicated cluster involves two asynchronous operations: (1) create a Network, (2) create a Cluster of `type: TYPE_DEDICATED`. Both calls immediately return an `Operation` message. Poll `GET /v1/operations/{id}` until `state` is `STATE_COMPLETED` before proceeding to the next step.
-
-Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`ClusterCreate`, `Cluster`, `ClusterService`); `controlplane.go` (`ClusterForID`, `Clusters`).
 
 ## Step 1: Create a Network
 
@@ -52,8 +52,6 @@ NET_ID=$(curl -s "https://api.redpanda.com/v1/operations/${NET_OP_ID}" \
   -H "Authorization: Bearer ${TOKEN}" | jq -r '.operation.resource_id')
 ```
 
-Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/network.proto` (HTTP annotation `post: "/v1/networks"`, `NetworkCreate` message, `cluster_type` field with validation `"network.cluster_type must be either TYPE_DEDICATED or TYPE_BYOC"`).
-
 ## Step 2: List Regions and Zones
 
 Before creating a cluster, list available regions and the zones/tiers for your cloud provider. The region service returns the available throughput tiers per region.
@@ -68,15 +66,11 @@ curl -s "https://api.redpanda.com/v1/regions/CLOUD_PROVIDER_AWS/us-east-1" \
   -H "Authorization: Bearer ${TOKEN}" | jq .
 ```
 
-Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/region.proto` (HTTP paths `get: "/v1/regions/{cloud_provider}"` and `get: "/v1/regions/{cloud_provider}/{name}"`).
-
 ## Step 3: Create a Dedicated Cluster
 
 **Endpoint:** `POST https://api.redpanda.com/v1/clusters`
 
 ### ClusterCreate Fields
-
-All fields below are sourced from `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`ClusterCreate` message).
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -210,8 +204,6 @@ For private access, pair `CONNECTION_TYPE_PRIVATE` with a PrivateLink spec:
 - GCP: `gcp_private_service_connect.enabled = true` with `consumer_accept_list`
 - Azure: `azure_private_link.enabled = true` with `allowed_subscriptions`
 
-Source: `cluster.proto` (`ConnectionType` enum, `AWSPrivateLinkSpec`, `GCPPrivateServiceConnectSpec`, `AzurePrivateLinkSpec`).
-
 ### `connection_type` is deprecated: per-service `connections`
 
 `connection_type` sets one topology for the whole cluster and is **deprecated** on the shared
@@ -261,7 +253,7 @@ Every mutating call (Create, Update, Delete) returns an `Operation`. The Operati
 }
 ```
 
-States (from `operation.proto`, `Operation.State` enum):
+States (`Operation.State` enum):
 - `STATE_IN_PROGRESS = 1` — still running
 - `STATE_COMPLETED = 2` — succeeded; `resource_id` is the cluster/network ID
 - `STATE_FAILED = 3` — failed; `error` field contains the `google.rpc.Status`
@@ -282,7 +274,7 @@ poll_operation() {
 poll_operation "${CLUSTER_OP_ID}"
 ```
 
-Operation types (from `operation.proto`, `Operation.Type` enum):
+Operation types (`Operation.Type` enum):
 - `TYPE_CREATE_CLUSTER = 1`
 - `TYPE_UPDATE_CLUSTER = 2`
 - `TYPE_DELETE_CLUSTER = 3`
@@ -291,8 +283,6 @@ Operation types (from `operation.proto`, `Operation.Type` enum):
 - `TYPE_UPDATE_NETWORK = 18`
 - `TYPE_CREATE_NETWORK_PEERING = 13`, `TYPE_DELETE_NETWORK_PEERING = 14`
 - `TYPE_CREATE_SHADOW_LINK = 15`, `TYPE_UPDATE_SHADOW_LINK = 16`, `TYPE_DELETE_SHADOW_LINK = 17`
-
-Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/operation.proto`.
 
 ## Cluster State Machine
 
@@ -308,8 +298,6 @@ The `Cluster.state` field (`Cluster.State` enum) tracks the cluster lifecycle:
 | `STATE_UPGRADING = 6` | Redpanda version upgrade in progress |
 | `STATE_FAILED = 7` | Cluster is in a failed state |
 | `STATE_SUSPENDED = 8` | Cluster is suspended (typically due to billing) |
-
-Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`Cluster.State` enum).
 
 ## Get Cluster
 
@@ -351,8 +339,6 @@ Key output fields in the `Cluster` object:
 
 **Important:** `dataplane_api.url` is only populated in the `GetCluster` response, not in `ListClusters`. Always call `GetCluster` to retrieve it.
 
-Source: `cluster.proto` (comment: `"Note: This endpoint does not return dataplane_api.url. Use the Get Cluster endpoint..."`).
-
 ## List Clusters
 
 ```bash
@@ -370,8 +356,6 @@ curl -s "https://api.redpanda.com/v1/clusters?filter.region=us-east-1" \
 ```
 
 Filter fields (`ListClustersRequest.Filter`): `resource_group_id`, `name_contains`, `region`, `cloud_provider`, `network_id`.
-
-Source: `cluster.proto` (`ListClustersRequest.Filter`).
 
 ## Update Cluster
 
@@ -416,8 +400,6 @@ curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask
 
 Updatable `ClusterUpdate` fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`, `gcp_private_service_connect`, `azure_private_link`, `read_replica_cluster_ids`, `cloud_provider_tags`, `maintenance_window_config`, `cluster_configuration`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`, `redpanda_connect`.
 
-Source: `cluster.proto` (`UpdateCluster` RPC: `patch: "/v1/clusters/{cluster.id}"`, `body: "cluster"`; `UpdateClusterRequest` with separate required top-level `update_mask`); `openapi.controlplane.yaml` (`/v1/clusters/{cluster.id}` PATCH; body schema `ClusterUpdate`; `update_mask` omitted from the generated spec).
-
 ## Delete Cluster
 
 ```bash
@@ -461,8 +443,6 @@ Common Dedicated cluster configuration properties:
 }
 ```
 
-Source: `cluster.proto` (`ClusterCreate.ClusterConfiguration.custom_properties`, type `google.protobuf.Struct`; comment "Properties of type integer and number ... needs to be provided as strings").
-
 ## Redpanda Connect Pipeline Egress
 
 `redpanda_connect.allowed_destination_cidr_ports` — settable on `ClusterCreate` and `ClusterUpdate` — allowlists the custom outbound destinations that Redpanda Connect pipelines running on the cluster may reach (for example, an external database or API in a peered network). Each entry is a `Cluster.CidrPort`:
@@ -486,8 +466,6 @@ Maximum 16 entries; each `cidr:port_start:port_end` tuple must be unique. On rea
 }
 ```
 
-Source: `cluster.proto` (`Cluster.RedpandaConnect.allowed_destination_cidr_ports`, `Cluster.CidrPort`; `ClusterCreate.redpanda_connect`, `ClusterUpdate.redpanda_connect`).
-
 ## Tags
 
 Cloud provider tags (resource labels) can be placed on cloud resources at cluster create or update time. Maximum 16 pairs. GCP network tags use the `gcp.network-tag.` prefix:
@@ -502,7 +480,7 @@ Cloud provider tags (resource labels) can be placed on cloud resources at cluste
 }
 ```
 
-Source: `cluster.proto` (`ClusterCreate.cloud_provider_tags`, `max_pairs = 16`, annotation about GCP network tags). Note: the returned `Cluster` message has a lower `max_pairs` cap on `cloud_provider_tags`; round-tripped output may show fewer tag entries than the 16-pair create limit.
+Note: create accepts up to 16 `cloud_provider_tags` pairs, but the returned `Cluster` has a lower cap on `cloud_provider_tags`; round-tripped output may show fewer tag entries than the 16-pair create limit.
 
 ## PrivateLink Details
 
@@ -552,8 +530,6 @@ Source: `cluster.proto` (`ClusterCreate.cloud_provider_tags`, `max_pairs = 16`, 
   }
 }
 ```
-
-Source: `cluster.proto` (`AWSPrivateLinkSpec`, `GCPPrivateServiceConnectSpec`, `AzurePrivateLinkSpec`).
 
 ## Private Connectivity Options
 
@@ -620,8 +596,6 @@ curl -s "https://api.redpanda.com/v1/network/${NET_ID}/network-peerings" \
 
 After creation, the peering moves to `STATE_PENDING_ACCEPTANCE` until you accept it on the customer side, then `STATE_READY`.
 
-Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/network_peering.proto` (`NetworkPeeringService` paths, `NetworkPeeringCreate`, `AWSPeeringSpec`/`GCPPeeringSpec`/`AzurePeeringSpec`, `NetworkPeering.State`); `operation.proto` (`TYPE_CREATE/DELETE_NETWORK_PEERING = 13/14`).
-
 ## Listing Operations
 
 To see all recent operations:
@@ -639,5 +613,3 @@ curl -s "https://api.redpanda.com/v1/operations?filter.type_in=TYPE_CREATE_CLUST
 curl -s "https://api.redpanda.com/v1/operations?filter.resource_id=${CLUSTER_ID}" \
   -H "Authorization: Bearer ${TOKEN}" | jq .
 ```
-
-Source: `operation.proto` (`ListOperationsRequest.Filter` with `type_in`, `state`, `resource_id`; HTTP path `get: "/v1/operations"`).

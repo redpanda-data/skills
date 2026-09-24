@@ -1,10 +1,12 @@
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `cluster.proto` (`Cluster.Type`), `network.proto` (`cluster_type` validation), `resource_group.proto` (`/v1/resource-groups`); redpanda `src/go/rpk/pkg/publicapi/` and `src/go/rpk/pkg/cli/cloud/` (auth flow, base URL, client sets). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Model and Auth: Dedicated Clusters
 
 ## What is a Dedicated Cluster?
 
 A Redpanda Cloud **Dedicated** cluster runs entirely in **Redpanda's cloud account** — AWS, GCP, or Azure. Redpanda provisions and manages the VPC (or VNet), Kubernetes control plane and data plane, agent, storage buckets, and all associated IAM resources. You interact only with the public Control Plane API; no cloud-provider credentials or Terraform execution on your side is required.
 
-Internally, Dedicated clusters are labelled `CLUSTER_TYPE_FMC` (Fully-Managed Cloud) in the internal proto (`common.proto`). In the **public API** proto (`controlplane/v1/cluster.proto`), they surface as `Cluster.Type.TYPE_DEDICATED = 1`. This is the value you set in `ClusterCreate.type` and the value returned in `Cluster.type`.
+In the Control Plane API, Dedicated clusters are `Cluster.Type.TYPE_DEDICATED = 1`. This is the value you set in `ClusterCreate.type` and the value returned in `Cluster.type`.
 
 ## Dedicated vs BYOC vs Serverless
 
@@ -28,7 +30,7 @@ Internally, Dedicated clusters are labelled `CLUSTER_TYPE_FMC` (Fully-Managed Cl
 - BYOC requires you to pre-create AWS instance profiles, security groups, GCP service accounts, storage buckets, etc. Dedicated does not; Redpanda creates all cloud infrastructure.
 - Serverless is served by a completely separate `ServerlessClusterService` with its own endpoints and no Network dependency.
 
-Source: `controlplane.go` (`CloudClientSet.Cluster` for Dedicated/BYOC, `CloudClientSet.Serverless` for Serverless); `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` enum `Cluster.Type`.
+Source: rpk `controlplane.go` (`CloudClientSet.Cluster` for Dedicated/BYOC, `CloudClientSet.Serverless` for Serverless).
 
 ## Enterprise Capabilities
 
@@ -142,11 +144,9 @@ Source: `publicapi.go` (`ControlPlaneProdURL = "https://api.redpanda.com"`).
 
 ### Note on Network and Dedicated Clusters
 
-Unlike what one might assume, Dedicated clusters **do** require a `Network` resource, just like BYOC. The `network.cluster_type` field must be set to `TYPE_DEDICATED` (value `1`). The validation rule in `network.proto` confirms: `"network.cluster_type must be either TYPE_DEDICATED or TYPE_BYOC"`.
+Unlike what one might assume, Dedicated clusters **do** require a `Network` resource, just like BYOC. The `network.cluster_type` field must be set to `TYPE_DEDICATED` (value `1`). The API rejects any other value: `"network.cluster_type must be either TYPE_DEDICATED or TYPE_BYOC"`.
 
 For Dedicated, you set `cidr_block` (at least a /21) and do **not** set `customer_managed_resources` — Redpanda provisions the VPC for you. For BYOC, you either provide the CIDR (Redpanda-managed VPC) or provide `customer_managed_resources` (your own VPC/subnets/buckets).
-
-Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/network.proto` (validation rule on `cluster_type`, field 10).
 
 ## Resource Groups
 
@@ -168,4 +168,4 @@ curl -s "https://api.redpanda.com/v1/resource-groups/${RG_ID}" \
   -H "Authorization: Bearer ${TOKEN}"
 ```
 
-Source: `cloudv2/proto/public/cloud/redpanda/api/controlplane/v1/resource_group.proto` (HTTP paths `/v1/resource-groups`); `controlplane.go` (`ResourceGroupForID`, `ResourceGroups`).
+Source: rpk `controlplane.go` (`ResourceGroupForID`, `ResourceGroups`).
