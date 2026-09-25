@@ -157,7 +157,13 @@ Metadata fields set on change messages:
 | `schema` | Table schema in Benthos common schema format (compatible with `parquet_encode`) | all messages |
 | `table` | Table name (e.g. `orders`) | all messages |
 | `operation` | One of: `read`, `insert`, `update_before`, `update_after`, `delete` | all messages |
-| `lsn` | Raw varbinary(10) LSN bytes (set via `string(m.LSN)`) — binary, not a printable hex string | streamed changes only (insert/update/delete); **absent on snapshot `read` rows** |
+| `lsn` | Raw varbinary(10) LSN bytes (set via `string(m.LSN)`) — binary, not a printable hex string. The commit LSN of the change, from `__$start_lsn` | streamed changes only (insert/update/delete); **absent on snapshot `read` rows** |
+| `seqval` | Position of the change in the transaction log, from `__$seqval`, as a **hexadecimal string with a `0x` prefix** (unlike `lsn`, which is raw bytes) | streamed changes only; **absent on snapshot `read` rows** |
+| `command_id` | Order of the statement within its transaction, from `__$command_id`, as a decimal string | streamed changes only; **absent on snapshot `read` rows** |
+
+`seqval` and `command_id` are set on the same condition as `lsn` — a non-empty LSN — so all three appear together or not at all.
+
+**Ordering within a transaction.** Changes are emitted in the order SQL Server recorded them: by `lsn` first, then by `command_id`. Every row of one transaction shares one `lsn`, so `lsn` alone does not order changes inside a transaction — use `command_id` for that.
 
 The `lsn` metadata is the raw binary representation of the SQL Server LSN, not the `0x…` hex form you see in log output (which uses `.String()`). To use it in a Bloblang expression or Kafka header as a readable value, hex-encode it first, for example:
 
@@ -169,7 +175,7 @@ pipeline:
         root._lsn_hex = meta("lsn").encode("hex")
 ```
 
-Snapshot (`operation: read`) rows have **no `lsn` metadata key** — they are built with `LSN: nil` in the snapshot phase and are not individually checkpointed.
+Snapshot (`operation: read`) rows have **no `lsn`, `seqval`, or `command_id` metadata keys** — they are built with `LSN: nil` in the snapshot phase and are not individually checkpointed.
 
 ### Operation Types
 

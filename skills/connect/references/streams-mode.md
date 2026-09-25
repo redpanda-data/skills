@@ -5,12 +5,12 @@ Normally one Redpanda Connect process runs a single stream (one `input` → `buf
 Streams can be defined two ways, and the methods combine (you can update or delete streams via the API that were created from static files):
 
 1. **Static config files** — a directory of per-stream YAML files loaded at startup.
-2. **HTTP REST API** — create, inspect, update, and delete streams dynamically at runtime.
+2. **HTTP REST API** — create, inspect, update, and delete streams dynamically at runtime. **Off by default**: the management endpoints are only registered when you pass `--bind-http` (see [Streams REST API](#streams-rest-api)).
 
 ## When to use streams mode
 
 - **Many small pipelines, one process**: consolidate lots of low-volume pipelines instead of running one process (and one metrics/HTTP port) per pipeline.
-- **Dynamic pipeline management**: add/remove/replace pipelines at runtime through the REST API without restarting the service.
+- **Dynamic pipeline management**: add/remove/replace pipelines at runtime through the REST API without restarting the service (requires `--bind-http`).
 - **Shared resources**: cache, rate-limit, and other resource components are defined once and shared by every stream.
 
 Prefer separate single-config processes when pipelines need independent scaling, isolation of failure/resource domains, or independent deploy lifecycles — streams in one process share the process's CPU, memory, and observability config.
@@ -27,8 +27,10 @@ rpk connect streams -o ./config.yaml ./streams/*.yaml
 # Shared resources via -r/--resources (same flag as regular run mode)
 rpk connect streams -r "./resources/prod/*.yaml" ./streams/*.yaml
 
-# API-only: start with no static streams, manage everything over REST
-rpk connect streams
+# API-only: start with no static streams, manage everything over REST.
+# --bind-http is REQUIRED: without it the management endpoints are not
+# registered and there is no way to add a stream.
+rpk connect streams --bind-http
 ```
 
 (Equivalently `redpanda-connect streams ...` with the plain binary.)
@@ -64,9 +66,36 @@ metrics:
 
 Served on the instance's HTTP server (default `localhost:4195`). Stream configs POSTed/PUT through the API can be JSON or YAML. Note: configs created or updated via the API do **not** get environment-variable interpolation (function interpolation `${! ... }` still works).
 
+### The management endpoints are opt-in
+
+The endpoints that **create, update, or remove** streams and resources accept pipeline configuration over HTTP, so they are **not registered by default**. Pass `--bind-http` to `rpk connect streams` to register them:
+
+```bash
+rpk connect streams --bind-http -o ./config.yaml ./streams/*.yaml
+```
+
+Without the flag the routes are simply never registered: the HTTP server still binds as configured and serves everything else, but these paths are unknown to it. Confirm with `rpk connect streams --help` on your installed version.
+
+What the flag does and does not gate:
+
+| Always registered | Requires `--bind-http` |
+|---|---|
+| `GET /ready` | `GET`/`POST /streams` |
+| The service-wide `/ping`, `/stats`, `/metrics` | `POST`/`GET`/`PUT`/`PATCH`/`DELETE /streams/{id}` |
+| Endpoints registered by components (e.g. an `http_server` input) | `GET /streams/{id}/stats` |
+| | `POST /resources/{type}/{id}` |
+
+So a liveness/readiness probe on `/ready` and the metrics scrape keep working with the API disabled — only runtime pipeline management is lost.
+
+**When you enable it, secure the HTTP server.** These endpoints let a caller run arbitrary pipeline configuration in your process. Bind `http.address` to a trusted interface and/or set `http.basic_auth` in the general (`-o`) config; the flag adds no authentication of its own.
+
+> **`--no-api` is deprecated and has no effect.** It was the old opt-*out* for this API. It is now hidden, and passing it only logs a warning (`The --no-api flag is deprecated and no longer has any effect: the streams-mode HTTP API is now disabled by default and enabled with --bind-http.`). A deployment that relied on `--no-api` to keep the API closed is already closed; one that relied on the API being on by default must add `--bind-http`.
+
+### Endpoints
+
 | Method + path | Effect |
 |---|---|
-| `GET /ready` | 200 if all active streams are connected to their inputs/outputs; 503 (naming the faulty stream) otherwise. 200 when zero streams are active. |
+| `GET /ready` | 200 if all active streams are connected to their inputs/outputs; 503 (naming the faulty stream) otherwise. 200 when zero streams are active. **The only endpoint here that does not need `--bind-http`.** |
 | `GET /streams` | Map of stream id → `{active, uptime, uptime_str}`. |
 | `POST /streams` | **Set the entire collection**: body is a map of id → stream config. Streams absent from the body are removed, existing ones updated, new ones created. |
 | `POST /streams/{id}` | Create stream `{id}` from the body (standard `input`/`buffer`/`pipeline`/`output` config). |
@@ -77,9 +106,11 @@ Served on the instance's HTTP server (default `localhost:4195`). Stream configs 
 | `GET /streams/{id}/stats` | The stream's metrics as a hierarchical JSON object. |
 | `POST /resources/{type}/{id}` | Add or modify a shared resource; `{type}` is one of `cache`, `input`, `output`, `processor`, `rate_limit`. |
 
-Create/update endpoints return `400` with a `{"linting_errors": [...]}` body when the config fails linting; append `?chilled=true` to accept a config despite lint errors.
+Create/update endpoints return `400` with a `{"lint_errors": [...]}` body when the config fails linting; append `?chilled=true` to accept a config despite lint errors (which also relaxes the missing-environment-variable check).
 
 ### Lifecycle example
+
+(All of these require the instance to have been started with `--bind-http`.)
 
 ```bash
 # Add a stream
@@ -99,5 +130,5 @@ curl http://localhost:4195/streams/foo -X DELETE
 ## Authoritative reference
 
 - Docs: docs.redpanda.com → Redpanda Connect → Guides → Streams mode (the About, Using config files, Using the REST API, and Streams API pages; the Streams API page is the full endpoint spec).
-- Engine source: `redpanda-data/benthos` `internal/cli/streams.go` (the `streams` subcommand and its flags) and `internal/stream/manager/api.go` (the REST handlers).
+- Engine source: `redpanda-data/benthos` `internal/cli/streams.go` (the `streams` subcommand and its flags, including `--bind-http`), `internal/cli/common/service.go` (the `--no-api` deprecation warning), and `internal/stream/manager/api.go` (`registerEndpoints`, whose `enableCrud` argument is what `--bind-http` sets).
 - Live surface: `rpk connect streams --help` on your installed version for the current flag set.
