@@ -146,9 +146,13 @@ fields (accessible via `meta("field_name")` in Bloblang or Connect expressions):
 | `schema` | object | all messages | Table schema in Benthos common schema format — compatible with the `parquet_encode` processor |
 | `table` | string | all messages | Table name without schema (e.g. `orders`) |
 | `operation` | string | all messages | `read`, `insert`, `update_before`, `update_after`, or `delete` |
-| `lsn` | bytes | streamed changes only | Raw varbinary(10) LSN bytes (set via `string(m.LSN)`) — binary, not a printable hex string. **Absent on snapshot `read` rows** (LSN is nil during snapshot). |
+| `lsn` | bytes | streamed changes only | The commit LSN of the change, from the change table column `__$start_lsn`. Raw varbinary(10) LSN bytes (set via `string(m.LSN)`) — binary, not a printable hex string. **Absent on snapshot `read` rows** (LSN is nil during snapshot). |
+| `seqval` | string | streamed changes only | The position of the change in the transaction log, from `__$seqval`. Emitted as a **hexadecimal string with a `0x` prefix** (set via `LSN.String()`), not as raw bytes. **Absent on snapshot `read` rows.** |
+| `command_id` | string | streamed changes only | The order of the statement within its transaction, from `__$command_id`, as a decimal string (set via `strconv.Itoa`). **Absent on snapshot `read` rows.** |
 
-The `0x…` hex form you may see in logs (e.g. `0x0000005a00000fc80001`) is produced by `LSN.String()` for logging only; it is never written to the message metadata. To expose a readable LSN in a Bloblang mapping use `.encode("hex")`:
+All three are set under the same non-empty-LSN condition, so they appear together or not at all.
+
+Note the type asymmetry: `lsn` carries raw varbinary bytes while `seqval` — which has the same varbinary(10) shape in the change table — is written in its printable `0x…` hex form. The `0x…` form you may see in logs (e.g. `0x0000005a00000fc80001`) is produced by `LSN.String()`; for `lsn` that form is used for logging only and is never written to the message metadata, so hex-encode `lsn` yourself with `.encode("hex")` when you need it readable:
 
 ```yaml
 pipeline:
@@ -171,10 +175,15 @@ The `operation` metadata value maps directly to SQL Server CDC operation codes:
 | `update_after` | 4 | Row state **after** an update |
 
 Every `UPDATE` in SQL Server produces **two** CDC change table entries: first
-the before image (operation 3), then the after image (operation 4). Both share
-the same `__$start_lsn` but have different `__$command_id` values. The
-connector emits them as two consecutive messages, both with the same `lsn`
-metadata value, ordered by command_id.
+the before image (operation 3), then the after image (operation 4). Both rows
+of one `UPDATE` statement share the same `__$start_lsn`, `__$seqval` **and**
+`__$command_id`, so none of those three distinguishes them — use `operation`.
+The connector emits them as two consecutive messages carrying identical `lsn`,
+`seqval`, and `command_id` metadata, with `update_before` always first (the
+`__$operation ASC` tiebreaker in the ordering described below).
+
+To order changes *within* one transaction, use `command_id`: every row of a
+transaction shares one `lsn`, so `lsn` alone cannot order them.
 
 ### Filtering Updates to Keep Only the After Image
 
@@ -187,7 +196,7 @@ pipeline:
 
 ### Enriching Messages with Table Routing Metadata
 
-Note: `lsn` is absent on snapshot rows (`operation: read`). Hex-encode it before embedding in the body if you need a printable representation:
+Note: `lsn`, `seqval`, and `command_id` are absent on snapshot rows (`operation: read`). Hex-encode `lsn` before embedding it in the body if you need a printable representation (`seqval` is already a `0x…` string):
 
 ```yaml
 pipeline:

@@ -174,11 +174,13 @@ Three constraints shape every `oracledb_cdc` deployment:
 
 **Throughput is bounded by the LogMiner session, not by CPU.** Each pipeline mines the redo stream through a **single synchronous LogMiner reader**, so giving Redpanda Connect more cores does not raise the capture rate. To capture more aggregate change volume from one database, run **multiple pipelines whose `include` patterns cover disjoint sets of tables** — each pipeline gets its own LogMiner reader.
 
-**Large transactions can look like a stall.** The Oracle driver fetches 25 rows per network round trip by default, so a large committed transaction can arrive minutes late while the database, network, and connector all look idle — each round trip is a full network exchange, and thousands of them are needed. Raise the fetch size with the `PREFETCH_ROWS` query parameter on `connection_string`:
+**Large transactions can look like a stall.** Left to itself the Oracle driver sizes each fetch to roughly 128 KiB based on the *declared maximum width* of the selected columns, so wide columns — such as LogMiner's redo SQL — yield only a handful of rows per network round trip. A large committed transaction can then arrive minutes late while the database, network, and connector all look idle: each round trip is a full network exchange, and thousands of them are needed. The connector therefore fetches `prefetch_rows` rows per round trip; raise it for large transactions over high-latency links, at the cost of more memory per fetch (and per table snapshotted in parallel):
 
 ```yaml
-connection_string: oracle://user:pass@host:1521/service?PREFETCH_ROWS=1000
+prefetch_rows: 5000
 ```
+
+A `PREFETCH_ROWS` query parameter on `connection_string` still works and **takes precedence** over the field (matched case-insensitively), so remove it if you want the field to apply. Values of `0` or below are rejected — both by `rpk connect lint` and at startup.
 
 **Redo log retention must cover idle periods, not just outages.** The SCN checkpoint only advances when messages are delivered, so a monitored table set that goes quiet leaves the checkpoint stationary while Oracle ages out redo/archive logs. If the checkpointed SCN is gone when activity resumes or the pipeline restarts, the input cannot resume and fails repeatedly with **ORA-01292**. Therefore:
 
