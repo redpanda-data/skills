@@ -1,8 +1,8 @@
-Source: `cloudv2 apps/rpai/internal/cmd/agent/transcript.go` (transcript list/get flags, columns, output) and `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent` command tree, `trigger runs`, global flags); `adp-docs modules/monitor/pages/transcripts.adoc`, `adp-docs modules/monitor/pages/audit-log.adoc`, `adp-docs modules/monitor/pages/agent-network.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc`, `adp-docs modules/get-started/pages/adp-quickstart.adoc` (Home page); `cloudv2 adp/RELEASE_NOTES.md` (shipped-feature checks). Evidence date: 2026-09-23.
+Source: `cloudv2 apps/rpai/internal/cmd/agent/transcript.go` (transcript list/get flags, columns, output) and `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent` command tree, `trigger runs`, global flags); `adp-docs modules/monitor/pages/transcripts.adoc`, `adp-docs modules/monitor/pages/audit-log.adoc`, `adp-docs modules/monitor/pages/agent-network.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc`, `adp-docs modules/get-started/pages/adp-quickstart.adoc` (Home page); `cloudv2 adp/RELEASE_NOTES.md` (shipped-feature checks). Evidence date: 2026-09-23. The grouped-call flow and the event detail pane re-verified 2026-09-28 against `adp-docs modules/monitor/pages/audit-log.adoc`.
 
 # Agentic Data Plane Observability Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available. The `rpk ai` CLI is Preview. The docs carry no Preview or Experimental marker on transcripts, the audit log, the Agent network view, or the Home dashboard.
+**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. The docs carry no Preview or Experimental marker on transcripts, the audit log, the Agent network view, or the Home dashboard.
 
 Audience: an AI agent answering "what did my agent do?" and "who was allowed to do what?" through `rpk ai` and the ADP UI (ai.redpanda.com).
 
@@ -113,7 +113,18 @@ Example: MCP authorization failures in the last hour: `outcome=denied`, `subsyst
 
 ### Grouped calls
 
-One row is one call. A call that decided on several resources (a list filtered by a policy, for example) shows Resource name as `Multiple resources (N)`, and an Outcome of Partial when some were denied. The detail pane's **Resources** section lists each resource with its own decision, denied first, and can be narrowed by exact resource ID (case-sensitive) or, for a Partial call, by Allowed/Denied. The Outcome tooltip on a Partial call shows how many resources were allowed.
+One row is one call. A call that decided on several resources (a list filtered by a policy, for example) shows Resource name as `Multiple resources (N)`, and an Outcome of Partial when some were denied. Such a call records **one decision per resource**, and those decisions open in the table, not in the detail pane: open the event, then click **View individual decisions**.
+
+The table then lists only that call's decisions, denied first, under a bar that names the call and carries **Clear call filter**. While that filter is on:
+
+- The table covers the call's whole recorded history rather than the selected window; the range control reads All time and the timeline is hidden.
+- Sorting is off, because the decisions already come denied first. The search bar refuses a `sort=` filter and says so.
+- The Fields panel counts values by call, not by decision, so narrow the decisions by typing `field=value` in the search bar.
+- `outcome=partial` describes a call rather than one decision; filter by `allowed`, `denied`, or `masked` instead.
+
+Click a decision to read it in the pane, which heads it *Individual decision*. **Clear call filter** returns to the events you came from, with the same window, rows, and open event.
+
+Outcome tooltips: on a call that decided on a single resource, hover over the outcome to see the policy that decided it. A Partial call's tooltip reports how many of its resources were allowed, and the policy behind each one sits on that resource's individual decision.
 
 ### Delegation (on-behalf-of)
 
@@ -121,7 +132,7 @@ When an agent makes the call, the Actor cell shows the agent's name and the acco
 
 ### Inspecting an event
 
-Expand a row, then **Open event details**. The pane shows the actor, groups, outcome, invoker, agent, subsystem, service, operation, resource, source IP, status detail, and a **Policies** section in evaluation order: **Access** (Permit/Deny), **Guardrail** (Blocked/Masked), and **Data policy** (Blocked/Masked/Passed), each linking to the policy. Depending on the action, the pane also shows Configuration change (before/after), Request, and Response sections.
+Expand a row, then **Open event details**. The pane shows the actor, groups, outcome, invoker, agent, subsystem, service, operation, resource, correlation ID, source IP, status detail, and a **Policies** section in evaluation order: **Access** (Permit/Deny), **Guardrail** (Blocked/Masked), and **Data policy** (Blocked/Masked/Passed), each linking to the policy. Depending on the action, the pane also shows Configuration change (before/after), Request, and Response sections. On a call that decided on more than one resource the pane carries the event summary and the **View individual decisions** link only: the Policies, Configuration change, Request, and Response sections belong to each individual decision (see [Grouped calls](#grouped-calls)). If part of an event fails to load, the affected rows read Unavailable and the pane offers a single **Retry**.
 
 - A guardrail appears only when the AI Gateway evaluated it itself. A guardrail Bedrock enforces inside the model call is not attributed here.
 - Captured values may be `[REDACTED]`, truncated (bodies are cut at 16 KB), or absent. An empty field does not mean no activity. Treat outcome and policy as the authoritative record.

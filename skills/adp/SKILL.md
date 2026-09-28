@@ -19,7 +19,7 @@ The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agen
 
 **How to operate it.** ADP has two supported operator surfaces: the **`rpk ai` CLI** and the **ADP UI** (ai.redpanda.com). Applications and agents then call the endpoints ADP exposes: the AI Gateway's per-provider LLM URLs, each MCP server's URL, and each agent's A2A endpoint. Operate ADP with `rpk ai`, and send the user to the UI for tasks the CLI does not cover. Confirm the live surface with `--help` before acting.
 
-**Maturity.** The Agentic Data Plane is generally available. The `rpk ai` CLI is in Preview. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, and MCP output format are Preview. Each reference file names these markers.
+**Maturity.** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, and MCP output format are Preview. Each reference file names these markers.
 
 ## Where each task lives
 
@@ -50,7 +50,7 @@ See [references/agents.md](references/agents.md).
 
 ### MCP servers
 
-Each MCP server is either **remote** (you own the upstream and pick an auth mode) or **managed** (a pre-integrated catalog type). The catalog changes, so list it live with `rpk ai mcp-server types` rather than assuming it. **Code mode** serves a second `-code` endpoint that exposes just `search` and `execute` tools in place of the full tool list, which cuts tokens for servers with many tools. **Output format** (Preview) can re-encode tabular tool results into a denser form. **Data policies** (Preview) mask, drop, or clamp data in tool calls before the model sees it.
+Each MCP server is either **remote** (you own the upstream and pick an auth mode) or **managed** (a pre-integrated catalog type). The catalog changes, so list it live with `rpk ai mcp-server types` rather than assuming it. **Code mode** serves a second `-code` endpoint that exposes just `search` and `execute` tools in place of the full tool list, which cuts tokens for servers with many tools. **Output format** (Preview) can re-encode tabular tool results into a denser form. **Data policies** (Preview) mask, drop, or clamp data in tool calls before the model sees it. Some managed types can also expose their data as read-only SQL tables alongside their tools, off by default.
 
 See [references/mcp-servers.md](references/mcp-servers.md).
 

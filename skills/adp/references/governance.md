@@ -1,8 +1,8 @@
-Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc` (roles and permissions); adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against `cloudv2` source (2026-09-21). Evidence date: 2026-09-23 (re-verified against the snapshot and the docs pages above; the Slack `user_scope` handling, reuse exclusion, and `invalid_grant` behavior are carried from 2026-09-21).
+Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc` (roles and permissions); adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against `cloudv2` source (2026-09-21). Evidence date: 2026-09-23 (re-verified against the snapshot and the docs pages above; the Slack `user_scope` handling, reuse exclusion, and `invalid_grant` behavior are carried from 2026-09-21). Re-verified 2026-09-28: the per-provider pricing rule against `adp-docs modules/control/pages/cost-usage.adoc`, and the built-in roles table and access-policy scope against `modules/control/pages/permissions-overview.adoc`, `permissions-reference.adoc`, and `access-policies.adoc`.
 
 # Agentic Data Plane Governance Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available. The `rpk ai` CLI is in Preview. Per-feature markers from the docs: **guardrails** and **data policies** are Preview; budgets, cost reporting, and access policies carry no Preview marker.
+**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Per-feature markers from the docs: **guardrails** and **data policies** are Preview; budgets, cost reporting, and access policies carry no Preview marker. Access policies are still enabled per organization: if **Access** is missing from the sidebar, they are not enabled for yours.
 
 Audience: an AI agent operating Agentic Data Plane governance (budgets, cost analysis, guardrails, access control, data policies, OAuth/identity) through `rpk ai` and the ADP UI.
 
@@ -60,7 +60,7 @@ The UI takes and shows budget amounts in **dollars**, and cost reporting and CSV
 
 ## Cost and usage
 
-UI only: open **Cost and usage** in the sidebar. Every LLM call routed through the gateway is recorded and priced automatically (input, output, and cached tokens; cost; request count; provider, model, user, agent context). Prices come from the built-in per-model catalog or per-provider overrides (`rpk ai llm-provider create/update --pricing`, see [gateway-and-providers.md](gateway-and-providers.md)).
+UI only: open **Cost and usage** in the sidebar. Every LLM call routed through the gateway is recorded and priced automatically (input, output, and cached tokens; cost; request count; provider, model, user, agent context). Prices come from the built-in per-model catalog or per-provider overrides (`rpk ai llm-provider create/update --pricing`, see [gateway-and-providers.md](gateway-and-providers.md)). Pricing is resolved per provider and model, so a call is priced with the rates of the provider that served it, and the same model offered by two providers is priced separately for each. Cost reporting works with no pricing setup at all.
 
 The **Cost & usage** tab offers:
 
@@ -177,8 +177,8 @@ ADP enforces fine-grained permissions: every operation checks exactly one permis
 | Role | What it grants in ADP |
 |---|---|
 | Admin | Every ADP permission on every resource. Bind it to the people who administer the deployment and author policies; it is not a least-privilege role for day-to-day users |
-| Writer, Reader | Nothing in ADP. They keep their control-plane, Kafka, and Redpanda Connect pipeline permissions, so a Writer can manage clusters and pipelines and still gets permission denied from every agent, MCP server, and LLM provider operation |
-| PipelineInvoker, Kafka and Schema Registry roles | Nothing in ADP |
+| Writer, Reader | Nothing in ADP. They keep their control-plane and Kafka permissions, so a Writer can manage clusters and topics and still gets permission denied from every agent, MCP server, and LLM provider operation |
+| The Kafka and Schema Registry roles | Nothing in ADP |
 
 There are no built-in invoker or transcript-reader roles for ADP. Grant runtime-only or read-only access with an access policy. Organizations created before that change may still carry legacy invoker and transcript-reader roles; don't build new grants on them. A **custom role** holding ADP permissions still works, for when you need a permission bundle bound at a control-plane scope. Until access policies are enabled for an organization, Admin or a custom role is the only way to reach ADP.
 
@@ -309,4 +309,4 @@ Existing Slack connections keep their bot identity and need no reconnection. See
 ### Capabilities that are not offered
 
 - The AI Gateway does no per-second/minute/day rate limiting, routing, or failover; use budgets to cap spend (see [gateway-and-providers.md](gateway-and-providers.md)).
-- Access policies govern only ADP resources; they can't govern Redpanda Connect pipelines.
+- Access policies govern only ADP resources; they cannot govern resources outside it.
