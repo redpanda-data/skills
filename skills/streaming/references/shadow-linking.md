@@ -15,7 +15,7 @@ version-negotiated `DescribeConfigs`, and `Fetch` — so the source does not hav
 Redpanda. It can be another Redpanda cluster, or any Kafka API-compatible cluster such as
 Apache Kafka, Confluent Cloud, or Confluent Platform. That makes a shadow link a migration
 path onto Redpanda as well as a DR topology: run the shadow as a continuously updated
-replica, then cut applications over.
+replica, then cut applications over. A Redpanda source must run v25.3 or later.
 
 Replicated from **any** Kafka API-compatible source:
 
