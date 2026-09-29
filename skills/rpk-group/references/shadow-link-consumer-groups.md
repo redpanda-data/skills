@@ -1,6 +1,6 @@
 # Consumer Groups and Shadow Linking (Disaster Recovery)
 
-Shadowing is Redpanda's **Enterprise** disaster recovery feature: asynchronous, offset-preserving replication between two distinct clusters. A shadow (read-only) cluster continuously replicates a source cluster's data, **including consumer group offsets and membership**, so that consumer applications can resume from their last committed position after a failover.
+Shadowing is Redpanda's **Enterprise** disaster recovery feature: asynchronous, offset-preserving replication from a source cluster into a Redpanda shadow cluster. The source can be another Redpanda cluster or any Kafka API-compatible cluster, such as Apache Kafka or Confluent; consumer group offsets replicate from any of them. A shadow (read-only) cluster continuously replicates a source cluster's data, **including consumer group offsets and membership**, so that consumer applications can resume from their last committed position after a failover.
 
 **License:** Shadowing requires an Enterprise license. On license expiration, new shadow links cannot be created; existing shadow links continue operating and can be updated.
 
