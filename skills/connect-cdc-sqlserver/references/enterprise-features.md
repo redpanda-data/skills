@@ -114,7 +114,8 @@ Set these on the destination topic (the topic your CDC output writes to).
 | `disabled` | (none) | Iceberg off for this topic (default). |
 
 Because `microsoft_sql_server_cdc` emits a JSON body and rich metadata
-(`table`, `database_schema`, `operation`, `lsn`), a common pattern is:
+(`table`, `database_schema`, `operation`, `lsn`, `seqval`, `command_id`), a
+common pattern is:
 - Route per-table to its own topic (see `pipeline-and-output.md`), then
 - Enable `redpanda.iceberg.mode=key_value` for a quick raw landing, or
 - Encode records against a Schema Registry subject and use

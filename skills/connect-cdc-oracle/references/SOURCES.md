@@ -65,7 +65,7 @@ the newest sync-log entry below; docs paths on `redpanda-data/rp-connect-docs@ma
   - Unchanged and re-confirmed: the `snapshot_filters` hard requirement that every PK column be projected. `querySnapshotTable` still builds the lexicographic `WHERE`/`ORDER BY` against the filter's own result set and still maps ORA-00904 to that hint.
 - **Verified against Connect v4.106.0 (2026-08-21 sync).** No config fields changed in this release; a new Performance section was added to the connector's doc strings (`internal/impl/oracledb/input_oracledb_cdc.go`, rendered into `modules/components/pages/inputs/oracledb_cdc.adoc`) and it carries durable constraints the skill lacked:
   - **Single synchronous LogMiner reader per pipeline** — throughput does not scale with CPU. Scale out by running multiple pipelines over disjoint `include` sets, each with its own reader.
-  - **Driver fetch size** — 25 rows per round trip by default, which makes large committed transactions appear minutes late while everything looks idle. Raise it with the `PREFETCH_ROWS` query parameter on `connection_string`.
+  - **Driver fetch size** — superseded at v4.111.0 by the `prefetch_rows` config field; see the v4.111.0 sync entry below. The earlier "25 rows per round trip by default" figure was wrong and has been removed from the skill.
   - **Redo retention must cover idle periods** — the SCN checkpoint only advances on delivery, so an idle table set leaves the checkpoint stationary while logs age out, ending in repeated **ORA-01292** on resume. Alert on a stagnant checkpoint SCN.
 - **Backfilled in the same pass** (structural fields present in the generated reference but missing from the skill, from releases earlier than v4.106.0):
   - `logminer.min_scn_window_size` (default `1000`) and `logminer.max_scn_window_size` (default `100000`) — with the adaptive-window behavior they imply: the window grows by `scn_window_size` per capped cycle with backlog and shrinks by the same step per caught-up cycle. `config-reference.md` previously described `scn_window_size` as a fixed window, which was wrong.
@@ -79,3 +79,46 @@ still matches. Verify Go behavior against the current released **tag** of `redpa
 `main`), and defer all `oracledb_cdc` field types/defaults to the auto-generated partial + `overrides.json`
 in `rp-connect-docs` rather than trusting a static list. Oracle-server setup steps are external —
 validate only what the connector enforces.
+
+### Connect v4.111.0 (2026-09-25 sync)
+
+- **New `prefetch_rows` config field, and the previous tuning guidance was
+  wrong.** Verified in `redpanda-data/connect` at tag `v4.111.0`:
+  `internal/impl/oracledb/input_oracledb_cdc.go` adds
+  `ociFieldPrefetchRows = "prefetch_rows"` as an int field with `Default(500)`
+  and the lint rule `prefetch_rows must be greater than 0`, and calls
+  `parsePrefetchRowsConfig` from `newOracleDBCDCInput`.
+  `internal/impl/oracledb/config.go` adds `parsePrefetchRowsConfig`, which
+  rejects values `<= 0`, scans `connection_string`'s query parameters for
+  `PREFETCH_ROWS` using `strings.EqualFold` (so any casing wins) and returns
+  without adding an override when one is present, otherwise writing the field
+  value into the driver overrides map. `internal/impl/oracledb/config_test.go`
+  pins all of it: the 500 default, a set value becoming the override, rejection
+  of `0` and `-1`, and connection-string precedence for `PREFETCH_ROWS`,
+  `prefetch_rows`, and `Prefetch_Rows` — the last checked by parsing the built
+  URL with the driver's own `configurations.ParseConfig` and asserting
+  `PrefetchRows == 100`. `TestPrefetchRowsConfigLinting` pins the lint message.
+  The input's doc string also replaces the old "driver fetches 25 rows per
+  network round trip by default" claim with the real behavior: the driver sizes
+  each fetch to roughly 128 KiB from the declared maximum width of the selected
+  columns, so wide columns such as LogMiner's redo SQL yield only a handful of
+  rows per round trip. Applied to `SKILL.md` (the "Large transactions can look
+  like a stall" constraint) and `references/config-reference.md` (a new
+  `prefetch_rows` section plus the all-fields example).
+  - Per the durability principle the `500` default is reproduced here and in
+    `config-reference.md` only as part of the skill's existing illustrative
+    field snapshot; the generated component reference and
+    `rpk connect create oracledb_cdc` remain the citation of record.
+- **Skipped: ORA-01368 redelivery fix.** `logminer/logminer.go`
+  `queryLogMinerContents` now returns the last processed SCN alongside its
+  error, and the `errCodeRedoLogHeaderMismatch` branch of `miningCycle` resumes
+  from `lastSCN - 1` instead of restarting the window, so each retry makes
+  progress instead of re-publishing the window's transactions; the log line also
+  moved from `Debugf` to `Warnf` and now names the resume SCN. No skill edit: the
+  skill never documented ORA-01368, the condition self-heals with no operator
+  action (unlike the ORA-01291 and ORA-01292 cases the skill does document), and
+  the connector's doc string was not changed. Revisit only if a release turns it
+  into something an operator must act on.
+- **Skipped: prepared-statement rework** carried over from the v4.110.0 note —
+  `logminer/logminer.go` and `logminer/sqlredo/lob.go` changes in this window are
+  internal. No config field, privilege, metadata key, or error string moved.

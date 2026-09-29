@@ -14,7 +14,7 @@ Connector version at verification: page shows `:status: beta`, "Introduced in ve
 |---|---|---|
 | `SKILL.md` | `internal/impl/mssqlserver/input_mssqlserver_cdc.go` (config spec, field defaults, include/exclude regexp filtering, `checkpoint_limit`, batching no-op→`count:1`, table verification), `checkpoint_cache.go` (built-in SQL Server cache: table-name validation, `CREATE OR ALTER PROCEDURE`, `rpcn.CdcCheckpointCache`, fixed `max_lsn` key), `batcher.go`, `schema.go`, `replication/snapshot.go` (`prepSnapshotScannerAndMappers`, snapshot type mapping, `operation: read`), `replication/stream.go` (`mapScannedValue`, stream type mapping), `replication/stream_message.go` (metadata + `operation` mapping, `lsn`); license: `internal/cli/flags_redpanda.go`, `internal/license/service.go` | `modules/components/pages/inputs/microsoft_sql_server_cdc.adoc` (auto-gen page), `modules/components/partials/fields/inputs/microsoft_sql_server_cdc.adoc` (**auto-gen field list/defaults — source of truth**), `docs-data/overrides.json` |
 | `references/config-reference.md` | `internal/impl/mssqlserver/input_mssqlserver_cdc.go` (every field + defaults), `checkpoint_cache.go` (table-name format validation `^[A-Za-z_][A-Za-z0-9_$]{0,127}$`, two-part `schema.table` rule, stored-proc/table DDL, `max_lsn`), `batcher.go` (batching sub-fields) | `modules/components/partials/fields/inputs/microsoft_sql_server_cdc.adoc` (**auto-gen; defers here for types/defaults**), `docs-data/overrides.json` |
-| `references/pipeline-and-output.md` | `internal/impl/mssqlserver/replication/stream_message.go` (metadata `schema`/`table`/`operation`/`lsn`, op codes 1–4), `replication/snapshot.go` (`operation: read`, `sys.fn_cdc_get_max_lsn()`, SNAPSHOT isolation, keyset pagination), `replication/stream.go` (poll cycle, `WITH (NOLOCK)`, min-heap LSN ordering, `checkpoint_limit` semantics), `input_mssqlserver_cdc.go` (restart-skips-snapshot), `checkpoint_cache.go` (checkpoint commit) | `modules/components/pages/inputs/microsoft_sql_server_cdc.adoc` (Metadata section) |
+| `references/pipeline-and-output.md` | `internal/impl/mssqlserver/replication/stream_message.go` (`MessageEvent` fields incl. `SeqVal`/`CommandID`, op codes 1–4), `batcher.go` `Publish()` (**which keys are actually emitted, and how**: `database_schema`, `table`, `operation`, and — only when `len(m.LSN) != 0` — `lsn` as raw bytes, `seqval` via `LSN.String()` (`0x…` hex), `command_id` via `strconv.Itoa`; plus `schema` via `MetaSetImmut`), `input_mssqlserver_cdc.go` (the metadata list and the `== Ordering` section), `replication/snapshot.go` (`operation: read`, `sys.fn_cdc_get_max_lsn()`, SNAPSHOT isolation, keyset pagination), `replication/stream.go` (poll cycle, `WITH (NOLOCK)`, min-heap LSN ordering, `checkpoint_limit` semantics), `input_mssqlserver_cdc.go` (restart-skips-snapshot), `checkpoint_cache.go` (checkpoint commit) | `modules/components/pages/inputs/microsoft_sql_server_cdc.adoc` (Metadata section) |
 | `references/enterprise-features.md` | `internal/cli/flags_redpanda.go` (`--redpanda-license`), `internal/cli/dry_run.go` (`applyLicenseFlag`), `internal/license/service.go` (`REDPANDA_LICENSE`, `REDPANDA_LICENSE_FILEPATH`, `defaultLicenseFilepath` = `/etc/redpanda/redpanda.license`). **Destination cluster features (Iceberg / Schema ID Validation / Tiered Storage / Cloud Topics) are broker config, NOT connect** — defined in `redpanda-data/redpanda` `src/v/config/configuration.cc` | Connect license: connector page + catalog. Destination features live in **`redpanda-data/docs`** (not rp-connect-docs): `modules/reference/partials/properties/topic-properties.adoc`, `cluster-properties.adoc`, `object-storage-properties.adoc`, plus `manage/` / `get-started/licensing` pages |
 | `references/setup-sqlserver.md` | Only the capture-instance lookup behavior is in source: `input_mssqlserver_cdc.go` (`VerifyUserDefinedTables` → `cdc.change_tables WHERE capture_instance = ?`, startup error on missing instance) and `replication/snapshot.go` (`ALLOW_SNAPSHOT_ISOLATION` requirement). Everything else is **external Microsoft SQL Server / Azure** behavior | none in-repo — external Microsoft Learn docs |
 
@@ -28,7 +28,7 @@ Connector version at verification: page shows `:status: beta`, "Introduced in ve
 
 ## TODO / re-verify
 
-- **`database_schema` metadata key**: SKILL.md and `pipeline-and-output.md` list a `database_schema` metadata field on all messages, but the auto-generated page documents only `schema`, `table`, `operation`, `lsn`. Re-verify against `replication/stream_message.go` / `input_mssqlserver_cdc.go` whether `database_schema` is actually emitted; if the generated page is authoritative, the skill's metadata tables overstate the key set.
+- **`database_schema` metadata key — RESOLVED (2026-09-25, at v4.111.0).** The skill is right and the generated page's key list was incomplete: `batcher.go` `Publish()` calls `msg.MetaSet("database_schema", m.Schema)`. There is no plain string `schema` key — `schema` is set separately via `MetaSetImmut` and carries the Benthos common-schema object, which is what the skill's metadata tables already say.
 - **Mapper file paths**: SKILL.md's Column Type Mapping cites `snapshot.go prepSnapshotScannerAndMappers` and `stream.go mapScannedValue` without a dir. Verified location is `internal/impl/mssqlserver/replication/snapshot.go` and `.../replication/stream.go` — update citations to include the `replication/` prefix.
 - **Generated-page repo path in config-reference.md**: cites `connect/docs/modules/components/pages/inputs/microsoft_sql_server_cdc.adoc`. The published reference lives in **rp-connect-docs** at `modules/components/pages/inputs/...` (page) and `modules/components/partials/fields/inputs/...` (fields). Reconcile the citation.
 - **Enterprise gating**: the generated page shows beta status but does not itself mark the connector Enterprise; the Enterprise license requirement is enforced in Go — verify the exact registration/gating in `input_mssqlserver_cdc.go` / `internal/license/`.
@@ -45,3 +45,36 @@ Connector version at verification: page shows `:status: beta`, "Introduced in ve
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For any config field type/default, treat the auto-generated fields partial in rp-connect-docs as authoritative and regenerate rather than hand-editing. Verify Go behavior against the current released `redpanda-data/connect`, and treat all SQL Server / Azure setup as external Microsoft documentation.
+
+## Sync log
+
+### Connect v4.111.0 (2026-09-25)
+
+- **`seqval` and `command_id` metadata added.** Verified in
+  `redpanda-data/connect` at tag `v4.111.0`:
+  `replication/stream_message.go` adds `MessageEvent.SeqVal` (typed `LSN`, the
+  `__$seqval` column, same varbinary(10) shape, empty for snapshot rows) and
+  `MessageEvent.CommandID` (`int`, the `__$command_id` column, zero for snapshot
+  rows); `replication/stream.go` `ReadChangeTables` populates both from
+  `cur.seqVal` / `cur.commandID`; and `batcher.go` `Publish()` emits them inside
+  the existing `if len(m.LSN) != 0` guard, so they are present on exactly the
+  same messages as `lsn` and absent on snapshot (`read`) rows. Note the
+  emission asymmetry that the guard hides: `lsn` is set as raw bytes
+  (`string(m.LSN)`) while `seqval` goes through `LSN.String()` and is therefore
+  a printable `0x…` hex string; `command_id` is `strconv.Itoa`. Applied to
+  `SKILL.md` and `references/pipeline-and-output.md` metadata tables, and the
+  metadata aside in `references/enterprise-features.md`.
+- **Corrected a wrong claim about `UPDATE` pairs.** The skill stated that the
+  before and after images of one `UPDATE` "share the same `__$start_lsn` but
+  have different `__$command_id` values" and are "ordered by command_id". The
+  new `== Ordering` section in `input_mssqlserver_cdc.go` states the opposite
+  and the source agrees: the two rows share `lsn`, `seqval` **and**
+  `command_id`, and `operation` is what distinguishes them, with
+  `update_before` always first. That is exactly what the `__$operation ASC`
+  tiebreaker in `replication/stream.go`'s ordering
+  (`__$start_lsn ASC, __$command_id ASC, __$operation ASC`) is for — a clause
+  `pipeline-and-output.md` already documented one section further down, so the
+  file contradicted itself. Corrected.
+- **Not a skill change:** the rest of this release's `mssqlserver` diff is
+  house-style rewording of the connector's doc strings (em-dash to colon) in
+  `input_mssqlserver_cdc.go`, plus test-only changes under `mssqlservertest/`.

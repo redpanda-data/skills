@@ -49,6 +49,34 @@ wallet_password: "${ORACLE_WALLET_PASSWORD}"
 
 ---
 
+### `prefetch_rows`
+
+**Type:** `int` | **Required:** no | **Default:** `500`
+
+The number of rows the Oracle driver fetches per network round trip, applied to
+**both** snapshot and streaming reads. Higher values mean fewer round trips but
+more memory per fetch — and that cost is paid once per table snapshotted in
+parallel, so weigh it against `max_parallel_snapshot_tables`.
+
+Raise it when large committed transactions arrive late while the database,
+network, and connector all look idle: without this field the driver sizes each
+fetch to roughly 128 KiB from the declared maximum width of the selected
+columns, and LogMiner's wide redo-SQL columns reduce that to a handful of rows
+per round trip.
+
+```yaml
+prefetch_rows: 5000
+```
+
+A `PREFETCH_ROWS` query parameter on `connection_string` **takes precedence**
+over this field and is matched case-insensitively (`PREFETCH_ROWS`,
+`prefetch_rows`, and `Prefetch_Rows` all win), in which case this field is
+ignored and the connector logs that it is using the connection-string value.
+Values of `0` or below are rejected by both the lint rule
+(`prefetch_rows must be greater than 0`) and startup validation.
+
+---
+
 ### `snapshot_mode`
 
 **Type:** `string` (enum) | **Required:** no | **Default:** `none` | **Since:** 4.99.0
@@ -455,6 +483,7 @@ input:
     connection_string: oracle://username:password@host:port/service_name  # required
     wallet_path: /opt/oracle/wallet                                        # optional
     wallet_password: ""                                                    # optional
+    prefetch_rows: 500
     snapshot_mode: none
     max_parallel_snapshot_tables: 1
     snapshot_max_batch_size: 1000
