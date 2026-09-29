@@ -1,8 +1,8 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model` groups), `cloudv2 apps/rpai/internal/cmd/llm/` (`check`), `cloudv2 apps/rpai/internal/cmd/model/` (`list`, `get`), `adp-docs modules/gateway/pages/configure-provider.adoc`, `adp-docs modules/gateway/pages/overview.adoc` — verified 2026-09-23. Behavioral claims carried over from earlier source verification (passthrough header handling, transcript create default, catalog token limits and reasoning efforts): 2026-09-21.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model` groups), `cloudv2 apps/rpai/internal/cmd/llm/` (`check`), `cloudv2 apps/rpai/internal/cmd/model/` (`list`, `get`), `adp-docs modules/gateway/pages/configure-provider.adoc`, `adp-docs modules/gateway/pages/overview.adoc` — verified 2026-09-23. Behavioral claims carried over from earlier source verification (passthrough header handling, transcript create default, catalog token limits and reasoning efforts): 2026-09-21. Bedrock credential modes (including the Bedrock API key mode, its flag, and its connection check) and the per-provider pricing rule verified 2026-09-28 against `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider create`/`update` `--bedrock-config.*` flags and the flag-metadata block), `adp-docs modules/gateway/pages/configure-provider.adoc`, `bedrock-setup.adoc`, and `adp-docs modules/control/pages/cost-usage.adoc`.
 
 # AI Gateway, LLM Providers, and Models Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available. The `rpk ai` CLI is in Preview, so confirm flags live with `--help` before relying on them.
+**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm flags live with `--help` before relying on them.
 
 Audience: an AI agent operating the Agentic Data Plane AI Gateway through `rpk ai llm-provider` / `rpk ai model` and the ADP UI (ai.redpanda.com), or calling the gateway from an application.
 
@@ -48,12 +48,20 @@ Every credential field is a **secret-store reference** (an `UPPER_SNAKE_CASE` ke
 | OpenAI | `--openai-config.base-url`, `--openai-config.api-key-ref` | Exactly one of an API key reference or authorization passthrough. `base-url` defaults to `https://api.openai.com/v1`. |
 | Anthropic | `--anthropic-config.base-url`, `--anthropic-config.api-key-ref`, `--anthropic-config.authorization-passthrough` | Exactly one of an API key reference or authorization passthrough. |
 | Google AI | `--google-config.base-url`, `--google-config.api-key-ref` | API key reference required. Clients send their gateway token in `X-Redpanda-Cloud-Token`; the gateway sets `x-goog-api-key` to the stored key upstream (the gateway does not read a client's `x-goog-api-key`). |
-| AWS Bedrock | `--bedrock-config.region` (required), `--bedrock-config.base-url`, plus one credential mode | UI **Credential type**: *Default chain* (leave credentials unset; needs an ambient AWS identity, so it cannot work on an environment hosted outside AWS), *Static keys* (`--bedrock-config.static-credentials.access-key-id-ref` + `.secret-access-key-ref`), or *Assume IAM role* (`--bedrock-config.assume-role.role-arn`, optional `.external-id`, `.session-name`; the AssumeRole call itself still authenticates through the default chain). One mode per provider. |
+| AWS Bedrock | `--bedrock-config.region` (required), `--bedrock-config.base-url`, plus one credential mode | UI **Credential type**: *Bedrock API key* (`--bedrock-config.api-key.api-key-ref`; see below), *Default chain* (leave credentials unset; needs an ambient AWS identity, so it cannot work on an environment hosted outside AWS), *Static keys* (`--bedrock-config.static-credentials.access-key-id-ref` + `.secret-access-key-ref`, an IAM access key pair only), or *Assume IAM role* (`--bedrock-config.assume-role.role-arn`, optional `.external-id`, `.session-name`; the AssumeRole call itself still authenticates through the default chain). One mode per provider. |
 | OpenAI-compatible | `--openai-compatible-config.base-url`, `--openai-compatible-config.api-key-ref` | API key, passthrough, or **neither** (no-auth endpoints such as Ollama, vLLM, LM Studio, LocalAI); never both. **Always set the base URL**: the UI requires it. |
 
-Short aliases exist for the Bedrock flags (`--region`, `--access-key-id-ref`, `--secret-access-key-ref`, `--role-arn`); an unknown flag such as `--api-key-ref` errors with a "did you mean" list of the per-group flags.
+Short aliases exist for some Bedrock flags (`--region`, `--access-key-id-ref`, `--secret-access-key-ref`, `--role-arn`); the Bedrock API key flag has none, so spell it in full. An unknown flag such as `--api-key-ref` errors with a "did you mean" list of the per-group flags.
 
 **Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google AI rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both.
+
+**Bedrock API key mode.** Instead of signing requests with SigV4, the gateway sends a stored Amazon Bedrock API key as a bearer token. Choose it when you want one credential and no IAM access key pair.
+
+- `--bedrock-config.api-key.api-key-ref` (UI: **Bedrock API key reference**) is a secret-store reference, `UPPER_SNAKE_CASE`, required in its group. Store the key value on its own: no `Bearer` prefix, no quotes.
+- The identity behind the key needs `bedrock:CallWithBearerToken`, the invoke permissions for the models you call, and `bedrock:ListFoundationModels` for **Test connection**.
+- The gateway never generates or renews a key, so an expired or revoked key fails every call until you update the secret. Generate the key in the Amazon Bedrock console. A short-term key works only in the region it was generated for and expires within 12 hours, so rotate the secret ahead of expiry.
+- A provider in this mode rejects a `base-url` that does not start with `https://`.
+- Region is still required, and the mode is exclusive: an API key reference cannot be combined with static keys or a role ARN.
 
 **Bedrock `base-url` caveat:** with a custom base URL every request goes to that URL, so models Bedrock serves only on its separate `bedrock-mantle` endpoint are not reachable through that provider.
 
@@ -69,7 +77,7 @@ Short aliases exist for the Bedrock flags (`--region`, `--access-key-id-ref`, `-
 
 `check` prints `OK  NAME  (<latency>)` on success. On failure it writes `FAIL  NAME  code=<N>  <message>` to stderr, followed by `reason=… domain=…` and any metadata lines, and exits non-zero — script on the exit code, not the latency.
 
-What a green result proves: for most types, the gateway listed the upstream's models with your credential (authentication + network path, not access to any one model); for Bedrock, the AWS credentials work in the configured region (model access is granted separately by IAM).
+What a green result proves: for most types, the gateway listed the upstream's models with your credential (authentication + network path, not access to any one model); for Bedrock, the AWS credentials work in the configured region (model access is granted separately by IAM). On a Bedrock provider in API key mode the check lists the region's foundation models, and AWS answers a rejected key and an under-privileged key the same way, so both are reported as an authentication failure; the message names the cause, such as an expired key, when AWS's response does. As with the other Bedrock modes, a green check does not prove the key can invoke a model or use a guardrail.
 
 **A passthrough provider cannot be probed.** There is no server-side credential, so the UI says the first real request verifies upstream access, and `check` reports a failed-precondition verdict. That is about the configuration, not reachability; do not gate a create or update on a green check for these providers.
 
@@ -171,7 +179,7 @@ In the UI, the provider **Models** tab shows capability icons, context-window li
 
 ## Per-model pricing overrides
 
-Overrides replace catalog rates for one model on one provider, for negotiated rates, internal chargeback, or models the catalog does not price. They change what ADP cost reporting computes, not what the upstream charges.
+Overrides replace catalog rates for one model on one provider, for negotiated rates, internal chargeback, or models the catalog does not price. They change what ADP cost reporting computes, not what the upstream charges. Pricing is per provider and model: a call is priced with the rates of the provider that served it, so the same model offered by two providers is priced separately for each, and an override you set on one provider never prices another's traffic.
 
 **UI:** the pencil icon (Override pricing) on a model in the picker or on the **Models** tab. Rates are in **US dollars per million tokens**; a blank field keeps the catalog rate, `0` is an explicit free rate; **Reset** / **Reset all** clear overrides. Overridden models carry a dollar-sign badge.
 
@@ -206,7 +214,7 @@ The AI Gateway is a managed HTTP proxy. Each provider has its own URL (copy it f
 
 - Clients keep using the provider's native SDK and API, pointed at the proxy URL.
 - Upstream keys stay in the Redpanda secret store; applications never see them (except passthrough, where the client supplies its own).
-- The gateway injects the credential per request (API key, SigV4 signing for Bedrock, or the caller's passthrough `Authorization`).
+- The gateway injects the credential per request (API key, SigV4 signing or a bearer Bedrock API key for Bedrock, or the caller's passthrough `Authorization`).
 - Inbound clients authenticate with short-lived tokens: `rpk ai auth login` / `rpk ai auth token` for local use, OIDC client credentials for applications and self-managed agents.
 - Spend, requests, and tokens are recorded per provider (list view, provider Overview, **Cost and usage**).
 - Optionally captures message bodies — on by default for new providers; see [Transcript recording defaults to ON](#transcript-recording-defaults-to-on).

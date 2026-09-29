@@ -1,8 +1,8 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`mcp-server`, `mcp-server create`, `mcp-server tools list|call`, `mcp-server types`, `mcp-server get` and error sections), `adp-docs modules/connect/pages/create-server.adoc`, `data-policies.adoc`, `user-delegated-oauth.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`, `managed/slack.adoc`, `managed/managed-catalog.adoc`, `adp-docs modules/gateway/pages/code-mode.adoc` — verified 2026-09-23. The per-method `user_oauth` gating and `response_format` fail-open behavior are carried forward from the earlier source-verified revision and cross-checked against `user-delegated-oauth.adoc` and `create-server.adoc` on 2026-09-23.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`mcp-server`, `mcp-server create`, `mcp-server tools list|call`, `mcp-server types`, `mcp-server get` and error sections), `adp-docs modules/connect/pages/create-server.adoc`, `data-policies.adoc`, `user-delegated-oauth.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`, `managed/slack.adoc`, `managed/managed-catalog.adoc`, `adp-docs modules/gateway/pages/code-mode.adoc` — verified 2026-09-23. The per-method `user_oauth` gating and `response_format` fail-open behavior are carried forward from the earlier source-verified revision and cross-checked against `user-delegated-oauth.adoc` and `create-server.adoc` on 2026-09-23. SQL table exposure on a managed connector and the `scope_upgrade_required` remedy verified 2026-09-28 against `adp-docs modules/connect/pages/managed/jira.adoc` and the user-delegated OAuth scope guidance in `modules/connect/pages/managed/` and `user-delegated-oauth.adoc`.
 
 # Agentic Data Plane MCP Servers Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available. The `rpk ai` CLI is Preview. Output format and data policies are Preview capabilities, and individual managed types carry their own maturity badges in the managed catalog; confirm the badge in the UI or docs rather than assuming GA.
+**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Output format and data policies are Preview capabilities, and individual managed types carry their own maturity badges in the managed catalog; confirm the badge in the UI or docs rather than assuming GA.
 
 Audience: an AI agent operating Agentic Data Plane MCP servers through `rpk ai mcp-server` and the ADP UI (ai.redpanda.com), and connecting MCP clients to them.
 
@@ -73,7 +73,7 @@ A remote server uses exactly one of five auth modes; the flag group you set sele
 
 Secret references are `UPPER_SNAKE_CASE` names in the ADP secret store, never the secret value.
 
-**User-delegated OAuth setup.** Name an existing OAuth provider with `--remote.user-oauth.provider-name`, or leave it empty to have the gateway set OAuth up automatically from the server URL. `--remote.user-oauth.client-id` / `.client-secret-ref` are only for automatic setup against a server without dynamic client registration (the secret only for a confidential app). On `update`, `--remote.user-oauth.automatic-setup` re-runs automatic setup instead of keeping the attached provider; do not combine it with a provider name. A connection with fewer scopes than `--remote.user-oauth.required-scopes` fails with `scope_upgrade_required`. See [governance.md](governance.md) for OAuth providers and connections.
+**User-delegated OAuth setup.** Name an existing OAuth provider with `--remote.user-oauth.provider-name`, or leave it empty to have the gateway set OAuth up automatically from the server URL. `--remote.user-oauth.client-id` / `.client-secret-ref` are only for automatic setup against a server without dynamic client registration (the secret only for a confidential app). On `update`, `--remote.user-oauth.automatic-setup` re-runs automatic setup instead of keeping the attached provider; do not combine it with a provider name. A connection with fewer scopes than `--remote.user-oauth.required-scopes` fails with `scope_upgrade_required`; the caller clears it by reconnecting and granting the missing scope, and a required scope the OAuth provider does not request keeps failing until the provider asks for it too. See [governance.md](governance.md) for OAuth providers and connections.
 
 **Before a user connects**, `rpk ai mcp-server get <name>` on a user-OAuth server prints the authorize link instead of a tool list:
 
@@ -180,6 +180,24 @@ rpk ai mcp-server create my-sql --enabled \
 ```
 
 Type-specific fields (including a `userOauth` block for types that support user-delegated OAuth) differ per type; take them from the type's setup guide or the UI form.
+
+### SQL table exposure on a managed connector
+
+Some managed types can present their data as read-only SQL tables in addition to their tools, so an agent can filter records the way it would query a database instead of paging through tool results. It is a per-server setting, **off by default** (UI: the **Enabled** toggle under **Queryable** in the server's configuration; CLI: the type's own field in `--managed.config`), so an existing server gains nothing until someone turns it on. Which types offer it changes, so read the type's configuration form or setup guide rather than assuming.
+
+Turning it on adds two tools to the server:
+
+- `list_tables`: the table catalog — each table's columns and types, which columns can be filtered and with which operators, **whether each filter is exact**, the page-size limit, and a schema fingerprint that every query response repeats, so a caller can tell when the catalog changed.
+- `execute_query`: run one query against one table and return a page of rows plus a cursor for the next page. It takes a table, predicates, a projection, a page size, and a cursor — there is no sort.
+
+Behavior to design around:
+
+- **Filters can be supersets.** A filter is offered only where the upstream search never drops a matching row, but most filters can return **extra** rows (case-insensitive matching, widened time bounds), and the rows are returned without being re-checked. An agent that needs exact results re-applies its filters to the rows it receives; `list_tables` marks which filters are exact.
+- **A table can require a predicate.** An unfiltered query against such a table is refused before the upstream is called.
+- **Paged scans are best-effort.** Page sizes are capped per table, the upstream keeps changing under a multi-page scan, and a cursor is bound to the query that produced it — reusing one with different predicates or against another table is refused rather than quietly restarting.
+- **A value list longer than the cap fails** instead of being silently truncated.
+- **Authentication is the server's own**, so with user-delegated OAuth a query returns only what the calling user can see. Neither tool writes.
+- **The tools reach every caller of the server**, agents included. Leave the setting off on a server whose agents should only reach the curated tools.
 
 ### User-delegated OAuth on a managed connector: whose identity acts
 
