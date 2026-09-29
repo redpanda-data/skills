@@ -312,7 +312,7 @@ A broker's runtime FIPS state is reported in the broker object as `in_fips_mode`
 
 ## Shadow Linking / Cross-Cluster Disaster Recovery — Enterprise (ConnectRPC, v25.3+)
 
-Shadowing provides offset-preserving, asynchronous replication between two distinct Redpanda clusters for cross-region DR. It is exposed as the **ConnectRPC `ShadowLinkService`** on port 9644 (not a `/v1` REST endpoint). All methods are **POST** with a JSON or Protobuf body. Service path prefix: `redpanda.core.admin.v2.ShadowLinkService/`.
+Shadowing provides offset-preserving, asynchronous replication from a source cluster into a Redpanda shadow cluster, for cross-region DR and for migrations onto Redpanda. The source can be another Redpanda cluster or any Kafka API-compatible cluster (Apache Kafka, Confluent Cloud, Confluent Platform); role shadowing and byte-for-byte `_schemas` shadowing are the two parts that require a Redpanda source. It is exposed as the **ConnectRPC `ShadowLinkService`** on port 9644 (not a `/v1` REST endpoint). All methods are **POST** with a JSON or Protobuf body. Service path prefix: `redpanda.core.admin.v2.ShadowLinkService/`.
 
 | Method | Purpose |
 |--------|---------|

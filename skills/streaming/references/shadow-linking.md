@@ -1,12 +1,44 @@
 # Shadowing / Shadow Links — Cross-Cluster Disaster Recovery (Enterprise)
 
-**Requires an Enterprise license on both clusters.** Shadowing requires Redpanda **v25.3 or later** on both source and shadow clusters (Console v3.30+ if used). On license expiration: new shadow links cannot be created, but existing shadow links keep operating and can be updated.
+**The shadow (destination) cluster requires an Enterprise license and Redpanda v25.3 or later.** The license is gated on the cluster property `enable_shadow_linking`, which only the shadow cluster sets, so the source cluster needs no Redpanda license — and need not be Redpanda at all (see **Source clusters** below). On license expiration: new shadow links cannot be created, but existing shadow links keep operating and can be updated.
 
 ## What It Does
 
 Shadowing is Redpanda's enterprise disaster-recovery solution. A **shadow link** establishes asynchronous, **offset-preserving, byte-level** replication from a source cluster to a read-only shadow cluster. Unlike tools that re-produce messages, Shadowing copies data at the byte level, so shadow topics are identical copies with preserved offsets, timestamps, and headers. It follows an **active-passive** pattern: the source serves production traffic; the shadow continuously receives updates and can be failed over to become writable during a disaster.
 
 Shadowing replicates: topic data (offsets + timestamps preserved), topic configurations, consumer group offsets, ACLs, and Schema Registry data.
+
+## Source clusters
+
+The shadow cluster pulls from the source over the **Kafka API** — Metadata, a
+version-negotiated `DescribeConfigs`, and `Fetch` — so the source does not have to be
+Redpanda. It can be another Redpanda cluster, or any Kafka API-compatible cluster such as
+Apache Kafka, Confluent Cloud, or Confluent Platform. That makes a shadow link a migration
+path onto Redpanda as well as a DR topology: run the shadow as a continuously updated
+replica, then cut applications over.
+
+Replicated from **any** Kafka API-compatible source:
+
+- Topic data, with offsets and timestamps preserved
+- Topic configurations (subject to the property rules below)
+- Consumer group offsets
+- ACLs
+
+Requires a **Redpanda** source cluster:
+
+- **RBAC role shadowing** (`role_sync_options`) — roles are read through the
+  Redpanda-only `DescribeRedpandaRoles` Kafka API. See "Role shadowing" below.
+- **Byte-for-byte Schema Registry shadowing**
+  (`schema_registry_sync_options.shadow_schema_registry_topic`) — shadows Redpanda's
+  internal `_schemas` topic. To replicate schemas from a Confluent-compatible registry,
+  use the Schema Registry API mode (`shadow_schema_registry_api`) instead.
+
+**Authenticating to the source.** The shadow link's internal client offers SASL/PLAIN and
+SASL/SCRAM (`SCRAM-SHA-256` or `SCRAM-SHA-512`), plus optional TLS. A source that requires
+some other SASL mechanism cannot be used: Amazon MSK works when SASL/SCRAM-SHA-512 is
+enabled on it, but MSK IAM authentication is not supported. Optionally set
+`source_cluster_id` to the source's Kafka `ClusterId` so the link refuses to connect to
+the wrong cluster.
 
 ## Prerequisite: enable shadow linking
 
@@ -156,6 +188,18 @@ Unlike the ACL filters in `security_sync_options`, it is **opt-in**: with no
 broker in the cluster to be upgraded — a shadow link that configures role name
 filters is rejected until the cluster's `shadow_link_role_sync` feature is
 active. Both self-hosted and Redpanda Cloud shadow links support it.
+
+Role shadowing additionally requires:
+
+- **A Redpanda source cluster** with `shadow_link_role_sync` active, because roles are
+  read through the Redpanda-only `DescribeRedpandaRoles` Kafka API. Pointed at a
+  non-Redpanda source, the Roles Migrator task parks in `link_unavailable` and the rest
+  of the shadow link keeps running.
+- **RBAC active on the shadow cluster.** With RBAC disabled the task reports
+  `link_unavailable` for that reason and mirrors nothing.
+- **Sufficient cluster-level permissions** for the shadow link client on the source;
+  otherwise the task parks in `link_unavailable` naming the required and actual
+  permission bitmask.
 
 ### Starting offset for new shadow topics
 

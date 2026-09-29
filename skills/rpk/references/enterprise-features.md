@@ -189,9 +189,12 @@ On expiration: continuous balancing reverts to `node_add`;
 ## Shadow Linking / Cross-Cluster Disaster Recovery (Enterprise) — `rpk shadow`
 
 Shadowing is Redpanda's enterprise-grade DR solution: asynchronous,
-offset-preserving replication between two distinct clusters (offsets, timestamps,
-and cluster metadata are preserved). This is a key DR differentiator and is
-operated entirely through `rpk shadow`.
+offset-preserving replication from a source cluster into a Redpanda shadow cluster
+(offsets, timestamps, and cluster metadata are preserved). The source can be another
+Redpanda cluster or any Kafka API-compatible cluster, such as Apache Kafka or Confluent,
+which also makes this a migration path onto Redpanda. The Enterprise license is required
+on the shadow cluster, which is the side that sets `enable_shadow_linking`. This is a key
+DR differentiator and is operated entirely through `rpk shadow`.
 
 ```bash
 # 1. Generate a shadow-link config (sample or fully documented template)
