@@ -286,7 +286,7 @@ Key features and their nested keys (full detail in [Enterprise Features](referen
 | Cloud Topics | topic | `redpanda.cloud_topic.enabled`, `redpanda.storage.mode=cloud` |
 | Iceberg Topics | cluster + topic | `iceberg_enabled`, `iceberg_default_catalog_namespace`; `redpanda.iceberg.mode/delete/invalid.record.action/partition.spec/target.lag.ms` |
 | Continuous Data Balancing | cluster | `partition_autobalancing_mode=continuous`, `partition_autobalancing_max_disk_usage_percent`, `partition_autobalancing_node_availability_timeout_sec`, `partition_autobalancing_node_autodecommission_timeout_sec`, `core_balancing_continuous` |
-| Shadow Linking (DR) | rpk + control plane | `rpk shadow config generate --for-cloud` / `create` / `status` / `failover`; `schema_registry_sync_options` selects `shadow_schema_registry_topic` or `shadow_schema_registry_api` (HTTP-API mode, incl. Confluent Schema Registry sources) |
+| Shadow Linking (DR, and migration onto Redpanda) | rpk + control plane | `rpk shadow config generate --for-cloud` / `create` / `status` / `failover`; the source can be another Redpanda cluster or any Kafka API-compatible cluster (Apache Kafka, Confluent Cloud, Confluent Platform); `schema_registry_sync_options` selects `shadow_schema_registry_topic` (Redpanda source only) or `shadow_schema_registry_api` (HTTP-API mode, incl. Confluent Schema Registry sources) |
 | Remote Read Replicas | topic + cluster | `redpanda.remote.readreplica`, `cloud_storage_enable_remote_read` |
 | Audit Logging | cluster | `audit_enabled`, `audit_log_num_partitions`, `audit_enabled_event_types`, `audit_excluded_topics/principals`, `audit_queue_drain_interval_ms` |
 | RBAC / GBAC | rpk / ACLs | `rpk security role ...`; `Group:` principals |
