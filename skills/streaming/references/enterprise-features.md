@@ -16,7 +16,7 @@ This index lists the enterprise differentiators relevant to the **Kafka API / br
 | Feature | Enable key(s) | Disable key(s) | Behavior on license expiration | Detail |
 |---|---|---|---|---|
 | **Tiered Storage** (shadow indexing) | `redpanda.storage.mode=tiered` (topic) or `redpanda.remote.write/read=true`; cluster `cloud_storage_enabled=true` | `cloud_storage_enabled=false` | Topics can't be created/modified to enable it; can't add partitions to tiered topics | `references/tiered-storage.md` |
-| **Cloud Topics** | `cloud_topics_enabled=true` (cluster) + `redpanda.storage.mode=cloud` (topic, create-only); `redpanda.cloud_topic.enabled` | — | New Cloud Topics can't be created; existing can't be modified; upgrades blocked in violation | `references/cloud-topics.md` |
+| **Cloud Topics** | `cloud_storage_enabled=true` (cluster) + `redpanda.storage.mode=cloud` (topic, create-only); `redpanda.cloud_topic.enabled`; cluster-wide default via `default_redpanda_storage_mode=cloud`. (`cloud_topics_enabled` is deprecated in v26.2.1 and ignored) | — | New Cloud Topics can't be created; existing can't be modified; upgrades blocked in violation | `references/cloud-topics.md` |
 | **Iceberg Topics** | `iceberg_enabled=true` (cluster) + `redpanda.iceberg.mode` (topic) | set `redpanda.iceberg.mode=disabled` | Topics can't be created/modified with `redpanda.iceberg.mode` | `references/iceberg-topics.md` |
 | **Continuous Data Balancing** | `partition_autobalancing_mode=continuous` | `partition_autobalancing_mode=node_add` | Reverts to `node_add` balancing | `references/continuous-balancing.md` |
 | **Continuous Intra-Broker (core) Balancing** | `core_balancing_continuous=true` | `core_balancing_continuous=false` | Disabled | `references/continuous-balancing.md` |

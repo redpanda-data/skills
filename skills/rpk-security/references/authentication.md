@@ -52,9 +52,17 @@ OIDC authentication requires an Enterprise license. With OIDC, Redpanda does not
 | `oidc_discovery_url` | IdP discovery URL (`.well-known/openid-configuration`) | `https://auth.prd.cloud.redpanda.com/.well-known/openid-configuration` |
 | `oidc_token_audience` | Required `aud` claim value | `redpanda` |
 | `oidc_principal_mapping` | JSON path extracting the principal from token claims | `$.sub` |
-| `oidc_clock_skew_tolerance` | Seconds of clock skew allowed when validating `exp` | — |
-| `oidc_token_expire_disconnect` | Disconnect clients when their token expires | — |
-| `oidc_keys_refresh_interval` | How long keys from `jwks_uri` are cached (seconds) | — |
+| `oidc_clock_skew_tolerance` | Seconds of clock skew allowed when validating the token's `exp` claim | — |
+| `oidc_group_claim_path` | JSON path extracting groups from the JWT payload | `$.groups` |
+| `oidc_keys_refresh_interval` | How often the JSON Web Keys (JWKS) used to validate access tokens are refreshed | — |
+| `oidc_http_proxy_url` | HTTP forward proxy for OIDC discovery and JWKS fetches (`http://host:port` or `https://host:port`). When set, `oidc_discovery_url` must use `https://` | unset |
+| `oidc_http_proxy_username` / `oidc_http_proxy_password` | HTTP Basic credentials for that forward proxy; set **both** or neither. Leave unset for an unauthenticated proxy. The username must not contain `:` | unset |
+
+There is no property that disconnects a client when its token expires; token
+expiry is enforced at authentication time against `exp` and
+`oidc_clock_skew_tolerance`. Confirm the live set and current defaults with
+`rpk cluster config get <property>` or `rpk cluster config set -h`, since
+defaults move between releases.
 
 ```bash
 rpk cluster config set sasl_mechanisms '["SCRAM","OAUTHBEARER"]' -X admin.hosts=localhost:9644
@@ -64,7 +72,6 @@ rpk cluster config set oidc_principal_mapping '$.sub'
 # principal mapping can use a JSONPath + regex transform:
 rpk cluster config set oidc_principal_mapping '$.user_info.email/([^@]+)@.*/$1/L'
 rpk cluster config set oidc_clock_skew_tolerance 30
-rpk cluster config set oidc_token_expire_disconnect true
 rpk cluster config set oidc_keys_refresh_interval 3600
 ```
 

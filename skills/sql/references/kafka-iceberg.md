@@ -153,7 +153,7 @@ Grounded in `connection_option_names.h` (`namespace iceberg`) and
 
 | Key | Notes |
 |-----|-------|
-| `uri` | REST catalog endpoint |
+| `uri` | REST catalog endpoint. **Required** — a catalog without it is rejected with `missing required option 'uri'` |
 | `warehouse` | warehouse location/identifier |
 | `auth_type` | one of `oauth2`, `basic`, `aws_sigv4`, `gcp` (validated; others rejected) |
 | `oauth2_client_id` | OAuth2 client id (`auth_type = 'oauth2'`) |
@@ -164,12 +164,14 @@ Grounded in `connection_option_names.h` (`namespace iceberg`) and
 | `username` | basic auth (`auth_type = 'basic'`) |
 | `password` | **secret** (basic auth) |
 | `aws_region` | SigV4 region (`auth_type = 'aws_sigv4'`) |
-| `aws_access_key_id` | **secret** (SigV4) |
-| `aws_secret_access_key` | **secret** (SigV4) |
+| `aws_access_key_id` | **secret** (SigV4); set together with `aws_secret_access_key` or omit both. Omitting both uses the AWS default credential chain; setting only one is rejected |
+| `aws_secret_access_key` | **secret** (SigV4); see `aws_access_key_id` |
 | `aws_service_name` | SigV4 service segment (defaults to `glue`) |
 | `gcp_project_id` | GCP project (required for `auth_type = 'gcp'`; uses GCP Application Default Credentials) |
-| `ssl_verify` | TLS verification toggle |
+| `ssl_verify` | TLS verification toggle; accepts only `'true'` or `'false'` (any other value is rejected). Verification is on when the option is omitted |
 | `ssl_ca_info` / `ssl_ca_path` / `ssl_crl_file` | TLS trust material |
+| `flat_namespaces` | Treat the catalog's namespaces as flat (single-level). Accepts only `'true'` or `'false'`. When omitted it is **derived**: flat for a SigV4 catalog whose `aws_service_name` is `glue` or `s3tables` (the default is `glue`), otherwise nested |
+| `allowed_namespaces` | Restrict the catalog to these namespaces: a comma-separated list of dot-separated paths (`'sales, data.prod'`). Entries and path components are trimmed, and an empty entry or component is rejected. Two entries may not overlap — one being a prefix of the other is rejected, because the same tables would be registered twice. When the catalog is effectively flat (see `flat_namespaces`), every entry must be single-segment |
 
 > Setting an auth-specific option (e.g. `oauth2_client_id`) without `auth_type`
 > raises `"auth option '...' provided without 'auth_type'"`.

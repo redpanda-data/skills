@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` (`resource_group.proto`, `serverless_region.proto`, `serverless.proto`, `serverless_private_link.proto`, `operation.proto`, `common.proto`); redpanda `src/go/rpk/pkg/publicapi/controlplane.go`, `publicapi.go`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` (`resource_group.proto`, `serverless_region.proto`, `serverless.proto`, `serverless_private_link.proto`, `operation.proto`, `common.proto`); redpanda `src/go/rpk/pkg/publicapi/controlplane.go`, `publicapi.go`; api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `ServerlessNetworkingConfig.State` accepted values, `ServerlessClusterCreate` required fields, `ServerlessCluster.State` — **verified 2026-10-01**). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Control Plane: Serverless Cluster Management
 
@@ -156,15 +156,17 @@ OP_ID=$(echo "${OP}" | jq -r .operation.id)
 | `resource_group_id` | yes | Valid UUID of an existing ResourceGroup |
 | `serverless_region` | yes | Region name string, e.g. `"us-east-1"` |
 | `tags` | no | `map<string,string>`, max 50 pairs, keys/values max 256 chars |
-| `networking_config.public` | no | `STATE_UNSPECIFIED` (enabled), `STATE_ENABLED`, or `STATE_DISABLED` |
-| `networking_config.private` | no | `STATE_UNSPECIFIED` (disabled), `STATE_ENABLED`, or `STATE_DISABLED` |
+| `networking_config.public` | no | `STATE_ENABLED` or `STATE_DISABLED`; omit to leave public access enabled |
+| `networking_config.private` | no | `STATE_ENABLED` or `STATE_DISABLED`; omit to leave private access disabled |
 | `private_link_id` | conditional | Required if `networking_config.private == STATE_ENABLED`; 20-char |
 
 **Networking constraint**: public and private cannot both be `STATE_DISABLED`.
-By default, both fields are `STATE_UNSPECIFIED` (wire value 0). The proxy
-plane resolves unspecified as: public enabled, private disabled. Do not
-expect the API to return `STATE_ENABLED` / `STATE_DISABLED` when you have not
-explicitly set those values.
+Each member accepts `STATE_ENABLED` or `STATE_DISABLED` and nothing else, and
+both are optional: omit a member, or the whole `networking_config` object, to
+take the default, which resolves as public enabled and private disabled. A
+member you never set comes back unset rather than as `STATE_ENABLED` or
+`STATE_DISABLED`, so take the effective value from this rule rather than from
+the response.
 
 ### Get
 

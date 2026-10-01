@@ -180,7 +180,8 @@ buffer). Debug disk-vs-object-store behavior with these.
 
 | Property | Purpose |
 |---|---|
-| `cloud_topics_enabled` (cluster) | Master switch: `rpk cluster config set cloud_topics_enabled=true`. |
+| `cloud_storage_enabled` (cluster) | Object storage must be on; the only cluster-level prerequisite from v26.2. Check with `rpk cluster config get cloud_storage_enabled`. |
+| `cloud_topics_enabled` (cluster) | **Deprecated in v26.2.1 and ignored** — a `true` value here explains nothing about a Cloud Topics problem, and a `false` one does not cause it. Before v26.2 it was the master switch. |
 | `redpanda.cloud_topic.enabled` (topic) | Enable Cloud Topic mode on a topic. Prefer `redpanda.storage.mode=cloud`. |
 
 **On expiry**: new Cloud Topics cannot be created; existing ones cannot be

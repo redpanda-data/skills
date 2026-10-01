@@ -16,12 +16,19 @@ Trade-off: Cloud Topics optimize for **throughput and cost**, not latency. With 
 
 ## Enabling Cloud Topics
 
-### Cluster-level switch
+### Cluster prerequisite
+
+Cloud Topics need no enablement property of their own. Once object storage is
+configured for the cluster (`cloud_storage_enabled=true`), you can create Cloud
+Topics directly:
 
 ```bash
-rpk cluster config set cloud_topics_enabled=true
-# This configuration update requires a cluster restart to take effect.
+rpk cluster config get cloud_storage_enabled   # must be true
 ```
+
+`cloud_topics_enabled` is **deprecated since v26.2.1 and ignored** — remove it
+from your configuration, because setting it has no effect. On clusters older
+than v26.2 it was a required prerequisite and needed a restart.
 
 ### Create a Cloud Topic
 
@@ -41,7 +48,8 @@ rpk cluster config set default_redpanda_storage_mode=cloud
 
 | Key | Scope | Purpose |
 |---|---|---|
-| `cloud_topics_enabled` | Cluster | Master switch for the Cloud Topics feature. Requires restart. Default `false`. |
+| `cloud_storage_enabled` | Cluster | Object storage must be enabled; this is the only cluster-level prerequisite from v26.2 on. |
+| `cloud_topics_enabled` | Cluster | **Deprecated in v26.2.1 and ignored.** Was the master switch before v26.2 (default `false`, restart required). Remove it from configuration. |
 | `redpanda.storage.mode=cloud` | Topic (create only) | Makes a topic a Cloud Topic. Cannot be changed after creation. |
 | `redpanda.cloud_topic.enabled` | Topic | Underlying topic property that marks Cloud Topic storage mode (object storage primary, local disk as write buffer only). Type `string`, default `null`. Redpanda recommends using `redpanda.storage.mode` instead for flexibility. **Note:** this property is never replicated by Shadow Links. |
 | `default_redpanda_storage_mode=cloud` | Cluster | Default storage mode for newly created topics. |

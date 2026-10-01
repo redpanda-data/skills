@@ -1,4 +1,4 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help output, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (auth, env, connection, trigger, run, llm pricing), `cloudv2 apps/rpai/internal/gitops/`, `cloudv2 apps/rpai/.goreleaser.yaml` and publish manifest (platforms, no FIPS build), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/` (install path, lifecycle errors), `adp-docs modules/cli/`. Evidence date: 2026-09-23 (command tree, canonical group names and aliases, `rpk ai` global flags, `llm-provider create` flags including `--pricing`, `mcp-server tools`, `trigger`, `run claude`/`run codex` help, and GitOps `apply`/`diff` help re-verified against the snapshot); earlier: `run claude` transport-mode guards 2026-09-14, `auth login --no-browser` 2026-08-24, `connection` 2026-08-03. Maturity re-verified 2026-09-28 against `adp-docs modules/reference/pages/rpk/rpk-ai/` and `modules/cli/pages/index.adoc` (no Preview attribute on the `rpk ai` pages).
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help output, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (auth, env, connection, trigger, run, llm pricing), `cloudv2 apps/rpai/internal/gitops/`, `cloudv2 apps/rpai/.goreleaser.yaml` and publish manifest (platforms, no FIPS build), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/` (install path, lifecycle errors), `adp-docs modules/cli/`. Evidence date: 2026-09-23 (command tree, canonical group names and aliases, `rpk ai` global flags, `llm-provider create` flags including `--pricing`, `mcp-server tools`, `trigger`, `run claude`/`run codex` help, and GitOps `apply`/`diff` help re-verified against the snapshot); earlier: `run claude` transport-mode guards 2026-09-14, `auth login --no-browser` 2026-08-24, `connection` 2026-08-03. Maturity re-verified 2026-09-28 against `adp-docs modules/reference/pages/rpk/rpk-ai/` and `modules/cli/pages/index.adoc` (no Preview attribute on the `rpk ai` pages). Drift audit 2026-10-01: full command tree, `rpk ai`-mode global flags, `agent`/`a2a`/`trigger`/`policy`/`mcp-server`/`oauth-*` subcommands and `run claude`/`run codex` flags re-confirmed against `cloudv2 apps/rpai/testdata/commands-snapshot.md`; the `llm-provider` provider-config groups were corrected there (a sixth `vertex-config` group, and authorization-passthrough flags on the OpenAI-family groups).
 
 # rpk ai CLI Reference
 
@@ -151,7 +151,7 @@ Aliases: `llm-providers`, `llm`, `provider`, `lp`.
 
 Subcommands: `create`, `get`, `list`, `update`, `delete`, `check` (connectivity check), `apply`, `diff`.
 
-`create` takes the provider name as a **positional argument** and has no `--type` or `--name` flag. The provider type is selected by which provider-config flag group you set — `openai-config`, `anthropic-config`, `google-config`, `bedrock-config` or `openai-compatible-config` — and setting flags from two groups is an error. Provider-config flags carry the group as a dotted prefix (`--<group>.<field>`); there are no bare `--api-key-ref` or `--base-url` flags (an unknown flag error suggests the dotted spelling). Key flags:
+`create` takes the provider name as a **positional argument** and has no `--type` or `--name` flag. The provider type is selected by which provider-config flag group you set — `openai-config`, `anthropic-config`, `google-config`, `bedrock-config`, `openai-compatible-config` or `vertex-config` — and setting flags from two groups is an error. Provider-config flags carry the group as a dotted prefix (`--<group>.<field>`); there are no bare `--api-key-ref` or `--base-url` flags (an unknown flag error suggests the dotted spelling). Key flags:
 
 | Flag | Description |
 |------|-------------|
@@ -160,11 +160,14 @@ Subcommands: `create`, `get`, `list`, `update`, `delete`, `check` (connectivity 
 | `--provider-models stringArray` | Model identifiers; repeatable, bare names (comma-split) or a JSON object. Empty allows all models. Replaces the full list on `update` |
 | `--enabled` | True when set; `--enabled=false` to disable |
 | `--<group>.api-key-ref string` (`openai-config`, `anthropic-config`, `google-config`, `openai-compatible-config`) | Secret-store reference for the API key; setting one selects that provider type. OpenAI and Anthropic need either a key or authorization passthrough; only `openai-compatible-config` may leave it empty for a no-auth endpoint |
-| `--<group>.base-url string` (all five groups) | Override the default endpoint |
-| `--anthropic-config.authorization-passthrough` | Forward the caller's `Authorization` header upstream instead of a stored key (enterprise/Max plan OAuth); `=false` to disable. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough) |
+| `--<group>.base-url string` (all six groups) | Override the default endpoint |
+| `--<group>.authorization-passthrough` (`openai-config`, `anthropic-config`, `openai-compatible-config`) | Forward the caller's `Authorization` header upstream instead of a stored key (on Anthropic, enterprise/Max plan OAuth; on the OpenAI family, also the caller's `ChatGPT-Account-ID`); `=false` to disable. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough) |
 | `--bedrock-config.region string` (alias `--region`) | AWS region; required within the Bedrock group |
 | `--bedrock-config.static-credentials.access-key-id-ref` (alias `--access-key-id-ref`), `--bedrock-config.static-credentials.secret-access-key-ref` (alias `--secret-access-key-ref`) | Static AWS credentials; both required within their sub-group |
 | `--bedrock-config.assume-role.role-arn` (alias `--role-arn`), `.external-id`, `.session-name` | STS assume-role credentials; `role-arn` required within its sub-group |
+| `--bedrock-config.api-key.api-key-ref` | Secret-store reference for a Bedrock API key (no `Bearer` prefix); required within its sub-group, and exclusive with the other Bedrock credential modes |
+| `--vertex-config.project`, `--vertex-config.location` | Google Cloud project and the single Vertex AI location the provider serves from (`global`, `us`/`eu`, or a region); both required within the Vertex group |
+| `--vertex-config.credentials-json.credentials-json-ref` | Secret-store reference for the Google service-account key JSON; required within its sub-group |
 | `--transcripts.record-input-messages`, `--transcripts.record-output-messages` | Transcript content capture; `=false` to disable |
 | `--guardrail string` | Guardrail to attach |
 | `--tags stringArray` | `key=value`, repeatable; replaces the full map on `update` |
@@ -172,9 +175,9 @@ Subcommands: `create`, `get`, `list`, `update`, `delete`, `check` (connectivity 
 | `--dry-run` | Print the request that would be sent and exit |
 | `--pricing stringArray` | Per-model pricing override in USD per million tokens; repeatable. Also on `update` |
 
-<!-- TODO(human): the current `--openai-config.api-key-ref` help says to leave it empty for no-auth endpoints, which matches the OpenAI-compatible type, not OpenAI; the product docs say OpenAI requires a key or passthrough. The CLI help text looks stale. -->
+<!-- TODO(human): the `--openai-config.api-key-ref` help says to leave it empty "for authorization passthrough or no-auth endpoints (Ollama, vLLM, local models)". The passthrough half is correct, but the no-auth half describes the OpenAI-compatible type, not OpenAI, and the product docs say OpenAI requires a key or passthrough. That half of the help text looks copied from the OpenAI-compatible group. -->
 
-The current help lists an authorization-passthrough flag only for the Anthropic group; check `rpk ai llm-provider create --help` for other groups. A new provider type or field shows up as a new flag group or dotted flag, not as a new value of a `--type` flag.
+Authorization passthrough is a flag on the `openai-config`, `anthropic-config` and `openai-compatible-config` groups; Google AI, Vertex AI and Bedrock always use stored credentials. A new provider type or field shows up as a new flag group or dotted flag, not as a new value of a `--type` flag.
 
 `update` adds `--clear <field-path>` (add a field to the update mask with it unset) and `--update-mask` (override the inferred mask); `update` with no changed flags is an error.
 
@@ -323,9 +326,7 @@ Launches the OpenAI Codex CLI with a throwaway `CODEX_HOME` pointed at the gatew
 
 Under `rpk ai`, `run codex` rejects a static `--token`; use `rpk ai auth login`.
 
-`run codex` wires API-key-style gateway authentication. It does **not** set up ChatGPT/Codex *subscription* passthrough: that needs a provider configured for authorization passthrough and a Codex config that sends the subscription token in `Authorization` and the gateway token in `X-Redpanda-Cloud-Token` — configure Codex by hand. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough).
-
-<!-- TODO(human): the current CLI help shows an authorization-passthrough flag only for `--anthropic-config`; confirm how an OpenAI-family provider is configured for passthrough (manifest field, UI, or not supported) before describing Codex subscription passthrough further. -->
+`run codex` wires API-key-style gateway authentication. It does **not** set up ChatGPT/Codex *subscription* passthrough. Configure that yourself: create the provider with `--openai-config.authorization-passthrough` (or the `openai-compatible-config` equivalent) and set that group's `base-url` to `https://chatgpt.com/backend-api/codex`, then configure Codex by hand so it sends the subscription token in `Authorization` and the gateway token in `X-Redpanda-Cloud-Token`. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough).
 
 ```bash
 rpk ai run codex -L openai -m gpt-5.3-codex -e high -- --ask-for-approval never

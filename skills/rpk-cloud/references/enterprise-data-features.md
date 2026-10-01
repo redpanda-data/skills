@@ -112,13 +112,14 @@ rpk registry schema create events-value --schema ./events.avsc --type avro
 
 **Cloud Topics** (v26.1+) store a topic's data primarily in object storage (S3/ADLS/GCS/MinIO) with local disk only as a write buffer, eliminating cross-AZ replication network cost for latency-tolerant, high-throughput workloads. Enterprise feature.
 
-**Prerequisite — enable Cloud Topics at the cluster level.** Before any topic can use Cloud Topic storage, the cluster property `cloud_topics_enabled` (type `boolean`, default `false`) must be set to `true`. Setting it to `true` requires an Enterprise license, and the change requires a cluster restart to take effect.
+**Prerequisite — object storage enabled on the cluster.** Cloud Topics need no enablement property of their own: with `cloud_storage_enabled=true` a topic can be created in Cloud Topic storage mode directly. On a Cloud cluster object storage is configured by the platform.
 
 ```bash
-rpk cluster config set cloud_topics_enabled=true
-# verify
-rpk cluster config get cloud_topics_enabled
+# verify the prerequisite
+rpk cluster config get cloud_storage_enabled
 ```
+
+`cloud_topics_enabled` is **deprecated as of v26.2.1 and ignored** — setting it has no effect. On clusters older than v26.2 it had to be set to `true` and the change required a cluster restart.
 
 Two topic properties then control this per topic (you can make a topic a Cloud Topic only at creation time):
 
