@@ -274,7 +274,7 @@ Beyond SASL/SCRAM, Redpanda supports several authentication mechanisms. SCRAM, P
 
 - **SASL/SCRAM** (Community) — default; `sasl_mechanisms` includes `SCRAM`. See [users.md](references/users.md).
 - **SASL/PLAIN** (Community) — `sasl_mechanisms` includes `PLAIN`.
-- **SASL/OAUTHBEARER (OIDC)** (Enterprise) — `sasl_mechanisms` includes `OAUTHBEARER`; configured via `oidc_discovery_url`, `oidc_token_audience`, `oidc_principal_mapping` (default `$.sub`), `oidc_clock_skew_tolerance`, `oidc_token_expire_disconnect`, `oidc_keys_refresh_interval`.
+- **SASL/OAUTHBEARER (OIDC)** (Enterprise) — `sasl_mechanisms` includes `OAUTHBEARER`; configured via `oidc_discovery_url`, `oidc_token_audience`, `oidc_principal_mapping` (default `$.sub`), `oidc_group_claim_path`, `oidc_clock_skew_tolerance`, `oidc_keys_refresh_interval`, and the `oidc_http_proxy_url`/`_username`/`_password` forward-proxy settings.
 - **SASL/GSSAPI (Kerberos)** (Enterprise) — `sasl_mechanisms` includes `GSSAPI`; configured via `sasl_kerberos_keytab`, `sasl_kerberos_config`, `sasl_kerberos_principal`, `sasl_kerberos_principal_mapping`.
 - **mTLS** (Community) — listener `authentication_method: mtls_identity`; principal extracted via `kafka_mtls_principal_mapping_rules`.
 - **HTTP APIs** — `http_authentication` cluster property: `BASIC` (Community) and `OIDC` (Enterprise); `admin_api_require_auth` gates Admin API auth.

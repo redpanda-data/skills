@@ -172,7 +172,7 @@ GET    /v1/serverless/clusters/{id}/prometheus/credentials
 | `resource_group_id` | yes | UUID of an existing ResourceGroup |
 | `serverless_region` | yes | Region name string, e.g. `"us-east-1"` |
 | `tags` | no | `map<string,string>`, max 50 pairs |
-| `networking_config` | no | Both fields default to `STATE_UNSPECIFIED` (0); resolved as public enabled, private disabled |
+| `networking_config` | no | Optional `public` / `private`, each `STATE_ENABLED` or `STATE_DISABLED`; omitted resolves as public enabled, private disabled |
 
 **Response fields on GET** (output-only):
 

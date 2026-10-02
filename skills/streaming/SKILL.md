@@ -265,12 +265,14 @@ Nested topic keys: `redpanda.iceberg.mode` (`key_value`/`value_schema_id_prefix`
 
 ### Cloud Topics
 
-Object-storage-native ("diskless") topics that use S3/ADLS/GCS as the primary store, eliminating most cross-AZ replication cost (latency 1-2s). Enable at the cluster level, then create with `redpanda.storage.mode=cloud` (create-only):
+Object-storage-native ("diskless") topics that use S3/ADLS/GCS as the primary store, eliminating most cross-AZ replication cost (latency 1-2s). No Cloud Topics enablement property is needed: with object storage enabled for the cluster, create the topic with `redpanda.storage.mode=cloud` (create-only):
 
 ```bash
-rpk cluster config set cloud_topics_enabled=true
+rpk cluster config get cloud_storage_enabled   # must be true
 rpk topic create -c redpanda.storage.mode=cloud my-cloud-topic
 ```
+
+(`cloud_topics_enabled` is deprecated in v26.2.1 and ignored; it was required before v26.2.)
 
 Underlying topic property: `redpanda.cloud_topic.enabled`. See [Cloud Topics](references/cloud-topics.md).
 
@@ -308,7 +310,7 @@ Replicates topic data, configs, consumer offsets, ACLs, and Schema Registry. See
 - [Tiered Storage](references/tiered-storage.md): What tiered storage does, enabling it per-topic (`redpanda.storage.mode=tiered` or legacy `redpanda.remote.write/read`), local vs remote retention, reading historical data, and Remote Read Replicas. (Enterprise)
 - [Enterprise Features Index](references/enterprise-features.md): All broker/topic-level enterprise differentiators with enable/disable config keys, license-expiration behavior, and pointers — Tiered Storage, Cloud Topics, Iceberg Topics, Continuous/Intra-Broker Balancing, Shadowing, Remote Read Replicas, Topic Recovery, Leader Pinning, Server-Side Schema ID Validation, Topic Deletion Control.
 - [Iceberg Topics](references/iceberg-topics.md): Iceberg integration — `iceberg_enabled` cluster switch and nested topic keys `redpanda.iceberg.mode`/`delete`/`invalid.record.action`/`partition.spec`/`target.lag.ms`, catalog types, schema evolution, retention, limitations. (Enterprise)
-- [Cloud Topics](references/cloud-topics.md): Object-storage-native topics — `cloud_topics_enabled`, `redpanda.storage.mode=cloud`, `redpanda.cloud_topic.enabled`, `default_redpanda_storage_mode`, latency/cost trade-offs, and limitations. (Enterprise)
+- [Cloud Topics](references/cloud-topics.md): Object-storage-native topics — the `cloud_storage_enabled` prerequisite, `redpanda.storage.mode=cloud`, `redpanda.cloud_topic.enabled`, `default_redpanda_storage_mode`, the deprecated `cloud_topics_enabled`, latency/cost trade-offs, and limitations. (Enterprise)
 - [Continuous Data Balancing](references/continuous-balancing.md): `partition_autobalancing_mode` modes, continuous-mode disk/availability/decommission thresholds, intra-broker `core_balancing_continuous`/`core_balancing_on_core_count_change`, and `rpk cluster partitions balancer-status`/`movement-cancel`. (Enterprise)
 - [Shadow Linking](references/shadow-linking.md): Cross-cluster DR via Shadow Links — `enable_shadow_linking`, the `rpk shadow` workflow (create/list/describe/status/update/failover/delete), shadow-config.yaml nested sync options and filters, topic-property replication rules, and limitations. (Enterprise)
 - [Kafka Client Metadata and Connection Settings](references/kafka-client-metadata.md): Per-client config keys for metadata refresh intervals (`metadata.max.age.ms`, `topic.metadata.refresh.interval.ms`, `kgo.MetadataMaxAge`), fast-refresh after leader errors, reconnect backoff, idle connection timeout, request timeouts, and producer delivery budgets (`delivery.timeout.ms`, `message.timeout.ms`) — with recommended values for latency, throughput, and resilience goals, and explicit callouts for Continuous Data Balancing, Shadow Linking failover, Cloud Topics, Leader Pinning, and Tiered Storage cold-read interactions.

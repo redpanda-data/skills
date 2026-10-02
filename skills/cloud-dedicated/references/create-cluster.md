@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `cluster.proto` (`ClusterCreate`, `Cluster`, `ClusterService`, `UpdateCluster` RPC and `UpdateClusterRequest.update_mask`, `ConnectionType`, PrivateLink specs, `ListClustersRequest.Filter`, `ClusterConfiguration.custom_properties`, `RedpandaConnect`, `cloud_provider_tags`), `network.proto` (`NetworkCreate`, `cluster_type` validation), `region.proto`, `operation.proto` (`Operation.State`, `Operation.Type`, `ListOperationsRequest.Filter`), `network_peering.proto`; cloudv2 `proto/gen/openapi/openapi.controlplane.yaml` (cluster PATCH body schema); redpanda `src/go/rpk/pkg/publicapi/controlplane.go` (`ClusterForID`, `Clusters`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `cluster.proto` (`ClusterCreate`, `Cluster`, `ClusterService`, `UpdateCluster` RPC and `UpdateClusterRequest.update_mask`, `ConnectionType`, PrivateLink specs, `ListClustersRequest.Filter`, `ClusterConfiguration.custom_properties`, `RedpandaConnect`, `cloud_provider_tags`), `network.proto` (`NetworkCreate`, `cluster_type` validation), `region.proto`, `operation.proto` (`Operation.State`, `Operation.Type`, `ListOperationsRequest.Filter`), `network_peering.proto`; api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `Operation.Type` and `Operation.State` values, `Cluster.State`, `Cluster.Type`, `/v1/operations` `filter.type_in` — **verified 2026-10-01**); cloudv2 `proto/gen/openapi/openapi.controlplane.yaml` (cluster PATCH body schema); redpanda `src/go/rpk/pkg/publicapi/controlplane.go` (`ClusterForID`, `Clusters`). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Create Cluster: Dedicated Cluster Lifecycle
 
@@ -274,12 +274,14 @@ poll_operation() {
 poll_operation "${CLUSTER_OP_ID}"
 ```
 
-Operation types (`Operation.Type` enum):
+Operation types (`Operation.Type` enum) that a Dedicated cluster produces — the
+enum also carries Serverless-only types this skill does not cover:
 - `TYPE_CREATE_CLUSTER = 1`
 - `TYPE_UPDATE_CLUSTER = 2`
 - `TYPE_DELETE_CLUSTER = 3`
 - `TYPE_CREATE_NETWORK = 4`
 - `TYPE_DELETE_NETWORK = 5`
+- `TYPE_CREATE_CLUSTER_WITH_DEPENDENCIES = 8`, `TYPE_DELETE_CLUSTER_WITH_DEPENDENCIES = 9` — a cluster created or deleted together with its dependencies, rather than by the separate cluster and network calls. Expect these when you read an operation's `type`, and include them when you filter `/v1/operations` for cluster lifecycle work.
 - `TYPE_UPDATE_NETWORK = 18`
 - `TYPE_CREATE_NETWORK_PEERING = 13`, `TYPE_DELETE_NETWORK_PEERING = 14`
 - `TYPE_CREATE_SHADOW_LINK = 15`, `TYPE_UPDATE_SHADOW_LINK = 16`, `TYPE_DELETE_SHADOW_LINK = 17`

@@ -152,14 +152,15 @@ Object-storage-native topic type (durable object storage as the primary backing
 store instead of local disk replication).
 
 ```bash
-rpk cluster config set cloud_topics_enabled=true     # cluster prerequisite; needs restart
+rpk cluster config get cloud_storage_enabled     # must be true; no Cloud Topics switch to set
 ```
 
-`cloud_topics_enabled` is the cluster-level prerequisite to enable the feature.
-In the Redpanda source it is a `deprecated_property` (not an `enterprise<>`-wrapped
-schema property), so it is NOT one of the enterprise-flagged cluster-config
-properties listed in the table above — do not classify it as `is_enterprise: true`.
-The command is still current per the Cloud Topics docs page.
+Object storage being enabled is the only cluster-level prerequisite. `cloud_topics_enabled`
+is **deprecated as of v26.2.1 and ignored** — setting it has no effect, so remove it from
+your configuration. In the Redpanda source it is a `deprecated_property` (not an
+`enterprise<>`-wrapped schema property), so it is also NOT one of the enterprise-flagged
+cluster-config properties listed in the table above — do not classify it as
+`is_enterprise: true`. Before v26.2 it was required and needed a cluster restart.
 
 Per-topic, a topic is made a Cloud Topic only at creation time using the topic
 property `redpanda.storage.mode=cloud`:

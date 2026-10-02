@@ -19,19 +19,20 @@ https://docs.redpanda.com/redpanda-connect/components/catalog/):
 | `community` | Community-maintained, best-effort |
 
 > **Tier vs. runtime gate caveat:** the tier label and the runtime license
-> check don't always agree. Known discrepancies at v4.100.0: both `jira`
-> components (the `input` and the now-deprecated `processor`) are tiered
-> `certified` but their source calls the enterprise license check
+> check don't always agree. Known discrepancies, still present at v4.111.1:
+> both `jira` components (the `input` and the now-deprecated `processor`) are
+> tiered `certified` but their source calls the enterprise license check
 > (`license.CheckRunningEnterprise`); `aws_dynamodb_cdc` is tiered
 > `enterprise` but has no runtime gate in source. When licensing matters for
 > a decision, verify the specific component (its docs page, or a dry run
 > without a license).
 
-## Enterprise components (complete at Connect v4.99.0)
+## Enterprise components (complete at Connect v4.111.1)
 
-All 33 enterprise-tier components, grouped by family. This list changes
-between releases — re-verify against `info.csv` at the current stable tag
-before relying on it.
+Every enterprise-tier component, grouped by family. Which components carry the
+tier changes between releases, so treat this as a point-in-time list and read
+the current set from `info.csv` at the stable tag (or filter the catalog page
+by tier) rather than counting on it.
 
 ### CDC inputs (8 enterprise + 1 certified)
 

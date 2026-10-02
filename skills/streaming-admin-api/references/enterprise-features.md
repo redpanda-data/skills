@@ -101,7 +101,7 @@ Object-storage-native topics that use durable object storage as the primary back
 
 | Key | Type | Purpose |
 |-----|------|---------|
-| `cloud_topics_enabled` | boolean | Master switch for Cloud Topics (Enterprise). |
+| `cloud_topics_enabled` | boolean | **Deprecated in v26.2.1 and ignored.** Was the Cloud Topics master switch before v26.2; from v26.2 on `cloud_storage_enabled` is the only cluster-level prerequisite. |
 | `cloud_topics_produce_upload_interval` | duration | How often buffered produce data is uploaded to object storage. |
 | `cloud_topics_produce_batching_size_threshold` | integer | Produce batch size that triggers an upload. |
 | `cloud_topics_reconciliation_interval` | duration | Base reconciliation loop interval. |

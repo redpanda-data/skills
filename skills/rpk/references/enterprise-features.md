@@ -76,16 +76,17 @@ Disable to exit license violation: `rpk cluster config set cloud_storage_enabled
 Object-storage-native topics that use durable object storage as the primary
 backing store instead of local-disk replication.
 
-**Enable cluster-wide, then create a cloud topic:**
+**With object storage enabled for the cluster, create a cloud topic directly:**
 ```bash
-rpk cluster config set cloud_topics_enabled true
+rpk cluster config get cloud_storage_enabled   # must be true
 rpk topic create my-cloud-topic -c redpanda.storage.mode=cloud
 ```
 
 | Key | Surface | Purpose |
 |---|---|---|
-| `cloud_topics_enabled` | Cluster config | Master switch for Cloud Topics. |
+| `cloud_storage_enabled` | Cluster config | Object storage enabled; the only cluster-level prerequisite from v26.2 on. |
 | `redpanda.storage.mode=cloud` | Topic property | Marks a topic as a Cloud Topic. |
+| `cloud_topics_enabled` | Cluster config | **Deprecated in v26.2.1 and ignored.** Was the master switch before v26.2. |
 
 On license expiration: new Cloud Topics cannot be created and existing ones cannot
 be modified (including partition changes).

@@ -26,6 +26,14 @@ This is the hub skill. It covers install, config, and command discovery. For
 depth on individual command groups, see the linked subskills in the Reference
 Directory below.
 
+**Discover the installed surface rather than assuming it.** `rpk --print-tree`
+emits the whole command tree as JSON and exits — it is meant for automation and
+agent tooling, and it is the fastest way to confirm what the binary in front of
+you actually supports. `rpk <group> --help` gives the same answer one group at a
+time, and `rpk -X help` (or the terser `rpk -X list`) lists every `-X`
+configuration key. Prefer that output over this document whenever they
+disagree.
+
 ## Quickstart
 
 ### 1. Install rpk
@@ -217,7 +225,10 @@ Profile selection: `RPK_PROFILE=<name>`
 | `rpk plugin` | Manage rpk plugins | — |
 | `rpk redpanda` | Operate the local broker: start/stop, mode, tune, check, node config, admin (brokers decommission) — self-managed only | `rpk-redpanda` |
 | `rpk iotune` | Benchmark disk I/O and write optimal io properties (Linux-only) | `rpk-redpanda` |
-| `rpk oxla` | Redpanda Oxla SQL engine — "Coming Soon" CLI stub | `sql` skills |
+| `rpk sql` | Interact with a Redpanda SQL cluster — currently `rpk sql debug bundle` | `sql` skills |
+| `rpk oxla` | Prints a "Coming Soon" early-access notice; not the SQL command group (that is `rpk sql`) | `sql` skills |
+| `rpk check` | Run production readiness checks for a Redpanda deployment (an rpk-managed plugin: `install`, `upgrade`, `uninstall`) | — |
+| `rpk k8s` | Interact with Redpanda clusters running on Kubernetes (an rpk-managed plugin: `install`, `upgrade`, `uninstall`) | — |
 | `rpk shadow` | Manage Redpanda Shadow Links (create/describe/update/delete/list/failover) | — |
 
 ---
@@ -243,7 +254,7 @@ Enterprise features operated via rpk, with their primary control:
 | Feature | rpk control (primary key/command) |
 |---|---|
 | Tiered Storage | `cloud_storage_enabled`; topic `redpanda.remote.read/write/delete`, `retention.local.target.ms/bytes` |
-| Cloud Topics | `cloud_topics_enabled`; topic `redpanda.storage.mode=cloud` |
+| Cloud Topics | `cloud_storage_enabled`; topic `redpanda.storage.mode=cloud` (`cloud_topics_enabled` is deprecated and ignored from v26.2.1) |
 | Iceberg Topics | `iceberg_enabled`; topic `redpanda.iceberg.mode` (+ `.target.lag.ms`, `.partition.spec`, `.invalid.record.action`, `.delete`) |
 | Continuous Data Balancing | `partition_autobalancing_mode=continuous` (+ `partition_autobalancing_*`, `core_balancing_continuous`) |
 | Shadow Linking / DR | `rpk shadow create/status/update/failover/delete`, `rpk shadow config generate` |
