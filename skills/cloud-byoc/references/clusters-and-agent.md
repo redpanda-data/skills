@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (field names and constraints, incl. `Cluster.RedpandaConnect`, `Cluster.CidrPort`), cloudv2 `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (dual-listener `connections` rules, verified 2026-09-17), cloudv2 `apps/cloud-ui/src/utils/rpk.utils.ts` (per-provider `rpk cloud byoc` account flags); redpanda `src/go/rpk/pkg/cli/cloud/byoc/` (`byoc.go`, `install.go`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (field names and constraints, incl. `Cluster.RedpandaConnect`, `Cluster.CidrPort`), cloudv2 `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (dual-listener `connections` rules, verified 2026-09-17), cloudv2 `apps/cloud-ui/src/utils/rpk.utils.ts` (per-provider `rpk cloud byoc` account flags); redpanda `src/go/rpk/pkg/cli/cloud/byoc/` (`byoc.go`, `install.go`); shadow-link source-cluster scope, auth arms and role sync (verified 2026-10-01): cloudv2 `controlplane/v1/shadow_link.proto`, api-docs `cloud-controlplane/cloud-controlplane.yaml` (`AuthenticationConfiguration`, `PlainConfig`, `ScramConfig`, `RoleSyncOptions`, `NameFilter`), docs `modules/manage/pages/disaster-recovery/shadowing/setup.adoc` + `overview.adoc` (`env-cloud` variants). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Clusters and Agent
 
@@ -508,7 +508,7 @@ Returns a `DeleteClusterOperation`. After the operation starts, the cluster move
 
 ## Shadow Linking (control-plane API)
 
-Shadow Linking is Redpanda's enterprise cross-cluster DR (asynchronous, offset-preserving replication between two clusters). It can be driven entirely through the **control-plane** `ShadowLinkService` — a first-class API complementary to the `rpk shadow` CLI flow documented in [Enterprise Features](enterprise-features.md#shadow-linking-cross-cluster-disaster-recovery). Grounded in `shadow_link.proto`.
+Shadow Linking is Redpanda's enterprise cross-cluster DR: asynchronous, offset-preserving replication from a source cluster — another Redpanda cluster, or any Kafka API-compatible cluster such as Apache Kafka, Confluent Cloud, or Confluent Platform — to a Redpanda shadow cluster. It can be driven entirely through the **control-plane** `ShadowLinkService` — a first-class API complementary to the `rpk shadow` CLI flow documented in [Enterprise Features](enterprise-features.md#shadow-linking-cross-cluster-disaster-recovery).
 
 These are **control-plane** paths under `api.redpanda.com` (not the per-cluster data-plane URL):
 
@@ -527,13 +527,14 @@ These are **control-plane** paths under `api.redpanda.com` (not the per-cluster 
 | `shadow_redpanda_id` | Yes | The target (shadow) cluster where the link is created. Immutable. |
 | `name` | Yes | DNS-1123 subdomain, max 63 chars, pattern `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`. Unique. |
 | `source_redpanda_id` **XOR** `client_options.bootstrap_servers` | Yes | Mutually exclusive — supply exactly one. `source_redpanda_id` auto-derives bootstrap servers from a known cluster; `bootstrap_servers` points at an external source. |
-| `client_options` | No | Kafka client config: `bootstrap_servers`, `tls_settings`, `authentication_configuration`, fetch/retry timing. SCRAM/PLAIN passwords must reference a data-plane secret as `${secrets.<SECRET_ID>}`. |
+| `client_options` | No | Kafka client config: `bootstrap_servers`, `tls_settings`, `authentication_configuration`, fetch/retry timing. `authentication_configuration` takes one of two arms — `scram_configuration` (`username`, `password`, `scram_mechanism`) or `plain_configuration` (`username`, `password`), the latter being what a Confluent Cloud source usually needs with its API key and secret. In both arms the password must reference a data-plane secret as `${secrets.<SECRET_ID>}` and is never read back; responses carry `password_set` and `password_set_at` instead. |
 | `topic_metadata_sync_options` | No | What topic metadata to mirror. |
 | `consumer_offset_sync_options` | No | Consumer group offset replication. |
 | `security_sync_options` | No | ACL / security-settings replication. |
 | `schema_registry_sync_options` | No | Schema Registry replication — a oneof of `shadow_schema_registry_topic` or `shadow_schema_registry_api`. See [Schema Registry replication modes](#schema-registry-replication-modes). |
+| `role_sync_options` | No | RBAC role replication: `interval` (defaults to 30s when 0), `paused`, `role_name_filters[]`. Nothing syncs until at least one INCLUDE filter is present; a single `PATTERN_TYPE_LITERAL`/`FILTER_TYPE_INCLUDE` filter with `name: "*"` covers every role. Requires a Redpanda source cluster. |
 
-`PATCH` uses an `UpdateShadowLinkRequest` with a required `update_mask` and a `shadow_link` (`ShadowLinkUpdate`) body; updatable fields are the four sync-options groups (`topic_metadata_sync_options`, `consumer_offset_sync_options`, `security_sync_options`, `schema_registry_sync_options`) plus `client_options`. Masks reach into nested fields, so a targeted credential rotation such as `update_mask=schema_registry_sync_options.shadow_schema_registry_api.auth_options.basic.password` is valid.
+`PATCH` uses an `UpdateShadowLinkRequest` with a required `update_mask` and a `shadow_link` (`ShadowLinkUpdate`) body; updatable fields are the sync-options groups (`topic_metadata_sync_options`, `consumer_offset_sync_options`, `security_sync_options`, `schema_registry_sync_options`, `role_sync_options`) plus `client_options`. Masks reach into nested fields, so a targeted credential rotation such as `update_mask=schema_registry_sync_options.shadow_schema_registry_api.auth_options.basic.password` is valid.
 
 ```bash
 # Create a shadow link from a known source cluster (control plane)

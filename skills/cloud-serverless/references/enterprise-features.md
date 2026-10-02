@@ -187,7 +187,7 @@ API to set them:
 | FIPS mode (`fips_mode` node config) | Node configuration is not tenant-accessible. |
 | Audit Logging (`audit_enabled` cluster config) | Cluster config not tenant-accessible. |
 | Remote Read Replicas (`cloud_storage_enable_remote_read`) | Cross-cluster object-storage reads are not a Serverless tenant feature. |
-| Shadow Linking / cross-cluster DR (`rpk shadow`, `ShadowLinkService`) | Shadow Linking is a **control-plane** API (`ShadowLinkService` at `https://api.redpanda.com`: `/v1/shadow-links`, `/v1/shadow-links/{id}`), with a data-plane shadow-topic/failover surface at `/v1/shadow-links/{name}/...`. Availability on Serverless is **unconfirmed** (see data-plane.md); DR for Serverless is handled by the managed platform. |
+| Shadow Linking / cross-cluster DR (`rpk shadow`, `ShadowLinkService`) | Shadow Linking is a **control-plane** API (`ShadowLinkService` at `https://api.redpanda.com`: `/v1/shadow-links`, `/v1/shadow-links/{id}`), with a data-plane shadow-topic/failover surface at `/v1/shadow-links/{name}/...`. A shadow link is always created **on** a BYOC or Dedicated shadow cluster, so Serverless is not a shadow-cluster option; DR for Serverless is handled by the managed platform. (A Serverless cluster is also not a shadow *source*: a source is reached over the Kafka API from the shadow cluster, which must itself be BYOC or Dedicated.) |
 | Whole Cluster Restore | Cluster-snapshot restore is a managed/self-managed operation, not a Serverless tenant API. |
 
 To configure these, use a **BYOC or Dedicated** cluster (see the `cloud-byoc`
