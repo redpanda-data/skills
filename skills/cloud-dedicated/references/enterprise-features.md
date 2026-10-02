@@ -113,17 +113,18 @@ Object-storage-native topics that use durable object storage as the primary back
 
 | Property | Scope | Notes |
 |---|---|---|
-| `cloud_topics_enabled` | Cluster | `true` to allow Cloud Topics. Requires a cluster restart. |
+| `cloud_storage_enabled` | Cluster | Object storage must be enabled; the only cluster-level prerequisite from v26.2 on. |
+| `cloud_topics_enabled` | Cluster | **Deprecated in v26.2.1 and ignored.** Was the master switch before v26.2 (restart required). Remove it from configuration. |
 | `redpanda.storage.mode` | Topic | Set to `cloud` at **topic create time only** to make a Cloud Topic. |
 
 ```bash
-rpk cluster config set cloud_topics_enabled=true   # restart required
+rpk cluster config get cloud_storage_enabled   # must be true; no Cloud Topics switch to set
 rpk topic create my-cloud-topic -c redpanda.storage.mode=cloud
 ```
 
 License expiration: new Cloud Topics cannot be created and existing ones cannot be modified (including partition changes). Pair with Follower Fetching and [Leader Pinning](#leadership-pinning-enterprise) for further cross-AZ cost reduction.
 
-Source: the Cloud Topics page (`cloud_topics_enabled`, `redpanda.storage.mode=cloud`); the Redpanda licensing overview (Cloud Topics row).
+Source: the Cloud Topics page (`cloud_storage_enabled` prerequisite, `redpanda.storage.mode=cloud`) and the deprecated-properties index (`cloud_topics_enabled` deprecated in v26.2.1, setting it has no effect — verified 2026-10-02); the Redpanda licensing overview (Cloud Topics row).
 
 ---
 
