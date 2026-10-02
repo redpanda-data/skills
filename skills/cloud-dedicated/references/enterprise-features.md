@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`, Cloud-only Schema Registry API-mode validation), `operation.proto` (shadow-link operation types); the Redpanda docs pages cited per section. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate` fields, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`, Cloud-only Schema Registry API-mode validation, `role_sync_options` on `ShadowLinkCreate`/`ShadowLinkUpdate`/`ShadowLink`), `operation.proto` (shadow-link operation types); api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `AuthenticationConfiguration` arms `plain_configuration`/`scram_configuration` with `PlainConfig`/`ScramConfig`, `RoleSyncOptions`, `NameFilter` — **verified 2026-10-01**); docs `modules/manage/pages/disaster-recovery/shadowing/setup.adoc` and `overview.adoc`, `env-cloud` variants (source cluster may be any Kafka API-compatible cluster; the Redpanda-source-only carve-outs; Amazon MSK with SASL/SCRAM-SHA-512, no MSK IAM, no AWS Glue Schema Registry — **verified 2026-10-01**); the Redpanda docs pages cited per section. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Enterprise Features on Dedicated Clusters
 
@@ -196,7 +196,16 @@ Source: the Continuous Data Balancing page (`partition_autobalancing_mode`, `_no
 
 ## Shadow Linking — Cross-Cluster Disaster Recovery (Enterprise)
 
-Asynchronous, offset-preserving replication between distinct Redpanda clusters for cross-region DR. Supported on BYOC and Dedicated clusters running v25.3+. The shadow (destination) cluster **pulls** from the source cluster. Shadow Linking is a first-class **Control Plane API** service (`ShadowLinkService` under `https://api.redpanda.com`, `/v1/shadow-links`), complementary to the `rpk shadow` CLI and the Cloud UI. Each mutating call returns a long-running `Operation`.
+Asynchronous, offset-preserving replication from a source cluster to a Redpanda shadow cluster, for cross-region DR and for migrations onto Redpanda. The shadow (destination) cluster **pulls** from the source over the Kafka API, so the source does **not** have to be Redpanda — it can be another Redpanda cluster or any Kafka API-compatible cluster, such as Apache Kafka, Confluent Cloud, or Confluent Platform. The shadow cluster must be a BYOC or Dedicated cluster running v25.3+. Shadow Linking is a first-class **Control Plane API** service (`ShadowLinkService` under `https://api.redpanda.com`, `/v1/shadow-links`), complementary to the `rpk shadow` CLI and the Cloud UI. Each mutating call returns a long-running `Operation`.
+
+**Replicated from any Kafka API-compatible source:** topic data (offsets and timestamps preserved), topic configurations, consumer group offsets, and ACLs.
+
+**Requires a Redpanda source cluster:**
+
+- **Byte-for-byte Schema Registry replication** (`shadow_schema_registry_topic`), which shadows Redpanda's internal `_schemas` topic. For a Confluent or other Confluent-compatible registry use API mode (`shadow_schema_registry_api`) instead — see [Schema Registry replication modes](#schema-registry-replication-modes).
+- **RBAC role synchronization** (`role_sync_options`). Leave it unset for a non-Redpanda source: an incompatible source does not fail the create call, and the role sync task instead reports itself unavailable while the rest of the link keeps replicating.
+
+**Amazon MSK** works as a source when SASL/SCRAM-SHA-512 is enabled on the MSK cluster. MSK IAM authentication is not supported, and AWS Glue Schema Registry is not supported as a schema source.
 
 > The control-plane `ShadowLinkService` is keyed by **shadow link ID** (`/v1/shadow-links/{id}`, a 20-char XID). A separate data-plane `ShadowLinkService` (keyed by link **name**, `/v1/shadow-links/{name}`) on the cluster's Data Plane URL exposes per-link operational endpoints (`failover`, `metrics`, per-topic). Create/manage links through the control plane.
 
@@ -223,16 +232,20 @@ Asynchronous, offset-preserving replication between distinct Redpanda clusters f
 | `topic_metadata_sync_options` | No | `interval`, `auto_create_shadow_topic_filters[]`, starting offset, `paused`. |
 | `consumer_offset_sync_options` | No | `interval`, `paused`, `group_filters[]`. |
 | `security_sync_options` | No | `interval`, `paused`, `acl_filters[]`. |
+| `role_sync_options` | No | RBAC role replication: `interval` (defaults to 30s when 0), `paused`, `role_name_filters[]` (a `NameFilter` list — `name`, `pattern_type`, `filter_type`). **Nothing syncs until at least one INCLUDE filter is added**: an unset message or an empty filter list replicates no roles. A single `PATTERN_TYPE_LITERAL`/`FILTER_TYPE_INCLUDE` filter with `name: "*"` replicates every role, and `*` must be the only character in the name. Requires a Redpanda source cluster. |
 | `schema_registry_sync_options` | No | A **oneof**: `shadow_schema_registry_topic` (byte-for-byte `_schemas` replication) **or** `shadow_schema_registry_api` (HTTP-API replication from a Redpanda or Confluent Schema Registry). See [Schema Registry replication modes](#schema-registry-replication-modes). |
 
 **`ShadowLinkClientOptions` nested keys** (`client_options`):
 - `bootstrap_servers[]` — source cluster brokers; required if `source_redpanda_id` is not provided.
 - `source_cluster_id` — source cluster ID (lives **inside** `client_options`, not at the top level).
 - `tls_settings` — the Control Plane API `TLSSettings` message is **flat**: `enabled` (bool), `ca`, `key` (input only; must reference a data-plane secret `${secrets.<SECRET_ID>}`), `cert` (`key`/`cert` are both-or-neither), `do_not_set_sni_hostname` (bool). Note: the nested `tls_pem_settings.{ca,key,cert}` / `tls_file_settings.{ca_path,key_path,cert_path}` form is the **rpk / self-managed YAML shape**, not the Control Plane API.
-- `authentication_configuration.scram_configuration`: `username`, `password` (must reference `${secrets.<sasl-password-secret-id>}`), `scram_mechanism` (Control Plane API uses `SCRAM_MECHANISM_SCRAM_SHA_256` / `SCRAM_MECHANISM_SCRAM_SHA_512`; rpk YAML uses `SCRAM_SHA_256`/`SCRAM_SHA_512`).
+- `authentication_configuration` has two arms — **SASL/SCRAM** and **SASL/PLAIN**. Set one:
+  - `scram_configuration`: `username`, `password`, `scram_mechanism` (Control Plane API uses `SCRAM_MECHANISM_SCRAM_SHA_256` / `SCRAM_MECHANISM_SCRAM_SHA_512`; rpk YAML uses `SCRAM_SHA_256`/`SCRAM_SHA_512`).
+  - `plain_configuration`: `username`, `password`. This is the arm a Confluent Cloud source usually needs, where the username and password are the API key and secret.
+  - In both arms `password` must reference a data-plane secret as `${secrets.<SECRET_ID>}` — inline plaintext is rejected. The password is never read back: responses carry `password_set` and `password_set_at` instead, which is how you confirm that a credential rotation landed.
 - Connection tuning (defaults applied when 0): `metadata_max_age_ms` (10000), `connection_timeout_ms` (1000), `retry_backoff_ms` (100), `fetch_wait_max_ms` (500), `fetch_min_bytes` (5242880), `fetch_max_bytes` (20971520), `fetch_partition_max_bytes` (1048576).
 
-**Filters** (`auto_create_shadow_topic_filters`, `group_filters`, `acl_filters`):
+**Filters** (`auto_create_shadow_topic_filters`, `group_filters`, `acl_filters`, `role_name_filters`):
 - `pattern_type`: `LITERAL` | `PREFIX` (API: `PATTERN_TYPE_LITERAL` / `PATTERN_TYPE_PREFIX`); ACL `resource_filter.pattern_type` uses `LITERAL`/`PREFIXED`.
 - `filter_type`: `INCLUDE` | `EXCLUDE` (API: `FILTER_TYPE_INCLUDE` / `FILTER_TYPE_EXCLUDE`). **EXCLUDE wins**; unmatched items are excluded.
 - Starting offset (one of): `start_at_earliest: {}` (default), `start_at_latest: {}`, `start_at_timestamp: <RFC3339>` — applies only to new shadow topics.

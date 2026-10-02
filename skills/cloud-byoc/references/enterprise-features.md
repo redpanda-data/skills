@@ -226,7 +226,9 @@ License behavior on expiration: reverts to `node_add`; `core_balancing_continuou
 
 ## Shadow Linking (cross-cluster disaster recovery)
 
-Shadowing is Redpanda's enterprise-grade DR: asynchronous, offset-preserving, byte-level replication between two clusters (active-passive). Supported on BYOC and Dedicated clusters on Redpanda 25.3+. It replicates topic data (offsets + timestamps preserved), topic configs, consumer group offsets, ACLs, and Schema Registry data.
+Shadowing is Redpanda's enterprise-grade DR: asynchronous, offset-preserving, byte-level replication from a source cluster to a Redpanda shadow cluster (active-passive). It replicates topic data (offsets + timestamps preserved), topic configs, consumer group offsets, ACLs, and Schema Registry data. The shadow cluster must be a BYOC or Dedicated cluster on Redpanda 25.3+.
+
+The shadow cluster reads the source over the Kafka API, so **the source does not have to be a Redpanda cluster** — it can be another Redpanda cluster or any Kafka API-compatible cluster, such as Apache Kafka, Confluent Cloud, or Confluent Platform. That makes a shadow link a migration path onto Redpanda as well as a DR topology: run the shadow cluster as a continuously updated replica alongside the existing deployment, then cut applications over. Two parts of a link still require a Redpanda source — byte-for-byte `_schemas` replication (use the HTTP-API mode below for a Confluent registry) and RBAC role synchronization (`role_sync_options`, which stays unset for a non-Redpanda source; the role sync task then reports itself unavailable while the rest of the link keeps running). Amazon MSK works as a source with SASL/SCRAM-SHA-512 enabled; MSK IAM authentication and AWS Glue Schema Registry are not supported.
 
 Driven by `rpk shadow`. In Cloud, use the `--for-cloud` flag where shown.
 
