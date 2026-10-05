@@ -1,4 +1,4 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help output, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (auth, env, connection, trigger, run, llm pricing), `cloudv2 apps/rpai/internal/gitops/`, `cloudv2 apps/rpai/.goreleaser.yaml` and publish manifest (platforms, no FIPS build), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/` (install path, lifecycle errors), `adp-docs modules/cli/`. Evidence date: 2026-09-23 (command tree, canonical group names and aliases, `rpk ai` global flags, `llm-provider create` flags including `--pricing`, `mcp-server tools`, `trigger`, `run claude`/`run codex` help, and GitOps `apply`/`diff` help re-verified against the snapshot); earlier: `run claude` transport-mode guards 2026-09-14, `auth login --no-browser` 2026-08-24, `connection` 2026-08-03. Maturity re-verified 2026-09-28 against `adp-docs modules/reference/pages/rpk/rpk-ai/` and `modules/cli/pages/index.adoc` (no Preview attribute on the `rpk ai` pages). Drift audit 2026-10-01: full command tree, `rpk ai`-mode global flags, `agent`/`a2a`/`trigger`/`policy`/`mcp-server`/`oauth-*` subcommands and `run claude`/`run codex` flags re-confirmed against `cloudv2 apps/rpai/testdata/commands-snapshot.md`; the `llm-provider` provider-config groups were corrected there (a sixth `vertex-config` group, and authorization-passthrough flags on the OpenAI-family groups).
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help output, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (auth, env, connection, trigger, run, llm pricing), `cloudv2 apps/rpai/internal/gitops/`, `cloudv2 apps/rpai/.goreleaser.yaml` and publish manifest (platforms, no FIPS build), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/` (install path, lifecycle errors), `adp-docs modules/cli/`. Evidence date: 2026-09-23 (command tree, canonical group names and aliases, `rpk ai` global flags, `llm-provider create` flags including `--pricing`, `mcp-server tools`, `trigger`, `run claude`/`run codex` help, and GitOps `apply`/`diff` help re-verified against the snapshot); earlier: `run claude` transport-mode guards 2026-09-14, `auth login --no-browser` 2026-08-24, `connection` 2026-08-03. Maturity re-verified 2026-09-28 against `adp-docs modules/reference/pages/rpk/rpk-ai/` and `modules/cli/pages/index.adoc` (no Preview attribute on the `rpk ai` pages). Drift audit 2026-10-01: full command tree, `rpk ai`-mode global flags, `agent`/`a2a`/`trigger`/`policy`/`mcp-server`/`oauth-*` subcommands and `run claude`/`run codex` flags re-confirmed against `cloudv2 apps/rpai/testdata/commands-snapshot.md`; the `llm-provider` provider-config groups were corrected there (a sixth `vertex-config` group, and authorization-passthrough flags on the OpenAI-family groups). Sync 2026-10-05: the exit-code table and `--verbose` request logging verified against `cloudv2 apps/rpai/internal/cmd/root.go` (`exitCode`, the verbose writer in `PersistentPreRunE`), `apps/rpai/internal/cmd/cmdutil/cmdutil.go` (`IsAuthError`, `VerboseHTTPClient`), `apps/rpai/internal/client/transport.go` (`verboseTransport`: method, URL, status, latency; no headers or bodies), `apps/rpai/internal/auth/token_source.go` (`ErrNotAuthenticated`), `apps/rpai/internal/cmd/exit_test.go` and `internal/client/verbose_test.go`, and against `adp-docs modules/cli/pages/index.adoc` ("Check exit codes in scripts", "Trace requests with verbose output"). Note: the published page describes exit 3 as missing or expired credentials; source shows the same code also covers a refused identity, which is why this file states both.
 
 # rpk ai CLI Reference
 
@@ -82,13 +82,15 @@ Running as an rpk plugin, some long flags are renamed to avoid colliding with rp
 |------|-------|---------|---------|-------------|
 | `--rpai-environment` | (none) | (none) | (empty) | Select a manual environment for this invocation; switch environments with `rpk ai env use` |
 | `--rpai-config` | `-c` | `RPAI_CONFIG` | `$HOME/.rpai/config` | Path to the config file |
-| `--rpai-verbose` | `-v` | `RPAI_VERBOSE` | false | Verbose debug logging to stderr |
+| `--rpai-verbose` | `-v` | `RPAI_VERBOSE` | false | One line per HTTP request on stderr: method, URL, response status, latency |
 | `--rpai-endpoint` | `-s` | (none) | `""` | Override the selected environment's AI Gateway URL for this invocation |
 | `--token` | (none) | (none; ambient `RPAI_TOKEN` is ignored under `rpk ai`) | `""` | Static bearer token override |
 | `--format` | `-o` | `RPAI_FORMAT` | `table` | Output format: `table`, `wide`, `json`, `yaml`, `markdown` |
 | `--no-color` | (none) | `NO_COLOR` | false | Disable colored output |
 
 `--rpai-endpoint` has no environment-variable binding, so it can never silently override the environment chosen with `rpk ai env use`; it takes effect only when passed for a single invocation.
+
+**`--rpai-verbose` logs requests, not payloads.** Every HTTP request the CLI makes gets one stderr line carrying the method, URL, response status, and latency — enough to see which endpoint a command called and how long it took. Request and response bodies, headers, and your bearer token never appear, so the output is safe to attach to a support ticket. `RPAI_VERBOSE` turns it on for the whole session; any value other than `0`, `false`, `no`, or `off` counts as on. The device-code exchange during `rpk ai auth login` is not logged.
 
 ## Top-level command tree
 
@@ -222,6 +224,8 @@ Aliases: `oauth-providers`, `oauth`, `op`. Subcommands: `create`, `get`, `list`,
 
 Aliases: `policies`, `pol`. Subcommands: `create`, `get`, `list`, `update` (Cedar body or metadata), `delete`, `apply`, `diff`. See [governance.md](governance.md).
 
+`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in a single command. That is the usual way to give a newly created agent any access at all, because nothing is granted to it automatically. See [governance.md](governance.md#give-a-new-agent-access).
+
 ## `trigger` subcommands
 
 Aliases: `triggers`, `agent-trigger`.
@@ -331,6 +335,19 @@ Under `rpk ai`, `run codex` rejects a static `--token`; use `rpk ai auth login`.
 ```bash
 rpk ai run codex -L openai -m gpt-5.3-codex -e high -- --ask-for-approval never
 ```
+
+## Exit codes
+
+Branch on the exit code rather than parsing messages:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. An A2A task left waiting for more input also exits `0` |
+| `1` | Any other failure: a usage error, an unreachable gateway, a rejected request, a resource that does not exist |
+| `3` | The call was not authenticated or not authorized — credentials missing or expired, or an identity the gateway refuses |
+| `4` | An A2A task ended failed, canceled, or rejected. The call itself worked, so this is the task's own outcome rather than a transport error |
+
+Separating `3` from `1` is what lets a scheduled job re-authenticate instead of treating an expired token as a broken command: on `3`, run `rpk ai auth login` and retry. A second `3` after a fresh login is a permissions problem, not a credentials problem — re-authenticating again will not help; map the refused operation to its permission and grant it (see [governance.md](governance.md#roles-and-permissions)).
 
 ## Common errors
 
