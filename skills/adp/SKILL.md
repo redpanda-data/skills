@@ -56,7 +56,7 @@ See [references/mcp-servers.md](references/mcp-servers.md).
 
 ### AI Gateway and LLM providers
 
-The AI Gateway is a managed HTTP proxy. It stores upstream credentials in the Redpanda secret store and injects them on outbound requests, so calling applications never see raw keys. Per-provider URL: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers with `rpk ai llm-provider`, and discover models with `rpk ai model list`. Provider types include OpenAI, Anthropic, Google, AWS Bedrock, and OpenAI-compatible endpoints; confirm the current set with `rpk ai llm-provider create --help`.
+The AI Gateway is a managed HTTP proxy. It stores upstream credentials in the Redpanda secret store and injects them on outbound requests, so calling applications never see raw keys. Per-provider URL: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers with `rpk ai llm-provider`, and discover models with `rpk ai model list`. Provider types include OpenAI, Anthropic, Google, Amazon Bedrock, and OpenAI-compatible endpoints; confirm the current set with `rpk ai llm-provider create --help`.
 
 **Scope:** the gateway injects credentials. It does not do routing, failover, cross-provider load balancing, or request rate limiting. To cap spend, use budgets.
 
@@ -66,7 +66,7 @@ See [references/gateway-and-providers.md](references/gateway-and-providers.md).
 
 - **Budgets** (UI): per-agent spend caps over a daily, weekly, or monthly period, with a warning threshold. A capped agent's LLM calls get `HTTP 429` until the period resets.
 - **Cost and usage** (UI): spend and token reporting, groupable by cost-allocation tags taken from agent tags.
-- **Guardrails** (Preview; UI to author, `rpk ai llm-provider update --guardrail` to attach): content safety backed by AWS Bedrock Guardrails. Policy types are content filters, word filters, denied topics, sensitive information (PII), contextual grounding, and automated reasoning.
+- **Guardrails** (Preview; UI to author, `rpk ai llm-provider update --guardrail` to attach): content safety backed by Amazon Bedrock Guardrails. Policy types are content filters, word filters, denied topics, sensitive information (PII), contextual grounding, and automated reasoning.
 - **Access policies** (`rpk ai policy`, UI): Cedar policies that decide *whether* a call runs. A new agent has no policy of its own; `rpk ai policy create --agent <name> --template <template>` binds one.
 - **Roles and permissions**: every operation checks one fine-grained permission (`dataplane_adp_*`, `dataplane_aigateway_*`). Among built-in roles only Admin carries ADP permissions; everyone else gets access through policies, which name action IDs such as `Action::"LLMProvider.invoke"`, not permission strings.
 - **Data policies** (Preview): shape *what data* a permitted MCP call exposes, and to whom.
@@ -132,6 +132,7 @@ rpk ai model list                      # model catalog (optionally --provider-ty
 - **The audit log records calls, not MCP session traffic.** MCP session setup and keep-alive messages are recorded only when denied or errored. Never count sessions, or conclude that no session happened, from the audit log.
 - **A GitOps manifest is the complete desired state.** `rpk ai <group> apply` / `diff` compare every writable field. A field left out of the manifest is compared as its empty value, so removing it from the manifest counts as drift; it does not mean "leave it alone". Start from `get -o yaml`. Neither command prunes resources missing from the manifests. See [rpk-ai.md](references/rpk-ai.md#gitops-apply-and-diff).
 - **`connection` manages your own OAuth grants.** `rpk ai connection list` / `revoke <provider>` act only on your connections. Connections are created through the browser consent flow, not the CLI.
+- **Bedrock naming.** Write Amazon Bedrock, the vendor's name, in prose. The ADP UI labels the LLM provider type tile and the managed MCP server type `AWS Bedrock`, so use that exact string only when naming those controls.
 
 ## Control-plane MCP server
 
