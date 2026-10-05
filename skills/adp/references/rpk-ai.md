@@ -224,7 +224,7 @@ Aliases: `oauth-providers`, `oauth`, `op`. Subcommands: `create`, `get`, `list`,
 
 Aliases: `policies`, `pol`. Subcommands: `create`, `get`, `list`, `update` (Cedar body or metadata), `delete`, `apply`, `diff`. See [governance.md](governance.md).
 
-`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in a single command. That is the usual way to give a newly created agent any access at all, because nothing is granted to it automatically. See [governance.md](governance.md#give-a-new-agent-access).
+`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in a single command. That is how you give a newly created agent its first policy, because none is written for it at create time. See [governance.md](governance.md#give-a-new-agent-access).
 
 ## `trigger` subcommands
 
