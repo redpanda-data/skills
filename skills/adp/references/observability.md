@@ -1,4 +1,4 @@
-Source: `cloudv2 apps/rpai/internal/cmd/agent/transcript.go` (transcript list/get flags, columns, output) and `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent` command tree, `trigger runs`, global flags); `adp-docs modules/monitor/pages/transcripts.adoc`, `adp-docs modules/monitor/pages/audit-log.adoc`, `adp-docs modules/monitor/pages/agent-network.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc`, `adp-docs modules/get-started/pages/adp-quickstart.adoc` (Home page); `cloudv2 adp/RELEASE_NOTES.md` (shipped-feature checks). Evidence date: 2026-09-23. The grouped-call flow and the event detail pane re-verified 2026-09-28 against `adp-docs modules/monitor/pages/audit-log.adoc`.
+Source: `cloudv2 apps/rpai/internal/cmd/agent/transcript.go` (transcript list/get flags, columns, output) and `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent` command tree, `trigger runs`, global flags); `adp-docs modules/monitor/pages/transcripts.adoc`, `adp-docs modules/monitor/pages/audit-log.adoc`, `adp-docs modules/monitor/pages/agent-network.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc`, `adp-docs modules/get-started/pages/adp-quickstart.adoc` (Home page); `cloudv2 adp/RELEASE_NOTES.md` (shipped-feature checks). Evidence date: 2026-09-23. The grouped-call flow and the event detail pane re-verified 2026-09-28 against `adp-docs modules/monitor/pages/audit-log.adoc`. Sync 2026-10-05: the transcript context-compaction markers (Detailed view only, the proactive and reactive passes, dropped messages and pruned tool results, the seven request parts with before/after sizes, estimates rather than billed usage) verified against `adp-docs modules/monitor/pages/transcripts.adoc` (Context compaction), `modules/connect/pages/concepts.adoc` (context-window limits) and `modules/monitor/pages/troubleshoot-ai-agents.adoc`.
 
 # Agentic Data Plane Observability Reference
 
@@ -78,6 +78,15 @@ Filter flags (all optional, ANDed):
 **Finding the slow step:** the Detailed view gives a turn's total latency and each tool call's duration, but not each model call's duration. Subtract tool time from turn latency. What remains is model time.
 
 **Cost:** transcripts show tokens, not dollars. For spend by agent, model, or user, use **Cost and usage** (see [governance.md](governance.md)).
+
+### Context compaction
+
+A managed agent reduces its own context to stay inside the model's window. The **Detailed** view marks each reduction with a **Context compacted** marker at the point it happened, carrying the estimated request size before and after the pass. These markers are a **Detailed**-view feature; **Chat** view does not show them.
+
+- A long conversation can carry several markers, and a single turn can carry more than one: an agent compacts either when its own estimate nears the limit before a model step, or after the provider rejects a request as too large. Hover the marker to see which of the two ran.
+- Expand a marker for what the pass removed: how many whole messages it dropped and how many tool results it replaced with short markers (a pass that removed neither says so), plus the before and after size split across the parts that make up a request — system prompt, tool definitions, text, reasoning, tool calls, tool results, and framing. A part that is empty on both sides is left out.
+- **These sizes are the agent's own estimate of what it was about to send, not billed usage**, so they do not reconcile with the turn's token totals. Use them to see what the agent dropped, and **Cost and usage** for spend.
+- No markers means either the conversation never compacted or the agent does not report compaction — not that nothing was dropped. Missing early messages, or tool results replaced by short markers, is normal in a long conversation and not a fault; the markers are how you tell a compacted detail apart from one the agent never had.
 
 ## Audit log (UI)
 

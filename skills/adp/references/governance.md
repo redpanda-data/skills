@@ -1,4 +1,4 @@
-Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc` (roles and permissions); adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against `cloudv2` source (2026-09-21). Evidence date: 2026-09-23 (re-verified against the snapshot and the docs pages above; the Slack `user_scope` handling, reuse exclusion, and `invalid_grant` behavior are carried from 2026-09-21). Re-verified 2026-09-28: the per-provider pricing rule against `adp-docs modules/control/pages/cost-usage.adoc`, and the built-in roles table and access-policy scope against `modules/control/pages/permissions-overview.adoc`, `permissions-reference.adoc`, and `access-policies.adoc`.
+Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc` (roles and permissions); adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against `cloudv2` source (2026-09-21). Evidence date: 2026-09-23 (re-verified against the snapshot and the docs pages above; the Slack `user_scope` handling, reuse exclusion, and `invalid_grant` behavior are carried from 2026-09-21). Re-verified 2026-09-28: the per-provider pricing rule against `adp-docs modules/control/pages/cost-usage.adoc`, and the built-in roles table and access-policy scope against `modules/control/pages/permissions-overview.adoc`, `permissions-reference.adoc`, and `access-policies.adoc`. Sync 2026-10-05: the agent-policy binding flags (`--agent`, `--template`, the `<id>-access` derived name, the `redpanda.com/agent-self` tag, the client-side principal check, the 63-character name limit and the seeded template aliases) verified against `cloudv2 apps/rpai/internal/cmd/policy/create.go` and `doc.go` and `apps/adp-api/internal/seed/`; the removal of the seeded per-agent grant against `cloudv2 apps/rpai/internal/cmd/agent/create.go` (`noAccessNotice`, stderr writer, stdout left as the printed object) and its tests in `agent/cmd_test.go`; the outbound registration ladder and CIMD rung against `cloudv2 apps/aigw/internal/services/oauthprovider/cimd.go`, `provision.go`, `service.go` and `proto/public/cloud/redpanda/api/adp/v1alpha1/oauth_provider.proto` (`cimd_client`, output-only); the mask-versus-row-membership limit against `adp-docs modules/connect/pages/data-policies.adoc` (Limitations) and `modules/connect/pages/managed/jira.adoc`. The no-policy-at-create wording re-checked 2026-10-05 against `adp-docs modules/connect/pages/create-agent.adoc` (Create the agent) and `modules/control/pages/access-policies.adoc` (Grant an agent its own permissions, including the self-managed Access section and the pre-existing `Agent grant` policy); neither page states that a policy-less agent's runtime calls are refused, so this file does not either. The tool-call remedy checked the same day against `adp-docs modules/connect/pages/data-policies.adoc` (Limitations: deny `McpServerTool.call` on that one tool) and `access-policies.adoc` (the only tool resource form shown is per-server); no single-tool resource form is published. The audit-log status detail for a call that bypassed policy evaluation is from `adp-docs modules/monitor/pages/audit-log.adoc`.
 
 # Agentic Data Plane Governance Reference
 
@@ -148,6 +148,30 @@ rpk ai policy diff -f policies/                  # exits non-zero when drift is 
 
 `--cedar` and `--cedar-file` are mutually exclusive, and the body must contain exactly one statement. `--etag` gives optimistic concurrency on update and delete.
 
+### Give a new agent access
+
+**A new agent has no policy of its own.** Creating an agent writes no policy for it, so you decide what it may reach. `rpk ai agent create` prints a notice on **stderr** saying the agent has no access until a policy names it, with the two commands below, leaving stdout as the created object so `-o json` output stays parseable. In the UI, a managed agent's **Permissions** tab warns until you author one. Registering a self-managed agent in the UI is the exception: its create page carries a required **Access** section that writes the first policy for you. Whether a given call was checked against policies at all shows in the audit log: a call that bypassed policy evaluation carries the status detail `allowed by internal-caller exemption; no policy evaluated` (see [observability.md](observability.md#audit-log-ui)).
+
+<!-- TODO(human): the CLI notice says a new agent "has no access until a policy names it"; the published docs stop at "has no policy of its own" plus the Permissions tab's warning, and do not state that a policy-less agent's runtime calls are refused. Keep this section at the docs' level until a human confirms which to state. -->
+
+Two `create` paths bind a policy to one agent:
+
+```bash
+# Bind a built-in template (least to most access: readonly, sandboxed, standard, full)
+rpk ai policy create --agent invoice-triage --template sandboxed
+
+# Or supply Cedar whose principal is that agent
+rpk ai policy create --agent invoice-triage --cedar-file grant.cedar
+```
+
+- `--agent` takes the agent ID or the `agents/<id>` resource name that `rpk ai agent list` prints; the prefixed form is normalized, so the policy never binds `Agent::"agents/<id>"`, which would save and then never match.
+- `--agent` defaults `--name` to `<agent-id>-access` and tags the policy `redpanda.com/agent-self: <agent-id>`. `--name` is required whenever `--agent` is not set, and must be passed explicitly when the derived name would exceed the 63-character policy-name limit.
+- With `--agent` and a Cedar body, the CLI parses the body and refuses it unless the principal is exactly `Agent::"<agent-id>"`; the error names the principal it found. This fails before the request is sent, because a body naming any other principal would save and never match the agent's token.
+- `--template` resolves one of the built-in aliases (`readonly`, `sandboxed`, `standard`, `full` — the templates the UI lists as *Read only*, *Sandboxed*, *Standard* and *Full access*; see [Templates and built-in policies](#templates-and-built-in-policies)) or takes a `policyTemplates/<id>` resource name, so a template you authored is bindable too. It requires `--agent`, and is mutually exclusive with `--cedar` / `--cedar-file`.
+- Creating a second grant under the derived name reports that the policy already exists. Pass an explicit `--name` for an additional policy, or change the existing one with `rpk ai policy update`.
+
+The UI offers the same binding from the agent's **Permissions** tab.
+
 ### Evaluation rules
 
 - Default deny: a request is denied unless a `permit` matches.
@@ -211,7 +235,7 @@ Points worth knowing:
 - Redpanda compiles role bindings into permits automatically, so they take part in the same evaluation as your policies. The **Roles** and **System policies** tabs show them read-only.
 - **Templates** (**Access** → **Templates**) fix an action set and effect; a policy links a template and supplies the principal and scope. Built-in templates: *Read only*, *Sandboxed*, *Standard*, *Full access* (each a superset of the previous; all grant transcript and session reads). Built-ins can't be edited; a template is a live link, so editing one changes every linked policy.
 - Built-in, read-only managed policies: *Owner lifecycle* (users can get/update/delete what they created), *Self-service OAuth connections* (users manage their own connections), and *Agent capability ceiling* (agents can never mint credentials or control OAuth clients, providers, DCR settings, or the token vault).
-- Each new agent gets an editable `Agent grant: <agent-name>` policy (MCP session access, LLM invocation, agent-to-agent calls). Deleting it can leave the agent's own calls denied. Author an agent's own grants from its **Permissions** tab.
+- **No policy is created for a new agent.** An agent created before Agentic Data Plane began asking for this decision carries an editable `Agent grant: <agent-name>` policy covering MCP session access, LLM invocation and agent-to-agent calls. It is a starting point, not a managed policy, so you can edit or delete it, and a deleted grant is not recreated. An agent created now gets no such policy and needs one bound to it — see [Give a new agent access](#give-a-new-agent-access).
 
 ## Data policies (MCP data shaping)
 
@@ -230,6 +254,8 @@ Transforms:
 - **Row filters** (response): name the array path (`$.body`, `$.result`, or `$`) and a predicate such as `@.priority >= 8` or `@ != "restricted"`. Elements the predicate can't evaluate never survive; predicates on the same array conjoin.
 
 **Preview in the UI:** the **Configuration** tab shows the composed effect for the selected tool across all of the server's policies (including unsaved edits); the **Preview** tab runs sample request and response data through the live shaping code, side by side, and shows masked/dropped/added/filtered counts or a "would be denied" banner.
+
+**A mask hides values, not which records hold them.** On a server that also exposes its data as read-only SQL tables, a caller who can run `execute_query` can filter on a masked column that the table declares filterable, and whether any rows come back tells them whether the value they filtered for exists. Treat a mask as value-hiding only. To stop a caller learning which records exist, withhold `execute_query` from them rather than relying on the mask. The documented remedy is an access policy that denies `McpServerTool.call` on that one tool; the docs publish no single-tool resource form, only the per-server one (`resource is McpServerTool in McpServer::"<name>"`), so until that form is confirmed, deny that caller the server's tools, leave SQL table exposure off on the server they reach, or expose the tables from a separate server. See [mcp-servers.md](mcp-servers.md#sql-table-exposure-on-a-managed-connector).
 
 Other limits: on legacy SSE self-managed servers, calls matching a policy with response rules are denied. A *Not enforced here* badge means rules save but don't apply on that gateway. The audit log records each matching data policy as Blocked, Masked, or Passed.
 
@@ -281,6 +307,24 @@ CIMD works only when **all three** hold: the switch is on, *Allowed resources* i
 CLI: `rpk ai oauth-provider` (aliases `oauth`, `op`; `create`, `get`, `list`, `update`, `delete`, `apply`, `diff`). UI: **Integrations setup** → **Outbound providers** → **Add provider** (catalog preset, *Custom Provider*, or *Discover from MCP server URL*).
 
 User-configured settings: name (positional, immutable), display name, authorization / token / revocation endpoints, client ID (immutable), client-secret reference (secret-store key in `UPPER_SNAKE_CASE`), scopes, grant types (select browser consent; token exchange is not usable), token-endpoint auth method, PKCE required, extra auth/token params, `--register-from-url` (discovery), `--enabled` (a new provider is **disabled** unless set), and, for Slack, the token type below. You can't delete a provider while an MCP server uses it; deleting one revokes every stored user token for it. Providers Redpanda creates for an MCP server are *Managed* and can't be edited or deleted.
+
+#### How discovery registers this gateway (DCR and CIMD)
+
+*Discover from MCP server URL* (CLI `--register-from-url`) points Redpanda at a remote MCP server and lets it work out the upstream OAuth setup. Registering this gateway as a client with the upstream authorization server follows a ladder, in order:
+
+1. **Credentials you supply** — the client ID and client-secret reference you enter yourself.
+2. **Client ID Metadata Documents (CIMD)**, where the upstream authorization server advertises support. The gateway identifies itself by the HTTPS URL of a metadata document it publishes about itself; that URL *is* the `client_id`. Nothing is registered upstream, which is why this rung is tried before DCR.
+3. **Dynamic Client Registration (RFC 7591)**, where the upstream offers a registration endpoint.
+4. **Manual setup** — you register the client with the upstream yourself and enter its credentials.
+
+What follows from that:
+
+- An upstream whose OAuth setup supports **only** CIMD, with no DCR, connects through this same discovery flow; it does not need manual setup.
+- A CIMD `client_id` is a public document URL, not a secret. It is the identity the upstream vendor sees, so it is the value to hand over for an allowlist, and the URL to open when an authorization request is rejected. Discovery reports it.
+- CIMD needs this deployment to know its own external HTTPS address. Where it cannot, discovery falls back to the DCR rung.
+- `rpk ai oauth-provider get <name> -o yaml` marks a provider admitted on the CIMD rung with `cimd_client: true`. It is set by the system at creation and is not a field you write. Such a provider holds no client registration at the upstream authorization server.
+
+This is the **outbound** direction. The separate inbound setting that admits *other* clients to this gateway by metadata document is [above](#inbound-client-registration-dcr-and-cimd); the two are independent.
 
 #### Slack: whose identity the connection acts as (`slack_token_type`)
 

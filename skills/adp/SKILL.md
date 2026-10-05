@@ -67,7 +67,7 @@ See [references/gateway-and-providers.md](references/gateway-and-providers.md).
 - **Budgets** (UI): per-agent spend caps over a daily, weekly, or monthly period, with a warning threshold. A capped agent's LLM calls get `HTTP 429` until the period resets.
 - **Cost and usage** (UI): spend and token reporting, groupable by cost-allocation tags taken from agent tags.
 - **Guardrails** (Preview; UI to author, `rpk ai llm-provider update --guardrail` to attach): content safety backed by AWS Bedrock Guardrails. Policy types are content filters, word filters, denied topics, sensitive information (PII), contextual grounding, and automated reasoning.
-- **Access policies** (`rpk ai policy`, UI): Cedar policies that decide *whether* a call runs.
+- **Access policies** (`rpk ai policy`, UI): Cedar policies that decide *whether* a call runs. A new agent has no policy of its own; `rpk ai policy create --agent <name> --template <template>` binds one.
 - **Roles and permissions**: every operation checks one fine-grained permission (`dataplane_adp_*`, `dataplane_aigateway_*`). Among built-in roles only Admin carries ADP permissions; everyone else gets access through policies, which name action IDs such as `Action::"LLMProvider.invoke"`, not permission strings.
 - **Data policies** (Preview): shape *what data* a permitted MCP call exposes, and to whom.
 - **OAuth**: inbound clients (including Dynamic Client Registration), outbound providers, and per-user connections.
@@ -92,6 +92,8 @@ rpk ai env list               # list local and live ADP environments
 rpk ai env use <environment>  # select the environment whose AI Gateway becomes the target
 rpk ai agent list             # now works
 ```
+
+Scripts can branch on the exit code: `3` is an authentication or authorization failure (re-login and retry once), `4` is an A2A task that ended failed, canceled, or rejected, `1` is anything else. See [rpk-ai.md](references/rpk-ai.md#exit-codes).
 
 `rpk ai auth status` shows token state; `rpk ai env show` prints the resolved environment. For headless use, pass `--token <bearer>`. Under `rpk ai` an ambient `RPAI_TOKEN` environment variable is **ignored**. To override the gateway endpoint for one invocation, pass `--rpai-endpoint <url>`; it is flag-only. Define a local gateway with `rpk ai env add <name> --ai-gateway-url <url> --auth-mode none`.
 
@@ -119,6 +121,7 @@ rpk ai model list                      # model catalog (optionally --provider-ty
 - **Cost unit.** The UI shows dollars. Raw cost values in manifests or `-o yaml` output are **USD microcents** ($1 = 100,000,000 microcents). Never treat them as cents.
 - **Creating an LLM provider turns transcript content capture ON.** If the create does not mention transcripts, prompts and completions are recorded verbatim. To opt out, pass `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set them in the manifest). Existing providers are not changed. See [gateway-and-providers.md](references/gateway-and-providers.md#transcript-recording-defaults-to-on).
 - **A passthrough provider takes two credentials and cannot be health-checked.** With authorization passthrough, the caller's upstream credential goes in `Authorization` and the Redpanda Cloud token in `X-Redpanda-Cloud-Token`. On OpenAI-family providers, a call without the gateway header is refused with **HTTP 400**, and an upstream redirect becomes **HTTP 502**. A connection check reports it as not configured, which is expected; don't gate a create on it. See [gateway-and-providers.md](references/gateway-and-providers.md#authorization-passthrough).
+- **A new agent has no policy of its own.** Creating an agent writes no policy for it. `rpk ai agent create` says so on stderr (its notice reads that the agent has no access until a policy names it) and keeps stdout parseable, and in the UI a managed agent's **Permissions** tab warns until you author one. Bind one with `rpk ai policy create --agent <name> --template readonly|sandboxed|standard|full`, or with Cedar whose principal is that agent. Registering a self-managed agent in the UI is the exception: its required **Access** section writes the first policy for you. See [governance.md](references/governance.md#give-a-new-agent-access).
 - **Agent writes are model-checked.** Create and update reject a model the provider type does not know, and on Bedrock also a model not enabled on the provider. OpenAI-compatible providers are not model-checked. See [agents.md](references/agents.md#write-time-validation).
 - **Reasoning effort is a provider-owned string, validated per model.** Set `reasoning.effort` in the agent manifest using the exact spelling the model catalog lists for every model the agent and its subagents use. Never assume a level exists, and leave it unset on OpenAI-compatible providers. See [agents.md](references/agents.md#reasoning-effort).
 - **Subagent MCP servers are independent.** A subagent's MCP server list is not a subset of its parent's, and agents reach tools only through MCP server references.
