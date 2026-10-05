@@ -231,7 +231,7 @@ The AI Gateway is a managed HTTP proxy. Each provider has its own URL (copy it f
 - Inbound clients authenticate with short-lived tokens: `rpk ai auth login` / `rpk ai auth token` for local use, OIDC client credentials for applications and self-managed agents.
 - Spend, requests, and tokens are recorded per provider (list view, provider Overview, **Cost and usage**).
 - Optionally captures message bodies — on by default for new providers; see [Transcript recording defaults to ON](#transcript-recording-defaults-to-on).
-- Optionally evaluates an attached guardrail before forwarding. On non-Bedrock providers, guardrail evaluation sends prompt and response text to AWS Bedrock Guardrails, even when the provider itself is self-hosted.
+- Optionally evaluates an attached guardrail before forwarding. On non-Bedrock providers, guardrail evaluation sends prompt and response text to Amazon Bedrock Guardrails, even when the provider itself is self-hosted.
 
 ## Not in scope
 

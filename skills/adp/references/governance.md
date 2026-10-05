@@ -85,7 +85,7 @@ Cost-allocation tags reuse the key/value tags on an agent (set in the agent form
 
 **Preview.** Create and configure guardrails in the UI (**Guardrails** in the sidebar). The CLI can only attach and detach them from LLM providers.
 
-A guardrail is a bundle of safety policies backed by **AWS Bedrock Guardrails**. It inherits the credentials and region of the Bedrock LLM provider you pick at creation, so a Bedrock provider must exist first. The name and provider connection are fixed after creation.
+A guardrail is a bundle of safety policies backed by **Amazon Bedrock Guardrails**. It inherits the credentials and region of the Bedrock LLM provider you pick at creation, so a Bedrock provider must exist first. The name and provider connection are fixed after creation.
 
 ### Create and enable (UI)
 

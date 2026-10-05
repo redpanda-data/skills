@@ -95,7 +95,7 @@ There is no `tools` field on an agent: agents reach tools only through `mcp_serv
 
 **Transcript recording.** Under **Advanced → Transcripts** the UI offers **Full transcripts** (default), **Metadata only** (no message or tool content), and **Off** (no traces; the Transcripts tab stays empty). This setting alone decides what the agent's transcripts hold; the LLM provider's record-inputs/outputs toggles are separate. It does not affect cost and usage reporting. <!-- TODO(human): confirm the manifest field name for the agent-level transcript recording mode; it is documented as a UI setting only and is not in the CLI flag tables. -->
 
-**Bedrock output cap.** For a Claude model on an AWS Bedrock provider, a managed agent caps each model call's output at 16,384 tokens (not configurable), so a long answer can be truncated. The same applies to subagent overrides.
+**Bedrock output cap.** For a Claude model on an Amazon Bedrock provider, a managed agent caps each model call's output at 16,384 tokens (not configurable), so a long answer can be truncated. The same applies to subagent overrides.
 
 ## Write-time validation
 
@@ -105,7 +105,7 @@ Create and update validate a managed spec's references before saving, so a bad r
 
 **Model must be valid for the provider.** Each effective `(model, llm_provider)` pair, including every subagent after inheritance, is checked:
 
-1. **Catalog check — OpenAI, Anthropic, Google, and AWS Bedrock providers.** The model must be one the agent runtime can resolve: an exact model ID, an official alias, a dated version, or a retired model the catalog still knows. A plausible-looking but unpublished name is rejected with a message like `model "…" is not a known <provider> model, so a managed agent could not start with it; pick a model from the provider's model list or check the spelling`. On Bedrock the check depends on the provider's region and suggests the full inference-profile form (for example `us.anthropic.<model>` rather than a bare model name).
+1. **Catalog check — OpenAI, Anthropic, Google, and Amazon Bedrock providers.** The model must be one the agent runtime can resolve: an exact model ID, an official alias, a dated version, or a retired model the catalog still knows. A plausible-looking but unpublished name is rejected with a message like `model "…" is not a known <provider> model, so a managed agent could not start with it; pick a model from the provider's model list or check the spelling`. On Bedrock the check depends on the provider's region and suggests the full inference-profile form (for example `us.anthropic.<model>` rather than a bare model name).
 2. **Enabled on the provider — Bedrock only.** The model must also be in the provider's `provider_models` list: `model "…" is not enabled on llm_provider "…"; enable it on the provider or pick one of its models`. A provider with an **empty** `provider_models` list serves whatever Bedrock accepts, so this check is skipped.
 
 Scoping rules:
