@@ -152,7 +152,7 @@ Output table (one row per cluster node):
 | Column | Description |
 |---|---|
 | NODE-ID | Broker node ID |
-| ENABLED | `true` if the node is currently draining |
+| ENABLED | `true` if maintenance mode is enabled on the node; stays `true` after the drain finishes (see FINISHED) |
 | FINISHED | Leadership drain is complete (only populated when ENABLED=true) |
 | ERRORS | Errors encountered during drain (check broker logs for detail) |
 | PARTITIONS | Number of partitions whose leadership has moved |
