@@ -25,17 +25,30 @@ unreachable, etc.), 2 for unhandled panics.
 
 | Field | Description |
 |---|---|
+| `cluster_uuid` | Cluster UUID. Omitted when rpk cannot read it; health is still reported |
 | `is_healthy` | Boolean overall health status |
 | `unhealthy_reasons` | List of human-readable reasons when unhealthy |
 | `controller_id` | Node ID of the current raft controller leader |
 | `all_nodes` | All node IDs in the cluster |
 | `nodes_down` | Node IDs that are not responding |
+| `nodes_in_maintenance` | Node IDs currently draining in maintenance mode (v26.2.2+) |
 | `nodes_in_recovery_mode` | Node IDs currently in recovery mode |
 | `leaderless_partitions` | List of partitions (ns/topic/partition) without a leader (truncated after a threshold) |
 | `leaderless_count` | Total leaderless partition count (available v23.3+) |
 | `under_replicated_partitions` | Partitions with fewer in-sync replicas than required |
 | `under_replicated_count` | Total URP count (available v23.3+) |
 | `high_disk_usage_nodes` | Node IDs exceeding the configured disk usage threshold |
+
+**`nodes_in_maintenance` is derived, not a health-overview field.** rpk builds it from the
+Admin API broker list (brokers whose maintenance status is `draining`), separately from the
+health-overview request. If that broker call fails, rpk logs a warning, leaves the list empty,
+and still reports health — so an empty list means "none draining, or status unavailable." A
+draining node does not by itself make the cluster unhealthy: the `is_healthy` verdict and the
+exit code come from the health overview alone. In text output the line is printed only when at
+least one node is draining.
+
+The field set evolves by rpk and broker version. Rather than trusting this table, list the
+fields of the current binary with `rpk cluster health --format help`.
 
 `--watch` polls every 2 s and prints only when the output changes.
 
