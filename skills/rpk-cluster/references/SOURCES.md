@@ -23,7 +23,10 @@ Critical scope distinction: the `rpk cluster` **commands** are defined in rpk Go
 - `rpk cluster <cmd> --help` and the live command tree — introspect rather than trust a static list.
 - **Cluster-config property keys, types, defaults, and `is_enterprise` flags** (`config.md` "Common Cluster Config Properties" table, the enterprise table in `enterprise-features.md`) — these are **broker** config from `src/v/config/configuration.cc`, surfaced live via `rpk cluster config list` / the Admin API. The citation of record is the docs partials (`cluster-properties.adoc`, `object-storage-properties.adoc`), NOT rpk. Do not treat a schema-value change as rpk drift.
 - `rpk cluster config get <key>` / `list` / `status` output — runtime values.
-- `rpk cluster health` field set and JSON shape — Admin API runtime output (fields evolve by broker version).
+- `rpk cluster health` field set and JSON shape — Admin API runtime output (fields evolve by
+  rpk and broker version). The field table in `health-and-selftest.md` is a convenience map,
+  not a pinned contract: introspect the current binary with `rpk cluster health --format help`
+  (rpk renders it from the `healthResponse` struct in `cluster/health.go`).
 - `rpk cluster self-test status` results and the disk/network/cloud test-suite composition — produced by the **broker** self-test subsystem; rpk only displays them.
 - `rpk cluster quotas describe` values and quota-key set — Kafka-protocol runtime values.
 - `rpk cluster license info` fields and violation state — runtime license state.
@@ -34,6 +37,21 @@ Critical scope distinction: the `rpk cluster` **commands** are defined in rpk Go
 - ~~No `rpk cluster brokers` reference pages exist~~ **SUPERSEDED (2026-07-28):** Redpanda **v26.2 added the `rpk cluster brokers` subgroup** (`decommission`/`decommission-status`/`recommission`), sourced from `src/go/rpk/pkg/cli/cluster/brokers/`. This is now the canonical location; the old `rpk redpanda admin brokers` (`src/go/rpk/pkg/cli/redpanda/admin/brokers/`) is a hidden, deprecated wrapper that forwards to it. Skill files updated for v26.2.1. The generated docs pages may still lag the release.
 - **Enterprise property defaults / enterprise-vs-sanctioned values** in `enterprise-features.md` and `config.md` were not each line-verified against `configuration.cc`. Re-check individual defaults against the property partials and source schema.
 - ~~`cloud_topics_enabled` schema classification~~ **RESOLVED (2026-10-01, drift audit):** at v26.2.2 it is declared as a bare `deprecated_property` in `src/v/config/configuration.cc` (so not enterprise-flagged), and it is **deprecated as of v26.2.1 and ignored** — the docs list it under `modules/reference/partials/deprecated/deprecated-properties.adoc` and `modules/upgrade/pages/deprecated/index.adoc` ("setting it has no effect"). Cloud Topics now need only `cloud_storage_enabled=true`, with `redpanda.storage.mode=cloud` per topic (`modules/develop/pages/manage-topics/cloud-topics.adoc`). Skill files corrected.
+- **`rpk cluster health` maintenance status (rpk v26.2.2+):** `healthResponse` gained
+  `nodes_in_maintenance`, built rpk-side from the Admin API broker list rather than from the
+  health-overview response. It selects brokers whose `maintenance_status.draining` is `true`;
+  per the Admin API schema (`src/v/redpanda/admin/api-doc/broker.json`) and
+  `fill_maintenance_status` in `src/v/redpanda/admin/server.cc`, that flag means "maintenance
+  mode is enabled" and stays `true` after the drain finishes (`finished` is the separate
+  completion flag). The list is always an array, is left empty when the broker call fails (the
+  failure is logged only under `-v`/`--verbose` — rpk's logger is a no-op otherwise, see
+  `BuildLogger` in `src/go/rpk/pkg/config/params.go`), does not affect the `is_healthy` verdict
+  or the exit code, and is excluded from the `--watch` reprint comparison (which covers the
+  health overview only). Added to `health-and-selftest.md` for v26.2.2; wording corrected
+  2026-10-06 after review ("maintenance mode enabled", not "draining"), and the ENABLED column
+  description in `brokers-maintenance.md` was corrected the same way. The pre-existing
+  `cluster_uuid` field was missing from the same table and was added in the same pass. Source
+  `src/go/rpk/pkg/cli/cluster/health.go`.
 - `rpk cluster txn` exists in source but is only named in `SKILL.md`. If it gains coverage, cite `cluster/txn/`. (`connections` gained SKILL.md coverage on 2026-07-07 — cite `cluster/connections/` + `rpk-cluster-connections-list.adoc`.)
 - **`rpk cluster loggers` (v26.2+):** the `loggers/` subgroup — anticipated and previously dismissed as drift — is now real and GA. `list`/`set` manage broker log levels via the Admin API; source `src/go/rpk/pkg/cli/cluster/loggers/`. Covered in `SKILL.md`. The list of available loggers is broker-version specific — deferred to `rpk cluster loggers list` (do NOT hardcode it).
 - **`rpk cluster upgrade` (v26.2+):** `status`/`finalize` manage deferred major-version upgrade finalization via the Admin API `FeaturesService`; source `src/go/rpk/pkg/cli/cluster/upgrade/`. Tied to the cluster config `features_auto_finalization` (broker config in `configuration.cc`). Covered in `SKILL.md`.
