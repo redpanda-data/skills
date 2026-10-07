@@ -1,0 +1,8 @@
+{
+  "cloud": "AWS",
+  "multi_az": true,
+  "workloads": [
+    { "ingress_mbps": 50, "egress_mbps": 150, "partitions": 1000 }
+  ],
+  "growth": { "months": 12, "annual_pct": 100, "partition_annual_pct": 50, "start": "2027-01" }
+}
