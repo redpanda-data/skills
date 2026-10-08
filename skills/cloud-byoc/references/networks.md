@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/network.proto`, `network_peering.proto`, `common.proto` (field names and constraints); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 + RFC 6598 ranges and the “block size between /16 and /20” note). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/network.proto`, `network_peering.proto`, `common.proto` (field names and constraints); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, whose `IsPrivate()` check admits RFC 1918 only, so RFC 6598 `100.64.0.0/10` is rejected; `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 ranges and the “block size between /16 and /20” note). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Networks
 
@@ -50,7 +50,7 @@ curl -s -X POST "${BASE}/v1/networks" \
   }' | jq .
 ```
 
-**CIDR constraint:** A private IPv4 CIDR with a prefix length between /16 and /20 — a /20 is the smallest block the API accepts, and a /21 is rejected. Use an RFC 1918 range (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`); BYOC also accepts the RFC 6598 carrier-grade NAT range `100.64.0.0/10`. Pick a range that does not overlap any network you plan to peer with. See [Choose CIDR Ranges](https://docs.redpanda.com/redpanda-cloud/networking/cidr-ranges/).
+**CIDR constraint:** A private IPv4 CIDR with a prefix length between /16 and /20 — a /20 is the smallest block the API accepts, and a /21 is rejected. Use an RFC 1918 range (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and pick a range that does not overlap any network you plan to peer with. See [Choose CIDR Ranges](https://docs.redpanda.com/redpanda-cloud/networking/cidr-ranges/).
 
 ### Option B: Customer-Managed VPC (BYOVPC)
 
