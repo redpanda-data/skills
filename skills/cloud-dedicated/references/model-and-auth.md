@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `cluster.proto` (`Cluster.Type`), `network.proto` (`cluster_type` validation), `resource_group.proto` (`/v1/resource-groups`); redpanda `src/go/rpk/pkg/publicapi/` and `src/go/rpk/pkg/cli/cloud/` (auth flow, base URL, client sets). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `cluster.proto` (`Cluster.Type`), `network.proto` (`cluster_type` validation), `resource_group.proto` (`/v1/resource-groups`); redpanda `src/go/rpk/pkg/publicapi/` and `src/go/rpk/pkg/cli/cloud/` (auth flow, base URL, client sets); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 + RFC 6598 ranges and the “block size between /16 and /20” note). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Model and Auth: Dedicated Clusters
 
@@ -146,7 +146,7 @@ Source: `publicapi.go` (`ControlPlaneProdURL = "https://api.redpanda.com"`).
 
 Unlike what one might assume, Dedicated clusters **do** require a `Network` resource, just like BYOC. The `network.cluster_type` field must be set to `TYPE_DEDICATED` (value `1`). The API rejects any other value: `"network.cluster_type must be either TYPE_DEDICATED or TYPE_BYOC"`.
 
-For Dedicated, you set `cidr_block` (at least a /21) and do **not** set `customer_managed_resources` — Redpanda provisions the VPC for you. For BYOC, you either provide the CIDR (Redpanda-managed VPC) or provide `customer_managed_resources` (your own VPC/subnets/buckets).
+For Dedicated, you set `cidr_block` (a private IPv4 CIDR with a prefix length between /16 and /20) and do **not** set `customer_managed_resources` — Redpanda provisions the VPC for you. For BYOC, you either provide the CIDR (Redpanda-managed VPC) or provide `customer_managed_resources` (your own VPC/subnets/buckets).
 
 ## Resource Groups
 
