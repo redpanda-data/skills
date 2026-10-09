@@ -99,6 +99,72 @@ max_parallel_snapshot_tables: 4
 
 Fraction of available memory usable during snapshot streaming. Values between 0 and 1. This field is deprecated; use `snapshot_batch_size` instead.
 
+## Incremental Snapshot Fields
+
+The `incremental_snapshot` object (**Advanced**, **Optional**) configures chunked backfill that runs *alongside* replication streaming, rather than as an up-front phase. Added in 4.112.0.
+
+Tables are not listed here. A backfill is requested at runtime by inserting a `snapshot-execute` row into the signal table (see `signal_table_name` and the Control Signals section of the skill), so a table can be backfilled without a config change.
+
+Startup validation (all of these are rejected at startup, not at runtime):
+
+- `incremental_snapshot.enabled` and `stream_snapshot` are **mutually exclusive** — both read the same rows.
+- `signal_table_name` must be set when `enabled` is `true`.
+- The top-level `heartbeat_interval` must be **non-zero** when `enabled` is `true`. The backfill advances only on a streamed commit, so on a quiet table the heartbeat supplies the only one; without it the backfill reads one chunk and silently stops.
+- `checkpoint_cache` is required when `enabled` is `true`, and must name a cache resource that exists in the config.
+- `chunk_size` and `incremental_snapshot.heartbeat_interval` must be `> 0`; `retry_cooldown` must be `>= 0`.
+
+### `incremental_snapshot.enabled`
+
+**Type**: `bool` | **Default**: `false`
+
+Backfills signalled tables in primary-key-ordered chunks while replication runs. Backfilled rows are emitted with `operation: read` and no `lsn`, interleaved with live changes; a row can legitimately arrive twice, so treat deliveries as idempotent upserts keyed by primary key.
+
+```yaml
+incremental_snapshot:
+  enabled: true
+```
+
+### `incremental_snapshot.chunk_size`
+
+**Type**: `int` | **Default**: `1024`
+
+Rows read per chunk while backfilling a table.
+
+### `incremental_snapshot.heartbeat_interval`
+
+**Type**: `duration` | **Default**: `"1s"`
+
+How often to heartbeat while the incremental snapshot is enabled, which is what paces the backfill on a quiet table. Whichever of this and the top-level `heartbeat_interval` is more frequent wins, and applies for the life of the input — it is fixed at startup and stays in force between backfills as well as during them.
+
+### `incremental_snapshot.retry_cooldown`
+
+**Type**: `duration` | **Default**: `"30s"`
+
+How long the backfill waits before retrying a chunk read that failed transiently — typically a conflicting lock on the table being backfilled (`VACUUM FULL`, most `ALTER TABLE` statements). The chunk read shares the goroutine that reads the replication stream, so each retry that blocks on the lock delays replication for *every* table. Raise it to protect replication latency during a long migration; lower it to resume the backfill sooner after a brief lock. `0s` disables the cooldown, retrying on the next streamed transaction.
+
+### `incremental_snapshot.checkpoint_cache`
+
+**Type**: `string` | **Optional** — but **required** when `enabled` is `true`
+
+The label of a cache resource storing the backfill's progress, so a restart resumes instead of starting over. Use a cache that survives a process restart: `memory` loses the checkpoint, and the `file` cache is documented as development-only.
+
+```yaml
+incremental_snapshot:
+  enabled: true
+  checkpoint_cache: snapshot_progress
+
+cache_resources:
+  - label: snapshot_progress
+    redis:
+      url: redis://localhost:6379
+```
+
+### `incremental_snapshot.checkpoint_cache_key`
+
+**Type**: `string` | **Default**: `"postgres_cdc_incremental_snapshot"`
+
+The key the progress is stored under in `checkpoint_cache`. Use a different key when several incremental snapshots share one cache. Changing or clearing the key discards the record of which tables have been backfilled, so a `snapshot-execute` signal reads a table again.
+
 ## Replication Slot Fields
 
 ### `temporary_slot`
@@ -309,6 +375,14 @@ input:
       role: ""
       role_external_id: ""
       roles: []
+    signal_table_name: ""
+    incremental_snapshot:
+      enabled: false
+      chunk_size: 1024
+      heartbeat_interval: 1s
+      retry_cooldown: 30s
+      checkpoint_cache: ""
+      checkpoint_cache_key: postgres_cdc_incremental_snapshot
     auto_replay_nacks: true
     batching:
       count: 0

@@ -8,19 +8,19 @@ Redpanda Connect (formerly Benthos) is split across **two public repos plus one 
 - **`redpanda-data/benthos`** (Go, a dependency of `connect` — pinned in `connect/go.mod`, currently **v4.81.0**) — the **engine**: the CLI commands (`run`, `list`, `create`, `lint`, `streams`, `blobl`), the Bloblang language (`internal/bloblang/`), the core config model, and the base `logger`/`metrics`/`tracer`/`buffer` components. The CLI verbs the skill teaches (`rpk connect run/list/create/lint`) are defined here, **not** in `redpanda-data/connect`.
 - **`redpanda-data/rp-connect-docs`** — the **auto-generated** component reference (`modules/components/pages/{inputs,processors,outputs,caches,buffers,rate_limits,scanners,metrics,tracers,...}/`) built from each component's Go `Spec()`, plus `docs-data/overrides.json` (DRY overrides via `$ref`) and versioned snapshots `docs-data/connect-<version>.json`.
 
-All three are public — read them via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `gh api repos/redpanda-data/<repo>/contents/<path>`; avoid `gh search code` (rate-limited). `rpk connect` itself is a **managed-plugin passthrough** to the `redpanda-connect` binary — its subcommand tree is not defined in `redpanda-data/redpanda`. Before writing or changing any fact, re-open the cited source and confirm exact field names, flag names, and defaults against the matching Connect release tag (and the benthos version in `go.mod`).
+`connect` and `benthos` are public; **`rp-connect-docs` is private**, so its paths and contents stay off public surfaces (PR titles, descriptions, commit messages) — see the repo `CLAUDE.md`. Note that `redpanda-data/connect` also commits the generated component reference into its own tree at `docs/modules/components/pages/**`, tagged with each release, so per-field verification at a release tag can usually be done entirely in the public repo. Read them via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `gh api repos/redpanda-data/<repo>/contents/<path>`; avoid `gh search code` (rate-limited). `rpk connect` itself is a **managed-plugin passthrough** to the `redpanda-connect` binary — its subcommand tree is not defined in `redpanda-data/redpanda`. Before writing or changing any fact, re-open the cited source and confirm exact field names, flag names, and defaults against the matching Connect release tag (and the benthos version in `go.mod`).
 
 ## File-to-source table
 
 | Skill file | connect / benthos source paths | docs sources (rp-connect-docs) |
 |---|---|---|
 | `SKILL.md` | benthos `internal/cli/` (`run.go`, `list.go`, `create.go`, `lint.go`, `common/run_flags.go`); connect `internal/cli/enterprise.go` (config search paths, `connector_list.yaml`), `internal/cli/flags_redpanda.go` (`--redpanda-license`, `--secrets`, `pipeline_id`, `logs_topic`); connect `internal/impl/kafka/input_redpanda.go`, `output_redpanda.go`; benthos `internal/bloblang/`; connect `internal/impl/{postgresql,mysql,mongodb,oracledb,mssqlserver,salesforce,openai,cohere,ollama}/`, `internal/license/service.go` | `modules/components/pages/**`, `modules/get-started/` (licensing) |
-| `references/config-structure.md` | connect `internal/cli/enterprise.go` (config file search-path list incl. `redpanda-connect.yaml`, `/etc/connect/config.yaml`, legacy `benthos.yaml`); benthos `internal/cli/run.go` + `internal/cli/common/run_flags.go` (`set`=`-s`, `env-file`); benthos config model + base `internal/impl/{log,metadata,pipeline,stream}` and `logger`/`metrics`/`tracer`/`buffer` component specs; connect `internal/cli/flags_redpanda.go` (global `redpanda` block: `pipeline_id`, `logs_topic`, `logs_level`, `status_topic`) | `modules/components/pages/{logger,metrics,tracers,buffers}/`, `modules/configuration/` |
+| `references/config-structure.md` | connect `internal/impl/prometheus/metrics_prometheus.go` (the `prometheus` metrics exporter's config spec — it is in `connect`, not in the benthos engine); connect `internal/cli/enterprise.go` (config file search-path list incl. `redpanda-connect.yaml`, `/etc/connect/config.yaml`, legacy `benthos.yaml`); benthos `internal/cli/run.go` + `internal/cli/common/run_flags.go` (`set`=`-s`, `env-file`); benthos config model + base `internal/impl/{log,metadata,pipeline,stream}` and `logger`/`metrics`/`tracer`/`buffer` component specs; connect `internal/cli/flags_redpanda.go` (global `redpanda` block: `pipeline_id`, `logs_topic`, `logs_level`, `status_topic`) | `modules/components/pages/{logger,metrics,tracers,buffers}/`, `modules/configuration/` |
 | `references/components.md` | benthos `internal/cli/list.go`, `create.go` (discovery/templates); component `Spec()` in connect `internal/impl/kafka/` (`redpanda` in/out), `internal/impl/io/` (`generate`, `file`, `http_server`, `http_client`), `internal/impl/{aws,gcp,azure,sql,redis,mongodb,nats,amqp09,amqp1}/`, plus caches/rate-limits/buffers in benthos `internal/impl/` and connect | `modules/components/pages/{inputs,processors,outputs,caches,rate_limits,buffers,scanners}/`, `docs-data/connect-<version>.json`, `docs-data/overrides.json` |
 | `references/bloblang.md` | benthos `internal/bloblang/` — `query/functions.go`, `query/methods*.go` (function & method catalogs), `mapping/`, `parser/`, `field/` (interpolation `${! … }`); CLI REPL: benthos `internal/cli/blobl/` | `modules/guides/` + `modules/components/pages/` Bloblang reference; playground `play.benthos.dev` |
 | `references/patterns.md` | Composite — no single source. Grounded in the component `Spec()`s cited above (connect `internal/impl/kafka/`, `io/`, `aws/`, `sql/`, `redis/`; benthos `broker`/`fallback`/`switch`/`retry` outputs, `system_window` buffer, `archive`/`dedupe`/`schema_registry_encode` processors) | `modules/cookbooks/`, `modules/components/pages/**` |
 | `references/enterprise.md` | connect `internal/impl/postgresql/` (`postgres_cdc`), `mysql/`, `mongodb/`, `oracledb/`, `mssqlserver/`, `salesforce/`, `aws/` (`aws_dynamodb_cdc`), `gcp/` (`gcp_spanner_cdc`); AI/ML in `internal/impl/{openai,cohere,ollama,aws,gcp}/`; connect `internal/cli/enterprise.go` (`connectorListPath = "/etc/redpanda/connector_list.yaml"`, allow/deny error text), `internal/secrets/secrets.go` (`--secrets` URN schemes), `internal/cli/flags_redpanda.go` (`--redpanda-license`, `REDPANDA_LICENSE`, `REDPANDA_LICENSE_FILEPATH`, `/etc/redpanda/redpanda.license`, `logs_topic`/`status_topic`), `internal/license/service.go`; support tiers: connect `internal/plugins/info.csv` (per-component `support` column: `enterprise` vs `certified`) | `docs-data/overrides.json`, `docs-data/connect-<version>.json`, generated `modules/components/pages/**` (`?support=enterprise`), `modules/get-started/` licensing page |
-| `references/migration.md` | connect `internal/impl/redpanda/migrator/` (`migrator.go`, `migrator_topic.go`, `migrator_schema_registry.go`, `migrator_groups.go`, `plumbing.go`) — the unified migrator does **not** live under `internal/impl/kafka/`; support tier (`certified`, not enterprise): connect `internal/plugins/info.csv` (re-verified at tag v4.111.1, 2026-10-01) | `modules/cookbooks/pages/redpanda_migrator.adoc` (workflow, required ACLs, offset-translation semantics), `modules/guides/pages/migration/migrate-unified-redpanda-migrator.adoc` (4.67.5+ availability; legacy bundle deprecated 4.67.5 / removed 4.85.0; legacy→unified field mapping), `modules/components/pages/inputs/redpanda_migrator.adoc` (pairing, tuning, `input_redpanda_migrator_lag`), `modules/components/pages/outputs/redpanda_migrator.adoc` (sync schedules, guarantees, limitations, `redpanda_migrator_*` metrics) |
+| `references/migration.md` | connect `internal/impl/redpanda/migrator/` (`migrator.go`, `migrator_topic.go`, `migrator_schema_registry.go`, `migrator_groups.go`, `plumbing.go`) — the unified migrator does **not** live under `internal/impl/kafka/`; the separate standalone `schema_registry` input/output pair **does**: connect `internal/impl/kafka/output_schema_registry.go` (`translate_ids` ↔ required destination mode, the `Connect()` mode check and per-subject-mode warning) and `internal/impl/kafka/schema_registry.go`; support tier (`certified`, not enterprise): connect `internal/plugins/info.csv` (re-verified at tag v4.111.1, 2026-10-01) | `modules/cookbooks/pages/redpanda_migrator.adoc` (workflow, required ACLs, offset-translation semantics), `modules/guides/pages/migration/migrate-unified-redpanda-migrator.adoc` (4.67.5+ availability; legacy bundle deprecated 4.67.5 / removed 4.85.0; legacy→unified field mapping), `modules/components/pages/inputs/redpanda_migrator.adoc` (pairing, tuning, `input_redpanda_migrator_lag`), `modules/components/pages/outputs/redpanda_migrator.adoc` (sync schedules, guarantees, limitations, `redpanda_migrator_*` metrics) |
 | `references/streams-mode.md` | benthos `internal/cli/streams.go` (`streams` subcommand; `-o/--observability`, `--prefix-stream-endpoints`, `--bind-http` flags, and the hidden deprecated `--no-api`), benthos `internal/cli/common/service.go` (the `--no-api` deprecation warning and the rationale comment for gating the CRUD routes), benthos `internal/cli/common/run_flags.go` (`-r/--resources`), benthos `internal/stream/manager/api.go` (`registerEndpoints(enableCrud bool)`: `/ready` registered unconditionally; `/streams`, `/streams/{id}`, `/streams/{id}/stats`, `/resources/{type}/{id}` gated; `lintErrors` JSON tag `lint_errors`; `chilled` lint bypass) | `modules/guides/pages/streams_mode/about.adoc`, `using_config_files.adoc`, `using_rest_api.adoc`, `streams_api.adoc` (full endpoint spec) |
 | `references/connector-catalog.md` | connect `internal/plugins/info.csv` at the current stable tag (tier record; enterprise list verified complete at v4.99.0, re-confirmed unchanged at v4.100.0); runtime-gate spot checks: `license.CheckRunningEnterprise` callers (e.g. `internal/impl/splunk/`, `internal/impl/google/`, `internal/impl/jira/processor_jira.go` and `internal/impl/jira/input_jira.go`) vs ungated Apache-2.0 impls (`internal/impl/openai/chat_processor.go`, `internal/impl/aws/dynamodb/input_cdc.go`) | one-liners from `modules/components/pages/{inputs,outputs,processors}/<name>.adoc`; tier filter UI `components/catalog/?support=enterprise` |
 
@@ -51,6 +51,55 @@ All three are public — read them via the Redpanda-Github-Read MCP connector (`
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. Route engine/CLI/Bloblang questions to `redpanda-data/benthos` (at the version in `connect/go.mod`), Redpanda-specific component/license/secrets/CDC/AI questions to `redpanda-data/connect`, and treat `redpanda-data/rp-connect-docs` (generated pages + `docs-data/`) as the citation of record for per-field connector config. Never hardcode auto-generated field lists or Bloblang catalogs — defer to the generated reference and `rpk connect list`/`create`/`blobl`.
 
 ## Sync log
+
+### Connect v4.112.0 / benthos v4.81.0 (2026-10-09)
+
+- **benthos unchanged.** `connect/go.mod` at tag `v4.112.0` still pins
+  `github.com/redpanda-data/benthos/v4 v4.81.0`, the same version as at
+  `v4.111.0`, so the CLI verbs, the Bloblang catalogs, the core config model,
+  and the base `logger`/`tracer`/`buffer` components are unmoved this release.
+  No Bloblang or CLI claim was re-opened.
+- **`prometheus` metrics: new `histogram_timing_seconds_suffix` field** (bool,
+  default `false`, `Version("4.112.0")`, Advanced), verified in connect
+  `internal/impl/prometheus/metrics_prometheus.go` at the tag. With
+  `use_histogram_timing: true` the histogram already observed the delta in
+  seconds while the series kept its `_ns` name; this flag rewrites the suffix
+  to `_seconds`, which also keeps the histogram series distinct from the
+  summary series emitted under the `_ns` name when `use_histogram_timing` is
+  `false`. Opt-in, and enabling it renames existing series. Added to the
+  metrics block in `references/config-structure.md`.
+  - **Provenance note:** this file's source map previously attributed the base
+    `metrics` components wholesale to benthos. The `prometheus` exporter is
+    registered in `connect`, so it verifies against the Connect release tag;
+    the `config-structure.md` row now says so.
+- **`schema_registry` output: required destination mode now follows
+  `translate_ids`.** Verified in connect
+  `internal/impl/kafka/output_schema_registry.go` at the tag: with
+  `translate_ids: false` (the default) schemas are created with their original
+  IDs and versions, which requires the destination registry in `IMPORT` mode
+  (Redpanda v25.3 or later, or Confluent Schema Registry); with
+  `translate_ids: true` the destination assigns new IDs and must be in
+  `READWRITE`. `Connect()` fails when the global mode is neither, and only
+  **warns** on a mismatch with `translate_ids`, because mode can also be set
+  per subject. The pre-25.3 fixed-ID workaround was removed from
+  `internal/impl/kafka/schema_registry.go`.
+  - Added to `references/migration.md` as a scoped subsection. Deliberately
+    scoped: the **unified migrator's** `schema_registry.translate_ids`
+    (connect `internal/impl/redpanda/migrator/migrator_schema_registry.go`) is
+    a different implementation that still carries a fixed-ID fallback — on an
+    ID conflict it compares the existing schema and reuses its ID — and its
+    `validateSchemaRegistries` only requires `READWRITE` **or** `IMPORT`. The
+    skill now states that difference explicitly so the two are not conflated.
+    The migrator's pre-existing mode claim in `migration.md` was re-verified
+    and is unchanged, with the `serverless: true` per-subject IMPORT-mode
+    switch-and-restore added from `newImportModeManager`.
+- **Verified and deliberately not documented this release:** the `opensearch`
+  output's new `compress_request_body` field (a per-field addition to an
+  existing connector — deferred to the generated reference), the `iceberg`
+  nanosecond-timestamp validation, and the `gcp_spanner_cdc` and
+  `oracledb_cdc` fixes. The Spanner and Postgres/Oracle changes that *did*
+  carry durable surface were applied in their own skills — see
+  `skills/connect-cdc-{postgres,oracle,spanner}/references/SOURCES.md`.
 
 ### Connect v4.111.0 / benthos v4.81.0 (2026-09-25)
 

@@ -44,8 +44,8 @@ Every message has these metadata fields accessible in Bloblang via `metadata("ke
 |---|---|---|
 | `table` | string | Unquoted table name (e.g. `orders`) |
 | `operation` | string | One of: `read`, `insert`, `update`, `delete`, `begin`, `commit` |
-| `lsn` | string | WAL log sequence number (e.g. `0/16E4D40`). **Absent** (not set) for snapshot `read` messages |
-| `commit_ts_ms` | string | Transaction commit timestamp as Unix milliseconds. Set on `insert`, `update`, and `delete` messages. **Not set** for snapshot `read` messages (since 4.98.0) |
+| `lsn` | string | WAL log sequence number (e.g. `0/16E4D40`). **Absent** (not set) for `read` messages, whether from the up-front `stream_snapshot` phase or from an incremental backfill |
+| `commit_ts_ms` | string | Transaction commit timestamp as Unix milliseconds. Set on `insert`, `update`, and `delete` messages. **Not set** for `read` messages, snapshot or incremental backfill (since 4.98.0) |
 | `before` | immutable object | Pre-change state of the row, in Benthos common schema format. Set on `update` and `delete` messages. For updates, availability depends on the table's `REPLICA IDENTITY`: with the default identity only key columns are present; with `REPLICA IDENTITY FULL` all columns are present (since 4.99.0) |
 | `schema` | immutable object | Column schema in Benthos common format, compatible with `parquet_encode`. Set on `read`, `insert`, `update`, and `delete` messages (all data-bearing messages; not set on `begin`/`commit`) |
 
@@ -217,6 +217,43 @@ Start
 
 On **restart** (slot already exists): the connector reads `pg_replication_slots.confirmed_flush_lsn` for the existing slot and resumes streaming from that point. Snapshot is skipped.
 
+## Incremental Snapshot Lifecycle
+
+With `incremental_snapshot.enabled: true` there is no up-front phase at all — the backfill runs *alongside* replication and is driven by it:
+
+```
+Replication running
+  |
+  +--> A `snapshot-execute` signal row names tables
+  |      Rejected (logged, replication unaffected) if a table is not replicated,
+  |      has no primary key, has an unsupported key type, or is partitioned
+  |      without publish_via_partition_root. Tables already covered this run
+  |      are skipped.
+  |
+  +--> Accepted tables join the back of the backfill queue
+  |
+  +--> Per table, the connector resolves the current maximum primary key
+  |      as the upper bound, then pages upward in chunk_size chunks
+  |      (ORDER BY pk ASC, each chunk bounded by the previous chunk's last key)
+  |
+  +--> Each chunk is buffered, then released on the next streamed commit
+  |      Emits StreamMessage{Operation: "read", LSN: nil, ...}
+  |      A buffered row superseded by a live change to the same primary key
+  |      is dropped, so the live change wins
+  |
+  +--> Progress is checkpointed into `checkpoint_cache` under
+  |      `checkpoint_cache_key`, so a restart resumes mid-table
+  |
+  +--> Queue empty -> back to streaming only
+```
+
+Consequences worth designing for:
+
+- **Backfill rows and live changes interleave.** A row can arrive twice — once from replication, once from the backfill — so the destination must treat deliveries as **idempotent upserts keyed by primary key**. This is standard CDC practice, but the up-front `stream_snapshot` phase did not require it in the same way.
+- **The backfill is paced by streamed commits**, so a quiet table advances only on heartbeats (hence the non-zero `heartbeat_interval` requirement). A busy database advances it continuously.
+- **Chunk reads run on the replication goroutine**, bounded by internal, non-configurable lock-wait and read timeouts (5s and 15s), kept well under PostgreSQL's `wal_sender_timeout` so a slow or blocked read cannot cost the replication connection. A lock conflict on the table being backfilled therefore briefly delays replication for every table; `retry_cooldown` bounds how often that repeats.
+- **Set `REPLICA IDENTITY FULL` while backfilling a table with TOASTable columns.** Otherwise an `UPDATE` that leaves a large column unchanged carries no value for it, the buffered backfill row that held the real value is dropped as a duplicate, and the destination only ever sees `unchanged_toast_value`. The connector warns at startup and when a table is queued.
+
 ## Checkpointing and At-Least-Once Delivery
 
 The connector uses `github.com/Jeffail/checkpoint` to track which LSNs have been acknowledged downstream:
@@ -225,6 +262,7 @@ The connector uses `github.com/Jeffail/checkpoint` to track which LSNs have been
 - The LSN is acknowledged to PostgreSQL (`pg_standby_status_update`) only after all messages up to that LSN have been confirmed delivered (acked) by the output.
 - `checkpoint_limit` bounds the number of in-flight messages. Back-pressure applies when the limit is reached.
 - Snapshot messages have `LSN: nil` — they are not individually acknowledged to PostgreSQL. The LSN is advanced after the snapshot completes and WAL streaming begins.
+- Incremental backfill progress is tracked separately, in the `incremental_snapshot.checkpoint_cache` cache resource rather than in the replication slot. The two checkpoints advance independently: the slot records how far replication has been acked, the cache records which tables and key ranges have been backfilled.
 
 **Guarantee**: At-least-once. On restart the connector resumes from the last acknowledged LSN, re-delivering any messages that had not been acked.
 
@@ -268,4 +306,6 @@ The connector detects schema changes via `RelationMessage` from the WAL. When Po
 
 ### Adding Tables
 
-Update the `tables` list in the config and restart the pipeline. The connector updates the publication to add the new tables. Existing data in newly added tables will not be snapshot unless `stream_snapshot: true` and the slot is dropped/recreated.
+Update the `tables` list in the config and restart the pipeline. The connector updates the publication to add the new tables.
+
+Existing data in a newly added table is not back-filled by the restart. With `stream_snapshot: true` the slot has to be dropped and recreated to replay it. With `incremental_snapshot.enabled: true` that is no longer necessary: once the restarted pipeline replicates the new table, insert a `snapshot-execute` signal naming it and the backfill runs alongside the stream.

@@ -312,6 +312,8 @@ The **starting** SCN range per mining cycle. Each cycle queries `V$LOGMNR_CONTEN
 
 The window is **adaptive**, not fixed: it grows by `scn_window_size` on each cycle that ends at the cap with a backlog still present, up to `max_scn_window_size`, and shrinks by the same step on each cycle that catches up to the database. So this field sets the steady-state window and the growth step, while `max_scn_window_size` bounds how large a backlog burst may go.
 
+This field belongs to the default `scn_window` strategy. It has no effect — and is rejected at startup if set to anything other than its default — when `window_strategy` is `redo_volume`.
+
 ```yaml
 logminer:
   scn_window_size: 50000
@@ -343,6 +345,63 @@ Upper bound on the adaptive mining window described under `scn_window_size`. Rai
 ```yaml
 logminer:
   max_scn_window_size: 100000
+```
+
+Has no effect — and is rejected at startup if set to anything other than its default — when `window_strategy` is `redo_volume`.
+
+---
+
+### `logminer.window_strategy`
+
+**Type:** `string` (enum) | **Required:** no | **Default:** `scn_window` | **Advanced**
+
+Chooses how the range mined per cycle is sized. Added in 4.112.0.
+
+| Value | How the cycle is sized | Tuned by |
+|---|---|---|
+| `scn_window` (default) | Grows and shrinks a fixed SCN increment based on backlog | `scn_window_size`, `min_scn_window_size`, `max_scn_window_size` |
+| `redo_volume` | A bounded redo-volume budget per cycle, per redo thread, independent of raw SCN movement | `redo_volume_min`, `redo_volume_growth_max` |
+
+Reach for `redo_volume` when the database's SCN can advance without matching real transaction volume — the classic case is a Multitenant Container Database (CDB) whose shared SCN is bumped by another Pluggable Database (PDB). Under `scn_window` the connector then burns cycles growing its window over mostly-empty ranges; `redo_volume` instead sizes each cycle by the redo it actually reads. On Real Application Clusters (RAC), the budget applies **per open redo thread**, so the volume mined per cycle scales with the number of open threads.
+
+The two sets of tuning fields are mutually exclusive and validated at startup: setting `scn_window_size` or `max_scn_window_size` away from its default under `redo_volume`, or `redo_volume_min` / `redo_volume_growth_max` away from its default under `scn_window`, is rejected with a "has no effect" error. `min_scn_window_size` is the exception — that floor applies under both strategies.
+
+```yaml
+logminer:
+  window_strategy: redo_volume
+```
+
+---
+
+### `logminer.redo_volume_min`
+
+**Type:** `int` | **Required:** no | **Default:** `2` | **Advanced**
+
+The minimum redo volume mined per cycle per redo thread, in multiples of the online redo log size (read once at startup as `MAX(BYTES)` over `V$LOG`). Only applies when `window_strategy` is `redo_volume`; must be greater than 0.
+
+Log files are added in sequence order until their total size reaches the budget, and the file that crosses the limit is kept — so one very large file is still selected. Increase it when redo logs are small and rotate frequently; decrease it when they are very large.
+
+```yaml
+logminer:
+  window_strategy: redo_volume
+  redo_volume_min: 4
+```
+
+---
+
+### `logminer.redo_volume_growth_max`
+
+**Type:** `int` | **Required:** no | **Default:** `4` | **Advanced**
+
+The ceiling the per-thread redo-volume budget may grow to. The budget starts at `redo_volume_min` and grows automatically whenever something stops the mining window advancing — a long-running transaction holding it in place, or a redo log recycled mid-query — then returns to `redo_volume_min` after a cycle that reads everything available. Only applies when `window_strategy` is `redo_volume`.
+
+Startup validation: it must be `>= redo_volume_min`, and at least `2`. A ceiling of `1` can never grow past a single reselected file, which stalls progress permanently, so it is rejected.
+
+```yaml
+logminer:
+  window_strategy: redo_volume
+  redo_volume_min: 2
+  redo_volume_growth_max: 6
 ```
 
 ---

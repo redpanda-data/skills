@@ -95,7 +95,20 @@ Each concern syncs on its own schedule (all tunable on the output):
 - **Offset translation is timestamp-based and approximate** (best-effort; duplicates possible, not exactly-once). Translated offsets only ever move forward — never rewound.
 - Consumer group migration requires **identical partition counts** at source and destination.
 - ACL replication (when `sync_topic_acls` is enabled) never grants write access at the destination: `ALLOW WRITE` entries are not migrated, `ALLOW ALL` is downgraded to `ALLOW READ`, group ACLs are not migrated.
-- The destination Schema Registry must be in `READWRITE` or `IMPORT` mode.
+- The destination Schema Registry must be in `READWRITE` or `IMPORT` mode; the migrator checks the destination's global mode at sync time and fails otherwise. With `serverless: true`, and only when the destination is not already globally in `IMPORT` mode, it additionally flips each destination *subject* to `IMPORT` before writing its first version and restores the previous subject mode once the sync completes.
+
+### Which registry mode, when (`schema_registry` output)
+
+The standalone `schema_registry` input/output pair — the registry-to-registry copy, separate from the unified migrator — ties the required destination mode to its own `translate_ids` field (default `false`):
+
+| `translate_ids` | Schemas created with | Destination mode required |
+|---|---|---|
+| `false` (default) | Their original IDs and versions | `IMPORT` — Redpanda **v25.3 or later**, or Confluent Schema Registry |
+| `true` | New IDs assigned by the destination | `READWRITE` (a schema registered without an explicit ID is rejected in `IMPORT` mode) |
+
+As of Connect 4.112.0 the output relies on native `IMPORT` support rather than the workaround it previously used for Redpanda versions before 25.3, so `translate_ids: false` against an older destination no longer works — either upgrade the destination or set `translate_ids: true`. The output fails to connect if the global mode is neither `READWRITE` nor `IMPORT`; a mode that merely mismatches `translate_ids` is a **warning**, not an error, because mode can also be set per subject, which the global check cannot see.
+
+Note that the unified migrator's `schema_registry.translate_ids` is a *different* implementation with the same name: it keeps a fixed-ID fallback (on an ID conflict it compares the existing schema and reuses its ID), so it does not impose the table above. Do not carry a conclusion from one to the other.
 
 ## Required ACLs (when clusters enforce authorization)
 

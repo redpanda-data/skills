@@ -182,15 +182,32 @@ CREATE TABLE IF NOT EXISTS cdc_metadata_OrderChanges (
 ROW DELETION POLICY (OLDER_THAN(FinishedAt, INTERVAL 1 DAY));
 
 -- Watermark index (STORING State) — used to find the minimum unfinished watermark
-CREATE INDEX IF NOT EXISTS ... ON cdc_metadata_OrderChanges (Watermark) STORING (State);
+CREATE INDEX IF NOT EXISTS WatermarkIdx_<databaseId>_<suffix>
+  ON cdc_metadata_OrderChanges (Watermark) STORING (State);
 
 -- CreatedAt/StartTimestamp index — used to discover new partitions
-CREATE INDEX IF NOT EXISTS ... ON cdc_metadata_OrderChanges (CreatedAt, StartTimestamp);
+CREATE INDEX IF NOT EXISTS CreatedAtIdx_<databaseId>_<suffix>
+  ON cdc_metadata_OrderChanges (CreatedAt, StartTimestamp);
 ```
 
 The `ROW DELETION POLICY` automatically purges FINISHED partition rows after 1
-day, keeping the table small. If you need to pre-create the metadata table
-manually (e.g. to grant tighter permissions), ensure you include both indexes.
+day, keeping the table small.
+
+**Index names are deterministic.** For a metadata table the connector is pointed
+at — the default `cdc_metadata_<stream_id>` or a `metadata_table` override — the
+`<suffix>` is derived from a hash of the database id and the table name, so the
+same table always yields the same two index names. That is what makes the
+`CREATE INDEX IF NOT EXISTS` statements, which are re-issued on **every**
+startup, true no-ops once the indexes exist. Hyphens in the generated name are
+replaced with underscores and the name is truncated to 63 characters.
+
+If you pre-create the metadata table manually (e.g. to grant tighter
+permissions), include both indexes. Their names do not have to match the
+connector's — a differently named index on the same columns still serves
+queries — but a name that does not match means the connector's own
+`CREATE INDEX IF NOT EXISTS` statements add two further indexes beside yours.
+Spanner caps a table at 128 indexes, so match the names above if you want the
+connector's statements to no-op.
 
 ### PostgreSQL dialect table schema (auto-created)
 

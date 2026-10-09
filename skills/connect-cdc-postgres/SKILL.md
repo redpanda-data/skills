@@ -177,12 +177,60 @@ pipeline:
         root = if @table == "rpcn_signal_table" { deleted() } else { this }
 ```
 
-**Supported signal types** are recognized from the row's `type` column; an unrecognized type is forwarded downstream but only logged as a warning. The `log` signal is currently recognized — its `data` must be a JSON object with a `message` key, whose value is written to the connector's log output. The recognized set may grow across releases; confirm it against the generated `postgres_cdc` reference (or `rpk connect create postgres_cdc`) rather than assuming this list is exhaustive.
+**Supported signal types** are recognized from the row's `type` column; an unrecognized type is forwarded downstream but only logged as a warning. Two are currently recognized — `log` and `snapshot-execute`. The recognized set may grow across releases; confirm it against the generated `postgres_cdc` reference (or `rpk connect create postgres_cdc`) rather than assuming this list is exhaustive.
+
+`log` writes a message to the connector's log output. Its `data` must be a JSON object with a `message` key:
 
 ```sql
 INSERT INTO <schema>.<signal_table_name> (type, data)
 VALUES ('log', '{"message": "Signal message"}');
 ```
+
+`snapshot-execute` requests an incremental backfill of the named tables (see below). Its `data` must be a JSON object with a `tables` key listing table names in the configured `schema`, without the schema prefix:
+
+```sql
+INSERT INTO <schema>.<signal_table_name> (type, data)
+VALUES ('snapshot-execute', '{"tables": ["orders", "customers"]}');
+```
+
+## Incremental Snapshot (backfill alongside streaming)
+
+`incremental_snapshot` backfills tables in primary-key-ordered chunks **while replication keeps running**, so a backfill needs no up-front snapshot phase and does not delay the stream. Tables are not listed in the config: request one at any time by inserting a `snapshot-execute` signal row.
+
+It is mutually exclusive with `stream_snapshot` — both read the same rows, so enabling either alongside the other delivers everything twice, and the config is rejected at startup.
+
+```yaml
+input:
+  postgres_cdc:
+    dsn: postgres://cdc_user:secret@localhost:5432/mydb?sslmode=disable
+    schema: public
+    tables: [ orders, customers ]
+    slot_name: my_slot
+    stream_snapshot: false            # mutually exclusive with incremental_snapshot
+    heartbeat_interval: 5m            # must be non-zero: the backfill is paced by streamed commits
+    signal_table_name: rpcn_signal_table   # required
+    incremental_snapshot:
+      enabled: true
+      checkpoint_cache: snapshot_progress  # required: a cache resource, so a restart resumes
+
+cache_resources:
+  - label: snapshot_progress
+    redis:
+      url: redis://localhost:6379
+```
+
+Pick a cache that survives a process restart — `memory` loses the checkpoint, and the `file` cache is documented as development-only. Any durable cache resource works (`redpanda`, `redis`, `sql`, `aws_dynamodb`, `nats_kv`, …); check the installed set with `rpk connect list caches`.
+
+Requirements and semantics worth knowing before enabling it:
+
+- **A signal table is required** (`signal_table_name`), since tables are requested by signal.
+- **A `checkpoint_cache` cache resource is required**, and progress is stored under `checkpoint_cache_key`. A restart resumes rather than starting over; pointing the key somewhere fresh makes a table eligible to be read again.
+- **The top-level `heartbeat_interval` must be non-zero.** The backfill only advances on a streamed commit, so on a quiet table the heartbeat is the only thing moving it. The effective heartbeat is the more frequent of `heartbeat_interval` and `incremental_snapshot.heartbeat_interval`, fixed at startup.
+- **Each requested table must be replicated** (listed in `tables`, or `tables` empty) and must have a **primary key** — the backfill pages by it.
+- **Backfilled rows arrive as `operation: read` with no `lsn`**, interleaved with live changes. A row can legitimately arrive twice (once from replication, once from the backfill), so treat deliveries as **idempotent upserts keyed by primary key**.
+- **A few primary-key types are rejected**, and a signal naming such a table is rejected and logged rather than started. Composite keys are supported. Confirm the current set against the generated `postgres_cdc` reference rather than treating it as fixed.
+- **Partitioned tables** need `publish_via_partition_root = true` on the publication, otherwise a signal naming one is rejected (their changes stream under the partition names, so the backfill cannot be deduplicated against them).
+- **Set `REPLICA IDENTITY FULL` while backfilling a table with large (TOASTed) columns**, and prefer a distinctive `unchanged_toast_value` sentinel over the `null` default — otherwise an unchanged TOAST value can reach the destination only as the placeholder. It can be reverted after the backfill.
 
 ## Enterprise Features for CDC Sink Topics
 
@@ -199,5 +247,5 @@ See [enterprise-sink-features.md](references/enterprise-sink-features.md) for ev
 
 - [config-reference.md](references/config-reference.md): Every `postgres_cdc` config field — type, default, required status, and description grounded in source.
 - [setup-postgres.md](references/setup-postgres.md): Preparing PostgreSQL for logical replication: `wal_level`, server parameters, replication user, publications, slots, RDS/Aurora, and IAM auth.
-- [pipeline-and-output.md](references/pipeline-and-output.md): Full runnable pipeline, message/metadata shape, per-table topic routing, snapshot-then-stream lifecycle, and checkpoint/restart semantics.
+- [pipeline-and-output.md](references/pipeline-and-output.md): Full runnable pipeline, message/metadata shape, per-table topic routing, snapshot-then-stream lifecycle, incremental backfill behavior, and checkpoint/restart semantics.
 - [enterprise-sink-features.md](references/enterprise-sink-features.md): Enterprise features for the destination CDC topics — Iceberg Topics, Tiered Storage, Server-Side Schema ID Validation, and Connect secrets — with every nested config key (`redpanda.iceberg.*`, `iceberg_*`, `redpanda.remote.*`, `enable_schema_id_validation`, `redpanda.value.schema.id.validation`), defaults, and license-expiration behavior. All require a Redpanda Enterprise license.

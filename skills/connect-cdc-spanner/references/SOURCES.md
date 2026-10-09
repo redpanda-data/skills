@@ -23,6 +23,33 @@ Scope note: the **field list and defaults are auto-generated** — the citation 
 - **`gcp_spanner_cdc` stability tag** — Go source marks the spec `.Stable()`, but the generated page carries `:status: beta`. Prefer live source/generated page over a hardcoded label.
 - **GCP Spanner behavior** — change-stream DDL, `value_capture_type`, `retention_period` limits, IAM roles, ADC — owned by Google Cloud; verify against Google Cloud docs.
 
+## Sync log
+
+### Connect v4.112.0 (2026-10-09)
+
+- **Metadata index names are now deterministic.** Verified at tag `v4.112.0` in
+  `internal/impl/gcp/enterprise/changestreams/metadata/name.go`: for a metadata table the connector is
+  pointed at, `TableNamesFromExistingTable` derives the index-name suffix from a hash of the database id
+  and the table name (`deterministicSuffix`), instead of a fresh UUID per call. Because the
+  `CREATE INDEX IF NOT EXISTS` statements run on **every** startup, a per-call random suffix previously
+  generated never-matching names and added two indexes per restart, up to Spanner's 128-index-per-table
+  limit. `genName` still replaces `-` with `_` and truncates to 63 characters, and the formats remain
+  `WatermarkIdx_<databaseId>_<suffix>` and `CreatedAtIdx_<databaseId>_<suffix>`.
+- **The deterministic path always applies to `spanner_cdc`.** `changestreams/subscriber.go` picks
+  `TableNamesFromExistingTable` whenever the metadata table name is non-empty and falls back to
+  `RandomTableNames` otherwise (logging that the random path is for testing only), but
+  `internal/impl/gcp/enterprise/input_spanner_cdc.go` fills an empty `metadata_table` with
+  `defaultMetadataTableFormat` = `cdc_metadata_<stream_id>` before building the subscriber config — so
+  the random path is unreachable from this input.
+- **No `FORCE_INDEX` anywhere in the package** (checked across
+  `internal/impl/gcp/enterprise/changestreams/`, including every statement in `metadata/metadata.go`):
+  the store's queries are plain SQL and leave index selection to the planner. That is what makes the
+  skill's "a differently named index on the same columns still serves queries" claim safe.
+- Applied to `references/setup-spanner.md`: the DDL illustration previously elided both index names as
+  `...`, which left a reader pre-creating the table manually no way to make the connector's own
+  `IF NOT EXISTS` statements no-op. The name formats and that consequence are now stated. No config
+  field, metadata column, or state value changed, so nothing else in the skill moved.
+
 ## TODO / re-verify
 
 - **Message metadata keys** (`table_name`, `mod_type`, `commit_timestamp`, `record_sequence`, `server_transaction_id`, `is_last_record_in_transaction_in_partition`, `value_capture_type`, `number_of_records_in_transaction`, `number_of_partitions_in_transaction`, `transaction_tag`, `is_system_transaction`) and payload shape (`keys`/`new_values`/`old_values`) — exist in `changestreams/model.go` conceptually but exact key strings not line-verified. Re-open `changestreams/model.go` + `subscriber.go`.

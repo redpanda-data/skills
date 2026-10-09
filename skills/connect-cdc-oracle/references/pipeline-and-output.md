@@ -387,7 +387,8 @@ The `online_catalog` LogMiner strategy does not capture DDL in the redo log. DDL
 
 | Knob | Tune when... | Direction |
 |---|---|---|
-| `logminer.scn_window_size` | High-volume database, large change backlog | Increase (50000–100000) |
+| `logminer.scn_window_size` | High-volume database, large change backlog | Increase (50000–100000). Only under the default `window_strategy: scn_window` |
+| `logminer.window_strategy` | SCN advances without matching transaction volume (for example a CDB's shared SCN bumped by another PDB) | Switch to `redo_volume` and tune `redo_volume_min` / `redo_volume_growth_max` instead of the SCN window fields |
 | `logminer.backoff_interval` | Low-traffic tables, reducing Oracle load | Increase (10s–60s) |
 | `logminer.mining_interval` | Near-real-time latency needed | Decrease (100ms) |
 | `max_parallel_snapshot_tables` | Snapshot of many tables is slow | Increase (2–8) |
