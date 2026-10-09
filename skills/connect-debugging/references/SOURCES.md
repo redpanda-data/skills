@@ -27,7 +27,7 @@ the connect tree. Benthos-defined flags are deferred (see below).
 |---|---|---|---|
 | `SKILL.md` | `internal/cli/dry_run.go`, `internal/cli/custom_lint.go`, `internal/cli/flags_redpanda.go`, `internal/cli/flags_common.go`, `internal/cli/enterprise.go`, `internal/cli/connectors_list.go`, `internal/license/service.go`, `internal/secrets/secrets.go` | `docs/modules/components/pages/http/about.adoc`, `logger/about.adoc`, `metrics/prometheus.adoc`, `metrics/json_api.adoc`, `tracers/open_telemetry_collector.adoc` | `modules/get-started/pages/licensing.adoc` |
 | `references/lint-and-validate.md` | `internal/cli/dry_run.go` (`dryRunCli()`, output format, `--redpanda-license`), `internal/cli/custom_lint.go` (`customLintCli()` = `mcp-server lint`), `internal/cli/flags_common.go` / `flags_redpanda.go` (`--verbose`, `--env-file`/`-e`, `--secrets`) | — | — |
-| `references/logging-metrics-tracing.md` | — | `docs/modules/components/pages/logger/about.adoc`, `metrics/prometheus.adoc`, `metrics/statsd.adoc`, `metrics/json_api.adoc`, `metrics/logger.adoc`, `tracers/open_telemetry_collector.adoc`, `http/about.adoc`, `redpanda/about.adoc` | — |
+| `references/logging-metrics-tracing.md` | `internal/impl/prometheus/metrics_prometheus.go` (the `prometheus` exporter's own config spec — it lives in `redpanda-data/connect`, not in the benthos engine: `use_histogram_timing`, `histogram_timing_seconds_suffix`, the seconds conversion in `promTiming.Timing`, and the `_ns` → `_seconds` rewrite in `histogramTimerName`) | `docs/modules/components/pages/logger/about.adoc`, `metrics/prometheus.adoc`, `metrics/statsd.adoc`, `metrics/json_api.adoc`, `metrics/logger.adoc`, `tracers/open_telemetry_collector.adoc`, `http/about.adoc`, `redpanda/about.adoc` | — |
 | `references/failure-modes.md` | `internal/cli/dry_run.go`, `internal/cli/custom_lint.go`, `internal/license/service.go` (`readLicense`, default-path fallback), `internal/license/shared_service.go` (`CheckRunningEnterprise` error string) | `docs/modules/components/pages/logger/about.adoc`, `metrics/*`, `http/about.adoc`; CDC input skeletons under `docs/modules/components/pages/inputs/` | — |
 | `references/enterprise-features.md` | `internal/cli/enterprise.go` (connector-list apply, `OnConfigParse`), `internal/cli/connectors_list.go` (`ApplyConnectorsList`, allow/deny), `internal/cli/flags_redpanda.go` (`--redpanda-license`, `--secrets`, `defaultLicenseConfig()`), `internal/license/service.go` (`defaultLicenseFilepath`), `internal/secrets/secrets.go` (`parseSecretsLookupURN`, URN schemes) | `docs/modules/components/pages/inputs/postgres_cdc.adoc`, `mysql_cdc.adoc`, `mongodb_cdc.adoc`, `oracledb_cdc.adoc`, `microsoft_sql_server_cdc.adoc`, `aws_dynamodb_cdc.adoc`, `gcp_spanner_cdc.adoc`, `salesforce_cdc.adoc`; `redpanda/about.adoc` | `modules/get-started/pages/licensing.adoc` (Connect enterprise feature table) |
 
@@ -43,6 +43,26 @@ recognized"`.
 - **Metric names** (`input_received`, `input_latency`, `output_sent`, `output_batch_sent`, `redpanda_cluster_features_enterprise_license_expiry_sec`) — release-specific; source from a live `json_api`/`prometheus` `/metrics` endpoint or generated docs, not pinned.
 - **Runtime log/trace output** — the "Successfully loaded Redpanda license", allow/deny apply, and logfmt/json log-line examples are illustrative runtime output.
 - **Component enterprise-support status** — confirm via the component catalog (`?support=enterprise`) or `rpk connect dry-run` at runtime, not a static list.
+
+## Sync log
+
+### Connect v4.112.0 (2026-10-09)
+
+- **New `prometheus` metrics field `histogram_timing_seconds_suffix`** (bool, default `false`,
+  `Version("4.112.0")`, Advanced). Verified at tag `v4.112.0` in
+  `internal/impl/prometheus/metrics_prometheus.go`: when it and `use_histogram_timing` are both true,
+  `histogramTimerName` rewrites a trailing `_ns` to `_seconds`. It is **opt-in**, not an automatic
+  rename — the release changelog describes the change as a fix, but the source adds a flag and leaves
+  the default behavior (histogram series keep the `_ns` name while recording seconds) unchanged.
+  Enabling it renames existing series.
+- Added to the `prometheus` config block in `references/logging-metrics-tracing.md`, together with the
+  unit mismatch it addresses and the remote-write "multiple metric kinds" rejection that a fleet mixing
+  `use_histogram_timing` produces. The same field was added to the metrics block in
+  `skills/connect/references/config-structure.md`.
+- **Provenance correction:** the `prometheus` metrics exporter is implemented in
+  `redpanda-data/connect` (`internal/impl/prometheus/`), not in the `redpanda-data/benthos` engine, so
+  exporter-level claims verify against the Connect release tag. The source map row for this file was
+  `—` for connect paths and now carries it.
 
 ## TODO / re-verify
 

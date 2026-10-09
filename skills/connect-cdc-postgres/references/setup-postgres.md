@@ -86,6 +86,14 @@ WHERE pubname = 'pglog_stream_my_cdc_slot';
 
 The connector manages the publication after creation (adds/removes tables as the `tables` config changes).
 
+**Partitioned tables**: if you intend to use `incremental_snapshot`, create the publication with `publish_via_partition_root = true`. Without it PostgreSQL publishes a partitioned table's changes under the individual partitions' names while the backfill reads the parent, so the two sides cannot be deduplicated — a `snapshot-execute` signal naming such a table is rejected and logged, and the connector warns about them at startup. Plain replication is unaffected either way.
+
+```sql
+CREATE PUBLICATION pglog_stream_my_cdc_slot
+  FOR TABLE public.events
+  WITH (publish_via_partition_root = true);
+```
+
 ## Step 5: Create Replication Slot (Optional)
 
 The connector creates the replication slot automatically. To pre-create it:
@@ -215,7 +223,7 @@ FROM pg_stat_replication;
 ```
 
 The connector also exposes Prometheus metrics:
-- `postgres_snapshot_progress{table=...}`: Fraction of snapshot complete per table (0.0–1.0)
+- `postgres_snapshot_progress{table=...}`: Fraction of snapshot complete per table (0.0–1.0). Covers incremental-snapshot backfills too — a table's series appears when its backfill starts. The denominator is the planner's row estimate (`pg_class.reltuples`), so a table that has never been analysed reports no progress and the connector logs a warning; run `ANALYZE` on it to get the metric.
 - `postgres_replication_lag_bytes`: Replication lag in bytes from the WAL monitor
 
 ## Dropping a Replication Slot

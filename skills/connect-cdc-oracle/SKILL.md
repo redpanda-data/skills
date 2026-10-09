@@ -187,6 +187,7 @@ A `PREFETCH_ROWS` query parameter on `connection_string` still works and **takes
 - Size archive log retention to exceed the longest plausible **idle** period for the monitored tables — not just the longest expected downtime.
 - Alert on a **stagnant checkpoint SCN** and on repeated ORA errors; a stationary checkpoint under a quiet workload is indistinguishable from a healthy one until the logs age out.
 - On databases with infrequent log switches, watch for **ORA-04036** (LogMiner PGA growth) and bound it with `logminer.max_session_age`.
+- On a CDB whose shared SCN is advanced by another PDB, the default `scn_window` strategy grows its window over mostly-empty SCN ranges. Switch `logminer.window_strategy` to `redo_volume` to size each cycle by the redo actually read instead — see [config-reference.md](references/config-reference.md).
 - A **flashback or point-in-time recovery followed by `OPEN RESETLOGS`** looks like the same failure but is not a retention problem: it starts a new database incarnation, so a checkpoint taken before the reset can never be resumed and the input fails with **ORA-01291** no matter how much retention you add. Recovery is to delete the checkpoint entry — with the default Oracle-based cache the flashback rolls the row *back* rather than clearing it, so it must be deleted explicitly — and to set `snapshot_mode: snapshot_and_stream` in the same change, since a checkpoint that is still present skips snapshotting entirely.
 
 ## Enterprise License
