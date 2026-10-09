@@ -377,7 +377,7 @@ logminer:
 
 **Type:** `int` | **Required:** no | **Default:** `2` | **Advanced**
 
-The minimum redo volume mined per cycle per redo thread, in multiples of the online redo log size (read once at startup as `MAX(BYTES)` over `V$LOG`). Only applies when `window_strategy` is `redo_volume`; must be greater than 0.
+The minimum redo volume mined per cycle per redo thread, in multiples of the online redo log size (read once on the first mining cycle as `MAX(BYTES)` over `V$LOG` and cached for the life of the input, so resizing the redo logs takes effect only after a restart; an unreadable or zero-byte result fails that mining cycle rather than startup). Only applies when `window_strategy` is `redo_volume`; must be greater than 0.
 
 Log files are added in sequence order until their total size reaches the budget, and the file that crosses the limit is kept — so one very large file is still selected. Increase it when redo logs are small and rotate frequently; decrease it when they are very large.
 

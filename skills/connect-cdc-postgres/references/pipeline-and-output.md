@@ -251,7 +251,7 @@ Consequences worth designing for:
 
 - **Backfill rows and live changes interleave.** A row can arrive twice — once from replication, once from the backfill — so the destination must treat deliveries as **idempotent upserts keyed by primary key**. This is standard CDC practice, but the up-front `stream_snapshot` phase did not require it in the same way.
 - **The backfill is paced by streamed commits**, so a quiet table advances only on heartbeats (hence the non-zero `heartbeat_interval` requirement). A busy database advances it continuously.
-- **Chunk reads run on the replication goroutine**, bounded by internal, non-configurable lock-wait and read timeouts (5s and 15s), kept well under PostgreSQL's `wal_sender_timeout` so a slow or blocked read cannot cost the replication connection. A lock conflict on the table being backfilled therefore briefly delays replication for every table; `retry_cooldown` bounds how often that repeats.
+- **Chunk reads run on the replication goroutine**, bounded by internal, non-configurable lock-wait and read timeouts, kept well under PostgreSQL's `wal_sender_timeout` so a slow or blocked read cannot cost the replication connection. A lock conflict on the table being backfilled therefore briefly delays replication for every table; `retry_cooldown` bounds how often that repeats.
 - **Set `REPLICA IDENTITY FULL` while backfilling a table with TOASTable columns.** Otherwise an `UPDATE` that leaves a large column unchanged carries no value for it, the buffered backfill row that held the real value is dropped as a duplicate, and the destination only ever sees `unchanged_toast_value`. The connector warns at startup and when a table is queued.
 
 ## Checkpointing and At-Least-Once Delivery
