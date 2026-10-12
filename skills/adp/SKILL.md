@@ -8,8 +8,9 @@ description: >-
   with `rpk ai agent` and `rpk ai trigger`, configuring remote or managed MCP servers
   with `rpk ai mcp-server` (including code mode and user-delegated OAuth), setting up
   LLM providers or discovering models with `rpk ai llm-provider` and `rpk ai model`,
-  writing Cedar access policies with `rpk ai policy`, or working with budgets,
-  guardrails, cost reporting, transcripts, and the audit log in the ADP UI. For the
+  writing Cedar access policies with `rpk ai policy`, reading conversation transcripts
+  or the audit log with `rpk ai agent transcript` and `rpk ai auditlog`, or working with
+  budgets, guardrails, and cost reporting in the ADP UI. For the
   separate rpk cloud mcp control-plane MCP server, see `/redpanda:rpk-cloud`.
 ---
 
@@ -37,7 +38,8 @@ The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agen
 | Your own OAuth connections | `rpk ai connection` | Connections |
 | Budgets, cost and usage, guardrail authoring | none | Budgets, Cost and usage, Guardrails |
 | Transcripts | `rpk ai agent transcript` | Agent → Transcripts |
-| Audit log, agent network, conversation sessions | none | Audit log, Agents → Agent network, Agent Playground history |
+| Audit log | `rpk ai auditlog` | Audit log |
+| Agent network, conversation sessions | none | Agents → Agent network, Agent Playground history |
 | Coding tools through the gateway | `rpk ai run claude`, `rpk ai run codex` | — |
 
 ## Components
@@ -56,7 +58,7 @@ See [references/mcp-servers.md](references/mcp-servers.md).
 
 ### AI Gateway and LLM providers
 
-The AI Gateway is a managed HTTP proxy. It stores upstream credentials in the Redpanda secret store and injects them on outbound requests, so calling applications never see raw keys. Per-provider URL: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers with `rpk ai llm-provider`, and discover models with `rpk ai model list`. Provider types include OpenAI, Anthropic, Google, Amazon Bedrock, and OpenAI-compatible endpoints; confirm the current set with `rpk ai llm-provider create --help`.
+The AI Gateway is a managed HTTP proxy. It stores upstream credentials in the Redpanda secret store and injects them on outbound requests, so calling applications never see raw keys. Per-provider URL: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers with `rpk ai llm-provider`, and discover models with `rpk ai model list`. Provider types include OpenAI, Anthropic, Google Gemini API, Amazon Bedrock, and OpenAI-compatible endpoints; confirm the current set with `rpk ai llm-provider create --help`.
 
 **Scope:** the gateway injects credentials. It does not do routing, failover, cross-provider load balancing, or request rate limiting. To cap spend, use budgets.
 
@@ -77,7 +79,7 @@ See [references/governance.md](references/governance.md).
 ### Observability
 
 - **Transcripts** (`rpk ai agent transcript list|get`, UI): what an agent did in a conversation: turns, tool calls, models, timing.
-- **Audit log** (UI): who was allowed or refused what across ADP, which policy decided, and on whose behalf an agent acted.
+- **Audit log** (`rpk ai auditlog list|get`, UI): who was allowed or refused what across ADP, which policy decided, and on whose behalf an agent acted.
 - **Home, Agent network, Playground history** (UI): headline metrics, agent-to-resource topology, and per-agent conversation sessions.
 
 See [references/observability.md](references/observability.md).
@@ -117,7 +119,7 @@ rpk ai model list                      # model catalog (optionally --provider-ty
 
 ## Key patterns and gotchas
 
-- **Use `rpk ai` or the UI.** When a task has no CLI command (budgets, cost reporting, guardrail authoring, the audit log), direct the user to the UI instead of inventing a command. There is no `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail`.
+- **Use `rpk ai` or the UI.** When a task has no CLI command (budgets, cost reporting, guardrail authoring), direct the user to the UI instead of inventing a command. There is no `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail`. The audit log **does** have one — `rpk ai auditlog` — so do not send a reader to the UI for it.
 - **Cost unit.** The UI shows dollars. Raw cost values in manifests or `-o yaml` output are **USD microcents** ($1 = 100,000,000 microcents). Never treat them as cents.
 - **Creating an LLM provider turns transcript content capture ON.** If the create does not mention transcripts, prompts and completions are recorded verbatim. To opt out, pass `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set them in the manifest). Existing providers are not changed. See [gateway-and-providers.md](references/gateway-and-providers.md#transcript-recording-defaults-to-on).
 - **A passthrough provider takes two credentials and cannot be health-checked.** With authorization passthrough, the caller's upstream credential goes in `Authorization` and the Redpanda Cloud token in `X-Redpanda-Cloud-Token`. On OpenAI-family providers, a call without the gateway header is refused with **HTTP 400**, and an upstream redirect becomes **HTTP 502**. A connection check reports it as not configured, which is expected; don't gate a create on it. See [gateway-and-providers.md](references/gateway-and-providers.md#authorization-passthrough).
