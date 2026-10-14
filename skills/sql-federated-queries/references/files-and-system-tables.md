@@ -67,10 +67,17 @@ The path string determines the storage provider
 | `gs://` | Google Cloud Storage | `'gs://my-bucket/data/file.parquet'` |
 | `az://` | Azure Blob Storage (short form) | `'az://my-container@my-account.blob.core.windows.net/file.parquet'` |
 | `wasbs://` | Azure Blob Storage (long form) | `'wasbs://my-container@my-account.blob.core.windows.net/file.parquet'` |
+| `abfss://` / `abfs://` | Azure Blob Storage (ADLS Gen2 spelling) | `'abfss://my-container@my-account.dfs.core.windows.net/file.parquet'` |
 | `local://` or no prefix | Local filesystem | `'local:///tmp/file.parquet'` or `'/tmp/file.parquet'` |
 
-Both `az://` and `wasbs://` are accepted for Azure paths (grounded in
-`oxla/src/filesystem/path/protocol.cpp`).
+All four Azure spellings — `az://`, `wasbs://`, `abfss://` and `abfs://` — are
+accepted and resolve to the same provider. The account may be named in the path
+itself; where a storage connection also carries `account_name`, the two must
+agree, or the statement is refused with `azure storage connection 'url' names
+account '<a>' but account_name is '<b>'`. In the `<container>@<account>.<host>`
+form the host must be `blob.core.windows.net` or `dfs.core.windows.net`; any
+other host is rejected rather than redirected, since requests always go to the
+account's public-cloud blob endpoint.
 
 ### Examples
 
@@ -193,11 +200,20 @@ Option names grounded in `oxla/src/filesystem/providers/azure/proto/credentials.
 
 | Option | Description |
 |--------|-------------|
-| `tenant_id` | Azure AD tenant ID |
-| `client_id` | Azure AD client/app ID |
-| `client_secret` | Azure AD client secret (stored encrypted) |
-| `account_name` | Storage account name (required) |
+| `tenant_id` | Azure AD tenant ID — optional, but see the all-or-none rule below |
+| `client_id` | Azure AD client/app ID — optional, same rule |
+| `client_secret` | Azure AD client secret (stored encrypted) — optional, same rule |
+| `account_name` | Storage account name (**required**; lowercased when stored) |
 | `endpoint` | Optional: custom blob endpoint (for Azure Stack or emulators) |
+
+`tenant_id`, `client_id` and `client_secret` must **either all be set or all be
+omitted** — a partially configured connection is refused with `azure storage
+connection options 'tenant_id', 'client_id' and 'client_secret' must either all
+be set or all be omitted`. Omitting all three gives a **keyless** connection that
+uses the node's ambient Azure identity — the default credential chain
+(environment, workload identity, managed identity, Azure CLI) — which is the
+Azure counterpart of the keyless GCS form above. `account_name` is required
+either way.
 
 The valid TYPE identifier for Azure is `ABS` (Azure Blob Storage). The grammar
 also accepts `S3` and `GCS`; `ABS` maps internally to the azure provider.

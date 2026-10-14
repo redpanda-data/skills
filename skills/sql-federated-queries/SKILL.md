@@ -198,6 +198,7 @@ Oxla connects to Apache Iceberg REST catalogs (e.g., Polaris, AWS Glue, Tabular)
 |--------|----------|-------------|
 | `uri` | Yes | REST catalog endpoint URL |
 | `warehouse` | No | Warehouse path or identifier |
+| `base_location` | No | Root for newly created tables (`<base_location>/<namespace>.db/<table>`); wins over `warehouse` and over a namespace's own location |
 | `auth_type` | No | `'oauth2'`, `'basic'`, or `'aws_sigv4'` |
 | `oauth2_client_id` | OAuth2 | OAuth2 client ID |
 | `oauth2_client_secret` | OAuth2 | OAuth2 client secret (stored encrypted) |
@@ -260,11 +261,14 @@ DROP TABLE my_ice=>sales.orders;           -- add PURGE to also delete data file
 
 `NOT NULL` columns become required Iceberg fields; `NUMERIC(p,s)` maps to
 `decimal(p,s)`; types with no Iceberg equivalent (`INTERVAL`, `JSON`/`JSONB`,
-`UUID`, `INT16`/`INT32`, geo types) are rejected. `CREATE TABLE AS SELECT` and
-`DROP NAMESPACE ... CASCADE` parse but are not supported. Iceberg DDL is
-authorized against the catalog's owner. See
-[iceberg.md](references/iceberg.md) for the full grammar, partition transforms,
-and type mapping.
+`UUID`, `INT16`/`INT32`, geo types) are rejected. `CREATE TABLE ... AS SELECT`
+**is** supported on a catalog (the table is created when the plan runs), while
+`DROP NAMESPACE ... CASCADE` parses but is not supported. `ALTER TABLE
+cat=>ns.table <action>` evolves a table's schema — `ADD`/`DROP`/`RENAME COLUMN`,
+`ALTER COLUMN ... TYPE`, `SET`/`UNSET TBLPROPERTIES`, partition-field changes,
+`WRITE ORDERED BY` — one action per statement. Iceberg DDL is authorized against
+the catalog's owner. See [iceberg.md](references/iceberg.md) for the full
+grammar, partition transforms, and type mapping.
 
 ---
 
@@ -314,7 +318,8 @@ SELECT * FROM system.kafka_sources;
 
 -- Iceberg catalogs
 SELECT * FROM system.iceberg_catalogs;
--- Columns: name, uri, warehouse, auth_type, namespace_name, database_name
+-- Columns: name, uri, warehouse, auth_type, namespace_name, database_name,
+--          base_location
 
 -- Iceberg tables (REFRESHed into local catalog)
 SELECT * FROM system.iceberg_tables;

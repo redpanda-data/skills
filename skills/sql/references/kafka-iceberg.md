@@ -95,7 +95,9 @@ gcs`, `ALTER STORAGE ...`, and the `IF [NOT] EXISTS` variants all parse without
 it). Whether a bare form is *accepted* depends on the type: **`gcs`** accepts it
 and falls back to ADC (see below); **`s3`** still requires `region` or
 `endpoint`, so a bare `TYPE = S3` parses but is rejected at validation; **`abs`**
-still requires `account_name`, `tenant_id`, `client_id`, and `client_secret`.
+still requires `account_name`, but its Azure AD credentials are optional as a
+unit (see below), so a bare `TYPE = ABS` is rejected only for the missing
+`account_name`.
 
 ### Storage connection option keys
 
@@ -114,10 +116,16 @@ redacted from logs/errors (marked **secret**).
 | `path_style` | s3 | force path-style addressing |
 | `use_http` | s3 | use plain HTTP instead of HTTPS |
 | `service_account_key` | gcs | **secret**; optional — omit (or leave empty) to use Application Default Credentials / Workload Identity |
-| `account_name` | azure | storage account name |
-| `tenant_id` | azure | AAD tenant |
-| `client_id` | azure | AAD app client id |
-| `client_secret` | azure | **secret** |
+| `account_name` | azure | storage account name; **required**, and lowercased when stored |
+| `tenant_id` | azure | AAD tenant; set all three AAD keys or none |
+| `client_id` | azure | AAD app client id; see `tenant_id` |
+| `client_secret` | azure | **secret**; see `tenant_id` |
+
+`tenant_id`, `client_id` and `client_secret` must either all be set or all be
+omitted (`... must either all be set or all be omitted`); omitting all three
+leaves the connection on the node's ambient Azure identity. Azure URLs may be
+written as `wasbs://`, `az://`, `abfss://` or `abfs://`, and a URL that names an
+account must agree with `account_name`.
 
 ---
 
@@ -155,6 +163,7 @@ Grounded in `connection_option_names.h` (`namespace iceberg`) and
 |-----|-------|
 | `uri` | REST catalog endpoint. **Required** — a catalog without it is rejected with `missing required option 'uri'` |
 | `warehouse` | warehouse location/identifier |
+| `base_location` | root for newly created tables: `<base_location>/<dot-joined namespace>.db/<table>`, sent as the create request's location. Takes precedence over a namespace's published location and over `warehouse`, for every catalog backend |
 | `auth_type` | one of `oauth2`, `basic`, `aws_sigv4`, `gcp` (validated; others rejected) |
 | `oauth2_client_id` | OAuth2 client id (`auth_type = 'oauth2'`) |
 | `oauth2_client_secret` | **secret** |
@@ -205,9 +214,14 @@ DROP TABLE IF EXISTS my_iceberg=>sales.orders;
 `[1, 2147483647]`). `NOT NULL` columns become required Iceberg fields;
 `NUMERIC(p,s)` → `decimal(p,s)`; arrays → `list`; composite types → `struct`.
 Types with no Iceberg equivalent (`INTERVAL`, `JSON`, `JSONB`, `UUID`,
-`INT16`/`INT32`, `GEOMETRY`, `GEOGRAPHY`, `POINT`) are rejected. `CREATE TABLE AS
-SELECT` and `DROP NAMESPACE ... CASCADE` parse but are not supported. DDL is
-authorized against the **catalog's owner**. (This is distinct from the Kafka
+`INT16`/`INT32`, `GEOMETRY`, `GEOGRAPHY`, `POINT`) are rejected. `CREATE TABLE
+... AS SELECT` **is** supported on an Iceberg catalog (optionally with a column
+list, `PARTITION BY` and `WITH (...)`), while `DROP NAMESPACE ... CASCADE` parses
+but is not supported. An Iceberg table also takes the schema-evolution forms of
+`ALTER TABLE` — `ADD`/`DROP`/`RENAME COLUMN`, `ALTER COLUMN ... TYPE`,
+`SET`/`UNSET TBLPROPERTIES`, partition-field changes and `WRITE ORDERED BY`, one
+action per statement; see `/redpanda:sql-federated-queries`. DDL is authorized
+against the **catalog's owner**. (This is distinct from the Kafka
 options-only `CREATE TABLE cat=>tbl WITH (...)` form below, which binds a topic;
 on an Iceberg catalog that form is rejected — a column list is required.)
 
@@ -264,6 +278,10 @@ Grounded in `connection_option_names.h` (`namespace kafka`) and the
 -- Update connection options
 ALTER REDPANDA CATALOG my_rp WITH (sasl_password = 'new-secret');
 
+-- Clear options back to unset (standalone, or after WITH (...) in one statement)
+ALTER REDPANDA CATALOG my_rp RESET (truststore, pandaproxy_url);
+ALTER REDPANDA CATALOG my_rp WITH (connection_timeout = 30000) RESET (truststore);
+
 -- Attach / detach an Iceberg catalog binding
 ALTER REDPANDA CATALOG my_rp USING CATALOG my_iceberg;
 ALTER REDPANDA CATALOG my_rp USING CATALOG NULL;   -- detach
@@ -274,6 +292,15 @@ SHOW REDPANDA TABLES;
 DROP REDPANDA CATALOG my_rp;
 DROP REDPANDA CATALOG IF EXISTS my_rp;
 ```
+
+`RESET (option, ...)` clears a previously set option back to unset — bare keys
+only, standalone or after `WITH (...)` in the same statement. A required option
+(`initial_brokers`, `schema_registry_url`) cannot be reset, the same key may not
+be set and reset in one statement, and resetting any of the `sasl_*` options
+clears the whole SASL configuration (likewise either `key_store_*` key clears the
+keypair). Separately, a string option set to `''` is rejected at DDL time on both
+`CREATE` and `ALTER`, except `sasl_user`, `sasl_password` and `rd_kafka_debug`.
+For the full rules see `/redpanda:sql-federated-queries`.
 
 ---
 
@@ -327,8 +354,9 @@ table name **must** use the `catalog=>table_name` external-source form (the pars
 raises `YYERROR` "Expected catalog=>table_name syntax" otherwise). This is the
 only `ALTER TABLE` form that applies to a topic table: `ALTER TABLE ... ADD
 COLUMN` is for native tables only and is refused on an external table (its
-columns follow the registered schema), and there is no `DROP/RENAME COLUMN` on
-any table. See [ddl-dml.md](ddl-dml.md#alter-table).
+columns follow the registered schema), and a topic table has no `DROP`/`RENAME
+COLUMN` either. (A table on an **Iceberg** catalog does take those forms — see
+`/redpanda:sql-federated-queries`.) See [ddl-dml.md](ddl-dml.md#alter-table).
 
 ```sql
 ALTER TABLE IF EXISTS my_rp=>orders WITH (

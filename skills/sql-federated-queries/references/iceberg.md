@@ -6,7 +6,7 @@ syntax. Partition pruning and predicate pushdown are applied automatically.
 
 > **Direct Iceberg access is gated at the cluster level.** One cluster setting
 > controls every direct interaction with an Iceberg catalog's tables and
-> namespaces — `SELECT`, `CREATE TABLE`/`DROP TABLE`, and
+> namespaces — `SELECT`, `CREATE TABLE`/`ALTER TABLE`/`DROP TABLE`, and
 > `CREATE NAMESPACE`/`DROP NAMESPACE`. Where it is not enabled, each of those is
 > refused with `FeatureNotSupported` and the message
 > `Direct queries on iceberg tables are not supported.` Defining the catalog is
@@ -57,6 +57,7 @@ All option names are grounded in `hsql::option_names::iceberg`
 | Option | Description |
 |--------|-------------|
 | `warehouse` | Warehouse path or identifier (catalog-specific) |
+| `base_location` | Root under which newly created tables are placed: a table is created at `<base_location>/<dot-joined namespace>.db/<table>`, sent as the location on the create request. Takes precedence over a location published by the namespace and over `warehouse`, and applies to every backend — including the ones that would otherwise choose the location themselves. |
 | `auth_type` | Authentication mode: `'oauth2'`, `'basic'`, `'aws_sigv4'`, or `'gcp'`. Omit for unauthenticated. |
 
 **OAuth2 options** (when `auth_type = 'oauth2'`):
@@ -234,11 +235,88 @@ DROP TABLE my_ice=>sales.orders PURGE;
 DROP TABLE IF EXISTS my_ice=>sales.orders;
 ```
 
-`CREATE TABLE ... AS SELECT` (CTAS) against an Iceberg catalog **parses but is
-rejected** (`CREATE TABLE AS SELECT is not supported`). The options-only form
-`CREATE TABLE cat=>tbl WITH (...)` (no column list) is the *Kafka* topic-binding
-form; on an **Iceberg** catalog it is rejected (`... is an iceberg catalog;
-creating a table on it requires a column definition list`).
+`CREATE TABLE ... AS SELECT` (CTAS) **is supported** on an Iceberg catalog. The
+`SELECT` is planned first, the new table's columns are derived from the planned
+output, and the table is created when the plan runs, so that it is published
+together with its first files wherever the catalog supports a staged create
+(Glue and S3 Tables do not, so against those the table is created immediately).
+An optional column-name list, `PARTITION BY (...)` and `WITH (...)` table
+properties all apply to the CTAS form as they do to a plain `CREATE TABLE`.
+
+```sql
+-- Copy a table within a catalog
+CREATE TABLE my_ice=>sales.orders_2026 AS
+    SELECT * FROM my_ice=>sales.orders WHERE sold_at >= DATE '2026-01-01';
+
+-- Partition the new table as it is created
+CREATE TABLE my_ice=>sales.by_day PARTITION BY (day(sold_at)) AS
+    SELECT id, sold_at FROM my_ice=>sales.orders;
+
+CREATE TABLE IF NOT EXISTS my_ice=>sales.top AS SELECT id FROM orders LIMIT 10;
+```
+
+`IF NOT EXISTS` against an existing table is resolved as a lookup at planning
+time. A statement that fails after the table was created drops it again, as does
+a transaction that ends without committing. CTAS is the one `CREATE` form that
+runs as a query rather than as catalog DDL, so it is also covered by
+`feature_flags.allow_table_operations`: with that gate off it is refused with
+`CREATE TABLE AS SELECT is not supported.`
+
+The options-only form `CREATE TABLE cat=>tbl WITH (...)` (no column list and no
+`AS SELECT`) is the *Kafka* topic-binding form; on an **Iceberg** catalog it is
+rejected (`... is an iceberg catalog; creating a table on it requires a column
+definition list`).
+
+### `ALTER TABLE` (Iceberg schema evolution)
+
+An Iceberg-catalog table takes a schema-evolution form of `ALTER TABLE` that
+native tables do not have:
+
+```sql
+ALTER TABLE [IF EXISTS] <catalog>=><namespace>.<table> <action>;
+```
+
+It is covered by the direct-Iceberg gate described at the top of this file, is
+authorized against the **catalog's owner** like the rest of the Iceberg DDL, and
+needs a namespace in the path (`iceberg table paths require a namespace; use
+"catalog=>namespace.table"`). On a catalog that is not an Iceberg catalog it is
+refused with `ALTER TABLE is only supported on Iceberg tables, and "<name>" is
+not an Iceberg catalog`.
+
+**One action per statement.** The grammar accepts a comma-separated list only so
+that it can refuse it with a diagnostic instead of a syntax error: `ALTER TABLE
+takes one action per statement; issue one statement per change`.
+
+| Action | Notes |
+|--------|-------|
+| `ADD COLUMN [IF NOT EXISTS] [<parent path>.]<col> <type> [FIRST \| AFTER <col>]` | The new column must be nullable: a required one is refused with `cannot add required column "<col>": rows already written have no value for it. Add it as nullable instead.` |
+| `DROP COLUMN [IF EXISTS] <path>` | |
+| `RENAME COLUMN <path> TO <name>` | Whether the new name collides is decided by the catalog itself |
+| `ALTER COLUMN <path> TYPE <type>` | Whether the change is a legal widening is decided by the catalog itself |
+| `ALTER COLUMN <path> DROP NOT NULL` | Makes the field optional |
+| `ALTER COLUMN <path> SET NOT NULL` | **Rejected**: `cannot make column "<col>" required: rows already written cannot be checked against it. Declare it NOT NULL when creating the table instead.` |
+| `ALTER COLUMN <path> FIRST \| AFTER <col>` | Moves the column |
+| `SET TBLPROPERTIES ('k' = 'v' [, ...])` | Table properties, as forwarded by `CREATE TABLE ... WITH (...)` |
+| `UNSET TBLPROPERTIES ('k' [, ...])` | |
+| `ADD PARTITION FIELD <transform> [AS <name>]` | `<transform>` is a partition term, as in `PARTITION BY` below |
+| `DROP PARTITION FIELD <transform>` | |
+| `REPLACE PARTITION FIELD <old> WITH <new> [AS <name>]` | Applied as a drop followed by an add |
+| `WRITE ORDERED BY (<transform> [ASC \| DESC] [NULLS FIRST \| NULLS LAST] [, ...])` | Sets the table's write sort order. Without an explicit nulls position, Iceberg's own default applies: nulls first when ascending, nulls last when descending |
+
+A column path is dotted and follows Iceberg's own field naming: struct fields by
+name, a list's `element`, and a map's `key` / `value` — for example
+`ALTER TABLE my_ice=>sales.orders DROP COLUMN shipping.address.zip`. An action
+excused by `IF EXISTS` / `IF NOT EXISTS` is dropped from the statement instead of
+failing it.
+
+```sql
+ALTER TABLE my_ice=>sales.orders ADD COLUMN discount DOUBLE AFTER amount;
+ALTER TABLE my_ice=>sales.orders RENAME COLUMN amount TO gross_amount;
+ALTER TABLE my_ice=>sales.orders ALTER COLUMN qty TYPE BIGINT;
+ALTER TABLE my_ice=>sales.orders SET TBLPROPERTIES ('write.format.default' = 'parquet');
+ALTER TABLE my_ice=>sales.orders ADD PARTITION FIELD day(sold_at) AS sold_day;
+ALTER TABLE my_ice=>sales.orders WRITE ORDERED BY (sold_at DESC NULLS LAST);
+```
 
 ### `PARTITION BY` transforms
 
@@ -457,6 +535,7 @@ Columns:
 | `auth_type` | TEXT | Authentication type: `'oauth2'`, `'basic'`, `'aws_sigv4'`, `'gcp'`, or `''` |
 | `namespace_name` | TEXT | Oxla schema (namespace) containing this catalog |
 | `database_name` | TEXT | Oxla database containing this catalog |
+| `base_location` | TEXT | Root for newly created tables (empty if not set) |
 
 ```sql
 -- List all Iceberg catalogs

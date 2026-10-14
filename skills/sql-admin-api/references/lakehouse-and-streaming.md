@@ -58,16 +58,18 @@ When `access_key_id`/`secret_access_key` are omitted, the AWS default credential
 | `service_account_key` | — | service-account JSON key; sensitive (redacted). Optional: when omitted or empty, GCS uses Application Default Credentials (ADC) — Workload Identity on GKE, else the GCP credential chain |
 | `endpoint` | — | custom endpoint |
 
-**ABS / Azure Blob** (`k_supported_azure_options`) — expected URL scheme `wasbs://`:
+**ABS / Azure Blob** (`k_supported_azure_options`) — accepted URL schemes `wasbs://`, `az://`, `abfss://`, `abfs://`:
 
 | Option | Required | Notes |
 |--------|----------|-------|
-| `url` | yes | `wasbs://container/prefix` |
-| `account_name` | yes | Azure Storage Account name |
-| `tenant_id` | — | Azure AD tenant ID |
-| `client_id` | — | Azure AD app (client) ID |
-| `client_secret` | — | Azure AD app secret; sensitive (redacted) |
+| `url` | yes | e.g. `wasbs://container/prefix` or `abfss://container@account.dfs.core.windows.net/prefix`; an account named in the URL must match `account_name` |
+| `account_name` | yes | Azure Storage Account name; lowercased when stored |
+| `tenant_id` | — | Azure AD tenant ID; all three AAD options are one unit |
+| `client_id` | — | Azure AD app (client) ID; see `tenant_id` |
+| `client_secret` | — | Azure AD app secret; sensitive (redacted); see `tenant_id` |
 | `endpoint` | — | custom endpoint |
+
+`tenant_id`, `client_id` and `client_secret` must either all be set or all be omitted; a partial set is rejected. Omitting all three runs the connection on the node's ambient Azure identity (the default credential chain), the Azure counterpart of GCS's ADC fallback.
 
 > Note: a storage **connection** (named SQL object) is distinct from the cluster-level `storage.oxla_home` backing store described in [configuration.md](configuration.md). The `oxla_home` URI is where Oxla stores its own data; a `CREATE STORAGE` connection is referenced by Iceberg catalogs for reading/writing external lakehouse data.
 
@@ -81,7 +83,8 @@ The cluster gate `feature_flags.allow_iceberg_queries` (default `false`) control
 every **direct** interaction with the tables and namespaces of an Iceberg catalog:
 
 - `SELECT` from an Iceberg table, and `INSERT` into one;
-- `CREATE TABLE` / `DROP TABLE` against the catalog;
+- `CREATE TABLE` / `ALTER TABLE` / `DROP TABLE` against the catalog — including
+  `CREATE TABLE ... AS SELECT` and the schema-evolution `ALTER TABLE` actions;
 - `CREATE NAMESPACE` / `DROP NAMESPACE` against the catalog.
 
 With the flag off, each of those is refused with `FeatureNotSupported` and the
@@ -124,6 +127,7 @@ The `STORAGE` clause links the catalog to a `CREATE STORAGE` connection (section
 |--------|----------|-------|
 | `uri` | yes | REST catalog base URI (validated as required) |
 | `warehouse` | — | warehouse identifier/location |
+| `base_location` | — | root for newly created tables (`<base_location>/<dot-joined namespace>.db/<table>`), sent as the create request's location; wins over a namespace's published location and over `warehouse`, on every backend |
 | `auth_type` | — | `oauth2` \| `basic` \| `aws_sigv4` (selects which auth sub-options apply) |
 
 **`auth_type = 'oauth2'`** (OAuth2 client-credentials; for Polaris, Okta, Azure AD):
