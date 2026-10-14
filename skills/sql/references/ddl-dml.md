@@ -48,10 +48,17 @@ DROP TABLE IF EXISTS orders;
 ## CREATE TABLE AS SELECT (CTAS)
 
 `CREATE TABLE ... AS SELECT` parses, but it is **not supported on native tables**:
-the statement is refused with `CREATE TABLE AS SELECT is not supported`
+a target without a `catalog=>` name is refused with `CREATE TABLE AS SELECT is
+supported only on iceberg catalogs ("catalog=>namespace.table")`
 (`FeatureNotSupported`), with or without a column-name list. It is supported only
 against an Iceberg catalog (`CREATE TABLE cat=>ns.t AS SELECT ...`); see
-`/redpanda:sql-federated-queries`.
+`/redpanda:sql-federated-queries`. A `catalog=>` target that names a
+Redpanda/Kafka catalog is refused in turn with `CREATE TABLE AS SELECT on catalog
+"<name>" is not supported; only iceberg catalogs accept it`. (`CREATE TABLE AS
+SELECT is not supported.` is a different refusal: that is what the
+`feature_flags.allow_table_operations` gate returns when it is off, before the
+target is examined at all.) `SELECT ... INTO` inside the body is rejected too
+(`SELECT ... INTO is not allowed in CREATE TABLE AS SELECT`).
 
 To materialize a query result as a native table, declare the table and then fill
 it with `INSERT INTO ... SELECT` (see [INSERT](#insert) below):

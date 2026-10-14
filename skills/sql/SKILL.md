@@ -22,7 +22,7 @@ Key differences from PostgreSQL to keep in mind:
 - `EXPLAIN` exists but is not PostgreSQL's: it returns the explanation **as a relation**, not as plan text, and there is no `EXPLAIN ANALYZE` and no parenthesized option list. `EXPLAIN` alone renders a help table of the modes; `EXPLAIN PHYSICAL <query>`, `EXPLAIN TIMING <query>`, and `EXPLAIN CONFIG` are the modes. See [ddl-dml.md](references/ddl-dml.md#explain).
 - `COPY FROM/TO` uses explicit `FORMAT` option names (`CSV`, `PARQUET`, `ORC`).
 - `SELECT INTO` supports two forms: `SELECT ... INTO new_table FROM ...` (creates a new table) and `SELECT ... INTO 'path' (options) FROM ...` (writes to a file). The parenthesized option list selects the file form.
-- `CREATE TABLE ... AS SELECT` (CTAS) is **not** supported on native tables (`CREATE TABLE AS SELECT is not supported`); it works only on an Iceberg catalog (`/redpanda:sql-federated-queries`). To materialize or reshape a native table, `CREATE TABLE` with a column list and then `INSERT INTO ... SELECT`.
+- `CREATE TABLE ... AS SELECT` (CTAS) is **not** supported on native tables (`CREATE TABLE AS SELECT is supported only on iceberg catalogs ("catalog=>namespace.table")`); it works only on an Iceberg catalog (`/redpanda:sql-federated-queries`). To materialize or reshape a native table, `CREATE TABLE` with a column list and then `INSERT INTO ... SELECT`.
 - `GENERATE_SERIES(start, stop[, step])` is supported as a table-valued function.
 
 ## Quickstart

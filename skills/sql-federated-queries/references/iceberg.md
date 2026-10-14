@@ -256,11 +256,14 @@ CREATE TABLE IF NOT EXISTS my_ice=>sales.top AS SELECT id FROM orders LIMIT 10;
 ```
 
 `IF NOT EXISTS` against an existing table is resolved as a lookup at planning
-time. A statement that fails after the table was created drops it again, as does
-a transaction that ends without committing. CTAS is the one `CREATE` form that
-runs as a query rather than as catalog DDL, so it is also covered by
-`feature_flags.allow_table_operations`: with that gate off it is refused with
-`CREATE TABLE AS SELECT is not supported.`
+time, and on an existing table the statement is a no-op that still reports the
+`CREATE TABLE AS` tag. A statement that fails after the table was created drops it
+again, as does a transaction that ends without committing. CTAS is the one
+`CREATE` form that runs as a query rather than as catalog DDL, so two gates apply:
+`feature_flags.allow_table_operations` (off ⇒ `CREATE TABLE AS SELECT is not
+supported.`, before the target is even examined) and the direct-Iceberg gate at the
+top of this file. Like the rest of the Iceberg DDL it is authorized against the
+catalog's owner, and `SELECT ... INTO` in the body is rejected.
 
 The options-only form `CREATE TABLE cat=>tbl WITH (...)` (no column list and no
 `AS SELECT`) is the *Kafka* topic-binding form; on an **Iceberg** catalog it is
