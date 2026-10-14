@@ -46,7 +46,7 @@ into a static list, nor flag a live/source mismatch as drift:
 
 ## TODO / re-verify
 
-- **Sync 2026-10-14:** verified at the shipped Oxla tag `1.4.0-rc5` (`release/1.4`; the version `cloudv2` pins at head in both install packs and the ADP image map, up from `1.3.4` on 2026-10-08).
+- **Sync 2026-10-14:** verified at the shipped Oxla tag `1.4.0-rc5` (`release/1.4`; the version `cloudv2` pins at head in both install packs and the ADP image map).
 
 - **Log filename pattern** (SKILL + metrics-and-logging say `server.<DATETIME>.<PID>.log`): `src/util/plog.h` documents the rolling log as `$TMPDIR/oxla/server.$DATETIME.log` (**no PID**); the `.<PID>.` form appears on the separate `startup.$DATETIME.$PID.log` tee file. Reconcile the `server.*` pattern.
 - **`state` value strings not line-verified**: `src/scheduler/states/context.cpp` and `src/executor/executor.cpp` confirmed to exist, but the exact lowercase enum-to-string mapping was not read line-by-line. Re-verify if precision matters.

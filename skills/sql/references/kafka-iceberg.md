@@ -298,8 +298,10 @@ only, standalone or after `WITH (...)` in the same statement. A required option
 (`initial_brokers`, `schema_registry_url`) cannot be reset, the same key may not
 be set and reset in one statement, and resetting any of the `sasl_*` options
 clears the whole SASL configuration (likewise either `key_store_*` key clears the
-keypair). Separately, a string option set to `''` is rejected at DDL time on both
-`CREATE` and `ALTER`, except `sasl_user`, `sasl_password` and `rd_kafka_debug`.
+keypair). `RESET` combines only with a leading `WITH (...)`, not with `USING
+CATALOG`. Separately, a string **connection** option set to `''` is rejected at
+DDL time on both `CREATE` and `ALTER`, except `sasl_user`, `sasl_password` and
+`rd_kafka_debug` (topic-binding table options are not subject to this check).
 For the full rules see `/redpanda:sql-federated-queries`.
 
 ---
@@ -353,8 +355,9 @@ This is the canonical Kafka-catalog rebind form. Use **`IF EXISTS`**, and the
 table name **must** use the `catalog=>table_name` external-source form (the parser
 raises `YYERROR` "Expected catalog=>table_name syntax" otherwise). This is the
 only `ALTER TABLE` form that applies to a topic table: `ALTER TABLE ... ADD
-COLUMN` is for native tables only and is refused on an external table (its
-columns follow the registered schema), and a topic table has no `DROP`/`RENAME
+COLUMN` on a native table does not apply to a topic table (its columns follow
+the registered schema, and the `catalog=>` form is refused for a non-Iceberg
+catalog), and a topic table has no `DROP`/`RENAME
 COLUMN` either. (A table on an **Iceberg** catalog does take those forms — see
 `/redpanda:sql-federated-queries`.) See [ddl-dml.md](ddl-dml.md#alter-table).
 

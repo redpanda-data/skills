@@ -28,7 +28,7 @@ Scope note: SQL-level administration (roles, grants, system-table queries, DDL s
 
 ## TODO / re-verify
 
-- **Sync 2026-10-14:** verified at the shipped Oxla tag `1.4.0-rc5` (`release/1.4`; the version `cloudv2` pins at head in both install packs and the ADP image map, up from `1.3.4` on 2026-10-08).
+- **Sync 2026-10-14:** verified at the shipped Oxla tag `1.4.0-rc5` (`release/1.4`; the version `cloudv2` pins at head in both install packs and the ADP image map).
 
 - **No public docs exist.** The `sql` module named in the sourcing brief is **not present** on `redpanda-data/docs` `main`. (The `sql` skill's user-facing docs are in `redpanda-data/cloud-docs`; admin-api has none.) If a public admin docs module lands later, add a docs column. (unverified — no path)
 - **Memory/OOM monitor internals** in `admin-grpc-and-runtime.md` (samples `/proc/self/status` RSS, ~1% margin below `memory.max`, cancels queries + evicts storage cache) are **not backed by a cited source path** — only the `memory.*` config keys are grounded. Locate and cite the OOM-monitor source (`src/mem/oom_monitor.cpp`, per the sql-debugging map) before treating these mechanics as verified.

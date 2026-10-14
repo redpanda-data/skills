@@ -153,8 +153,9 @@ with a **parenthesized option list**, it writes query results to a file (S3, loc
 When the target is a bare table name (no option list), it creates a new table —
 exactly like PostgreSQL's `SELECT INTO new_table`. See ddl-dml.md for the table-destination form.
 
-`CREATE TABLE AS SELECT` (CTAS) is the recommended way to materialize query results
-as a named table and is explicitly supported (`CREATE TABLE [IF NOT EXISTS] t AS SELECT ...`).
+`CREATE TABLE AS SELECT` (CTAS) is **not** supported on native tables (it works only
+on an Iceberg catalog). To materialize query results as a named native table, create
+the table with a column list and `INSERT INTO ... SELECT` into it.
 
 ### CSV export (file destination)
 

@@ -22,7 +22,7 @@ Key differences from PostgreSQL to keep in mind:
 - `EXPLAIN` exists but is not PostgreSQL's: it returns the explanation **as a relation**, not as plan text, and there is no `EXPLAIN ANALYZE` and no parenthesized option list. `EXPLAIN` alone renders a help table of the modes; `EXPLAIN PHYSICAL <query>`, `EXPLAIN TIMING <query>`, and `EXPLAIN CONFIG` are the modes. See [ddl-dml.md](references/ddl-dml.md#explain).
 - `COPY FROM/TO` uses explicit `FORMAT` option names (`CSV`, `PARQUET`, `ORC`).
 - `SELECT INTO` supports two forms: `SELECT ... INTO new_table FROM ...` (creates a new table) and `SELECT ... INTO 'path' (options) FROM ...` (writes to a file). The parenthesized option list selects the file form.
-- `CREATE TABLE [IF NOT EXISTS] t AS SELECT ...` (CTAS) is supported and is the idiomatic way to materialize or reshape a table.
+- `CREATE TABLE ... AS SELECT` (CTAS) is **not** supported on native tables (`CREATE TABLE AS SELECT is not supported`); it works only on an Iceberg catalog (`/redpanda:sql-federated-queries`). To materialize or reshape a native table, `CREATE TABLE` with a column list and then `INSERT INTO ... SELECT`.
 - `GENERATE_SERIES(start, stop[, step])` is supported as a table-valued function.
 
 ## Quickstart
@@ -175,12 +175,11 @@ CREATE TABLE sales (
     sold_at    TIMESTAMP
 );
 
--- CREATE TABLE AS SELECT (CTAS — materialize / reshape a table)
-CREATE TABLE sales_2024 AS
+-- Native CREATE TABLE ... AS SELECT is NOT supported (Iceberg catalogs only).
+-- To copy / reshape a native table: declare it, then INSERT ... SELECT.
+CREATE TABLE sales_2024 (id INT, product VARCHAR, qty INT, price DOUBLE, sold_at TIMESTAMP);
+INSERT INTO sales_2024
     SELECT * FROM sales WHERE sold_at >= TIMESTAMP '2024-01-01 00:00:00';
-
--- CREATE TABLE IF NOT EXISTS AS SELECT
-CREATE TABLE IF NOT EXISTS sales_backup AS SELECT * FROM sales;
 
 -- DROP TABLE
 DROP TABLE sales;
@@ -191,11 +190,12 @@ ALTER TABLE sales ADD COLUMN discount BIGINT;             -- COLUMN keyword opti
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount BIGINT;
 -- Always nullable: rows written before the ALTER read back as NULL. One column per
 -- statement; NOT NULL and DEFAULT are rejected; no DROP/RENAME COLUMN. Refused on a
--- view and on external (Kafka/Iceberg) tables. See references/ddl-dml.md.
+-- view and on Kafka/Redpanda topic tables (an Iceberg catalog=>ns.table has its own
+-- ALTER TABLE, below). See references/ddl-dml.md.
 -- The other ALTER TABLE forms re-bind an external Redpanda/Kafka catalog table
 -- (ALTER TABLE IF EXISTS my_catalog=>my_table WITH (schema_lookup_policy='LATEST'))
 -- and reassign ownership. For DROP/RENAME/retype a column on a native table,
--- recreate via CTAS; a table on an Iceberg catalog takes the Iceberg
+-- create a new table and INSERT ... SELECT; a table on an Iceberg catalog takes the Iceberg
 -- schema-evolution forms of ALTER TABLE instead (/redpanda:sql-federated-queries).
 
 -- NOTE: GRANT ... ON ALL TABLES IN SCHEMA is NOT valid in Oxla (parser rejects
@@ -491,7 +491,7 @@ SELECT * FROM generate_series(10, 1, -1);
 ## Reference Directory
 
 - [connect-and-types.md](references/connect-and-types.md): PostgreSQL wire protocol connection (port 5432, psql/JDBC/psycopg2/pgx), authentication (`initial_password`), SSL config, and the full supported data-type list grounded in `ColumnType.h`, including the wide-integer (`INT16`/`INT32`) cast and operator matrix plus how to bind wide-integer parameters, and the map surface (`map(...)` constructor, `m[key]` lookup on both constructed maps and external-schema map columns, supported key types, miss-vs-stored-NULL semantics).
-- [ddl-dml.md](references/ddl-dml.md): CREATE/DROP TABLE, CREATE TABLE AS SELECT (CTAS), CREATE/DROP VIEW (non-materialized, inlined per use, pinned column contract, owner-based privileges with the creator's search path captured at CREATE, `pg_views`), CREATE/REFRESH/DROP MATERIALIZED VIEW (native tables only, gated by `allow_table_operations`, full rebuild on REFRESH, `relkind = 'm'`), the `EXPLAIN` statement and `explain()` table function (help/physical_plan/timing/config modes, per-mode result columns, `steps=n`), CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE, GRANT/REVOKE (valid targets: ON table / ON TABLE / ON SCHEMA / ON DATABASE / ON EXTERNAL SOURCE — `ON ALL TABLES IN SCHEMA` is rejected by the parser), the three `ALTER TABLE` forms (`ADD COLUMN` on a native table — nullable-only, metadata-only, one column per statement, with the `NOT NULL`/`DEFAULT`/view/external-table rejections; the `IF EXISTS catalog=>table WITH (...)` Kafka-catalog rebind; and `OWNER TO`), SELECT/INSERT VALUES/INSERT SELECT/UPDATE/DELETE, SELECT INTO (table or file destination), PREPARE/EXECUTE, and transactions — all grounded in `query_planner` test cases and `bison_parser.y`.
+- [ddl-dml.md](references/ddl-dml.md): CREATE/DROP TABLE, CREATE TABLE AS SELECT (CTAS — not supported on native tables; use `INSERT ... SELECT`), CREATE/DROP VIEW (non-materialized, inlined per use, pinned column contract, owner-based privileges with the creator's search path captured at CREATE, `pg_views`), CREATE/REFRESH/DROP MATERIALIZED VIEW (native tables only, gated by `allow_table_operations`, full rebuild on REFRESH, `relkind = 'm'`), the `EXPLAIN` statement and `explain()` table function (help/physical_plan/timing/config modes, per-mode result columns, `steps=n`), CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE, GRANT/REVOKE (valid targets: ON table / ON TABLE / ON SCHEMA / ON DATABASE / ON EXTERNAL SOURCE — `ON ALL TABLES IN SCHEMA` is rejected by the parser), the three `ALTER TABLE` forms (`ADD COLUMN` on a native table — nullable-only, metadata-only, one column per statement, with the `NOT NULL`/`DEFAULT`/view/external-table rejections; the `IF EXISTS catalog=>table WITH (...)` Kafka-catalog rebind; and `OWNER TO`), SELECT/INSERT VALUES/INSERT SELECT/UPDATE/DELETE, SELECT INTO (table or file destination), PREPARE/EXECUTE, and transactions — all grounded in `query_planner` test cases and `bison_parser.y`.
 - [kafka-iceberg.md](references/kafka-iceberg.md): Oxla + Redpanda enterprise differentiator — querying Redpanda/Kafka topics and Apache Iceberg tables via SQL. CREATE/ALTER/DROP STORAGE (s3/gcs/abs), CREATE/ALTER/DROP ICEBERG CATALOG (uri/warehouse/auth_type oauth2|basic|aws_sigv4|gcp + nested keys), CREATE/ALTER/DROP REDPANDA|KAFKA CATALOG (initial_brokers/schema_registry_url required, sasl_*, truststore, key_store_*, USING CATALOG bind/detach), CREATE TABLE / ALTER TABLE IF EXISTS catalog=>topic WITH (topic/schema_lookup_policy/error_handling_policy/struct_mapping_policy/confluent_wire_protocol plus the key/header decode options key_decode_mode/key_schema_subject/key_confluent_wire_protocol/key_schema_message_full_name/header_value_type), REFRESH, DESCRIBE/SHOW, GRANT ON EXTERNAL SOURCE, and the Redpanda Enterprise Iceberg-topic properties (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/invalid.record.action). Notes Redpanda Enterprise license requirements. Grounded in `bison_parser.y`, `connection_option_names.h`, `kafka/conversions.cpp`, `iceberg_catalog_parser.cpp`.
 - [data-loading.md](references/data-loading.md): COPY FROM / COPY TO with CSV/Parquet/ORC formats, STDIN/STDOUT, S3 credentials via `aws_cred(...)`, and bulk-loading patterns for analytical ingestion.
 - [functions-and-analytics.md](references/functions-and-analytics.md): Complete function reference — aggregates (SUM/AVG/COUNT/percentile_disc/percentile_cont/mode/CORR), string (CONCAT/SUBSTR/REPLACE/REGEXP_REPLACE/STARTS_WITH/ENDS_WITH/STRPOS/LENGTH/UPPER/LOWER), math (ABS/CEIL/FLOOR/ROUND/SQRT/EXP/LN/LOG10/trig), date-time (EXTRACT/TIMESTAMP_TRUNC/MAKE_DATE/MAKE_TIMESTAMP/CURRENT_TIMESTAMP), window functions, CTEs, CASE/IF, and ARRAY functions — all grounded in test cases.

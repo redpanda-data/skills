@@ -76,8 +76,10 @@ itself; where a storage connection also carries `account_name`, the two must
 agree, or the statement is refused with `azure storage connection 'url' names
 account '<a>' but account_name is '<b>'`. In the `<container>@<account>.<host>`
 form the host must be `blob.core.windows.net` or `dfs.core.windows.net`; any
-other host is rejected rather than redirected, since requests always go to the
-account's public-cloud blob endpoint.
+other host is rejected (`unsupported Azure storage host`) rather than silently
+redirected to the public-cloud endpoint. A storage connection's optional
+`endpoint` option (Azure Stack, emulators) is a separate setting from the path
+host.
 
 ### Examples
 

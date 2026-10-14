@@ -194,13 +194,23 @@ WITH (schema_lookup_policy = 'SCHEMA_ID');
 Modifies connection-level options on an existing catalog.
 
 ```sql
+-- set or replace options, optionally clearing others in the same statement
 ALTER [KAFKA | REDPANDA] CATALOG [IF EXISTS] [<schema>.]<catalog_name>
-  WITH ( <option> = <value> [, ...] ) [ RESET ( <option> [, ...] ) ]
-  [USING CATALOG <iceberg_catalog_name> | USING CATALOG NULL];
+  WITH ( <option> = <value> [, ...] ) [ RESET ( <option> [, ...] ) ];
 
+-- clear options only
 ALTER [KAFKA | REDPANDA] CATALOG [IF EXISTS] [<schema>.]<catalog_name>
   RESET ( <option> [, ...] );
+
+-- attach, swap or detach the linked Iceberg catalog
+ALTER [KAFKA | REDPANDA] CATALOG [IF EXISTS] [<schema>.]<catalog_name>
+  USING CATALOG <iceberg_catalog_name> | USING CATALOG NULL
+  [ WITH ( <option> = <value> [, ...] ) ];
 ```
+
+These are separate forms: `RESET` combines only with a leading `WITH (...)`, never
+with `USING CATALOG`, and in the `USING CATALOG` form the optional `WITH (...)`
+comes **after** it.
 
 The `USING CATALOG` clause attaches or swaps the linked Iceberg catalog.
 `USING CATALOG NULL` detaches the linked Iceberg catalog (clears the link).
@@ -233,11 +243,14 @@ Rules enforced when the statement is applied:
 
 ### Empty-string option values are rejected
 
-A string option set to `''` is refused at DDL time — `option <name> cannot be set
-to an empty string` — on both `CREATE` and `ALTER`, instead of storing a
-configuration that cannot connect. The exceptions are `sasl_user`,
-`sasl_password` and `rd_kafka_debug`, which still accept an empty string because
-deployment tooling sends them unconditionally.
+A string **connection** option (the catalog-level options such as
+`initial_brokers`, `schema_registry_url` and `truststore`) set to `''` is refused
+at DDL time — `option <name> cannot be set to an empty string` — on both `CREATE`
+and `ALTER`, instead of storing a configuration that cannot connect. The
+exceptions are `sasl_user`, `sasl_password` and `rd_kafka_debug`, which still
+accept an empty string because deployment tooling sends them unconditionally. The
+per-table topic-binding options set with `CREATE TABLE ... WITH (...)` are not
+subject to this check, and an empty policy value there means the default.
 
 ```sql
 -- Update timeout
