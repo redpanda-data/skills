@@ -7,7 +7,8 @@ description: >-
   tearing down BYOC clusters and Networks; wiring customer-managed IAM roles, buckets, or
   subnets into a cluster; setting up private connectivity (AWS PrivateLink, GCP Private
   Service Connect, Azure Private Link, VPC peering, or Transit Gateway egress);
-  configuring dual listener mode (a public and a private listener per service);
+  configuring dual listener mode (a public and a private listener per service); scaling a
+  cluster up or down by broker count or tier;
   registering cross-account AWS access; managing Shadow Link cross-cluster DR; running
   `rpk cloud byoc apply`; or enabling Enterprise features (Tiered Storage, Cloud Topics,
   Iceberg Topics, Continuous Data Balancing, RBAC, and more) on a BYOC cluster. For
@@ -215,6 +216,9 @@ STATE_FAILED
 STATE_SUSPENDED
 ```
 
+`STATE_UPGRADING` covers a scaling operation as well as a version upgrade, and the cluster refuses
+other changes while it lasts — see [Scaling a cluster](references/clusters-and-agent.md#scaling-a-cluster-broker-count-and-tier).
+
 The cluster enters `STATE_CREATING_AGENT` after the API accepts the create request. This is when you must run `rpk cloud byoc apply` to install the agent Terraform. Once the agent completes provisioning, the cluster transitions to `STATE_CREATING`, then `STATE_READY`.
 
 ## rpk cloud byoc Commands
@@ -299,5 +303,5 @@ Key features and their nested keys (full detail in [Enterprise Features](referen
 
 - [BYOC Model and Auth](references/byoc-model-and-auth.md): What BYOC is vs Serverless, OAuth2 client-credentials flow, and the end-to-end provisioning sequence.
 - [Networks](references/networks.md): Creating the Network resource per cloud provider — AWS (VPC/subnet/IAM ARNs), GCP (network name, project, GCS bucket), Azure (VNet, subnets, resource groups). Plus VPC/VNet peering (NetworkPeeringService) and private connectivity / centralized egress (AWS PrivateLink incl. cross-region, GCP PSC, Azure Private Link, centralized egress through your own hub network).
-- [Clusters and Agent](references/clusters-and-agent.md): ClusterCreate fields for BYOC (TYPE_BYOC, network_id, throughput_tier, customer_managed_resources, zones, cloud_provider_tags), dual listener mode (per-service `connections`, endpoints, and migration semantics), the cluster PATCH/update_mask form, Operation lifecycle, control-plane Shadow Linking (ShadowLinkService, including the two Schema Registry replication modes and Confluent Schema Registry migration), and the full rpk cloud byoc install/apply/destroy/validate flow.
+- [Clusters and Agent](references/clusters-and-agent.md): ClusterCreate fields for BYOC (TYPE_BYOC, network_id, throughput_tier, customer_managed_resources, zones, cloud_provider_tags), dual listener mode (per-service `connections`, endpoints, and migration semantics), the cluster PATCH/update_mask form, scaling a cluster (`redpanda_node_count` and `throughput_tier`, the preconditions the API enforces, and what happens during the operation), cloud provider tag semantics (replace-the-map PATCH, reserved and Redpanda-managed keys), Operation lifecycle, control-plane Shadow Linking (ShadowLinkService, including the two Schema Registry replication modes and Confluent Schema Registry migration), and the full rpk cloud byoc install/apply/destroy/validate flow.
 - [Enterprise Features](references/enterprise-features.md): Enabling Redpanda Enterprise differentiators on a BYOC cluster (license included with the Cloud subscription) via `cluster_configuration.custom_properties` and topic properties — Tiered Storage, Cloud Topics, Iceberg Topics, Continuous Data Balancing, Shadow Linking DR, Remote Read Replicas, Audit Logging, RBAC/GBAC, OIDC/OAuthBearer/Kerberos, FIPS, Server-Side Schema ID Validation, and Leadership Pinning — with their nested config keys and license-expiration behavior, grounded in the licensing overview and per-feature docs.
