@@ -8,8 +8,7 @@ description: >-
   subnets into a cluster; setting up private connectivity (AWS PrivateLink, GCP Private
   Service Connect, Azure Private Link, VPC peering, or Transit Gateway egress);
   configuring dual listener mode (a public and a private listener per service); scaling a
-  cluster up or down by broker count or tier;
-  registering cross-account AWS access; managing Shadow Link cross-cluster DR; running
+  cluster by broker count or tier; registering cross-account AWS access; managing Shadow Link cross-cluster DR; running
   `rpk cloud byoc apply`; or enabling Enterprise features (Tiered Storage, Cloud Topics,
   Iceberg Topics, Continuous Data Balancing, RBAC, and more) on a BYOC cluster. For
   Serverless clusters, see `/redpanda:cloud-serverless`; for fully Redpanda-managed
