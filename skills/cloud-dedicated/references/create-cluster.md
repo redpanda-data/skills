@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `cluster.proto` (`ClusterCreate`, `Cluster`, `ClusterService`, `UpdateCluster` RPC and `UpdateClusterRequest.update_mask`, `ConnectionType`, PrivateLink specs, `ListClustersRequest.Filter`, `ClusterConfiguration.custom_properties`, `RedpandaConnect`, `cloud_provider_tags`), `network.proto` (`NetworkCreate`, `cluster_type` validation), `region.proto`, `operation.proto` (`Operation.State`, `Operation.Type`, `ListOperationsRequest.Filter`), `network_peering.proto`; api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `Operation.Type` and `Operation.State` values, `Cluster.State`, `Cluster.Type`, `/v1/operations` `filter.type_in` — **verified 2026-10-01**); cloudv2 `proto/gen/openapi/openapi.controlplane.yaml` (cluster PATCH body schema); redpanda `src/go/rpk/pkg/publicapi/controlplane.go` (`ClusterForID`, `Clusters`); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 ranges and the “block size between /16 and /20” note). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` `cluster.proto` (`ClusterCreate`, `Cluster`, `ClusterService`, `UpdateCluster` RPC and `UpdateClusterRequest.update_mask`, `ConnectionType`, PrivateLink specs, `ListClustersRequest.Filter`, `ClusterConfiguration.custom_properties`, `RedpandaConnect`, `cloud_provider_tags`), `network.proto` (`NetworkCreate`, `cluster_type` validation), `region.proto`, `operation.proto` (`Operation.State`, `Operation.Type`, `ListOperationsRequest.Filter`), `network_peering.proto`; api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `Operation.Type` and `Operation.State` values, `Cluster.State`, `Cluster.Type`, `/v1/operations` `filter.type_in` — **verified 2026-10-01**); cloudv2 `proto/gen/openapi/openapi.controlplane.yaml` (cluster PATCH body schema); redpanda `src/go/rpk/pkg/publicapi/controlplane.go` (`ClusterForID`, `Clusters`); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 ranges and the “block size between /16 and /20” note). Tier migration and cloud-provider-tag semantics (verified 2026-10-15): cloudv2 `cluster.proto` (`cloud_provider_tags` capped at 16 pairs on `ClusterCreate`/`ClusterUpdate`, uncapped on the `Cluster` response), `apps/controlplane-api/internal/services/redpanda/redpanda_service.go` (`reservedTagKeyErr`), cloud-docs `modules/manage/pages/maintenance.adoc` `tier-migrations` section (published: Redpanda-run migration, maintenance-window timing, rolling broker replacement, the Terraform follow-up) and `modules/manage/pages/cluster-maintenance/scale-cluster.adoc` (published: self-service scaling is BYOC-and-usage-based-billing only), `modules/get-started/partials/custom-tags-gcp.adoc` (published reserved keys and replace-the-map PATCH semantics). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Create Cluster: Dedicated Cluster Lifecycle
 
@@ -92,7 +92,7 @@ curl -s "https://api.redpanda.com/v1/regions/CLOUD_PROVIDER_AWS/us-east-1" \
 | `aws_private_link` | AWSPrivateLinkSpec | No | AWS PrivateLink (AWS only) |
 | `gcp_private_service_connect` | GCPPrivateServiceConnectSpec | No | GCP PSC (GCP only) |
 | `azure_private_link` | AzurePrivateLinkSpec | No | Azure Private Link (Azure only) |
-| `cloud_provider_tags` | map<string,string> | No | Tags on cloud resources; max 16 pairs |
+| `cloud_provider_tags` | map<string,string> | No | Tags on cloud resources; create and update accept at most 16 pairs |
 | `maintenance_window_config` | MaintenanceWindowConfig | No | `day_hour`, `anytime`, or `unspecified` |
 | `cluster_configuration` | ClusterConfiguration | No | Custom Redpanda cluster config properties |
 | `api_gateway_access` | NetworkAccessMode | No | Controls console/API Gateway exposure: `NETWORK_ACCESS_MODE_PUBLIC` or `NETWORK_ACCESS_MODE_PRIVATE` |
@@ -299,7 +299,7 @@ The `Cluster.state` field (`Cluster.State` enum) tracks the cluster lifecycle:
 | `STATE_READY = 3` | Cluster is operational |
 | `STATE_DELETING = 4` | Deletion in progress |
 | `STATE_DELETING_AGENT = 5` | Agent is being removed |
-| `STATE_UPGRADING = 6` | Redpanda version upgrade in progress |
+| `STATE_UPGRADING = 6` | Redpanda version upgrade, or a tier migration / scaling operation, in progress |
 | `STATE_FAILED = 7` | Cluster is in a failed state |
 | `STATE_SUSPENDED = 8` | Cluster is suspended (typically due to billing) |
 
@@ -369,8 +369,21 @@ Updates use **PATCH** to `https://api.redpanda.com/v1/clusters/{cluster.id}` (th
 
 You do not need to include `id` in the body; the cluster ID comes from the path. Returns an Operation.
 
+A tier change on a Dedicated cluster is a **tier migration that Redpanda runs for you**: open a
+Redpanda Support request, and the migration begins during the cluster's scheduled maintenance
+window (if no `Scheduled` window is set, it can start on any day, at any time, and a migration
+that starts inside a window may finish after it closes). During the migration Redpanda provisions
+brokers of the target tier, moves partition data and leadership to them in a rolling fashion, then
+decommissions the originals; the cluster keeps serving traffic and its endpoints do not change,
+though clients see connections restart as each broker is decommissioned. The self-service scaling
+path — changing `redpanda_node_count` or `throughput_tier` yourself and having the change start
+immediately — is offered on BYOC clusters in organizations on usage-based billing, not on
+Dedicated; see the `/redpanda:cloud-byoc` skill. If you manage the cluster with Terraform, update
+`throughput_tier` (and `redpanda_node_count`) in your configuration to match after a migration
+completes, or the next `terraform apply` reverts it.
+
 ```bash
-# Update throughput tier (scale up/down)
+# Update throughput tier
 # Body is the ClusterUpdate object directly; update_mask is a required query parameter.
 UPDATE_OP=$(curl -s -X PATCH "https://api.redpanda.com/v1/clusters/${CLUSTER_ID}?update_mask=throughput_tier" \
   -H "Authorization: Bearer ${TOKEN}" \
@@ -484,7 +497,11 @@ Cloud provider tags (resource labels) can be placed on cloud resources at cluste
 }
 ```
 
-Note: create accepts up to 16 `cloud_provider_tags` pairs, but the returned `Cluster` has a lower cap on `cloud_provider_tags`; round-tripped output may show fewer tag entries than the 16-pair create limit.
+A tag PATCH replaces the whole map: `cloud_provider_tags` is not merged key by key, so include every tag you want to keep, drop one by omitting it, and clear them all with `{"cloud_provider_tags": {}}`. Redpanda's own managed labels survive the replacement.
+
+Reserved keys are rejected: `redpanda-org`, `redpanda-id`, `network-id`, and `redpanda-client` are reserved and matched exactly. A create or update carrying one fails with `INVALID_ARGUMENT` and the message `cloud tags cannot contain the reserved key "<key>"`, reported as a field violation on `cluster.cloud_provider_tags`. Keys must also start with a lowercase letter and contain only lowercase letters, numbers, underscores, and dashes, with the `gcp.network-tag.` prefix the one exception. Keys under the `redpanda-` prefix are accepted but ignored — it is Redpanda's own namespace — so don't use it for your own tags.
+
+Note: the 16-pair limit applies to the create and update request. The returned `Cluster` is not capped, and it carries Redpanda's own managed tags alongside the ones you set, so a round trip can legitimately return more keys than you sent. Read the cluster back for the authoritative tag set rather than assuming the response mirrors the request.
 
 ## PrivateLink Details
 
