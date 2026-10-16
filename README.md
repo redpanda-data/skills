@@ -72,6 +72,7 @@ Redpanda Cloud — the managed control plane and per-cluster data plane.
 - [**cloud-serverless**](./skills/cloud-serverless) — Serverless clusters (multi-tenant, pay-per-use) via the Control Plane API, plus the per-cluster Data Plane API.
 - [**cloud-byoc**](./skills/cloud-byoc) — BYOC (Bring Your Own Cloud) clusters in your own AWS/GCP/Azure account: networks/VPCs, provider setup, and the `rpk` BYOC agent flow.
 - [**cloud-dedicated**](./skills/cloud-dedicated) — Dedicated clusters (fully Redpanda-managed, single-tenant, in Redpanda's cloud account) via the Control Plane API.
+- [**cloud-byoc-sizing**](./skills/cloud-byoc-sizing) — Size a BYOC cluster from a workload: required RPUs, the binding resource constraint, and the broker layout on AWS, GCP or Azure — for today, or as a month-by-month projection with scale-up points and RPU-hours. Runs a bundled zero-dependency Node.js calculator.
 
 ### 🤖 Agentic Data Plane
 Redpanda's governance infrastructure for AI agents and MCP servers — its own product surface that runs on Redpanda, provisioning its own environment.

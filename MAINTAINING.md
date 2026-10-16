@@ -30,7 +30,7 @@ human loop**:
 | Routine | Skills it maintains | Source of truth | Trigger model |
 |---------|--------------------|-----------------|---------------|
 | ADP skills sync | `skills/adp/` | `redpanda-data/cloudv2` (private) | commit-watch, keyed off `adp/RELEASE_NOTES.md` |
-| Cloud skills sync | `skills/cloud-*` (3) | `cloudv2` + `cloud-docs` (private) | commit-watch, keyed off `whats-new-cloud.adoc` + OpenAPI diff |
+| Cloud skills sync | `skills/cloud-serverless`, `skills/cloud-byoc`, `skills/cloud-dedicated` (3; **not** `cloud-byoc-sizing`) | `cloudv2` + `cloud-docs` (private) | commit-watch, keyed off `whats-new-cloud.adoc` + OpenAPI diff |
 | Redpanda Core skills sync | `skills/streaming*`, `skills/rpk*` (12) | `redpanda-data/redpanda` + `docs` (public) | **release-pinned** (GitHub Release notes) |
 | SQL skills sync | `skills/sql*` (4) | `redpanda-data/oxla` (private) + `cloud-docs` | pin-watch: the Oxla version `cloudv2` pins, verified at that version's Oxla release tag (not the default branch) |
 | Connect skills sync | `skills/connect*` (10) | `connect` + `benthos` engine + `rp-connect-docs` (public) | **release-pinned** (Connect releases) |
@@ -83,6 +83,15 @@ when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 
 
 When adding a new source-grounded skill, add a `SOURCES.md` beside it and register it in the
 drift-audit scope.
+
+### Hand-maintained skills
+
+`skills/cloud-byoc-sizing` is **not** source-grounded: it bundles a sizing calculator
+(`scripts/sizing.js`) and its docs describe that model, not a product API. No routine
+generates changes for it. Changes are made by hand following "Changing the Model" in its
+`references/sizing-model.md`, and verified with `node --test skills/cloud-byoc-sizing/scripts/sizing.test.js`.
+It still carries a `SOURCES.md` (CI requires one) that maps each doc to the script functions
+it describes.
 
 ## Operating the routines
 

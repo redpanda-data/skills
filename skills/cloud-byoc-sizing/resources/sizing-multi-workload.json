@@ -1,0 +1,8 @@
+{
+  "cloud": "GCP",
+  "multi_az": true,
+  "workloads": [
+    { "ingress_mbps": 50, "egress_mbps": 150, "partitions": 1000 },
+    { "ingress_mbps": 20, "egress_mbps": 20, "partitions": 200, "latency_ms": 50, "iceberg_fields": 30 }
+  ]
+}
