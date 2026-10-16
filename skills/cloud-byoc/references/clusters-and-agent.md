@@ -387,7 +387,7 @@ Core fields for `customer_managed_resources.gcp` (see the `CustomerManagedResour
 | `redpanda_connect_api_service_account.email` | GCP SA email for Connect API |
 | `redpanda_connect_service_account.email` | GCP SA email for Connect |
 
-Additional optional/conditional fields in the proto include `redpanda_operator_service_account.email` (proto field 11) and PSC NAT subnet fields `psc_nat_subnet_name` (PSC v1) and `psc_v2_nat_subnet_name` (PSC v2).
+Additional optional/conditional fields include `redpanda_operator_service_account.email` and PSC NAT subnet fields `psc_nat_subnet_name` (PSC v1) and `psc_v2_nat_subnet_name` (PSC v2).
 
 ### Azure Cluster Customer-Managed Resources
 
