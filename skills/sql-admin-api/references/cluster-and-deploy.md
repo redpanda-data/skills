@@ -49,7 +49,8 @@ A node whose `host_name` matches `leader_name` boots as the leader. All other no
 
 > **No public image.** Redpanda SQL is offered through BYOC and the Agentic Data Plane, and there is
 > no publicly pullable container image for running it yourself. The Docker examples in this skill
-> use `<redpanda-sql-image>` as a placeholder for an image you have been given access to.
+> illustrate the engine's runtime configuration with a `<redpanda-sql-image>` placeholder; they
+> are not steps for a BYOC or Agentic Data Plane cluster.
 
 For a single node, `leader_name` and `host_name` are the same value. There is no inter-node communication.
 
@@ -123,13 +124,11 @@ Note: MinIO (pre-late-2024 versions) does not fully support If-Match/Compare-and
 
 ### Three-node cluster (local storage)
 
-The simplified illustrative three-node compose below is based on the repo's `tests/blackbox/configurations/three_nodes.yml`. Key observations:
+The simplified illustrative three-node compose below shows the pattern. Key observations:
 - All three nodes share the same `oxla_data_persistence` and `oxla_shmem` volumes
 - `OXLA__LEADER_ELECTION__LEADER_NAME=oxla_node_1` on all three nodes
 - Each node has a unique `OXLA__NETWORK__HOST_NAME`
 - `OXLA__SHARED_MEMORY__CLUSTER__PATH=/oxla/shmem` and a shared Docker volume
-
-> **Note:** The actual repo file (`tests/blackbox/configurations/three_nodes.yml`) differs from this example: it hard-requires `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY` (using `?err` substitution, so compose errors out if they are unset); it uses `OXLA__LOGGING__LEVEL=verbose` (not INFO); it does not set `OXLA__NETWORK__CLUSTER_NAME` (relying on the default `cluster_1`); and it passes several additional vars (`OXLA__INSERTION__BUFFER_TIMEOUT`, `OXLA_PROCESS_UID/GID`, etc.). The example below is simplified for clarity — see the actual repo file for the authoritative form.
 
 ```yaml
 # docker-compose.yml — three-node cluster
@@ -215,28 +214,6 @@ services:
       nofile:
         soft: 20000
         hard: 40000
-```
-
-### Use the reference configurations directly
-
-The repo ships reference Compose files at `tests/blackbox/configurations/`:
-
-```bash
-# Three-node cluster (with port exposure overlay)
-docker compose \
-  -f tests/blackbox/configurations/three_nodes.yml \
-  -f tests/blackbox/configurations/three_nodes_ports.yml \
-  up
-
-# Three-node cluster with explicit Docker bridge network
-docker compose \
-  -f tests/blackbox/configurations/three_nodes_with_network.yml \
-  up
-
-# Single node (used in CI/blackbox tests)
-docker compose \
-  -f tests/blackbox/configurations/one_node.yml \
-  up
 ```
 
 ---
@@ -372,148 +349,4 @@ ulimits:
     hard: 40000
 ```
 
-Also set `security_opt: [seccomp:unconfined]` as shown in the reference configurations.
-
----
-
-## Ansible Deployment
-
-The repo ships two Ansible playbooks under `ansible/` for deploying Oxla to real (non-Docker-only) servers.
-
-### Playbooks
-
-| Playbook | Target | Notes |
-|----------|--------|-------|
-| `ansible/devcluster_deploy.yml` | Hetzner or any bare-metal/VM host (Docker-based) | Installs Docker, AWS CLI, Node Exporter, then templates `config.yml.j2` and runs `docker compose up` |
-| `ansible/devcluster_deploy_aws.yml` | AWS EC2 instances provisioned by Terraform | Assumes Docker + AWS CLI already installed via EC2 userdata; templates `config_aws.yml.j2` and runs `docker compose up`. Also deploys optional Redpanda nodes and a client node. |
-
-### Jinja2 compose templates
-
-The playbooks generate a `~/oxla/config.yml` Docker Compose file from one of two Jinja2 templates:
-
-- `ansible/templates/config.yml.j2` — for Hetzner/bare-metal deployments. Key variables:
-  - `image` — Docker image to pull (pass `<redpanda-sql-image>`; the playbook default is an internal registry image)
-  - `host_name` — set to `{{ inventory_hostname }}`
-  - `leader_name` — first host in the play (`hostvars[ansible_play_hosts[0]].ansible_host`)
-  - `oxla_home` — `{{ oxla_home_prefix }}/{{ oxla_home_name }}` (e.g., `s3://devcluster-aws-c5a-8xlarge/home:ro`)
-  - `OXLA__MEMORY__MAX` — auto-sized to 80% of node RAM (`ansible_memtotal_mb * 0.8`)
-  - `OXLA_ENCRYPTION_KEY` — fixed demo key in the template (`0123456789abcdef...`); override for production
-  - Hetzner-specific S3 credentials read from `aws configure get … --profile minio`
-
-- `ansible/templates/config_aws.yml.j2` — for AWS EC2 deployments. Same structure but:
-  - Uses the node's `private_ip` as `OXLA__NETWORK__HOST_NAME` and `leader_name` (avoids AWS data-transfer charges for inter-node traffic)
-  - `oxla_home_path` — `s3://{{ devcluster_bucket_name }}/{{ oxla_home_name }}`
-  - `OXLA__ACCESS_CONTROL__INITIAL_PASSWORD` — rendered from the inventory var `oxla_password` (generated or SSM-provided)
-  - AWS region hardcoded to `eu-central-1` in the template; override with the `aws_region` var
-
-### Inventory files
-
-Inventory files live under `ansible/inventory/`. Static inventories are provided for named devclusters:
-
-```
-ansible/inventory/
-  devcluster-aws-c5a-8xlarge.yml      # 3-node c5a.8xlarge AWS cluster
-  devcluster-aws-c5a-8xlarge-1node.yml
-  devcluster-hetzner-ax102-3nodes.yml  # 3-node Hetzner AX102 cluster
-  devcluster-hetzner-ax41-1node.yml
-  ...
-```
-
-AWS inventories set `cluster_type` to drive per-cluster S3 bucket naming and MinIO/S3 credential selection inside the template. Example from `devcluster-aws-c5a-8xlarge.yml`:
-
-```yaml
-devcluster_aws_c5a_8xlarge:
-  hosts:
-    n1_devcluster_aws_c5a_8xlarge:
-      ansible_host: n1.example.com
-    n2_devcluster_aws_c5a_8xlarge:
-      ansible_host: n2.example.com
-    n3_devcluster_aws_c5a_8xlarge:
-      ansible_host: n3.example.com
-  vars:
-    provider: aws
-    machine_type: c5a-8xlarge
-    ansible_user: ubuntu
-    cluster_type: devcluster-aws-c5a-8xlarge
-    oxla_home_prefix: s3://devcluster-aws-c5a-8xlarge
-    oxla_home_name: home:ro
-```
-
-### Running a deployment
-
-```bash
-# Install Ansible collections
-ansible-galaxy collection install -r ansible/requirements.yml
-
-# Deploy to a Hetzner cluster (install Docker + deploy Oxla)
-ansible-playbook ansible/devcluster_deploy.yml \
-  -i ansible/inventory/devcluster-hetzner-ax102-3nodes.yml \
-  -e image=<redpanda-sql-image> \
-  -e oxla_home_prefix=s3://my-devcluster \
-  -e oxla_home_name=home
-
-# Deploy to AWS EC2 instances (Docker pre-installed via Terraform userdata)
-ansible-playbook ansible/devcluster_deploy_aws.yml \
-  -i /path/to/generated-ansible-inventory.yml \
-  -e image=<redpanda-sql-image>
-
-# Stop a deployment without destroying nodes
-ansible-playbook ansible/devcluster_deploy.yml \
-  -i ansible/inventory/devcluster-hetzner-ax102-3nodes.yml \
-  --tags stop
-```
-
----
-
-## Terraform Deployment
-
-The repo's `terraform/devcluster/` module provisions dynamic AWS EC2 instances for Oxla devclusters.
-
-### What it provisions
-
-- **EC2 instances** — `var.devcluster_node_count` nodes (default `c6i.xlarge`), Ubuntu 22.04, sized with `var.devcluster_root_volume_size` (default 256 GB gp3)
-- **S3 bucket** — dedicated bucket for `OXLA__STORAGE__OXLA_HOME` (named `{environment}-{devcluster_type}[-{alias}]`)
-- **IAM role + instance profile** — grants each EC2 node S3 full access to its home bucket, read-only access to a shared blueprint bucket, and ECR pull access
-- **VPC/subnet** — reuses an existing `redpanda-gh-vpc` if found; otherwise creates a new VPC
-- **EC2 userdata** — `terraform/devcluster/userdata.sh` bootstraps Docker, AWS CLI, the ECR credential helper, Node Exporter, and optionally copies an Oxla home blueprint from S3
-- **Ansible inventory** — `terraform/devcluster/templates/ansible-inventory.yml.tpl` renders a ready-to-use inventory file (output via `terraform output`) with `oxla_nodes`, optional `redpanda`, and optional `client` groups
-
-### Key variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `devcluster_node_count` | `1` | Number of Oxla nodes (1–10) |
-| `devcluster_instance_type` | `c6i.xlarge` | EC2 instance type (auto-detects x86 vs arm) |
-| `devcluster_alias` | `""` | Short alias appended to cluster/bucket name |
-| `devcluster_bucket_name` | auto-generated | Override the S3 bucket name |
-| `devcluster_home_name` | `home` | Name of the Oxla home path within the bucket |
-| `oxla_password` | random 16-char | Oxla access_control password; injected via `OXLA__ACCESS_CONTROL__INITIAL_PASSWORD` |
-| `enable_prometheus` | `false` | Deploy a dedicated Prometheus node |
-| `enable_glue` | `false` | Provision AWS Glue Iceberg catalog + IAM policy |
-| `devcluster_copy_blueprint_in_userdata` | `false` | Copy existing Oxla home from blueprint bucket at boot |
-
-### Typical workflow
-
-```bash
-cd terraform/devcluster
-
-# Provision infrastructure
-terraform init
-terraform apply \
-  -var="devcluster_node_count=3" \
-  -var="devcluster_instance_type=c5a.8xlarge" \
-  -var="devcluster_alias=my-test"
-
-# Retrieve the generated Ansible inventory
-terraform output -raw ansible_inventory > /tmp/devcluster-inventory.yml
-
-# Deploy Oxla onto the provisioned nodes
-ansible-playbook ansible/devcluster_deploy_aws.yml \
-  -i /tmp/devcluster-inventory.yml \
-  -e image=<redpanda-sql-image>
-
-# Tear down
-terraform destroy
-```
-
-The Terraform module auto-detects CPU architecture from the instance type (ARM Graviton instances like `r6g` vs x86 instances like `r6a`/`c6i`) and selects the matching Ubuntu 22.04 AMI accordingly.
+Also set `security_opt: [seccomp:unconfined]` on each node service.

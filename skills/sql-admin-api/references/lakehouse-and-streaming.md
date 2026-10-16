@@ -167,10 +167,6 @@ When both AWS keys are omitted, the AWS default credential chain (IMDSv2/ECS ins
 | `ssl_ca_path` | CA directory |
 | `ssl_crl_file` | certificate revocation list file |
 
-### AWS Glue example (from `ansible/templates/iceberg_glue.j2`)
-
-The Ansible Glue template configures an equivalent integration via cluster properties (REST catalog type, `aws_sigv4` auth, region, warehouse base location, default namespace, commit interval), demonstrating the Glue REST + SigV4 pattern.
-
 ### Refresh external metadata
 
 ```sql

@@ -1,7 +1,7 @@
 # docker-compose-local.yml — self-contained single-node Oxla with local storage
 #
-# There is no public Redpanda SQL image: replace <redpanda-sql-image> with an image
-# you have been given access to.
+# There is no public Redpanda SQL image. <redpanda-sql-image> is a placeholder: this file
+# illustrates the engine's runtime configuration and is not a BYOC or Agentic Data Plane step.
 #
 # Does NOT require AWS credentials. Suitable for local development and testing.
 # Ports exposed: 5432 (PostgreSQL), 8080 (Prometheus metrics), 9090 (admin API).
