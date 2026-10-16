@@ -26,7 +26,7 @@ curl -s -X POST https://api.redpanda.com/v1/resource-groups \
 
 Returns `201` with the `ResourceGroup` object.
 
-**Name constraints** (from `resource_group.proto`):
+**Name constraints** (enforced by the API; the published spec does not state them):
 - 3–253 characters
 - Pattern: `^[a-zA-Z0-9-]+$` (alphanumeric + hyphens only)
 
@@ -105,7 +105,7 @@ curl -s "https://api.redpanda.com/v1/serverless/region?cloud_provider=CLOUD_PROV
   -H "Authorization: Bearer ${TOKEN}" | jq .serverless_region
 ```
 
-**cloud_provider values** (from `common.proto`):
+**cloud_provider values** (the `CloudProvider` enum in the [Control Plane API reference](https://docs.redpanda.com/api/doc/cloud-controlplane/)):
 
 | Value | Provider |
 |---|---|
@@ -198,7 +198,7 @@ curl -s "https://api.redpanda.com/v1/serverless/clusters/${CLUSTER_ID}" \
 
 ### State Machine
 
-From `ServerlessCluster.State` in `serverless.proto`:
+From the `ServerlessCluster.State` enum in the [Control Plane API reference](https://docs.redpanda.com/api/doc/cloud-controlplane/):
 
 ```
   POST /v1/serverless/clusters
@@ -371,9 +371,9 @@ curl -s -X DELETE "https://api.redpanda.com/v1/serverless/private-links/${PL_ID}
 `STATE_CREATING`, `STATE_READY`, `STATE_DELETING`, `STATE_FAILED`,
 `STATE_UPDATING`.
 
-**Operation types** (`operation.proto`): `TYPE_CREATE_SERVERLESS_PRIVATE_LINK`
-= 10, `TYPE_UPDATE_SERVERLESS_PRIVATE_LINK` = 11,
-`TYPE_DELETE_SERVERLESS_PRIVATE_LINK` = 12. Poll at `GET /v1/operations/{id}`
+**Operation types** (`Operation.Type`): `TYPE_CREATE_SERVERLESS_PRIVATE_LINK`,
+`TYPE_UPDATE_SERVERLESS_PRIVATE_LINK`, and
+`TYPE_DELETE_SERVERLESS_PRIVATE_LINK`. Poll at `GET /v1/operations/{id}`
 like any other Operation.
 
 ### Workflow: private-networked Serverless cluster
@@ -419,7 +419,7 @@ curl -s "https://api.redpanda.com/v1/operations/${OP_ID}" \
   -H "Authorization: Bearer ${TOKEN}" | jq '{state: .operation.state, error: .operation.error}'
 ```
 
-**Operation fields** (from `operation.proto`):
+**Operation fields** (the `v1.Operation` schema in the [Control Plane API reference](https://docs.redpanda.com/api/doc/cloud-controlplane/)):
 
 | Field | Notes |
 |---|---|

@@ -370,7 +370,7 @@ Required fields for `customer_managed_resources.aws`:
 
 ### GCP Cluster Customer-Managed Resources
 
-Core fields for `customer_managed_resources.gcp` (see `cluster.proto` `CustomerManagedResources.GCP` for the authoritative and complete list, including optional/conditional fields):
+Core fields for `customer_managed_resources.gcp` (see the `CustomerManagedResources.GCP` schema in the [Control Plane API reference](https://docs.redpanda.com/api/doc/cloud-controlplane/) for the authoritative and complete list, including optional/conditional fields):
 
 | Field | Description |
 |---|---|
@@ -445,7 +445,7 @@ Maximum 16 entries; each `cidr:port_start:port_end` tuple must be unique. On rea
 
 ## Cluster State Machine
 
-States are defined in the `Cluster.State` enum in `cluster.proto`:
+States are the values of the `Cluster.State` enum in the [Control Plane API reference](https://docs.redpanda.com/api/doc/cloud-controlplane/):
 
 | State | Meaning |
 |---|---|
@@ -525,10 +525,10 @@ DP_URL=$(curl -s "${BASE}/v1/clusters/${CLUSTER_ID}" \
 
 Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, `aws_private_link`/`gcp_private_service_connect`/`azure_private_link`, `customer_managed_resources`, `cloud_provider_tags`, `maintenance_window_config`, `throughput_tier`, `redpanda_node_count`, `api_gateway_access`, `redpanda_connect`. `throughput_tier` and `redpanda_node_count` are how a cluster is scaled — see [Scaling a cluster](#scaling-a-cluster-broker-count-and-tier) for the preconditions the API enforces. `connection_type` is **not** updatable — changing a cluster's connectivity goes through the per-service `connections` list; see [Dual Listener Mode](#dual-listener-mode-public--private-listeners-per-service-beta-aws). On a service whose listeners already use `connections`, the `sasl`/`mtls` sub-fields can only be changed together with that service's `connections` list — a legacy-only PATCH is rejected (see [Migrate an existing cluster](#migrate-an-existing-cluster)).
 
-**`update_mask` is a REQUIRED query parameter**, not a body field. From `cluster.proto` the `UpdateCluster` RPC is `patch: "/v1/clusters/{cluster.id}"` with `body: "cluster"`, plus a separate top-level required `update_mask` FieldMask. Two consequences:
+**`update_mask` is a REQUIRED query parameter**, not a body field. `UpdateCluster` is `PATCH /v1/clusters/{cluster.id}`; the request body is the `ClusterUpdate` object itself, and `update_mask` is a separate top-level FieldMask that the live API requires even though the published spec does not list it. Two consequences:
 
 - Pass `update_mask` as a query param: `?update_mask=<comma-separated snake_case field paths>` (the API uses proto field names — e.g. `throughput_tier`, `cluster_configuration.custom_properties` — verified against the live `ClusterService.UpdateCluster` contract). The generated OpenAPI omits this parameter — a known grpc-gateway quirk for top-level FieldMask fields — but it is still required.
-- Because `body: "cluster"`, the JSON body maps directly to the `cluster` (`ClusterUpdate`) field. The body **is** the `ClusterUpdate` object — do **not** wrap it as `{"cluster":{...}}`, and do **not** put `update_mask` in the body.
+- The JSON body maps directly to the `cluster` (`ClusterUpdate`) field. The body **is** the `ClusterUpdate` object — do **not** wrap it as `{"cluster":{...}}`, and do **not** put `update_mask` in the body.
 
 ```bash
 # Upgrade throughput tier — update_mask in the query string, ClusterUpdate fields in the body
