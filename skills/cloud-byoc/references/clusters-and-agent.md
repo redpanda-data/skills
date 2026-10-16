@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (field names and constraints, incl. `Cluster.RedpandaConnect`, `Cluster.CidrPort`), cloudv2 `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (dual-listener `connections` rules, verified 2026-09-17), cloudv2 `apps/cloud-ui/src/utils/rpk.utils.ts` (per-provider `rpk cloud byoc` account flags); redpanda `src/go/rpk/pkg/cli/cloud/byoc/` (`byoc.go`, `install.go`); shadow-link source-cluster scope, auth arms and role sync (verified 2026-10-01): cloudv2 `controlplane/v1/shadow_link.proto`, api-docs `cloud-controlplane/cloud-controlplane.yaml` (`AuthenticationConfiguration`, `PlainConfig`, `ScramConfig`, `RoleSyncOptions`, `NameFilter`), docs `modules/manage/pages/disaster-recovery/shadowing/setup.adoc` + `overview.adoc` (`env-cloud` variants). Self-service cluster scaling and cloud-provider-tag semantics (verified 2026-10-15): cloudv2 `apps/controlplane-api/internal/services/redpanda/redpanda_service.go` (`nodesCountTooLowErr`, the tier-migration-path and reserved-tag-key errors), `apps/public-api-go/internal/services/cluster/v1/user_scaling_gate.go` (the usage-based-billing gate and its PERMISSION_DENIED message), `proto/public/cloud/redpanda/api/controlplane/v1beta2/error.proto` (`Reason` enum (`REASON_SCALING_REDPANDA_NODE_COUNT_TOO_LOW`/`_TOO_HIGH`, `REASON_SCALING_REDPANDA_NODE_COUNT_NOT_ZONE_MULTIPLE`, `REASON_SCALING_UNSUPPORTED_THROUGHPUT_TIER_MIGRATION_PATH`)), `cluster.proto` (`cloud_provider_tags` on `ClusterCreate`/`ClusterUpdate` capped at 16 pairs and uncapped on the `Cluster` response), api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `redpanda_node_count`, `throughput_tier`, `STATE_UPGRADING`), cloud-docs `modules/manage/pages/cluster-maintenance/scale-cluster.adoc` (published how-to: scaling axes, preconditions, preflight checks, error table, behavior during the operation) and `modules/get-started/partials/custom-tags-gcp.adoc` (published reserved keys, replace-the-map PATCH semantics, and the Google Cloud Marketplace consumption-tracking label). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (field names and constraints, incl. `Cluster.RedpandaConnect`, `Cluster.CidrPort`), cloudv2 `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (dual-listener `connections` rules, verified 2026-09-17), cloudv2 `apps/cloud-ui/src/utils/rpk.utils.ts` (per-provider `rpk cloud byoc` account flags); redpanda `src/go/rpk/pkg/cli/cloud/byoc/` (`byoc.go`, `install.go`); shadow-link source-cluster scope, auth arms and role sync (verified 2026-10-01): cloudv2 `controlplane/v1/shadow_link.proto`, api-docs `cloud-controlplane/cloud-controlplane.yaml` (`AuthenticationConfiguration`, `PlainConfig`, `ScramConfig`, `RoleSyncOptions`, `NameFilter`), docs `modules/manage/pages/disaster-recovery/shadowing/setup.adoc` + `overview.adoc` (`env-cloud` variants). Self-service cluster scaling and cloud-provider-tag semantics (verified 2026-10-15): cloudv2 `apps/controlplane-api/internal/services/redpanda/redpanda_service.go` (`nodesCountTooLowErr`, the tier-migration-path and reserved-tag-key errors), `apps/public-api-go/internal/services/cluster/v1/user_scaling_gate.go` (the usage-based-billing gate and its PERMISSION_DENIED message), `proto/public/cloud/redpanda/api/controlplane/v1beta2/error.proto` (`Reason` enum; the skill body names only the two values the published `scale-cluster.adoc` names, `REASON_SCALING_REDPANDA_NODE_COUNT_TOO_HIGH` and `REASON_SCALING_UNSUPPORTED_THROUGHPUT_TIER_MIGRATION_PATH`), `apps/controlplane-api/internal/services/redpanda/validate_test.go` (`TestValidateCloudTagKeysOnCreate` presence check vs `TestValidateCloudTagKeysOnUpdate` delta check, verified 2026-10-15), `cluster.proto` (`cloud_provider_tags` on `ClusterCreate`/`ClusterUpdate` capped at 16 pairs and uncapped on the `Cluster` response), api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `redpanda_node_count`, `throughput_tier`, `STATE_UPGRADING`), cloud-docs `modules/manage/pages/cluster-maintenance/scale-cluster.adoc` (published how-to: scaling axes, preconditions, preflight checks, error table, behavior during the operation) and `modules/get-started/partials/custom-tags-{gcp,aws,azure}.adoc` (published reserved keys, replace-the-map PATCH semantics, the GCP-only lowercase key rule, AWS `Name`/`aws:` and Azure case-insensitivity/overwrite/create-time-only rules, and the Google Cloud Marketplace consumption-tracking label; verified 2026-10-15). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Clusters and Agent
 
@@ -109,17 +109,35 @@ it, and clear them all with `{"cloud_provider_tags": {}}`. Redpanda's own manage
 the replacement either way.
 
 **Reserved keys are rejected.** `redpanda-org`, `redpanda-id`, `network-id`, and `redpanda-client`
-are reserved, matched exactly, and on GCP so is `goog-partner-solution`. A create or update
-carrying one fails with `INVALID_ARGUMENT` and the message
-`cloud tags cannot contain the reserved key "<key>"`, reported as a field violation on
-`cluster.cloud_provider_tags`. Keys must also start with a lowercase letter and contain only
-lowercase letters, numbers, underscores, and dashes — the `gcp.network-tag.` prefix being the one
-exception.
+are reserved and matched exactly. A create that carries one fails with `INVALID_ARGUMENT` and the
+message `cloud tags cannot contain the reserved key "<key>"`, reported as a field violation on
+`cluster.cloud_provider_tags`. A PATCH is checked against what the cluster already stores: it is
+rejected only when it introduces a reserved key or changes a stored reserved key's value. Echoing
+a stored reserved key back unchanged — which a read-modify-write of the tag map does — is accepted,
+as is leaving it out. So there is no need to strip Redpanda's keys from a map you read back before
+sending it again.
 
-**Other keys are accepted but ignored**, which is the quieter failure mode: anything under the
-`redpanda-` prefix is Redpanda's own namespace (the agent ignores such labels on GCE instances and
-disks, and the Redpanda Terraform provider drops them from state), and on GCP the `goog-gke-` and
-`goog-k8s-` prefixes belong to GKE. Don't use either for your own tags.
+**Provider-specific key rules.** Matching is exact and case-sensitive on every provider, but each
+provider adds its own rules:
+
+- **GCP:** label keys must start with a lowercase letter and contain only lowercase letters,
+  numbers, underscores, and dashes, except for keys with the `gcp.network-tag.` prefix.
+  `goog-partner-solution` is also reserved (see the Marketplace label below).
+- **AWS:** keys may use mixed case (`Environment`, `CostCenter`). Avoid `Name`, which Redpanda sets
+  on the resources it creates and AWS shows as the resource name, and the `aws:` prefix, which AWS
+  reserves.
+- **Azure:** keys may use mixed case, but Azure treats tag keys as case-insensitive, so a variant
+  such as `Redpanda-Id` collides with Redpanda's `redpanda-id` tag. Custom tags on the nodepool
+  Application Security Groups and on the Private Link network interfaces are set only at cluster
+  creation and cannot be changed later.
+
+**Other keys are accepted but don't take effect**, which is the quieter failure mode. Anything under
+the `redpanda-` prefix is Redpanda's own namespace: on AWS such tags aren't applied to EC2
+instances, EBS volumes, or network interfaces; on GCP the agent ignores such labels on GCE
+instances and disks; on Azure, where a custom tag uses one of Redpanda's own keys, Redpanda's
+value overwrites yours; and the Redpanda Terraform provider drops them from state. On GCP the
+`goog-gke-` and `goog-k8s-` prefixes belong to GKE and are ignored too. Don't use any of these for
+your own tags.
 
 **Managed labels come back on read.** Redpanda applies labels of its own, and they appear in
 `cloud_provider_tags` alongside yours. On GCP, an organization subscribed through a Google Cloud
@@ -517,7 +535,7 @@ Updatable fields include: `name`, `kafka_api`, `http_proxy`, `schema_registry`, 
 curl -s -X PATCH "${BASE}/v1/clusters/${CLUSTER_ID}?update_mask=throughput_tier" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"throughput_tier": "tier-2-aws-v2-arm"}' | jq .
+  -d '{"throughput_tier": "tier-2-aws-v3-arm"}' | jq .
 ```
 
 ### Scaling a cluster (broker count and tier)
@@ -560,16 +578,19 @@ tells you what to fix instead of surfacing later on the operation:
 - The cluster must be in `STATE_READY`. While another operation is running the update is rejected
   (`cannot be updated at this time`), and other cluster changes are refused until scaling finishes.
 - `redpanda_node_count` must be a multiple of the cluster's zone count, so brokers spread evenly
-  across availability zones (`REASON_SCALING_REDPANDA_NODE_COUNT_NOT_ZONE_MULTIPLE`). A
-  three-zone cluster therefore moves in steps of three.
-- Each tier enforces a minimum and a maximum broker count, and the error names the minimum for the
-  tier (`REASON_SCALING_REDPANDA_NODE_COUNT_TOO_LOW` /
-  `REASON_SCALING_REDPANDA_NODE_COUNT_TOO_HIGH`). Read the current range from the Cloud UI or the
+  across availability zones. A three-zone cluster therefore moves in steps of three.
+- Each tier enforces a minimum and a maximum broker count; a count below the minimum is rejected
+  with an error that names the minimum for the tier, and a count above the maximum with
+  `REASON_SCALING_REDPANDA_NODE_COUNT_TOO_HIGH`. Read the current range from the Cloud UI or the
   BYOC tiers docs rather than assuming one.
 - A `throughput_tier` change must stay within the same cloud provider, machine family, and CPU
-  architecture. A cross-family or cross-architecture move is refused
+  architecture (for example, `tier-2-aws-v3-arm` to `tier-5-aws-v3-arm`). A cross-family or
+  cross-architecture move is refused with `FAILED_PRECONDITION`
   (`REASON_SCALING_UNSUPPORTED_THROUGHPUT_TIER_MIGRATION_PATH`) and has to go through Redpanda
   Support.
+- The target tier must be offered in the cluster's region. Otherwise the request fails with
+  `FAILED_PRECONDITION` — "Product/tier '<tier>' is not available in region '<region>'" — so pick
+  a configuration from the BYOC tiers and regions docs.
 - A capacity-reducing change also runs preflight checks, and is refused when the cluster has
   firing alerts, when the remaining brokers would not have enough storage or partition capacity
   for the current data, when a topic's replication factor would exceed the new broker count, or
@@ -577,6 +598,9 @@ tells you what to fix instead of surfacing later on the operation:
 - Self-service scaling is available to BYOC clusters in organizations on usage-based billing.
   Elsewhere a broker-count change returns `PERMISSION_DENIED` — "User-defined node count changes
   are only available for organizations with usage-based billing" — and the change goes through
+  Redpanda Support.
+- Some older clusters don't support self-service scaling at all and return
+  `cluster does not support product/node count change - contact support`; scale those through
   Redpanda Support.
 
 Most scaling errors also carry a machine-readable `reason` in the error details, so branch on
@@ -588,8 +612,11 @@ elections and dropped connections and reconnect on their own. Horizontal scaling
 the two; a vertical move replaces every broker and scales with the broker count, so plan for a
 much longer run and raise any client or automation timeout to match. If the cloud provider cannot
 supply the requested machines — a stockout or a quota limit — the operation pauses with the
-brokers provisioned so far, the cluster stays in `STATE_UPGRADING`, and further scaling requests
-are rejected until Redpanda Support resumes or rolls back the change.
+brokers provisioned so far and the cluster stays in `STATE_UPGRADING`. The long-running operation
+eventually times out, so a poller sees it end without the cluster returning to `STATE_READY`.
+Further scaling requests are rejected with `FAILED_PRECONDITION` (`scaling is paused because the
+cloud provider could not supply the requested capacity …`) until Redpanda Support resumes or rolls
+back the change.
 
 ---
 
