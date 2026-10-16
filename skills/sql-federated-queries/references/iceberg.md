@@ -35,7 +35,7 @@ connection (created via `CREATE STORAGE`) for object-store credentials.
 
 ### Options reference
 
-These are all the Iceberg catalog option names the engine accepts.
+Iceberg catalog options:
 
 **Required:**
 

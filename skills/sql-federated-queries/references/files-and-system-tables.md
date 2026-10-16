@@ -134,9 +134,6 @@ or `endpoint`; `ABS` still requires its account/credential options.
 | `use_http` | `'true'` to use HTTP instead of HTTPS |
 | `session_token` | AWS STS session token for temporary credentials |
 
-These map directly to the S3 credential fields `region`, `access_key_id`,
-`secret_key`, `endpoint`, `path_style`, `use_http`, and `session_token`.
-
 ```sql
 -- S3 with static credentials
 CREATE STORAGE my_s3
