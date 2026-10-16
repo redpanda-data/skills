@@ -178,7 +178,7 @@ Subcommands: `create`, `get`, `list`, `update`, `delete`, `check` (connectivity 
 | `--dry-run` | Print the request that would be sent and exit |
 | `--pricing stringArray` | Per-model pricing override in USD per million tokens; repeatable. Also on `update` |
 
-The CLI help for `--openai-config.api-key-ref` says it can be left empty for no-auth endpoints. That applies only to `openai-compatible-config`: an OpenAI provider needs an API key or authorization passthrough, and create fails with `Set an API key, or enable authorization passthrough.` otherwise.
+The CLI help for `--openai-config.api-key-ref` says it can be left empty for no-auth endpoints. That applies only to `openai-compatible-config`: an OpenAI provider needs an API key or authorization passthrough, and create is rejected otherwise.
 
 Authorization passthrough is a flag on the `openai-config`, `anthropic-config` and `openai-compatible-config` groups; Google Gemini API, Vertex AI and Bedrock always use stored credentials. A new provider type or field shows up as a new flag group or dotted flag, not as a new value of a `--type` flag.
 
