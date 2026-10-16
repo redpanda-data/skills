@@ -1,3 +1,5 @@
+Source: oxla `src/catalog/kafka/conversions.cpp`, `src/sqlparser/sql/CreateStatement.h`, `src/sqlparser/sql/AlterKafkaCatalogStatement.h`, `src/sqlparser/sql/connection_option_names.h`, `src/kafka/types.h`, `src/kafka/metadata_columns.h` (`redpanda` struct fields), `src/kafka/decoders/schema_lookup_policy.h` (schema lookup policies), `src/kafka/decoders/logical_types.h` (Avro type mappings), `src/external_schema/protobuf/protobuf_sql_mapping.h` (`pbTypeToSqlt`, Protobuf type mappings), `src/external_schema/json/` (JSON Schema type mappings), `tests/MT/query_planner/cases/predefined_transparent_kafka_iceberg_*/`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla: Kafka Catalogs
 
 Oxla can query Kafka and Redpanda topics as tables using named catalog objects.
@@ -5,13 +7,6 @@ The Kafka catalog stores connection details (broker addresses, Schema Registry U
 optional PandaProxy URL) and a set of registered topic sources. Both `CREATE KAFKA CATALOG`
 and `CREATE REDPANDA CATALOG` are accepted synonyms.
 
-Sources grounded in: `oxla/src/catalog/kafka/conversions.cpp`,
-`oxla/src/sqlparser/sql/CreateStatement.h`,
-`oxla/src/sqlparser/sql/AlterKafkaCatalogStatement.h`,
-`oxla/src/sqlparser/sql/connection_option_names.h`,
-`oxla/src/kafka/types.h`, `oxla/src/kafka/metadata_columns.h`,
-`oxla/src/kafka/decoders/schema_lookup_policy.h`,
-`oxla/tests/MT/query_planner/cases/predefined_transparent_kafka_iceberg_*/`.
 
 ---
 
@@ -297,7 +292,7 @@ JOIN   customers c ON o.customer_id = c.id;
 Every Kafka source exposes a hidden `redpanda` struct column containing Kafka
 message metadata. It is not returned by `SELECT *` but can be accessed explicitly.
 
-**`redpanda` struct fields** (grounded in `oxla/src/kafka/metadata_columns.h`):
+**`redpanda` struct fields:**
 
 | Field | SQL Type | Description |
 |-------|----------|-------------|
@@ -370,13 +365,13 @@ the broker timequery entirely.
 ## Schema Decoding: Avro, Protobuf, JSON
 
 Schema type is determined automatically from the Schema Registry subject's registered
-schema. Three schema types are supported (grounded in `oxla/kafka/types.h`):
+schema. Three schema types are supported:
 
 ```
 enum class SchemaType : int32_t { Avro = 0, Protobuf = 1, Json = 2 };
 ```
 
-### Avro type mappings (selected, from `oxla/src/kafka/decoders/logical_types.h`)
+### Avro type mappings (selected)
 
 | Avro type | SQL type |
 |-----------|----------|
@@ -399,14 +394,14 @@ enum class SchemaType : int32_t { Avro = 0, Protobuf = 1, Json = 2 };
 
 ### Protobuf type mappings
 
-Protobuf field types map via `pbTypeToSqlt` in `oxla/src/external_schema/protobuf/protobuf_sql_mapping.h`.
+Protobuf field types map to SQL types as follows.
 Nested messages become STRUCT fields (COMPOUND policy) or JSON (JSON policy).
 A `map<K, V>` field becomes a map column under the COMPOUND policy, or a single JSON
 column under the JSON policy — see [Map columns](#map-columns).
 
 ### JSON schema mappings
 
-JSON Schema types map via `oxla/src/external_schema/json/`: `string`→TEXT,
+JSON Schema types map as follows: `string`→TEXT,
 `integer`→BIGINT, `number`→DOUBLE, `boolean`→BOOL, `object`→STRUCT or JSON,
 `array`→ARRAY.
 
@@ -464,8 +459,7 @@ widens, and a struct value type takes the superset of fields). Full map semantic
 
 ## Schema Lookup Policies
 
-Two policies control how schemas are resolved at read time
-(grounded in `oxla/src/kafka/decoders/schema_lookup_policy.h`):
+Two policies control how schemas are resolved at read time:
 
 **`LATEST` (default):**
 - Oxla fetches the latest schema version at `REFRESH` time and stores it.

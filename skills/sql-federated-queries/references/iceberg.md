@@ -1,3 +1,5 @@
+Source: oxla `src/sqlparser/sql/CreateCatalogStatement.h`, `src/sqlparser/sql/connection_option_names.h` (`hsql::option_names::iceberg`), `src/catalog/iceberg_catalog_parser.cpp`, `src/iceberg_client/rest_catalog_config.h`, `src/iceberg_client/apache_iceberg_client/apache_iceberg_client.h`, `tests/MT/query_planner/cases/predefined_iceberg_*/`; table/namespace DDL: `src/sqlparser/bison_parser/bison_parser.y`, `src/sqlparser/sql/{CreateStatement.h,DropStatement.h,PartitionTerm.h}`, `src/external_schema/iceberg/iceberg_schema_builder.cpp`, `tests/blackbox/pit/iceberg/test_iceberg_ddl.py`; system tables: `src/metastore/system_iceberg_catalogs.cpp`, `src/metastore/system_iceberg_tables.cpp`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla: Apache Iceberg Queries
 
 Oxla connects to Apache Iceberg REST catalogs (e.g., Apache Polaris, AWS Glue
@@ -16,16 +18,6 @@ syntax. Partition pruning and predicate pushdown are applied automatically.
 > Kafka+Iceberg queries are unaffected throughout. For the parameter itself and
 > how an operator sets it, see `/redpanda:sql-admin-api`.
 
-Sources grounded in: `oxla/src/sqlparser/sql/CreateCatalogStatement.h`,
-`oxla/src/sqlparser/sql/connection_option_names.h`,
-`oxla/src/catalog/iceberg_catalog_parser.cpp`,
-`oxla/src/iceberg_client/rest_catalog_config.h`,
-`oxla/src/iceberg_client/apache_iceberg_client/apache_iceberg_client.h`,
-`oxla/tests/MT/query_planner/cases/predefined_iceberg_*/`. Table/namespace DDL
-grounded in `oxla/src/sqlparser/bison_parser/bison_parser.y`,
-`oxla/src/sqlparser/sql/{CreateStatement.h,DropStatement.h,PartitionTerm.h}`,
-`oxla/src/external_schema/iceberg/iceberg_schema_builder.cpp`, and
-`oxla/tests/blackbox/pit/iceberg/test_iceberg_ddl.py`.
 
 ---
 
@@ -43,8 +35,7 @@ connection (created via `CREATE STORAGE`) for object-store credentials.
 
 ### Options reference
 
-All option names are grounded in `hsql::option_names::iceberg`
-(`oxla/src/sqlparser/sql/connection_option_names.h`).
+These are all the Iceberg catalog option names the engine accepts.
 
 **Required:**
 
@@ -339,8 +330,7 @@ out-of-range value is a parse error.
 
 ### SQL → Iceberg type mapping
 
-Column types are translated to Iceberg types when the table is created (grounded
-in `iceberg_schema_builder.cpp` and `test_iceberg_ddl.py`):
+Column types are translated to Iceberg types when the table is created:
 
 | SQL column type | Iceberg type |
 |-----------------|--------------|
@@ -402,8 +392,7 @@ not discoverable without `USAGE`.
 ## Querying Iceberg Tables
 
 Use the `catalog=>path.to.table` syntax. The path after `=>` is a dot-delimited
-Iceberg namespace + table name (grounded in the test cases under
-`oxla/tests/MT/query_planner/cases/predefined_iceberg_*/`).
+Iceberg namespace + table name.
 
 ```sql
 -- Simple select — all columns
@@ -520,9 +509,7 @@ the predicates again during the actual data read even after partition pruning.
 
 ## System Tables for Iceberg
 
-Two system virtual tables expose Iceberg catalog metadata
-(grounded in `oxla/src/metastore/system_iceberg_catalogs.cpp` and
-`oxla/src/metastore/system_iceberg_tables.cpp`).
+Two system virtual tables expose Iceberg catalog metadata.
 
 ### `system.iceberg_catalogs`
 
