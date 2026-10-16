@@ -47,6 +47,10 @@ A node whose `host_name` matches `leader_name` boots as the leader. All other no
 
 ## Single-Node Deployment
 
+> **No public image.** Redpanda SQL is offered through BYOC and the Agentic Data Plane, and there is
+> no publicly pullable container image for running it yourself. The Docker examples in this skill
+> use `<redpanda-sql-image>` as a placeholder for an image you have been given access to.
+
 For a single node, `leader_name` and `host_name` are the same value. There is no inter-node communication.
 
 ### Minimal Docker run
@@ -59,7 +63,7 @@ docker run --rm -it \
   -e OXLA__LEADER_ELECTION__LEADER_NAME=oxla_node_1 \
   -e OXLA__STORAGE__OXLA_HOME=/oxla/data \
   -e OXLA__LOGGING__LEVEL=INFO \
-  778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+  <redpanda-sql-image>
 ```
 
 ### Single-node with persistence (local volume)
@@ -75,7 +79,7 @@ docker run --rm -it \
   -e OXLA__LEADER_ELECTION__LEADER_NAME=oxla_node_1 \
   -e OXLA__STORAGE__OXLA_HOME=/oxla/data \
   -e OXLA__LOGGING__LEVEL=INFO \
-  778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+  <redpanda-sql-image>
 ```
 
 ### Single-node with S3 storage (MinIO example)
@@ -108,7 +112,7 @@ docker run --rm -it \
   -e OXLA__FEATURE_FLAGS__ALLOW_NONATOMIC_STORAGE=true \
   -e OXLA__DISTRIBUTED_CATALOG__CACHE_ENABLED=false \
   -e OXLA__DISTRIBUTED_CATALOG__CACHE_CONSISTENCY_ENABLED=false \
-  778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+  <redpanda-sql-image>
 ```
 
 Note: MinIO (pre-late-2024 versions) does not fully support If-Match/Compare-and-Swap. Disable the distributed catalog CAS features as shown above.
@@ -135,7 +139,7 @@ volumes:
 
 services:
   oxla_node_1:
-    image: 778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+    image: <redpanda-sql-image>
     stop_grace_period: 3m
     security_opt:
       - seccomp:unconfined
@@ -161,7 +165,7 @@ services:
         hard: 40000
 
   oxla_node_2:
-    image: 778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+    image: <redpanda-sql-image>
     stop_grace_period: 3m
     security_opt:
       - seccomp:unconfined
@@ -187,7 +191,7 @@ services:
         hard: 40000
 
   oxla_node_3:
-    image: 778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+    image: <redpanda-sql-image>
     stop_grace_period: 3m
     security_opt:
       - seccomp:unconfined
@@ -252,7 +256,7 @@ docker run --rm -it \
   -e OXLA__SSL__MAX_PROTOCOL_VERSION=1.3 \
   -e OXLA__ACCESS_CONTROL__MODE=on \
   -e OXLA__LEADER_ELECTION__LEADER_NAME=oxla_node_1 \
-  778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+  <redpanda-sql-image>
 ```
 
 ---
@@ -329,7 +333,7 @@ Mount a directory containing `config.yml`:
 docker run --rm -it \
   -p 5432:5432 \
   -v /path/to/my/config:/oxla/startup_config \
-  778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+  <redpanda-sql-image>
 ```
 
 The config file does not need to be complete. A minimal `config.yml` for a single node with S3 storage:
@@ -388,7 +392,7 @@ The repo ships two Ansible playbooks under `ansible/` for deploying Oxla to real
 The playbooks generate a `~/oxla/config.yml` Docker Compose file from one of two Jinja2 templates:
 
 - `ansible/templates/config.yml.j2` — for Hetzner/bare-metal deployments. Key variables:
-  - `image` — Docker image to pull (default: `harbor.oxladb.dev/oxla-ci/oxla-daily:latest`)
+  - `image` — Docker image to pull (pass `<redpanda-sql-image>`; the playbook default is an internal registry image)
   - `host_name` — set to `{{ inventory_hostname }}`
   - `leader_name` — first host in the play (`hostvars[ansible_play_hosts[0]].ansible_host`)
   - `oxla_home` — `{{ oxla_home_prefix }}/{{ oxla_home_name }}` (e.g., `s3://devcluster-aws-c5a-8xlarge/home:ro`)
@@ -421,11 +425,11 @@ AWS inventories set `cluster_type` to drive per-cluster S3 bucket naming and Min
 devcluster_aws_c5a_8xlarge:
   hosts:
     n1_devcluster_aws_c5a_8xlarge:
-      ansible_host: n1.devcluster-aws-c5a-8xlarge.oxladb.dev
+      ansible_host: n1.example.com
     n2_devcluster_aws_c5a_8xlarge:
-      ansible_host: n2.devcluster-aws-c5a-8xlarge.oxladb.dev
+      ansible_host: n2.example.com
     n3_devcluster_aws_c5a_8xlarge:
-      ansible_host: n3.devcluster-aws-c5a-8xlarge.oxladb.dev
+      ansible_host: n3.example.com
   vars:
     provider: aws
     machine_type: c5a-8xlarge
@@ -444,14 +448,14 @@ ansible-galaxy collection install -r ansible/requirements.yml
 # Deploy to a Hetzner cluster (install Docker + deploy Oxla)
 ansible-playbook ansible/devcluster_deploy.yml \
   -i ansible/inventory/devcluster-hetzner-ax102-3nodes.yml \
-  -e image=778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest \
+  -e image=<redpanda-sql-image> \
   -e oxla_home_prefix=s3://my-devcluster \
   -e oxla_home_name=home
 
 # Deploy to AWS EC2 instances (Docker pre-installed via Terraform userdata)
 ansible-playbook ansible/devcluster_deploy_aws.yml \
   -i /path/to/generated-ansible-inventory.yml \
-  -e image=778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-daily:latest
+  -e image=<redpanda-sql-image>
 
 # Stop a deployment without destroying nodes
 ansible-playbook ansible/devcluster_deploy.yml \
@@ -506,7 +510,7 @@ terraform output -raw ansible_inventory > /tmp/devcluster-inventory.yml
 # Deploy Oxla onto the provisioned nodes
 ansible-playbook ansible/devcluster_deploy_aws.yml \
   -i /tmp/devcluster-inventory.yml \
-  -e image=778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-daily:latest
+  -e image=<redpanda-sql-image>
 
 # Tear down
 terraform destroy

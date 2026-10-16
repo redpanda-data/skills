@@ -22,6 +22,10 @@ Clients connect to Oxla via the PostgreSQL wire protocol on port 5432. SQL-level
 
 ## Quickstart
 
+> **No public image.** Redpanda SQL is offered through BYOC and the Agentic Data Plane, and there is
+> no publicly pullable container image for running it yourself. The Docker examples in this skill
+> use `<redpanda-sql-image>` as a placeholder for an image you have been given access to.
+
 ### Single-node via Docker (minimal config)
 
 ```bash
@@ -33,7 +37,7 @@ docker run --rm -it \
   -e OXLA__LEADER_ELECTION__LEADER_NAME=oxla_node_1 \
   -e OXLA__STORAGE__OXLA_HOME=/oxla/data \
   -e OXLA__LOGGING__LEVEL=INFO \
-  778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+  <redpanda-sql-image>
 ```
 
 ### Single-node with S3 storage
@@ -47,7 +51,7 @@ docker run --rm -it \
   -e AWS_DEFAULT_REGION=us-east-1 \
   -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
   -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
-  778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+  <redpanda-sql-image>
 ```
 
 ### Three-node cluster (Docker Compose)
@@ -82,7 +86,7 @@ docker run ... -e OXLA__LOGGING__LEVEL=DEBUG ...
 docker run --rm -it \
   -p 5432:5432 \
   -v /path/to/config:/oxla/startup_config \
-  778696301129.dkr.ecr.eu-central-1.amazonaws.com/oxla-devel:latest
+  <redpanda-sql-image>
 ```
 
 ### Health check and log-level management via the admin API
