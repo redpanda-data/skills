@@ -54,9 +54,11 @@ wallet_password: "${ORACLE_WALLET_PASSWORD}"
 **Type:** `int` | **Required:** no | **Default:** `500`
 
 The number of rows the Oracle driver fetches per network round trip, applied to
-**both** snapshot and streaming reads. It also sizes the read-ahead buffer
+**both** snapshot and streaming reads. It also scales the read-ahead buffer
 between LogMiner row reading and the rest of the pipeline, so one fetch's worth
-of rows can be processed while the next round trip is in flight. Higher values
+of rows can be processed while the next round trip is in flight. The buffer has
+a floor of roughly 2000 rows, so raising `prefetch_rows` grows it only above
+that. Higher values
 mean fewer round trips but more memory per fetch — and that cost is paid once
 per table snapshotted in parallel, so weigh it against
 `max_parallel_snapshot_tables`.

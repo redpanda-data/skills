@@ -305,9 +305,11 @@ Durability notes that outlive any field list:
   transaction or rows committed after the bound are never seen.
 - **Identifiers are quoted**, so they must match the HANA catalog's case —
   unquoted DDL upper-cases names (`create table orders` is `ORDERS`).
-- Messages carry `table_name`, `database_schema`, an Avro-compatible `schema`
-  (usable with `schema_registry_encode`), and `primary_key_columns`; `schema`
-  and `primary_key_columns` need `schema_name` set and catalog read access, and
+- Messages always carry `table_name`. `database_schema`, an Avro-compatible
+  `schema` (usable with `schema_registry_encode`), and `primary_key_columns`
+  are present only when `schema_name` is set (`schema` and
+  `primary_key_columns` also need catalog read access), and
+  `primary_key_columns` additionally needs the table to have a primary key.
   `query` mode attaches no metadata at all.
 
 Scaffold the full field set with `rpk connect create sap_hana`.

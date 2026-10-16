@@ -153,7 +153,10 @@ validate only what the connector enforces.
 - **`prefetch_rows` now also sizes the read-ahead buffer.** At the tag,
   `queryLogMinerContents` reads rows on its own goroutine into a channel whose
   capacity comes from `readAheadBatches(cfg.PrefetchRows)`, so one fetch's rows
-  are processed while the next round trip is in flight;
+  are processed while the next round trip is in flight. `readAheadBatches`
+  returns `max(logMinerReadAheadBatches, ceil(prefetchRows /
+  logMinerReadBatchSize))`, a documented minimum of 2000 rows, so the skill
+  states the floor rather than a plain "sized from `prefetch_rows`";
   `internal/impl/oracledb/config.go` now returns the effective value (including
   one taken from a `PREFETCH_ROWS` connection-string parameter) and
   `logminer/config.go` carries it as `Config.PrefetchRows`. Reflected in

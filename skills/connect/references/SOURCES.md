@@ -81,7 +81,10 @@ items below are grounded in source at the tag rather than in the changelog.
   `license.CheckRunningEnterprise` call in `newSAPHANAInput`) and
   `internal/impl/saphana/input_sap_hana.go` (the per-mode queries, the
   database-clock window bound, `bulk`/`query` terminating the input, and the
-  `table_name` / `database_schema` / `schema` / `primary_key_columns` metadata).
+  `table_name` / `database_schema` / `schema` / `primary_key_columns` metadata;
+  per the spec's metadata list in `config.go`, only `table_name` is
+  unconditional, the other three need `schema_name`, and `primary_key_columns`
+  also needs a table primary key).
   `info.csv` lists `sap_hana ,input ,SAP HANA ,enterprise`. Documented as a
   family in `references/connector-catalog.md` and as a subsection in
   `references/enterprise.md`, with the field set deferred to
@@ -137,7 +140,11 @@ items below are grounded in source at the tag rather than in the changelog.
 - **Verification stamps refreshed** against `info.csv` at `v4.113.1`: the
   16 AI/ML processors are still `certified`; `gateway` and `a2a_message` are
   still enterprise with no published reference page; the enterprise roster is
-  complete at the tag.
+  complete at the tag for non-deprecated components. `pg_stream` (input) and
+  `redpanda_common` (input and output) are also `enterprise` in `info.csv` but
+  `deprecated=y`, so the roster heading says deprecated components are
+  excluded, and the "Deprecated in favour of `redpanda`" note records that
+  `redpanda_common` is enterprise-tier.
 - **Verified and deliberately not documented this release:** the `sftp`
   credentials block for extra SSH key-exchange algorithms, ciphers and MACs
   (per-field addition); the `compression` field defaulting to `snappy` on the

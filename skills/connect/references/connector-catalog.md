@@ -26,9 +26,9 @@ https://docs.redpanda.com/connect/components/catalog/):
 > always called.) When licensing matters for a decision, verify the specific
 > component (its docs page, or a dry run without a license).
 
-## Enterprise components (complete at Connect v4.113.1)
+## Enterprise components (complete at Connect v4.113.1, deprecated components excluded)
 
-Every enterprise-tier component, grouped by family. Which components carry the
+Every non-deprecated enterprise-tier component, grouped by family. Which components carry the
 tier changes between releases, so treat this as a point-in-time list and read
 the current set from `info.csv` at the stable tag (or filter the catalog page
 by tier) rather than counting on it.
@@ -158,7 +158,7 @@ The `kafka` and `kafka_franz` **inputs and outputs** are all marked deprecated
 in the catalog, and their component specs point at the `redpanda` input/output.
 They still run, so an existing config is not broken, but new pipelines (and the
 examples in these skills) should use `redpanda`. `redpanda_common` is likewise
-deprecated — a plain `redpanda` input/output with its connection fields omitted
+deprecated, but unlike `kafka` and `kafka_franz` it is enterprise-tier — a plain `redpanda` input/output with its connection fields omitted
 reads the same global `redpanda` block.
 
 ## Discover live (always preferred over static lists)
