@@ -61,3 +61,18 @@ Scope note: the **field list and defaults are auto-generated** — the citation 
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For field names/defaults, trust the auto-generated fields partial + `overrides.json` (regenerated from the Go `ConfigSpec`), never a hardcoded value. Verify connector behavior against the current `redpanda-data/connect` release, and treat all Spanner-side setup as external Google Cloud documentation.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- `references/enterprise-features.md` distinguished the CDC data output
+  (`kafka_franz`) from the global `redpanda` block; it now contrasts the
+  `redpanda` **output** with the top-level `redpanda` **block**, which is the
+  same distinction without the deprecated component name.

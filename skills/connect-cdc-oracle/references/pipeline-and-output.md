@@ -76,6 +76,9 @@ Access metadata in Bloblang with `meta("field_name")`.
 | `source_ts_ms` | string | CDC only | Milliseconds since Unix epoch when Oracle wrote the change to redo log; absent on snapshot messages |
 | `commit_ts_ms` | string | CDC + snapshot | Milliseconds since Unix epoch at transaction commit (from `V$LOGMNR_CONTENTS.TIMESTAMP` on the COMMIT redo record). On snapshot (`read`) messages this is Oracle's `SYSTIMESTAMP` captured when the snapshot SCN was taken, so every snapshot row carries the same value (since 4.99.0). |
 | `username` | string | CDC only | The Oracle database username of the session that performed the DML, from `V$LOGMNR_CONTENTS.USERNAME`. Absent on snapshot (`read`) messages, and on CDC events where Oracle reports a NULL or empty username — the field is only set when the value is non-empty, so downstream mappings must tolerate its absence (since 4.110.0). |
+| `rs_id` | string | CDC only | The LogMiner record set ID, from `V$LOGMNR_CONTENTS.RS_ID`: it identifies the redo record that produced this change. Absent on snapshot (`read`) messages and on the synthetic updates Connect emits for LOB-only transactions. Use `rs_id`, `ssn`, and `row_seq` together to identify a single row change and to order the changes within one transaction (since 4.113.1). |
+| `ssn` | string | CDC only | The SQL sequence number, from `V$LOGMNR_CONTENTS.SSN`, rendered as a numeric string — compare it numerically, not lexically. Present exactly when `rs_id` is (since 4.113.1). |
+| `row_seq` | string | CDC only | The position of this row change among the consecutive changes that report the same `rs_id` and `ssn`, starting at `0` in redo order, rendered as a numeric string. Oracle writes every row of an array DML record (for example a bulk `DELETE` of up to 255 rows) with the same `rs_id` and `ssn`, so this is what tells those rows apart; it is `0` for every other change. Present exactly when `rs_id` is (since 4.113.1). |
 | `schema` | string | When schema resolution succeeds | Serialised table schema (fingerprinted `schema.Common`) for use with `schema_registry_encode`. Present whenever schema lookup succeeds; absent if schema resolution fails (a warning is logged). |
 
 ---
@@ -103,7 +106,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: oracle-cdc-events
@@ -145,7 +148,7 @@ pipeline:
         root.payload    = this
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: ${! meta("topic") }
@@ -180,7 +183,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: oracle-cdc-orders
@@ -220,7 +223,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: oracle-cdc-orders
@@ -250,7 +253,7 @@ input:
     # Checkpoint table auto-derived to C##RPCN.CDC_CHECKPOINT_MYPDB in CDB mode
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: mypdb-cdc-orders

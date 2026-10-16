@@ -10,7 +10,7 @@ note at the end).
 Each component carries a support tier in the catalog
 (`internal/plugins/info.csv` in `redpanda-data/connect`; also shown on each
 component's reference page and filterable at
-https://docs.redpanda.com/redpanda-connect/components/catalog/):
+https://docs.redpanda.com/connect/components/catalog/):
 
 | Tier | Meaning |
 |---|---|
@@ -19,15 +19,14 @@ https://docs.redpanda.com/redpanda-connect/components/catalog/):
 | `community` | Community-maintained, best-effort |
 
 > **Tier vs. runtime gate caveat:** the tier label and the runtime license
-> check don't always agree. Known discrepancies, still present at v4.111.1:
-> both `jira` components (the `input` and the now-deprecated `processor`) are
-> tiered `certified` but their source calls the enterprise license check
-> (`license.CheckRunningEnterprise`); `aws_dynamodb_cdc` is tiered
-> `enterprise` but has no runtime gate in source. When licensing matters for
-> a decision, verify the specific component (its docs page, or a dry run
-> without a license).
+> check don't always agree. One discrepancy remains at v4.113.1:
+> `aws_dynamodb_cdc` is tiered `enterprise` but has no runtime gate in source.
+> (The `jira` input and processor were the other one — both were re-tiered
+> `enterprise` at v4.113.0 to match the enterprise check their source has
+> always called.) When licensing matters for a decision, verify the specific
+> component (its docs page, or a dry run without a license).
 
-## Enterprise components (complete at Connect v4.111.1)
+## Enterprise components (complete at Connect v4.113.1)
 
 Every enterprise-tier component, grouped by family. Which components carry the
 tier changes between releases, so treat this as a point-in-time list and read
@@ -59,6 +58,24 @@ input, `tigerbeetle_cdc`, is **certified** (no license) and CGO-only; see
 
 - `iceberg` (output) — fan out topics to Apache Iceberg tables via the REST
   catalog API. (Distinct from Redpanda's broker-side Iceberg Topics feature.)
+
+### SAP HANA
+
+- `sap_hana` (input) — **polls** a SAP HANA table (or a supplied query) rather
+  than reading a change log: no deletes, and updates only surface if they move
+  the tracked column. Five `mode` values (`bulk`, `incrementing`, `query`,
+  `timestamp`, `timestamp+incrementing`) and a `checkpoint_cache` for the
+  high-water mark; see [enterprise.md](enterprise.md).
+
+### Jira
+
+- `jira` (input) — stream issues, comments, or changelog entries behind a JQL
+  filter with cursor-based incremental polling.
+- `jira` (processor) — enrich/lookup against the Jira API; **deprecated** in
+  favour of the input.
+
+  Both now have a published reference page; as always, read the field set from
+  there or from `rpk connect create jira` rather than from a static list.
 
 ### Splunk
 
@@ -95,13 +112,13 @@ input, `tigerbeetle_cdc`, is **certified** (no license) and CGO-only; see
 ### In catalog but undocumented (flagged — do not recommend without checking)
 
 - `gateway` (input) and `a2a_message` (processor) are enterprise-tier in
-  `info.csv` at v4.99.0 but have **no reference page** in the published Redpanda Connect docs.
+  `info.csv` at v4.113.1 but have **no reference page** in the published Redpanda Connect docs.
   They appear to be Agentic Data Plane/agent-related surfaces; confirm status before
   documenting or recommending them.
 
 ## AI/ML processors — certified, NOT license-gated
 
-All 16 AI inference processors are **certified** tier at v4.99.0 with no
+All 16 AI inference processors are **certified** tier at v4.113.1 with no
 runtime license check (Apache-2.0 source): `openai_chat_completion`,
 `openai_embeddings`, `openai_image_generation`, `openai_speech`,
 `openai_transcription`, `openai_translation`, `aws_bedrock_chat`,
@@ -128,18 +145,21 @@ from this list. Families worth knowing exist:
   plus the already-covered `azure_blob_storage` family.
 - **Analytics/DB:** `gcp_bigquery_select` (in/processor), `questdb` (out),
   `aws_dynamodb_partiql` (processor), the `sql_*` family (insert/select/raw).
-- **Compute/integration:** `aws_lambda` (processor), `git` (input — poll a
-  repo for commits), and the `jira` components. The `jira` **input** (new in
-  Connect v4.100.0) streams issues, comments, or changelog entries via a JQL
-  filter with cursor-based incremental polling; the older `jira`
-  **processor** (enrich/lookup by calling the Jira API) is now
-  **deprecated** in favour of that input. Both are tiered `certified` but
-  require an Enterprise license at runtime (see the tier-vs-gate caveat
-  above); the input has no published reference page yet, so scaffold its
-  config with `rpk connect create jira` rather than a static field list.
+- **Compute/integration:** `aws_lambda` (processor) and `git` (input — poll a
+  repo for commits). (The `jira` input and processor moved to the enterprise
+  roster above at v4.113.0.)
 - **Redpanda-native:** `redpanda_data_transform` (processor) — run a
   broker-style Wasm Data Transform inside a Connect pipeline (see the
   `rpk-transform` skill for authoring transforms).
+
+### Deprecated in favour of `redpanda`
+
+The `kafka` and `kafka_franz` **inputs and outputs** are all marked deprecated
+in the catalog, and their component specs point at the `redpanda` input/output.
+They still run, so an existing config is not broken, but new pipelines (and the
+examples in these skills) should use `redpanda`. `redpanda_common` is likewise
+deprecated — a plain `redpanda` input/output with its connection fields omitted
+reads the same global `redpanda` block.
 
 ## Discover live (always preferred over static lists)
 
@@ -150,7 +170,7 @@ rpk connect create <component>          # scaffold full config for a component
 ```
 
 Catalog with tier filters:
-https://docs.redpanda.com/redpanda-connect/components/catalog/?support=enterprise
+https://docs.redpanda.com/connect/components/catalog/?support=enterprise
 
 > **Durability note:** this file names families and tiers so an agent knows
 > what exists; it deliberately contains no per-field config. Field lists,

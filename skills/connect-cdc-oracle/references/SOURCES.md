@@ -134,3 +134,44 @@ validate only what the connector enforces.
 - **Skipped: prepared-statement rework** carried over from the v4.110.0 note —
   `logminer/logminer.go` and `logminer/sqlredo/lob.go` changes in this window are
   internal. No config field, privilege, metadata key, or error string moved.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **Three new metadata fields: `rs_id`, `ssn`, `row_seq`.** Verified at tag
+  `v4.113.1` in `internal/impl/oracledb/batcher.go` (all three are set together,
+  and only when `RSID != ""`, with `ssn` and `row_seq` formatted as decimal
+  strings), `internal/impl/oracledb/replication/stream_message.go`
+  (`MessageEvent.RSID` from `V$LOGMNR_CONTENTS.RS_ID`, `SSN` from `SSN`, and
+  `RowSeq` numbering the row changes that share one `(RS_ID, SSN)` pair from 0 in
+  redo order), `internal/impl/oracledb/logminer/logminer.go` (`RS_ID, SSN` added
+  to the `V$LOGMNR_CONTENTS` projection; `rowSeqCounter`; all CSF fragments of
+  one change share the pair, so the first fragment carries it) and the component
+  spec's own metadata list in `internal/impl/oracledb/input_oracledb_cdc.go`
+  (which records the up-to-255-row array-DML case). Added to both metadata tables
+  (`SKILL.md`, `references/pipeline-and-output.md`), including that they are
+  absent on snapshot (`read`) messages and on the synthetic LOB-only updates.
+- **`prefetch_rows` now also sizes the read-ahead buffer.** At the tag,
+  `queryLogMinerContents` reads rows on its own goroutine into a channel whose
+  capacity comes from `readAheadBatches(cfg.PrefetchRows)`, so one fetch's rows
+  are processed while the next round trip is in flight;
+  `internal/impl/oracledb/config.go` now returns the effective value (including
+  one taken from a `PREFETCH_ROWS` connection-string parameter) and
+  `logminer/config.go` carries it as `Config.PrefetchRows`. Reflected in
+  `references/config-reference.md`, `references/pipeline-and-output.md` and the
+  `SKILL.md` performance section, where "single **synchronous** LogMiner reader"
+  became "single LogMiner reader" with the pipelining noted — the one-reader
+  throughput ceiling is unchanged.
+- **Not documented:** the LOB-only commit-checkpoint hardening in `v4.113.0`
+  (#4920) extends the `v4.112.0` fix already recorded above; it moves no field,
+  metadata key, or documented error string.
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- The cache-resource docs link in `references/config-reference.md` used the
+  wrong host (`www.docs.redpanda.com`) and the retired `/redpanda-connect/`
+  path; both corrected — see the Connect skill's sync log for the docs move.

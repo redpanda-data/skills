@@ -184,7 +184,7 @@ exclude:
 - **Required:** no
 - **Default:** none (empty string)
 
-The label of a Connect [cache resource](https://www.docs.redpanda.com/redpanda-connect/components/caches/about)
+The label of a Connect [cache resource](https://docs.redpanda.com/connect/components/caches/about)
 to use for storing the last successfully delivered LSN. This allows the pipeline
 to resume from that position on restart.
 

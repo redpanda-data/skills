@@ -78,3 +78,18 @@ For each file being reviewed or updated, open the listed source paths first and 
 - **Not a skill change:** the rest of this release's `mssqlserver` diff is
   house-style rewording of the connector's doc strings (em-dash to colon) in
   `input_mssqlserver_cdc.go`, plus test-only changes under `mssqlservertest/`.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- The enterprise-catalog filter link in `references/enterprise-features.md` and
+  the cache-resource link in `references/config-reference.md` (which also used
+  the wrong `www.docs.redpanda.com` host) were moved to the new
+  `docs.redpanda.com/connect/` paths.

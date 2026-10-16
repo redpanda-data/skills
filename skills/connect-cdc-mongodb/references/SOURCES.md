@@ -69,3 +69,18 @@ auto-generated `mongodb_cdc.adoc` + `docs-data/overrides.json` in `redpanda-data
 Do not hardcode the auto-generated field list; defer MongoDB server setup to MongoDB's own
 docs; and treat the enterprise topic/cluster keys as broker properties owned by the
 Redpanda docs, re-verifying them there rather than in Connect.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- The Redpanda-sink section in `references/enterprise-integration.md` said
+  "the `redpanda`/`kafka_franz` output"; it now names `redpanda` alone. The
+  file-to-source rows in this map still mention both, because the shared franz
+  writer fields are where those claims are grounded.

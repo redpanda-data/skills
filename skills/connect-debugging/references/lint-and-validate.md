@@ -139,7 +139,7 @@ The examples below are illustrative; exact error text comes from the component:
 ./pipeline.yaml: OK
 
 # A connection failure (exact text from the component's error):
-./pipeline.yaml: [.input.kafka_franz] dial tcp: connection refused
+./pipeline.yaml: [.input.redpanda] dial tcp: connection refused
 
 # Component does not support connection testing (verbose only, yellow, not a failure):
 # The exact "not supported" text comes from service.ErrConnectionTestNotSupported
@@ -147,7 +147,7 @@ The examples below are illustrative; exact error text comes from the component:
 ```
 
 The label shown in brackets is either the component's `label:` value, or the
-dotted path (`.input.kafka_franz`) if no label is set — another reason to
+dotted path (`.input.redpanda`) if no label is set — another reason to
 always set labels (use `--labels` in CI to enforce this).
 
 ---

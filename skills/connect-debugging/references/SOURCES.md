@@ -79,3 +79,27 @@ every claim still matches. Verify against the current stable release tag of
 (licensing/product docs). Treat the upstream Benthos command surface as live-introspected,
 not pinned. Re-confirm exact flag names, config keys, and error strings before writing any
 new fact.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **Community binary now reports a license error, not an internal fault.**
+  Verified at tag `v4.113.1` in `internal/license/shared_service.go`:
+  `CheckRunningEnterprise` returns `errEnterpriseLicenseRequired` when no license
+  service is registered at all — the case of `redpanda-connect-community`, which
+  can still import enterprise components — instead of the
+  "unable to access license service" error. The same file shows the error string
+  now pointing at `https://docs.redpanda.com/connect/get-started/licensing/`.
+  Both applied to `references/enterprise-features.md`, and the quoted error in
+  `references/failure-modes.md` was updated to the current string.
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- The `connector_list.yaml` allow-list example in
+  `references/enterprise-features.md` and the illustrative lint/connection-test
+  output in `references/lint-and-validate.md` named `kafka_franz`; both now name
+  `redpanda` so no example teaches a deprecated component.

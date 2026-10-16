@@ -74,8 +74,8 @@ redpanda:
       password: "${REDPANDA_PASSWORD}"
 ```
 
-Note: the data output for CDC events normally uses `kafka_franz`; the `redpanda`
-block is for operational logs/status telemetry, not the CDC payload.
+Note: the `redpanda` **output** carries the CDC events; the top-level `redpanda`
+**block** is for operational logs/status telemetry, not the CDC payload.
 
 ---
 
@@ -241,7 +241,7 @@ links keep operating and can be updated.
 ## 7. Security differentiators on the destination cluster
 
 These apply to the Redpanda cluster the CDC events are written into, and to the
-SASL block of the Connect `kafka_franz` output / `redpanda` block.
+SASL block of the Connect `redpanda` output / `redpanda` block.
 
 | Feature | License | Key config |
 |---------|---------|-----------|

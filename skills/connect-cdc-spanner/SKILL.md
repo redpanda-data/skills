@@ -100,7 +100,7 @@ input:
       period: 1s
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - "localhost:9092"
     topic: '${! meta("table_name") }'

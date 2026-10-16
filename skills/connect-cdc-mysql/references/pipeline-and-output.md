@@ -25,7 +25,7 @@ input:
 
 output:
   label: redpanda_out
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: cdc.orders
@@ -76,7 +76,7 @@ pipeline:
 
 output:
   label: redpanda_out
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker-1:9092
       - redpanda-broker-2:9092
@@ -147,7 +147,7 @@ pipeline:
         }
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! meta("topic") }
@@ -242,7 +242,7 @@ On restart with a valid checkpoint:
 
 ```yaml
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - seed-abc123.cloud.redpanda.com:9092
     tls:
@@ -281,11 +281,11 @@ Wrap the primary output in a `fallback` to catch persistent failures:
 ```yaml
 output:
   fallback:
-    - kafka_franz:
+    - redpanda:
         seed_brokers:
           - localhost:9092
         topic: ${! meta("topic") }
-    - kafka_franz:
+    - redpanda:
         seed_brokers:
           - localhost:9092
         topic: cdc.dlq
@@ -308,7 +308,7 @@ output:
 output:
   broker:
     outputs:
-      - kafka_franz:
+      - redpanda:
           seed_brokers: [localhost:9092]
           topic: ${! meta("topic") }
       - http_client:

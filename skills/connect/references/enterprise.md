@@ -26,7 +26,8 @@ export REDPANDA_LICENSE_FILEPATH=/path/to/redpanda.license
 The `--redpanda-license` flag usage string: "Provide an explicit Redpanda License, which enables enterprise functionality. By default licenses found at the path `/etc/redpanda/redpanda.license` are applied."
 
 License error at startup (when an enterprise component is used without a license):
-`this feature requires a valid Redpanda Enterprise Edition license that includes the Connect product. For more information check out: https://docs.redpanda.com/redpanda-connect/get-started/licensing/`.
+`this feature requires a valid Redpanda Enterprise Edition license that includes the Connect product. For more information check out: https://docs.redpanda.com/connect/get-started/licensing/`.
+A binary that registers no license service at all — `redpanda-connect-community`, which can still import enterprise components — reports this same error instead of an internal "unable to access license service" fault.
 
 ## Connect Enterprise Feature Summary
 
@@ -44,7 +45,7 @@ License error at startup (when an enterprise component is used without a license
 
 ## Enterprise Connectors (license required)
 
-Enterprise connectors are inputs, outputs, and processors available only with an Enterprise license. Discover them in the catalog with the `support=enterprise` filter: https://docs.redpanda.com/redpanda-connect/components/catalog/?support=enterprise
+Enterprise connectors are inputs, outputs, and processors available only with an Enterprise license. Discover them in the catalog with the `support=enterprise` filter: https://docs.redpanda.com/connect/components/catalog/?support=enterprise
 
 ### CDC (Change Data Capture) inputs
 
@@ -270,10 +271,51 @@ input:
 
 > CDC inputs that use `checkpoint_cache` reference a named cache resource (`cache_resources`). For durable, restartable CDC use a persistent cache (Redis, SQL, file) rather than `memory`.
 
+### `sap_hana` — polling table reads (enterprise, not CDC)
+
+An enterprise input that **polls** a SAP HANA table (or runs a supplied query)
+rather than reading a change log — there is no redo/binlog capture, so deletes
+are invisible and an update is only seen if it moves the column being tracked.
+It is enterprise-gated at runtime like the CDC inputs.
+
+`mode` selects the read strategy, and each mode decides which other fields are
+required; setting a field a mode never reads is rejected at startup rather than
+ignored:
+
+| `mode` | Reads | Needs |
+|---|---|---|
+| `bulk` (default) | every row once, then the input terminates (wrap in a `sequence` input to re-read periodically) | `table` |
+| `incrementing` | rows whose `incrementing_column` is above the last seen value | `table`, `incrementing_column` |
+| `timestamp` | rows in `(last high-water mark, database clock − timestamp_delay]`; the mark advances only once a window is fully consumed, so a restart mid-window re-reads that window from its start | `table`, `timestamp_column` |
+| `timestamp+incrementing` | the same window, ordered and resumed by the `(timestamp, incrementing)` pair of the last delivered row | `table`, `timestamp_column`, `incrementing_column` |
+| `query` | one message per row of a supplied SQL statement, then terminates | `query` |
+
+Durability notes that outlive any field list:
+
+- **The high-water mark only survives a restart when `checkpoint_cache` names a
+  cache resource**, and only in the three polling modes — `bulk` and `query`
+  have no mark to keep. Use a persistent cache (Redis, SQL, file), not `memory`.
+- **Pick the column type for the mode.** `incrementing` needs a strictly
+  monotonic, duplicate-free column (a BIGINT identity is ideal); a column with
+  ties re-delivers rows whose tie spans a fetch boundary. Use
+  `timestamp+incrementing` for timestamp columns.
+- **The poll window's upper bound is read from the database clock**, never the
+  connector host, so `timestamp_clock` must match how the column is populated
+  (session-local vs UTC), and `timestamp_delay` must exceed your longest write
+  transaction or rows committed after the bound are never seen.
+- **Identifiers are quoted**, so they must match the HANA catalog's case —
+  unquoted DDL upper-cases names (`create table orders` is `ORDERS`).
+- Messages carry `table_name`, `database_schema`, an Avro-compatible `schema`
+  (usable with `schema_registry_encode`), and `primary_key_columns`; `schema`
+  and `primary_key_columns` need `schema_name` set and catalog read access, and
+  `query` mode attaches no metadata at all.
+
+Scaffold the full field set with `rpk connect create sap_hana`.
+
 ### AI/ML processors (certified — no license gate)
 
 AI/ML inference processors are **certified** tier, not enterprise: at Connect
-v4.99.0 all 16 are marked `certified` in the component catalog
+v4.113.1 all 16 are still marked `certified` in the component catalog
 (`internal/plugins/info.csv`) and their source is Apache-2.0 with no runtime
 license check. (This section previously called them enterprise connectors —
 that was wrong.) They are documented here because they pair with the

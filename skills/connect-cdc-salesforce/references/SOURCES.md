@@ -40,3 +40,18 @@ The `salesforce_cdc` input is Go source in the **public** repo `redpanda-data/co
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For connector fields, treat the generated rp-connect-docs partial + `docs-data/overrides.json` as authoritative and re-derive rather than hand-edit. For Salesforce-side setup, verify against Salesforce's own documentation. Verify against the current stable release tags of `redpanda-data/connect` and `redpanda-data/redpanda` before writing any new fact.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- The licensing links in `SKILL.md` and
+  `references/redpanda-enterprise-sink.md` were moved to
+  `docs.redpanda.com/connect/get-started/licensing/`, the path the binary's own
+  license error now prints (`internal/license/shared_service.go` at the tag).

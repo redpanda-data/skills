@@ -91,7 +91,7 @@ input:
     checkpoint_cache: mongo_checkpoint
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["localhost:9092"]
     topic:        "mongo.orders"
     # In canonical json_marshal_mode (default), _id for ObjectId documents is

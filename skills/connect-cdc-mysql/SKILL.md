@@ -71,7 +71,7 @@ pipeline:
 
 output:
   label: redpanda_out
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! meta("topic") }

@@ -57,6 +57,14 @@ If no valid Enterprise license is found, a 10-year open-source license is applie
 automatically. Using an enterprise component under that open-source license fails
 at connection time — surface this fast with `rpk connect dry-run`.
 
+The **community binary** (`redpanda-connect-community`) registers no license
+service at all, yet it can import enterprise components. Configuring one there
+now fails with the same "requires a valid Redpanda Enterprise Edition license"
+error as an unlicensed enterprise binary, rather than an internal "unable to
+access license service" fault — so treat that error as "this component needs a
+license, and possibly a different binary", and check which binary is running
+before hunting for a license file.
+
 ---
 
 ## Enterprise connectors: CDC inputs
@@ -257,7 +265,7 @@ On startup the binary reads **`/etc/redpanda/connector_list.yaml`** (constant
 # /etc/redpanda/connector_list.yaml
 # Specify EITHER allow OR deny, never both.
 allow:
-  - kafka_franz
+  - redpanda
   - postgres_cdc
 # deny:
 #   - subprocess

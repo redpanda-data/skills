@@ -69,7 +69,7 @@ rpk cluster config set iceberg_enabled true
 ### Topic-level properties (per CDC topic)
 
 Set these on the topics your CDC pipeline writes to (the topics produced by the
-`kafka_franz`/`redpanda` output). Grounded in the Redpanda Iceberg Topics pages and
+`redpanda` output). Grounded in the Redpanda Iceberg Topics pages and
 the topic properties reference.
 
 | Topic property | Values | Notes |

@@ -66,7 +66,7 @@ CommitOpType OpType = "commit"  // transaction end (only if include_transaction_
 
 ## Minimal Pipeline: Single Table to Redpanda
 
-> **Output choice**: When writing to Redpanda, the native `redpanda` output is the idiomatic choice — it handles seed broker discovery and authentication more ergonomically. `kafka_franz` is fully valid for both Redpanda and generic Kafka targets. The examples below use `kafka_franz` for generality; substitute `redpanda:` with the same `seed_brokers`/`topic`/`key` fields for the native output.
+> **Output choice**: the examples below use the native `redpanda` output, which handles seed broker discovery and authentication ergonomically and works against generic Kafka brokers too. The older `kafka_franz` and `kafka` outputs are deprecated in favour of it; they still run, and they take the same `seed_brokers`/`topic`/`key` fields, so an existing config only needs the component renamed.
 
 ```yaml
 input:
@@ -79,7 +79,7 @@ input:
     stream_snapshot: false   # only live changes
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: pg.orders.cdc
@@ -132,7 +132,7 @@ pipeline:
         }
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! metadata("topic") }
@@ -163,13 +163,13 @@ output:
     cases:
       - check: metadata("operation") == "delete"
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: [localhost:9092]
             topic: pg.cdc.${! metadata("table") }.deletes
             key: ${! json("id").string() }
 
       - output:
-          kafka_franz:
+          redpanda:
             seed_brokers: [localhost:9092]
             topic: pg.cdc.${! metadata("table") }
             key: ${! json("id").string() }

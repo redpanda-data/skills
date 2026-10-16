@@ -54,9 +54,12 @@ wallet_password: "${ORACLE_WALLET_PASSWORD}"
 **Type:** `int` | **Required:** no | **Default:** `500`
 
 The number of rows the Oracle driver fetches per network round trip, applied to
-**both** snapshot and streaming reads. Higher values mean fewer round trips but
-more memory per fetch — and that cost is paid once per table snapshotted in
-parallel, so weigh it against `max_parallel_snapshot_tables`.
+**both** snapshot and streaming reads. It also sizes the read-ahead buffer
+between LogMiner row reading and the rest of the pipeline, so one fetch's worth
+of rows can be processed while the next round trip is in flight. Higher values
+mean fewer round trips but more memory per fetch — and that cost is paid once
+per table snapshotted in parallel, so weigh it against
+`max_parallel_snapshot_tables`.
 
 Raise it when large committed transactions arrive late while the database,
 network, and connector all look idle: without this field the driver sizes each
@@ -193,7 +196,7 @@ exclude:
 
 **Type:** `string` | **Required:** no | **Default:** none (uses built-in Oracle table)
 
-Name of a [cache resource](https://www.docs.redpanda.com/redpanda-connect/components/caches/about) for storing the SCN checkpoint. When not set, the connector automatically creates an Oracle table and stored procedure under the `RPCN` schema to store the checkpoint (see `checkpoint_cache_table_name`).
+Name of a [cache resource](https://docs.redpanda.com/connect/components/caches/about) for storing the SCN checkpoint. When not set, the connector automatically creates an Oracle table and stored procedure under the `RPCN` schema to store the checkpoint (see `checkpoint_cache_table_name`).
 
 Recommended external cache backends: **Redis** or **Memcached** (low-latency, cheap per-operation). The built-in `memory:{}` cache works but provides no durability across process restarts.
 

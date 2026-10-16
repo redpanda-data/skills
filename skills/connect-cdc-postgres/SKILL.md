@@ -70,14 +70,14 @@ pipeline:
         meta topic = "pg.cdc." + metadata("table")
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! metadata("topic") }
     key: ${! json("id").string() }
 ```
 
-> **Tip**: When writing to Redpanda, the native `redpanda` output is the idiomatic choice — it handles seed broker discovery and authentication more ergonomically than `kafka_franz`. `kafka_franz` is fully valid for both Redpanda and generic Kafka targets.
+> **Tip**: use the native `redpanda` output — it handles seed broker discovery and authentication ergonomically, and works against generic Kafka brokers too. The older `kafka_franz` and `kafka` outputs are deprecated in its favour (same fields, so a rename is usually the whole migration).
 
 ### 3. Run the pipeline
 

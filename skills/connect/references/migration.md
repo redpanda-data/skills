@@ -31,7 +31,7 @@ If you encounter a config using the bundle components, the full field-by-field m
 - You need schemas, consumer group offsets, or ACLs carried over — a plain pipeline moves none of these.
 - You want live cutover: the migrator keeps syncing new data, new topics (as messages arrive), schemas, and offsets while producers/consumers stay on the source, until you repoint them.
 
-**Use a plain `redpanda` (or `kafka_franz`) input → `redpanda` output when:**
+**Use a plain `redpanda` input → `redpanda` output when:**
 - You just need to copy or fork message data, possibly transformed, between clusters or topics.
 - Destination topics already exist (or auto-creation is acceptable) and you don't need schema/offset/ACL sync.
 - The flow is a permanent data pipeline, not a migration. The migrator pair is designed for migration scenarios, not general streaming.

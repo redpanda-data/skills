@@ -37,14 +37,14 @@ fails with the exact error (`connect/internal/license/shared_service.go:44`):
 ```
 this feature requires a valid Redpanda Enterprise Edition license that includes the
 Connect product. For more information check out:
-https://docs.redpanda.com/redpanda-connect/get-started/licensing/
+https://docs.redpanda.com/connect/get-started/licensing/
 ```
 
 | Behavior | Detail |
 |---|---|
 | License scope | Connect product line (separate from the broker license) |
 | Trial | 30-day evaluation; after expiry enterprise connectors are blocked |
-| Apply a key | `rpk connect run` reads the license from `redpanda-connect` license config, env, or the connected cluster — see https://docs.redpanda.com/redpanda-connect/get-started/licensing/ |
+| Apply a key | `rpk connect run` reads the license from `redpanda-connect` license config, env, or the connected cluster — see https://docs.redpanda.com/connect/get-started/licensing/ |
 | Restriction on expiry | All enterprise connectors (including `salesforce_cdc`) are blocked |
 
 Note: `rpk cluster license info` reports violations only for **broker** enterprise features. It does

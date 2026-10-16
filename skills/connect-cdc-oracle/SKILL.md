@@ -81,7 +81,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: oracle-cdc-events
@@ -115,7 +115,7 @@ pipeline:
         meta topic = meta("table_name").lowercase()
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: ${! meta("topic") }
@@ -145,7 +145,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: oracle-cdc-events
@@ -166,15 +166,18 @@ Every message emitted by `oracledb_cdc` carries these metadata fields (access wi
 | `source_ts_ms` | Wall-clock time when Oracle wrote the change to redo log (ms since epoch); absent on snapshot messages |
 | `commit_ts_ms` | Commit timestamp of the transaction (ms since epoch). On snapshot (`read`) messages this is Oracle's `SYSTIMESTAMP` captured when the snapshot SCN was taken — the same value for every snapshot row (since 4.99.0) |
 | `username` | Oracle database username of the session that performed the DML, from `V$LOGMNR_CONTENTS.USERNAME`. CDC only — absent on snapshot (`read`) messages, and on change events where Oracle reports a NULL or empty username (since 4.110.0) |
+| `rs_id` | LogMiner record set ID (`V$LOGMNR_CONTENTS.RS_ID`) identifying the redo record that produced the change. CDC only — absent on snapshot (`read`) messages and on LOB-only synthetic updates (since 4.113.1) |
+| `ssn` | SQL sequence number (`V$LOGMNR_CONTENTS.SSN`), as a numeric string. Set whenever `rs_id` is (since 4.113.1) |
+| `row_seq` | Position of this row change among the consecutive changes sharing the same `rs_id` and `ssn`, counted from `0` in redo order; `0` for every change that is not part of an array DML record. Set whenever `rs_id` is (since 4.113.1) |
 | `schema` | Serialised table schema for use with `schema_registry_encode` processor; present when schema resolution succeeds |
 
 ## Performance and Scaling
 
 Three constraints shape every `oracledb_cdc` deployment:
 
-**Throughput is bounded by the LogMiner session, not by CPU.** Each pipeline mines the redo stream through a **single synchronous LogMiner reader**, so giving Redpanda Connect more cores does not raise the capture rate. To capture more aggregate change volume from one database, run **multiple pipelines whose `include` patterns cover disjoint sets of tables** — each pipeline gets its own LogMiner reader.
+**Throughput is bounded by the LogMiner session, not by CPU.** Each pipeline mines the redo stream through a **single LogMiner reader** (reading and processing are pipelined through a read-ahead buffer sized from `prefetch_rows`, but there is still one reader), so giving Redpanda Connect more cores does not raise the capture rate. To capture more aggregate change volume from one database, run **multiple pipelines whose `include` patterns cover disjoint sets of tables** — each pipeline gets its own LogMiner reader.
 
-**Large transactions can look like a stall.** Left to itself the Oracle driver sizes each fetch to roughly 128 KiB based on the *declared maximum width* of the selected columns, so wide columns — such as LogMiner's redo SQL — yield only a handful of rows per network round trip. A large committed transaction can then arrive minutes late while the database, network, and connector all look idle: each round trip is a full network exchange, and thousands of them are needed. The connector therefore fetches `prefetch_rows` rows per round trip; raise it for large transactions over high-latency links, at the cost of more memory per fetch (and per table snapshotted in parallel):
+**Large transactions can look like a stall.** Left to itself the Oracle driver sizes each fetch to roughly 128 KiB based on the *declared maximum width* of the selected columns, so wide columns — such as LogMiner's redo SQL — yield only a handful of rows per network round trip. A large committed transaction can then arrive minutes late while the database, network, and connector all look idle: each round trip is a full network exchange, and thousands of them are needed. The connector therefore fetches `prefetch_rows` rows per round trip, and sizes the read-ahead buffer between row reading and the rest of the pipeline from the same value, so the next round trip overlaps with processing the rows already read. Raise it for large transactions over high-latency links, at the cost of more memory per fetch (and per table snapshotted in parallel):
 
 ```yaml
 prefetch_rows: 5000

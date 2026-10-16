@@ -79,7 +79,7 @@ addresses:
 | Type | `string` |
 | Required | Yes (must name an existing cache resource) |
 
-Label of a [cache resource](https://docs.redpanda.com/redpanda-connect/components/caches/about) used to track progress by storing the last acknowledged timestamp. This allows Redpanda Connect to resume from the latest delivered event upon restart.
+Label of a [cache resource](https://docs.redpanda.com/connect/components/caches/about) used to track progress by storing the last acknowledged timestamp. This allows Redpanda Connect to resume from the latest delivered event upon restart.
 
 Config validation fails at startup if no `cache_resources` entry with this label exists. Mechanics (from source):
 
@@ -98,7 +98,7 @@ Use a persistent cache (`redis`, `aws_dynamodb`, `sql`) in production. An in-mem
 | Type | `string` |
 | Default | `""` (no limit) |
 
-Label of an optional [rate limit resource](https://docs.redpanda.com/redpanda-connect/components/rate_limits/about/) to throttle the number of **requests** made to TigerBeetle (not events — one request fetches up to `event_count_max` events). If set, the resource must exist or config validation fails.
+Label of an optional [rate limit resource](https://docs.redpanda.com/connect/components/rate_limits/about/) to throttle the number of **requests** made to TigerBeetle (not events — one request fetches up to `event_count_max` events). If set, the resource must exist or config validation fails.
 
 ---
 

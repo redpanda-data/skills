@@ -90,7 +90,7 @@ pipeline:
         avro_raw_json: false
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: [ ${REDPANDA_BROKERS} ]
     topic: oracle-cdc-orders   # Iceberg mode set on this topic via rpk
 ```

@@ -8,7 +8,7 @@ Redpanda Connect (formerly Benthos) is split across **two public repos plus one 
 - **`redpanda-data/benthos`** (Go, a dependency of `connect` — pinned in `connect/go.mod`, currently **v4.81.0**) — the **engine**: the CLI commands (`run`, `list`, `create`, `lint`, `streams`, `blobl`), the Bloblang language (`internal/bloblang/`), the core config model, and the base `logger`/`metrics`/`tracer`/`buffer` components. The CLI verbs the skill teaches (`rpk connect run/list/create/lint`) are defined here, **not** in `redpanda-data/connect`.
 - **`redpanda-data/rp-connect-docs`** — the **auto-generated** component reference (`modules/components/pages/{inputs,processors,outputs,caches,buffers,rate_limits,scanners,metrics,tracers,...}/`) built from each component's Go `Spec()`, plus `docs-data/overrides.json` (DRY overrides via `$ref`) and versioned snapshots `docs-data/connect-<version>.json`.
 
-`connect` and `benthos` are public; **`rp-connect-docs` is private**, so its paths and contents stay off public surfaces (PR titles, descriptions, commit messages) — see the repo `CLAUDE.md`. Note that `redpanda-data/connect` also commits the generated component reference into its own tree at `docs/modules/components/pages/**`, tagged with each release, so per-field verification at a release tag can usually be done entirely in the public repo. Read them via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `gh api repos/redpanda-data/<repo>/contents/<path>`; avoid `gh search code` (rate-limited). `rpk connect` itself is a **managed-plugin passthrough** to the `redpanda-connect` binary — its subcommand tree is not defined in `redpanda-data/redpanda`. Before writing or changing any fact, re-open the cited source and confirm exact field names, flag names, and defaults against the matching Connect release tag (and the benthos version in `go.mod`).
+`connect` and `benthos` are public; **`rp-connect-docs` is private**, so its paths and contents stay off public surfaces (PR titles, descriptions, commit messages) — see the repo `CLAUDE.md`. Note that the generated component reference is **no longer committed** into the `redpanda-data/connect` tree (its `docs/README.md` at v4.113.1 says so, and the version check now reads the previous release's `redpanda-connect-docs.tar.gz` asset instead of committed partials), so per-field verification at a tag means reading the component's Go `Spec()` in `internal/impl/`, the release's docs asset, or the generated pages in `rp-connect-docs`. Read them via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `gh api repos/redpanda-data/<repo>/contents/<path>`; avoid `gh search code` (rate-limited). `rpk connect` itself is a **managed-plugin passthrough** to the `redpanda-connect` binary — its subcommand tree is not defined in `redpanda-data/redpanda`. Before writing or changing any fact, re-open the cited source and confirm exact field names, flag names, and defaults against the matching Connect release tag (and the benthos version in `go.mod`).
 
 ## File-to-source table
 
@@ -39,7 +39,7 @@ Redpanda Connect (formerly Benthos) is split across **two public repos plus one 
 - **Unified migrator version bounds** (migration.md): "introduced 4.67.5, legacy deprecated 4.67.5 / removed 4.85.0" per `guides/migration/migrate-unified-redpanda-migrator.adoc`. The generated component metadata says `4.67.0` for the input and the output page says "Introduced in version 4.37.0" (the output *name* predates the unified rework); the guide's 4.67.5+ figure is used as the compatibility boundary. Re-check if the guide changes.
 
 - **AI/ML processors are certified, not enterprise (corrected 2026-07-07):** all 16 (`openai_*`, `aws_bedrock_*`, `cohere_*`, `gcp_vertex_ai_*`, `ollama_*`) are `certified` in `info.csv` at v4.99.0 and `internal/impl/openai/chat_processor.go` is Apache-2.0 with no license check. `SKILL.md`, `components.md`, and `enterprise.md` previously called them enterprise — corrected. If a future release re-tiers them, treat that as a user-facing change.
-- **Tier vs runtime gate discrepancies (flagged, not resolved; re-confirmed at v4.111.1 on 2026-10-01):** both `jira` `input` (new in v4.100.0, `internal/impl/jira/input_jira.go`) and `jira` `processor` (`internal/impl/jira/processor_jira.go`, `deprecated=y` in `info.csv` since v4.100.0) are `certified` in `info.csv` but their source calls `license.CheckRunningEnterprise`; `aws_dynamodb_cdc` is `enterprise` in `info.csv` but its source (`internal/impl/aws/dynamodb/input_cdc.go`) has no runtime gate. The catalog file carries a caveat instead of asserting either way; needs product/Connect-team confirmation. **The `jira` input has no rp-connect-docs reference page yet** (`modules/components/pages/inputs/jira.adoc` 404 at time of sync), so its per-field config is deferred to `rpk connect create jira` — do not enumerate its fields in the skill until the generated page is published.
+- **Tier vs runtime gate discrepancies — the `jira` half is RESOLVED at v4.113.0:** `info.csv` at v4.113.1 lists both `jira` `input` and `jira` `processor` (still `deprecated=y`) as `enterprise`, matching the `license.CheckRunningEnterprise` call their source has always carried, so the catalog now files them under the enterprise roster. `modules/components/pages/inputs/jira.adoc` also exists now (it 404'd at the earlier sync), though its page header still carries `:support: certified` — a docs-side lag, not a skill claim; the skill states the tier from `info.csv`. **Still open:** `aws_dynamodb_cdc` is `enterprise` in `info.csv` but its source (`internal/impl/aws/dynamodb/input_cdc.go`) has no runtime gate; the catalog carries a caveat instead of asserting either way, and it needs product/Connect-team confirmation.
 - **`gateway` (input) and `a2a_message` (processor)** are enterprise-tier in `info.csv` at v4.99.0 but have no rp-connect-docs reference page — likely ADP-related surfaces. Do not document further until they have public reference pages.
 - **benthos vs connect split (accepted, not drift):** the CLI verbs (`run`/`list`/`create`/`lint`/`streams`/`blobl`), Bloblang, the core config model, and base `logger`/`metrics`/`tracer`/`buffer` components live in the dependency **`redpanda-data/benthos`** (v4.81.0 as of connect v4.111.1, re-checked 2026-10-01), NOT in `redpanda-data/connect`. Verify engine-level claims against the matching benthos tag; verify Redpanda-specific claims against the connect release tag.
 - **CDC/AI field defaults** in `enterprise.md` (e.g. `checkpoint_limit: 1024`, `scn_window_size: 20000`, `api_version: v65.0`) grounded from the generated component docs snapshot, not line-verified against each impl's `Spec()` this pass. Re-check against the generated reference for the target version.
@@ -51,6 +51,105 @@ Redpanda Connect (formerly Benthos) is split across **two public repos plus one 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. Route engine/CLI/Bloblang questions to `redpanda-data/benthos` (at the version in `connect/go.mod`), Redpanda-specific component/license/secrets/CDC/AI questions to `redpanda-data/connect`, and treat `redpanda-data/rp-connect-docs` (generated pages + `docs-data/`) as the citation of record for per-field connector config. Never hardcode auto-generated field lists or Bloblang catalogs — defer to the generated reference and `rpk connect list`/`create`/`blobl`.
 
 ## Sync log
+
+### Connect v4.113.1 / benthos v4.82.0 (2026-10-16)
+
+Release checked: `v4.113.1` (published 2026-10-14, the current stable tag), which
+also carries the `v4.113.0` changelog section (2026-10-09). `CHANGELOG.md` has no
+`4.113.1` section — its entries live only in the GitHub release notes, so several
+items below are grounded in source at the tag rather than in the changelog.
+
+- **benthos moved v4.81.0 → v4.82.0** (`connect/go.mod` at the tag). Both of its
+  changes were checked and neither is a skill surface: the new
+  `NewOAuth2Field` / `NewRetryBackOffFields` / `NewMaxRetriesField` helpers are
+  Go plugin-author API, and the `cache` output's new `key` default
+  (`${!timestamp_unix_nano()}-${!uuid_v4()}`, replacing the impure `count`) is a
+  per-field default, deferred to the generated reference. No CLI verb, Bloblang
+  function/method, or core config-model claim was re-opened.
+- **`jira` input and processor are now enterprise-tier.**
+  `internal/plugins/info.csv` at the tag lists both rows as `enterprise` (the
+  processor still `deprecated=y`), which closes the long-standing tier-vs-gate
+  discrepancy: their source has always called `license.CheckRunningEnterprise`.
+  `references/connector-catalog.md` now carries them in the enterprise roster,
+  the caveat keeps only the remaining `aws_dynamodb_cdc` case, and the
+  "notable certified" bullet points at the move.
+- **New enterprise input `sap_hana`.** Verified at the tag in
+  `internal/impl/saphana/config.go` (the `Spec()`: five `mode` values —
+  `bulk`, `incrementing`, `query`, `timestamp`, `timestamp+incrementing` — the
+  per-mode required fields, `rejectInertFields`, the `checkpoint_cache` /
+  `checkpoint_cache_key` pair, `timestamp_clock`, and the
+  `license.CheckRunningEnterprise` call in `newSAPHANAInput`) and
+  `internal/impl/saphana/input_sap_hana.go` (the per-mode queries, the
+  database-clock window bound, `bulk`/`query` terminating the input, and the
+  `table_name` / `database_schema` / `schema` / `primary_key_columns` metadata).
+  `info.csv` lists `sap_hana ,input ,SAP HANA ,enterprise`. Documented as a
+  family in `references/connector-catalog.md` and as a subsection in
+  `references/enterprise.md`, with the field set deferred to
+  `rpk connect create sap_hana`.
+  - **Flagged, not resolved:** the spec is annotated `Version("4.114.0")` even
+    though the component is registered in the `v4.113.1` tag and announced in
+    that release's notes. The skill therefore states no "introduced in" version
+    (it pins no versions anyway). Re-check whether the annotation or the release
+    is the one that moves.
+  - The per-connector cloud availability in `info.csv` (`cloud: n` for
+    `sap_hana`) is deliberately not recorded in the skill — availability is a
+    volatile matrix, as with the `websocket` flip at v4.111.0.
+- **`kafka` and `kafka_franz` inputs *and* outputs are now all deprecated in
+  favour of `redpanda`.** `info.csv` marks all four rows `deprecated=y`, and
+  `internal/impl/kafka/output_kafka_franz.go` carries `.Deprecated()` with a
+  description that now opens "Use the `redpanda` output instead" (same for
+  `input_kafka_franz.go`). Documented in `references/components.md` (both
+  `redpanda` sections) and `references/connector-catalog.md` (a new
+  "Deprecated in favour of `redpanda`" subsection, which also records that
+  `redpanda_common` is deprecated and that a `redpanda` input/output with its
+  connection fields omitted reads the same global `redpanda` block —
+  `output_redpanda.go`). `references/migration.md` no longer offers
+  `kafka_franz` as the plain-pipeline input.
+  - **Consequence across the Connect skills:** every `kafka_franz:` component
+    key in an example was renamed to `redpanda:`, because the examples otherwise
+    scaffold a deprecated component. The rename is field-safe: both specs are
+    built from the same `FranzConnection*` / `FranzWriterConfigFields` /
+    `FranzProducerFields` groups (`output_kafka_franz.go` vs
+    `output_redpanda.go`), the only differences being that `seed_brokers` is
+    optional on `redpanda`, that `kafka_franz` carries a deprecated `rack_id`,
+    and that `max_in_flight` defaults differ (10 vs 256) — no skill asserted
+    either default. Every changed YAML block was re-parsed after the rename.
+- **License error string and community-binary behavior.**
+  `internal/license/shared_service.go` at the tag shows
+  `errEnterpriseLicenseRequired` now pointing at
+  `https://docs.redpanda.com/connect/get-started/licensing/`, and
+  `CheckRunningEnterprise` returning that same error when no license service is
+  registered at all (the community binary, which can still import enterprise
+  components) instead of the internal "unable to access license service" fault.
+  Both are reflected in `references/components.md` and
+  `references/enterprise.md`.
+- **Docs URLs moved** from `docs.redpanda.com/redpanda-connect/` to
+  `docs.redpanda.com/connect/` (the old path only 301-redirects). Grounded in
+  the public `redpanda-data/connect` repo at the tag: `README.md`,
+  `docs/README.md` and `config/README.md` now use the new prefix, and the
+  license error string above carries it. Every link in these skills was
+  updated, including two that used the wrong `www.docs.redpanda.com` host. Note
+  that some paths changed shape in the move (`/about#components` →
+  `/components/about/`, `/about` → `/home/`), so the prefix swap was checked
+  per link rather than applied blind. `internal/cli/enterprise.go` still sets
+  the *old* documentation URL for CLI help output — left alone, not a skill
+  claim.
+- **Verification stamps refreshed** against `info.csv` at `v4.113.1`: the
+  16 AI/ML processors are still `certified`; `gateway` and `a2a_message` are
+  still enterprise with no published reference page; the enterprise roster is
+  complete at the tag.
+- **Verified and deliberately not documented this release:** the `sftp`
+  credentials block for extra SSH key-exchange algorithms, ciphers and MACs
+  (per-field addition); the `compression` field defaulting to `snappy` on the
+  Kafka/Redpanda producers (per-field default, and the franz-go behavior it
+  describes is unchanged); the Postgres CDC snapshot-chunk release on the first
+  idle heartbeat (internal resource management); the `timeplus` output being
+  re-registered after a refactor dropped it (restores availability, no surface);
+  and the Redpanda Migrator tolerating a per-subject schema-registration
+  failure instead of failing the whole output (a resilience fix that moves no
+  field, metric, or documented error string — `references/migration.md` made no
+  claim about per-subject failure handling, so nothing needed correcting; not
+  line-verified beyond the release note).
 
 ### Connect v4.112.0 / benthos v4.81.0 (2026-10-09)
 

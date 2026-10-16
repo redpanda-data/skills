@@ -59,3 +59,17 @@ Read both via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `g
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For any field/default/enum fact, read the generated `partial$fields/inputs/aws_dynamodb_cdc.adoc` + `docs-data/overrides.json` rather than trusting the transcribed table. Verify Go behavior against `internal/impl/aws/dynamodb/*.go` at the current release tag. Enterprise cluster/topic properties and `rpk` commands are external — cite their own repos.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- Two prose references to "the `kafka_franz` output" in
+  `references/enterprise-redpanda-features.md` now name the `redpanda` output,
+  matching the examples.

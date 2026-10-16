@@ -90,3 +90,23 @@ page + `docs-data/overrides.json` (backed by `input_pg_stream.go`) as the source
 hardcode. For PostgreSQL server setup, the authority is upstream PostgreSQL/AWS docs. For the
 enterprise sink-topic features, the authority is `redpanda-data/docs` + `src/v/config/configuration.cc`,
 not this connector.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- The "Output choice" notes in `SKILL.md` and
+  `references/pipeline-and-output.md` previously presented `kafka_franz` as the
+  general-purpose alternative and used it in the examples. They now recommend
+  `redpanda` (which also works against generic Kafka brokers) and record that
+  `kafka`/`kafka_franz` are deprecated in its favour, with the same fields.
+- **Not documented:** `v4.113.0` makes Postgres CDC release snapshot chunks on
+  the first heartbeat when idle — internal resource management behind the
+  `incremental_snapshot` surface already documented at `v4.112.0`; no field,
+  signal type, or metadata key changes.

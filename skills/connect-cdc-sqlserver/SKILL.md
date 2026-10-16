@@ -78,7 +78,7 @@ input:
       period: 1s
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: '${! meta("table") }'   # route each table to its own topic
@@ -89,7 +89,7 @@ To route to a Redpanda Cloud cluster with SASL:
 
 ```yaml
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - seed-abc123.cloud.redpanda.com:9092
     tls:
@@ -283,7 +283,7 @@ Use Bloblang in the output `topic` field or a `switch` processor:
 
 ```yaml
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: '${! "sqlserver." + meta("database_schema") + "." + meta("table") }'
@@ -297,12 +297,12 @@ output:
     cases:
       - check: 'meta("table") == "orders"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: [localhost:9092]
             topic: orders-cdc
       - check: 'meta("table") == "customers"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: [localhost:9092]
             topic: customers-cdc
 ```

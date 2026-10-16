@@ -145,7 +145,7 @@ pipeline:
         root.op = meta("dynamodb_event_name")
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["redpanda:9092"]
     topic: orders-cdc
     sasl:
@@ -177,17 +177,17 @@ output:
     cases:
       - check: 'meta("dynamodb_table") == "orders"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["redpanda:9092"]
             topic: orders-cdc
       - check: 'meta("dynamodb_table") == "customers"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["redpanda:9092"]
             topic: customers-cdc
       - check: 'meta("dynamodb_table") == "products"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["redpanda:9092"]
             topic: products-cdc
 ```
@@ -209,7 +209,7 @@ input:
     region: us-east-1
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["redpanda:9092"]
     topic: '${! meta("dynamodb_table") }-cdc'
 ```
@@ -230,7 +230,7 @@ input:
     region: us-east-1
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["redpanda:9092"]
     topic: inventory-cdc
 ```
@@ -260,11 +260,11 @@ output:
     cases:
       - check: 'meta("dynamodb_event_name") == "REMOVE"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["redpanda:9092"]
             topic: orders-deletes
       - output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["redpanda:9092"]
             topic: orders-cdc
 ```
@@ -305,7 +305,7 @@ input:
     region: us-east-1
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["redpanda:9092"]
     topic: products-snapshot
 ```
@@ -370,7 +370,7 @@ input:
     region: us-east-1
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["${REDPANDA_BROKERS}"]
     tls:
       enabled: true

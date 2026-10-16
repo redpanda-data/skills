@@ -71,7 +71,7 @@ input:
     stream_id: "AllChanges"
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - "localhost:9092"
     topic: "spanner-changes"
@@ -112,7 +112,7 @@ pipeline:
         root.data   = this
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - "redpanda-broker-0:9092"
       - "redpanda-broker-1:9092"
@@ -145,17 +145,17 @@ output:
     cases:
       - check: 'meta("table_name") == "orders"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["localhost:9092"]
             topic: "spanner.orders"
       - check: 'meta("table_name") == "customers"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["localhost:9092"]
             topic: "spanner.customers"
       - output:
           # Catch-all for unexpected tables
-          kafka_franz:
+          redpanda:
             seed_brokers: ["localhost:9092"]
             topic: "spanner.other"
 ```
@@ -165,7 +165,7 @@ Alternatively, use a dynamic topic expression (simpler when all tables go to a
 
 ```yaml
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["localhost:9092"]
     topic: 'spanner.${! meta("table_name") }'
 ```
@@ -290,7 +290,7 @@ input:
     stream_id: "OrderChanges"
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["redpanda-broker-0:9092"]
     topic: "spanner.cdc.orders"
     compression: snappy
@@ -310,10 +310,10 @@ If the primary output fails, route failed messages to a dead-letter topic:
 ```yaml
 output:
   fallback:
-    - kafka_franz:
+    - redpanda:
         seed_brokers: ["localhost:9092"]
         topic: 'spanner.cdc.${! meta("table_name") }'
-    - kafka_franz:
+    - redpanda:
         seed_brokers: ["localhost:9092"]
         topic: "spanner.cdc.dead-letter"
 ```

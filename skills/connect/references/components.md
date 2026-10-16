@@ -36,13 +36,18 @@ rpk connect create stdin/mapping/stdout # pipeline with mapping processor
 rpk connect create /mapping/            # mapping processor template only
 ```
 
-Online docs: https://docs.redpanda.com/redpanda-connect
+Online docs: https://docs.redpanda.com/connect
 
 ## Inputs
 
 ### `redpanda` (stable)
 
 Kafka-compatible input using the Franz Kafka client. Preferred for Redpanda clusters.
+
+The older `kafka` and `kafka_franz` inputs are **deprecated** — their component
+specs now tell you to use this input instead. Existing configs keep working, but
+write new ones against `redpanda`; the connection, consumer, and producer field
+groups are shared, so the switch is usually a rename.
 
 ```yaml
 input:
@@ -372,7 +377,10 @@ rate_limit_resources:
 
 ### `redpanda` (stable)
 
-Kafka-compatible output using Franz. Preferred for Redpanda clusters.
+Kafka-compatible output using Franz. Preferred for Redpanda clusters. The older
+`kafka` and `kafka_franz` outputs are **deprecated** in favour of this one (same
+field groups; `seed_brokers` is optional here because the output falls back to
+the global `redpanda` block).
 
 ```yaml
 output:
@@ -580,4 +588,4 @@ export REDPANDA_LICENSE_FILEPATH=/path/to/license.txt
 
 Precedence: `--redpanda-license` flag overrides `REDPANDA_LICENSE` / `REDPANDA_LICENSE_FILEPATH` env vars; the default file `/etc/redpanda/redpanda.license` is applied automatically if present. Enterprise connectors are blocked after the 30-day trial expires without a valid license.
 
-License errors appear at startup with a message along the lines of: `this feature requires a valid Redpanda Enterprise Edition license that includes the Connect product. For more information check out: https://docs.redpanda.com/redpanda-connect/get-started/licensing/`.
+License errors appear at startup with a message along the lines of: `this feature requires a valid Redpanda Enterprise Edition license that includes the Connect product. For more information check out: https://docs.redpanda.com/connect/get-started/licensing/`. A community binary (which has no license service at all, yet can import enterprise components) reports that same license error rather than an internal fault.

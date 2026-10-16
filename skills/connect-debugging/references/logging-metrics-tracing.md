@@ -480,7 +480,7 @@ tracer:
       ratio: 0.1
 
 input:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["broker:9092"]
     topics: ["orders"]
     consumer_group: orders-group
@@ -491,7 +491,7 @@ pipeline:
         root = this
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["broker:9092"]
     topic: orders-processed
 ```
