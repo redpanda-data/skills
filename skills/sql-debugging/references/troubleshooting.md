@@ -1,3 +1,5 @@
+Source: oxla `src/scheduler/states/context.cpp` and `src/executor/executor.cpp` (query `state` values), `src/mem/limits.h` (`k_oom_monitor_margin_factor = 0.01`) and the OOM monitor (`OOMMonitor`), `config/Release/default_config.yml` (memory settings). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla Troubleshooting Playbooks
 
 ---
@@ -19,7 +21,7 @@ ORDER BY created ASC;
 
 If a query has been running for unexpectedly long, note its `qid` and `state`.
 
-**State interpretation** (actual `state` column values from `src/scheduler/states/context.cpp` and `src/executor/executor.cpp`):
+**State interpretation** (actual `state` column values):
 
 | State | Meaning |
 |---|---|
@@ -170,13 +172,13 @@ SET oxla.parquet_late_materialization = on;
 
 ### Background
 
-Oxla's `OOMMonitor` runs a background thread every 100 ms that reads the process RSS from `/proc/self/status` (the `_status_file_path` member points to this file — it is the RSS source, not a file the monitor writes). When RSS exceeds the operational limit — `total - 1%` (margin factor `k_oom_monitor_margin_factor = 0.01`, from `src/mem/limits.h`), where `total` is the computed memory limit derived from `memory.max` or auto-detection — it takes emergency action:
+Oxla's out-of-memory monitor runs a background thread every 100 ms that reads the process RSS from `/proc/self/status` (it reads RSS from that file; it does not write it). When RSS exceeds the operational limit — `total - 1%`, where `total` is the computed memory limit derived from `memory.max` or auto-detection — it takes emergency action:
 
 1. Cancels all running tasks/queries.
 2. Evicts the entire storage cache.
 3. Logs an allocation-state report.
 
-Memory is configured in `config/Release/default_config.yml` (exact path is deployment-dependent):
+Memory is configured in the cluster config file (exact path is deployment-dependent):
 
 ```yaml
 memory:
@@ -433,7 +435,7 @@ LIMIT 10;
 ### Step 4 — Adjust admission config
 
 ```yaml
-# config/Release/default_config.yml (exact path is deployment-dependent)
+# cluster config file (exact path is deployment-dependent)
 resource_management:
   max_concurrent_queries: 50    # Reduce to reduce memory pressure
   query_queue_timeout: 60 s     # Increase timeout if queries are worth waiting for

@@ -80,7 +80,7 @@ SELECT * FROM system.transactions;
 
 ## Prometheus Metrics
 
-The metrics endpoint listens on port 8080 (configured in `metrics.port` in the cluster config file, e.g. `config/Release/default_config.yml`). No authentication is required by default. All metric names are prefixed `oxla_`.
+The metrics endpoint listens on port 8080 (configured in `metrics.port` in the cluster config file). No authentication is required by default. All metric names are prefixed `oxla_`.
 
 ```bash
 # Full scrape
@@ -110,7 +110,7 @@ Default is `INFO`. Logs are written to stdout (with colors in TTY mode) and to f
 ### Set log level in config (requires restart)
 
 ```yaml
-# config/Release/default_config.yml (exact path is deployment-dependent)
+# cluster config file (exact path is deployment-dependent)
 logging:
   level: "DEBUG"
 ```
@@ -145,9 +145,9 @@ See [metrics-and-logging.md](references/metrics-and-logging.md) for full details
 
 ## Memory / OOM Monitoring
 
-Oxla runs an internal `OOMMonitor` background thread that checks the process RSS (Resident Set Size) from `/proc/self/status` every 100 ms. When RSS exceeds the operational limit — `total - 1%` (the 1% margin is `k_oom_monitor_margin_factor = 0.01` from `src/mem/limits.h`), where `total` is the computed memory limit derived from `memory.max` or auto-detection — it triggers emergency actions: (1) cancel all running tasks/queries and (2) evict the storage cache, logging an allocation-state report.
+Oxla runs an internal out-of-memory monitor that checks the process RSS (Resident Set Size) from `/proc/self/status` every 100 ms. When RSS exceeds the operational limit — `total - 1%`, where `total` is the computed memory limit derived from `memory.max` or auto-detection — it triggers emergency actions: (1) cancel all running tasks/queries and (2) evict the storage cache, logging an allocation-state report.
 
-The memory limit is set in config (config/Release/default_config.yml, exact path is deployment-dependent):
+The memory limit is set in the cluster config file (exact path is deployment-dependent):
 
 ```yaml
 memory:

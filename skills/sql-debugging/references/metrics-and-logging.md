@@ -1,10 +1,12 @@
+Source: oxla `config/Release/default_config.yml` (metrics, admission control and logging settings), `src/monitoring/metrics/` (metric `k_name` strings, incl. `query_parse_duration.h`, `query_plan_duration.h`, `query_execute_duration.h`, `file_cache_use.cpp` label key `use_type`, `tasks_ongoing.h`), `src/util/plog.h` (`initPlog`, log file layout), `src/admin/proto/logging.proto` and `src/admin/logging_service_impl.cpp` (runtime log level). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla Metrics & Logging
 
 ---
 
 ## Prometheus Metrics Endpoint
 
-Oxla exposes a Prometheus-compatible metrics endpoint via HTTP. Configuration is in `config/Release/default_config.yml` (exact path is deployment-dependent):
+Oxla exposes a Prometheus-compatible metrics endpoint via HTTP. Configuration is in the cluster config file (exact path is deployment-dependent):
 
 ```yaml
 metrics:
@@ -34,7 +36,7 @@ The endpoint speaks standard Prometheus text exposition format (no authenticatio
 
 ## Metric Catalog
 
-All metric names are prefixed `oxla_`. The following are grounded in `src/monitoring/metrics/` header files.
+All metric names are prefixed `oxla_`.
 
 ### Cluster & Node Health
 
@@ -114,8 +116,6 @@ rate(oxla_query_errors_total[5m])
 | `oxla_query_plan_duration_seconds` | Histogram | — | Time spent planning |
 | `oxla_query_execute_duration_seconds` | Histogram | — | Time spent executing |
 
-Sources: `src/monitoring/metrics/query_parse_duration.h`, `query_plan_duration.h`, `query_execute_duration.h` (k_name fields).
-
 **Label values for `stmt_type`:** `select`, `insert`, `copy`, `other`
 
 ```promql
@@ -151,7 +151,7 @@ rate(oxla_query_rows_processed_total{direction="read"}[1m])
 
 ### Admission Control
 
-Admission control limits concurrency and queues queries when the system is under load. The configuration knobs are `resource_management.max_concurrent_queries` and `resource_management.query_queue_timeout` in the cluster config file (e.g. `config/Release/default_config.yml`).
+Admission control limits concurrency and queues queries when the system is under load. The configuration knobs are `resource_management.max_concurrent_queries` and `resource_management.query_queue_timeout` in the cluster config file.
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -201,8 +201,6 @@ oxla_process_memory_total / <memory_max_bytes>
 | `oxla_db_event_journal_size` | Gauge | — | Current journal size |
 | `oxla_readers_opened_total` / `oxla_readers_closed_total` | Counter | — | Lifecycle of file reader objects |
 | `oxla_writers_opened_total` / `oxla_writers_closed_total` | Counter | — | Lifecycle of file writer objects |
-
-Sources: `src/monitoring/metrics/file_cache_use.cpp` (label key `use_type`), `src/monitoring/metrics/` header files for k_name strings.
 
 ```promql
 # File cache hit rate
@@ -273,8 +271,6 @@ rate(oxla_kafka_messages_consumed_total[1m])
 **Label values for `scheduler_role`:** `inserter`, `leader`
 **Label values for `file_task_type`:** `compact`, `merge`
 
-Source: `src/monitoring/metrics/tasks_ongoing.h`
-
 ---
 
 ### Thread Pool
@@ -311,12 +307,10 @@ $TMPDIR/oxla/server.<DATETIME>.log
 # (The <PID> appears only on the separate startup tee file, startup.<DATETIME>.<PID>.log.)
 ```
 
-Source: `src/util/plog.h` — `initPlog(plog::Severity max_severity)`
-
 ### Set level in config (requires process restart)
 
 ```yaml
-# config/Release/default_config.yml (exact path is deployment-dependent)
+# cluster config file (exact path is deployment-dependent)
 logging:
   level: "DEBUG"   # one of: NONE, FATAL, ERROR, WARNING, INFO, DEBUG, VERBOSE
 ```
@@ -377,8 +371,6 @@ curl -s -X POST \
   -d '{"level": "LOG_LEVEL_WARNING"}' \
   http://<host>:9090/oxla.admin.v1.LoggingService/SetLogLevel
 ```
-
-Source: `src/admin/proto/logging.proto`, `src/admin/logging_service_impl.cpp`
 
 The admin API is only available when `admin_api.enabled: true` (default) in config.
 

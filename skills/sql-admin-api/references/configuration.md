@@ -1,6 +1,8 @@
+Source: oxla `config/Release/default_config.yml` (defaults), `src/config/config_parameter_list.h` (public vs internal classification), `src/admin/proto/logging.proto` (log levels). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla Configuration Reference
 
-Oxla uses a YAML configuration file (`config.yml`) with layered overrides. The authoritative defaults are in `config/Release/default_config.yml`. Every setting can also be overridden by an environment variable using the `OXLA__` prefix and `__` as the path separator.
+Oxla uses a YAML configuration file (`config.yml`) with layered overrides. Every setting can also be overridden by an environment variable using the `OXLA__` prefix and `__` as the path separator.
 
 ## Configuration Layering
 
@@ -21,7 +23,7 @@ For array values, use YAML syntax in the env var value: `OXLA__OIDC__PROTECTED_U
 
 ## Parameter Classification
 
-Config parameters are classified as **public** (user-facing) or **internal** (operator/developer). Both are accepted via env vars. The classification is defined in `src/config/config_parameter_list.h`.
+Config parameters are classified as **public** (user-facing) or **internal** (operator/developer). Both are accepted via env vars.
 
 **Public parameters** (the ones operators are expected to set):
 
@@ -211,7 +213,7 @@ logging:
   level: "INFO"   # startup log level
 ```
 
-Valid levels (from `logging.proto`): `NONE`, `FATAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`, `VERBOSE`
+Valid levels: `NONE`, `FATAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`, `VERBOSE`
 
 The runtime log level can be changed without restart via the admin API (port 9090). See [admin-grpc-and-runtime.md](admin-grpc-and-runtime.md).
 

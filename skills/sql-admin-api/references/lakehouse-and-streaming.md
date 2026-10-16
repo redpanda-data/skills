@@ -1,13 +1,10 @@
+Source: oxla `src/sqlparser/sql/connection_option_names.h` (option-key constants, `k_*_sensitive_keys`), `src/sqlparser/bison_parser/bison_parser.y` (DDL grammar, `storage_type` rule), `src/catalog/storage_parser.cpp` (`k_supported_s3_options`, `k_supported_gcs_options`, `k_supported_azure_options`), `src/catalog/iceberg_catalog_parser.cpp`, `src/catalog/kafka/conversions.cpp` (`KafkaConnectionOptions::k_option_definitions`, `KafkaSourceOptions::k_option_definitions`), `src/metastore/system_iceberg_catalogs.*`, `src/metastore/system_iceberg_tables.*`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla Lakehouse & Streaming Integration (Iceberg, Redpanda/Kafka, Storage Connections)
 
-Oxla's analytical-database differentiators are its native object-storage backing, its **Apache Iceberg REST catalog** integration (lakehouse interoperability), and its **transparent Redpanda/Kafka** integration (query streaming topics as SQL tables). Unlike a Kafka broker's enterprise features, these are **not gated by a separate license key** — they are configured through SQL DDL (connection objects) and cluster config. The relevant licensing note: Oxla runs as a single binary; the streaming/lakehouse surfaces below are configured with SQL `CREATE` statements whose options are parsed in `src/catalog/`.
+Oxla's analytical-database differentiators are its native object-storage backing, its **Apache Iceberg REST catalog** integration (lakehouse interoperability), and its **transparent Redpanda/Kafka** integration (query streaming topics as SQL tables). Unlike a Kafka broker's enterprise features, these are **not gated by a separate license key** — they are configured through SQL DDL (connection objects) and cluster config. The relevant licensing note: Oxla runs as a single binary; the streaming/lakehouse surfaces below are configured with SQL `CREATE` statements and cluster config.
 
-All connection DDL options are verified against:
-- `src/sqlparser/sql/connection_option_names.h` (the authoritative option-key constants)
-- `src/sqlparser/bison_parser/bison_parser.y` (the DDL grammar)
-- `src/catalog/iceberg_catalog_parser.cpp`, `src/catalog/kafka/conversions.cpp`, `src/catalog/storage_parser.cpp`
-
-Credentials inside these connection objects are encrypted at rest (see [auth-and-security.md](auth-and-security.md), `OXLA_ENCRYPTION_KEY`). Sensitive option values are redacted from query logs and error messages (`k_*_sensitive_keys` in `connection_option_names.h`).
+Credentials inside these connection objects are encrypted at rest (see [auth-and-security.md](auth-and-security.md), `OXLA_ENCRYPTION_KEY`). Sensitive option values are redacted from query logs and error messages.
 
 ---
 
@@ -27,15 +24,15 @@ ALTER STORAGE [IF EXISTS] [schema.]connection_name
   [ WITH ( option = 'value', ... ) ];
 ```
 
-`TYPE` must be one of `s3`, `gcs`, or `abs` (Azure Blob Storage). Any other value is rejected at parse time (`src/sqlparser/bison_parser/bison_parser.y` `storage_type` rule).
+`TYPE` must be one of `s3`, `gcs`, or `abs` (Azure Blob Storage). Any other value is rejected at parse time.
 
 The `WITH (...)` clause is optional in the grammar (all four forms — `CREATE`, `CREATE ... IF NOT EXISTS`, `ALTER`, `ALTER ... IF EXISTS` — parse a bare `TYPE = <type>`). Whether a bare form is *accepted* is decided per-type by `parseStorageConnectionOptions`: `GCS` accepts it and falls back to ADC; `S3` still fails validation without `region` or `endpoint`; `ABS` still fails without its required account/credential options.
 
-### Per-type options (from `src/catalog/storage_parser.cpp`)
+### Per-type options
 
 The parser validates that only the supported option keys for each type are present; unknown keys produce `Unsupported <type> storage connection option: '<key>'`.
 
-**S3** (`k_supported_s3_options`) — expected URL scheme `s3://`:
+**S3** — expected URL scheme `s3://`:
 
 | Option | Required | Notes |
 |--------|----------|-------|
@@ -50,7 +47,7 @@ The parser validates that only the supported option keys for each type are prese
 
 When `access_key_id`/`secret_access_key` are omitted, the AWS default credential chain is used (env → shared config → STS web identity → IMDSv2/ECS).
 
-**GCS** (`k_supported_gcs_options`) — expected URL scheme `gs://`:
+**GCS** — expected URL scheme `gs://`:
 
 | Option | Required | Notes |
 |--------|----------|-------|
@@ -58,7 +55,7 @@ When `access_key_id`/`secret_access_key` are omitted, the AWS default credential
 | `service_account_key` | — | service-account JSON key; sensitive (redacted). Optional: when omitted or empty, GCS uses Application Default Credentials (ADC) — Workload Identity on GKE, else the GCP credential chain |
 | `endpoint` | — | custom endpoint |
 
-**ABS / Azure Blob** (`k_supported_azure_options`) — accepted URL schemes `wasbs://`, `az://`, `abfss://`, `abfs://`:
+**ABS / Azure Blob** — accepted URL schemes `wasbs://`, `az://`, `abfss://`, `abfs://`:
 
 | Option | Required | Notes |
 |--------|----------|-------|
@@ -121,7 +118,7 @@ ALTER ICEBERG CATALOG [IF EXISTS] [schema.]catalog_name
 
 The `STORAGE` clause links the catalog to a `CREATE STORAGE` connection (section 1) for the underlying data files.
 
-### Catalog options (from `iceberg_catalog_parser.cpp` + `connection_option_names.h` `iceberg` namespace)
+### Catalog options
 
 | Option | Required | Notes |
 |--------|----------|-------|
@@ -208,7 +205,7 @@ ALTER TABLE [IF EXISTS] catalog_name=>table_name
 
 The `catalog=>table_name` arrow syntax is required for Kafka tables; omitting it raises `Expected catalog=>table_name syntax`.
 
-### Catalog (connection) options (`KafkaConnectionOptions::k_option_definitions`, `kafka` namespace)
+### Catalog (connection) options
 
 | Option | Required | Type | Notes |
 |--------|----------|------|-------|
@@ -224,7 +221,7 @@ The `catalog=>table_name` arrow syntax is required for Kafka tables; omitting it
 | `connection_timeout` | — | int64 | connection timeout |
 | `rd_kafka_debug` | — | string | librdkafka debug flags |
 
-### Table (source) options (`KafkaSourceOptions::k_option_definitions`)
+### Table (source) options
 
 | Option | Required | Notes / valid values |
 |--------|----------|----------------------|
@@ -244,4 +241,4 @@ A Redpanda/Kafka catalog can be linked to an Iceberg catalog via `USING CATALOG 
 
 ## System catalogs for introspection
 
-Iceberg catalogs and tables are tracked in system metastore tables (`src/metastore/system_iceberg_catalogs.*`, `src/metastore/system_iceberg_tables.*`), queryable via SQL for operational visibility. See the `sql` skill for querying system tables.
+Iceberg catalogs and tables are tracked in system metastore tables, queryable via SQL for operational visibility. See the `sql` skill for querying system tables.

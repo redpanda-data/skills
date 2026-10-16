@@ -164,7 +164,7 @@ Currently implemented service: `oxla.admin.v1.LoggingService` with two RPCs:
 - `GetLogLevel` — returns the current runtime log level
 - `SetLogLevel` — changes the runtime log level without restart
 
-Log levels (from `logging.proto`): `LOG_LEVEL_NONE`, `LOG_LEVEL_FATAL`, `LOG_LEVEL_ERROR`, `LOG_LEVEL_WARNING`, `LOG_LEVEL_INFO`, `LOG_LEVEL_DEBUG`, `LOG_LEVEL_VERBOSE`
+Log levels: `LOG_LEVEL_NONE`, `LOG_LEVEL_FATAL`, `LOG_LEVEL_ERROR`, `LOG_LEVEL_WARNING`, `LOG_LEVEL_INFO`, `LOG_LEVEL_DEBUG`, `LOG_LEVEL_VERBOSE`
 
 The admin API can be TLS-secured independently of the PostgreSQL port. See the [Admin gRPC and Runtime](references/admin-grpc-and-runtime.md) reference.
 
@@ -201,7 +201,7 @@ Oxla's differentiators in its analytical-database domain are configured through 
 - [configuration.md](references/configuration.md): The YAML config file section by section — network ports, heartbeat, leader election, storage backends, metrics, access control, memory, SSL, OIDC, logging. The OXLA__ env-var override scheme and the public vs internal parameter classification.
 - [cluster-and-deploy.md](references/cluster-and-deploy.md): Cluster topology (cluster_name, host_name, leader vs worker nodes, inter-node ports), single-node and multi-node Docker Compose deployment patterns, and environment-variable wiring.
 - [admin-grpc-and-runtime.md](references/admin-grpc-and-runtime.md): The ConnectRPC admin server on port 9090 — LoggingService (GetLogLevel/SetLogLevel), the /healthz endpoint, TLS/mTLS for the admin API, the Prometheus metrics endpoint on port 8080, and memory/OOM controls.
-- [lakehouse-and-streaming.md](references/lakehouse-and-streaming.md): Oxla's lakehouse and streaming integration surfaces — object-storage connections (`CREATE STORAGE TYPE S3/GCS/ABS` with full per-type option keys), Apache Iceberg REST catalogs (`CREATE ICEBERG CATALOG` with oauth2/basic/aws_sigv4 auth, TLS options, and the scope of the `feature_flags.allow_iceberg_queries` gate), and transparent Redpanda/Kafka integration (`CREATE REDPANDA/KAFKA CATALOG`, topic-backed tables, `schema_lookup_policy`/`error_handling_policy`/`struct_mapping_policy`/`confluent_wire_protocol`, and the `USING CATALOG` Iceberg link). All option keys grounded in `src/sqlparser` and `src/catalog`. No separate license key required.
+- [lakehouse-and-streaming.md](references/lakehouse-and-streaming.md): Oxla's lakehouse and streaming integration surfaces — object-storage connections (`CREATE STORAGE TYPE S3/GCS/ABS` with full per-type option keys), Apache Iceberg REST catalogs (`CREATE ICEBERG CATALOG` with oauth2/basic/aws_sigv4 auth, TLS options, and the scope of the `feature_flags.allow_iceberg_queries` gate), and transparent Redpanda/Kafka integration (`CREATE REDPANDA/KAFKA CATALOG`, topic-backed tables, `schema_lookup_policy`/`error_handling_policy`/`struct_mapping_policy`/`confluent_wire_protocol`, and the `USING CATALOG` Iceberg link). No separate license key required.
 - [auth-and-security.md](references/auth-and-security.md): Authentication and security — access-control modes (`access_control.mode`), SCRAM-SHA-256 passwords, OIDC/JWT bearer auth (all `oidc.*` keys), centralized access control (`feature_flags.centralized_access_control.*`), and AES-256-GCM at-rest encryption of connection secrets via `OXLA_ENCRYPTION_KEY` (hex, ≤64 chars, cycled to a 256-bit key).
 
 ## Scripts and Resources

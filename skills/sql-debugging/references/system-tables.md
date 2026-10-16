@@ -1,6 +1,8 @@
+Source: oxla `src/metastore/metastore.cpp` (`createSystemTables()`), `src/metastore/system_{nodes,queries,transactions,storage,execs,catalogs}.cpp` (registration; `StorageConnections`), `src/processors/consts/show_shapes.cpp` (`nodeStateOutputSchema()`, `nodeQueriesOutputSchema()`, `nodeExecsOutputSchema()` column schemas), `src/scheduler/states/context.cpp` and `src/executor/executor.cpp` (`state` values), `config/Release/default_config.yml` (`allow_table_operations`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla System Catalog Tables
 
-Oxla exposes diagnostic state through virtual tables in the `system` schema (schema name `system`, registered via `src/metastore/metastore.cpp` `createSystemTables()`). These tables are **populated at query runtime** by distributed processors on each node — there is no materialized cache. Access follows Oxla's access-control model: superusers see everything; regular users see rows scoped to resources they have grants on.
+Oxla exposes diagnostic state through virtual tables in the `system` schema (schema name `system`). These tables are **populated at query runtime** by distributed processors on each node — there is no materialized cache. Access follows Oxla's access-control model: superusers see everything; regular users see rows scoped to resources they have grants on.
 
 Connect with any PostgreSQL client:
 
@@ -15,8 +17,6 @@ psql -h <host> -p 5432 -U oxla
 Shows the state of every cluster node as seen from the querying node. Data is generated at runtime via `NodeState` processors on each node.
 
 **Table name:** `system.nodes`
-
-Sources: `src/metastore/system_nodes.cpp` (registration), `src/processors/consts/show_shapes.cpp` → `nodeStateOutputSchema()` (column schema)
 
 | Column | Type | Nullable | Description |
 |---|---|---|---|
@@ -53,8 +53,6 @@ Shows active and recently completed queries across the cluster. Data is generate
 
 **Table name:** `system.queries`
 
-Sources: `src/metastore/system_queries.cpp` (registration), `src/processors/consts/show_shapes.cpp` → `nodeQueriesOutputSchema()` (column schema)
-
 | Column | Type | Nullable | Description |
 |---|---|---|---|
 | `qid` | TEXT | NO | Query ID (unique cluster-wide string) |
@@ -68,7 +66,7 @@ Sources: `src/metastore/system_queries.cpp` (registration), `src/processors/cons
 | `executed` | TIMESTAMP | YES | Timestamp when execution started (column name; not a state value) |
 | `finished` | TIMESTAMP | YES | Timestamp when query completed (NULL = still running) |
 
-**`state` value domain** (from `src/scheduler/states/context.cpp` and `src/executor/executor.cpp`): `created`, `scheduling`, `scheduled`, `executing`, `cancelling`, `cleanup`, `ready`, `finished`. Note that `accepted` and `executed` are **timestamp column names**, not state values.
+**`state` value domain**: `created`, `scheduling`, `scheduled`, `executing`, `cancelling`, `cleanup`, `ready`, `finished`. Note that `accepted` and `executed` are **timestamp column names**, not state values.
 
 ### Example queries
 
@@ -112,8 +110,6 @@ Shows active catalog transactions. Requires the distributed catalog to be enable
 
 **Table name:** `system.transactions`
 
-Source: `src/metastore/system_transactions.cpp`
-
 | Column | Type | Nullable | Description |
 |---|---|---|---|
 | `transaction_id` | BIGINT | NO | Unique transaction ID |
@@ -137,11 +133,9 @@ SELECT COUNT(*) AS active_tx_count FROM system.transactions;
 
 ## storage_connections
 
-Shows storage connections (external storage backends configured for the cluster). The virtual table is registered under the `system` schema as `storage_connections` (class `StorageConnections` in `src/metastore/system_storage.cpp`).
+Shows storage connections (external storage backends configured for the cluster). The virtual table is registered under the `system` schema as `storage_connections`.
 
 **Table name:** `system.storage_connections`
-
-Source: `src/metastore/system_storage.cpp`
 
 | Column | Type | Nullable | Description |
 |---|---|---|---|
@@ -174,8 +168,6 @@ SELECT name, parameters FROM system.storage_connections WHERE type = 's3';
 Shows per-node execution fragments for queries. Data is generated at runtime via `NodeExecs` processors.
 
 **Table name:** `system.execs`
-
-Sources: `src/metastore/system_execs.cpp` (registration), `src/processors/consts/show_shapes.cpp` → `nodeExecsOutputSchema()` (column schema)
 
 | Column | Type | Nullable | Description |
 |---|---|---|---|
@@ -211,8 +203,6 @@ Shows external catalogs registered in the cluster (Iceberg and Kafka/Redpanda co
 
 **Table name:** `system.catalogs`
 
-Source: `src/metastore/system_catalogs.cpp`
-
 | Column | Type | Description |
 |---|---|---|
 | `name` | TEXT | Catalog name |
@@ -235,7 +225,7 @@ These tables enumerate the user-visible Oxla schema objects.
 
 **columns** (`system.columns`): `database_name TEXT`, `namespace_name TEXT`, `table_name TEXT`, `name TEXT`, `type TEXT`, `nullable BOOLEAN`.
 
-> **Note:** Querying `system.tables` and `system.columns` may be disabled depending on the `allow_table_operations` feature flag. If disabled, you will see the error: `"Querying system.tables is disabled."` Check `default_config.yml` (under `config/Release/`) for the `allow_table_operations` setting.
+> **Note:** Querying `system.tables` and `system.columns` may be disabled depending on the `allow_table_operations` feature flag. If disabled, you will see the error: `"Querying system.tables is disabled."` Check the cluster config file for the `allow_table_operations` setting.
 
 ```sql
 -- All tables accessible to the current user

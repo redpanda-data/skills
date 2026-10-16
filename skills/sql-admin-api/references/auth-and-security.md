@@ -1,6 +1,8 @@
+Source: oxla `config/Release/default_config.yml`, `src/config/config_parameter_list.h`, `src/config/startup_config.{h,cpp}` (`access_control.cac` mapping), `src/access_control/scram_sha256/` and `src/access_control/access_controller.cpp` (SCRAM-SHA-256 storage), `src/access_control/aes256_gcm/crypt.cpp` (`OXLA_ENCRYPTION_KEY` handling), `src/sqlparser/sql/connection_option_names.h` (`k_kafka_sensitive_keys`, `k_iceberg_sensitive_keys`, `k_storage_sensitive_keys`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla Authentication, Access Control & Secret Encryption
 
-This reference covers Oxla's security surfaces: password (SCRAM) authentication, OIDC/JWT bearer-token authentication, access-control modes, centralized access control, and at-rest encryption of stored connection secrets. These are the security differentiators relevant to operating Oxla; all keys below are verified against `config/Release/default_config.yml`, `src/config/config_parameter_list.h`, `src/config/startup_config.{h,cpp}`, and `src/access_control/`.
+This reference covers Oxla's security surfaces: password (SCRAM) authentication, OIDC/JWT bearer-token authentication, access-control modes, centralized access control, and at-rest encryption of stored connection secrets. These are the security differentiators relevant to operating Oxla.
 
 Authentication for the PostgreSQL wire port is distinct from TLS for the admin API (port 9090) — see [admin-grpc-and-runtime.md](admin-grpc-and-runtime.md) for the latter.
 
@@ -25,7 +27,7 @@ access_control:
 - `initial_password` is **internal**, settable via `OXLA__ACCESS_CONTROL__INITIAL_PASSWORD`.
 - `cache_update_interval` controls how often the access-control cache is refreshed.
 
-Passwords are stored using **SCRAM-SHA-256** (`src/access_control/scram_sha256/`). When a role is created or altered (`CREATE ROLE` / `ALTER ROLE ... PASSWORD`), the password is run through `scram_sha256::encryptPassword` and stored with mechanism `"SCRAM-SHA-256"` (`src/access_control/access_controller.cpp`). Role/grant SQL DDL itself is covered by the `sql` skill.
+Passwords are stored using **SCRAM-SHA-256**. When a role is created or altered (`CREATE ROLE` / `ALTER ROLE ... PASSWORD`), the password is hashed and stored with mechanism `"SCRAM-SHA-256"`. Role/grant SQL DDL itself is covered by the `sql` skill.
 
 ---
 
@@ -69,19 +71,19 @@ feature_flags:
     cluster_id: ""        # OXLA__FEATURE_FLAGS__CENTRALIZED_ACCESS_CONTROL__CLUSTER_ID
 ```
 
-These map directly to `config.access_control.cac.{organization_id, cluster_id, datastorage_id}` at startup (`src/config/startup_config.cpp`). Related: `feature_flags.force_catalog_ac_consistency` (default `true`) enforces catalog/access-control consistency.
+These map directly to `config.access_control.cac.{organization_id, cluster_id, datastorage_id}` at startup. Related: `feature_flags.force_catalog_ac_consistency` (default `true`) enforces catalog/access-control consistency.
 
 ---
 
 ## Secret Encryption at Rest (`OXLA_ENCRYPTION_KEY`)
 
-Credentials embedded in connection objects (`CREATE STORAGE`, `CREATE ICEBERG CATALOG`, `CREATE REDPANDA CATALOG` — see [lakehouse-and-streaming.md](lakehouse-and-streaming.md)) and other sensitive values are **encrypted at rest with AES-256-GCM** (`src/access_control/aes256_gcm/`). The encryption key is supplied via the environment variable:
+Credentials embedded in connection objects (`CREATE STORAGE`, `CREATE ICEBERG CATALOG`, `CREATE REDPANDA CATALOG` — see [lakehouse-and-streaming.md](lakehouse-and-streaming.md)) and other sensitive values are **encrypted at rest with AES-256-GCM**. The encryption key is supplied via the environment variable:
 
 ```bash
 OXLA_ENCRYPTION_KEY=<hex string, up to 64 hex characters>
 ```
 
-Verified behavior (`src/access_control/aes256_gcm/crypt.cpp`):
+Behavior:
 - The variable holds **hex characters**, maximum length **64 hex chars** (= a 32-byte / 256-bit key).
 - Empty value → error `"OXLA_ENCRYPTION_KEY must not be empty"`. Unset → `"OXLA_ENCRYPTION_KEY environment variable not set"`.
 - Values **shorter than 64 hex chars are expanded** by cycling the supplied characters to fill 64 hex chars, then parsed to a 32-byte key. Non-hex characters → `"OXLA_ENCRYPTION_KEY contains invalid hex characters"`.
@@ -90,7 +92,7 @@ Verified behavior (`src/access_control/aes256_gcm/crypt.cpp`):
 **Operational guidance:**
 - Use the **full 64 hex characters** for maximum entropy (e.g. `openssl rand -hex 32`). Short keys are accepted but cycled, reducing effective entropy.
 - The key must be **identical and stable across all nodes and restarts** — it decrypts previously stored secrets. Losing or changing it makes existing encrypted connection secrets unreadable.
-- Sensitive option values are additionally **redacted from query logs and error messages** at parse time (`k_kafka_sensitive_keys`, `k_iceberg_sensitive_keys`, `k_storage_sensitive_keys` in `src/sqlparser/sql/connection_option_names.h`).
+- Sensitive option values are additionally **redacted from query logs and error messages** at parse time.
 
 Example (matches the deployment references):
 

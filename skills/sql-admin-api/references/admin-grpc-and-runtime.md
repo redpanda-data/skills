@@ -1,3 +1,5 @@
+Source: oxla `src/admin/proto/logging.proto` (`LoggingService`), `src/admin/proto/debug.proto` (`DebugService`), `src/admin/proto/debug_bundle.proto` (`DebugBundleService`), `config/{Release,Debug}/default_config.yml` (`admin_api` section). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Oxla Admin API, Prometheus Metrics, and Runtime Controls
 
 ## Admin API Overview
@@ -31,13 +33,11 @@ The blackbox test framework polls `/healthz` until it returns 200 before running
 
 Three admin services are exposed under package `oxla.admin.v1`:
 
-- **`LoggingService`** (`src/admin/proto/logging.proto`) — get/set the runtime log level.
-- **`DebugService`** (`src/admin/proto/debug.proto`) — read-only diagnostics consumed by `rpk debug bundle`. See [DebugService](#debugservice-read-only-diagnostics) below.
-- **`DebugBundleService`** (`src/admin/proto/debug_bundle.proto`) — spawns `rpk sql debug bundle` on the node to collect a diagnostics bundle, and manages the single in-flight job. See [DebugBundleService](#debugbundleservice-on-demand-diagnostics-bundle) below.
+- **`LoggingService`** — get/set the runtime log level.
+- **`DebugService`** — read-only diagnostics consumed by `rpk debug bundle`. See [DebugService](#debugservice-read-only-diagnostics) below.
+- **`DebugBundleService`** — spawns `rpk sql debug bundle` on the node to collect a diagnostics bundle, and manages the single in-flight job. See [DebugBundleService](#debugbundleservice-on-demand-diagnostics-bundle) below.
 
 ## LoggingService
-
-`oxla.admin.v1.LoggingService` is defined in `src/admin/proto/logging.proto`.
 
 ### Proto definition
 
@@ -160,24 +160,6 @@ Omitting `duration` still changes the level, but it reverts to the configured
 startup level after the 1-hour default (see [Temporary-by-design log
 levels](#temporary-by-design-log-levels) above).
 
-### Using binary protobuf encoding
-
-If you have the generated Python bindings or a protobuf-capable client:
-
-```python
-# Using the generated admin client (from tests/blackbox/admin_client/client.py)
-from admin_client.client import AdminClient, LogLevel
-
-client = AdminClient("http://localhost:9090")
-level = client.get_log_level()
-print(f"Current level: {level}")
-
-client.set_log_level(LogLevel.DEBUG)
-client.close()
-```
-
-The client automatically uses `application/proto` encoding unless `use_json=True` is passed.
-
 ### Log level effect on the startup config
 
 The `SetLogLevel` RPC changes the log level **in memory only** — it is not persisted to the config file. After a restart, Oxla reads `logging.level` from the YAML config (or `OXLA__LOGGING__LEVEL` env var) again.
@@ -186,14 +168,13 @@ The `SetLogLevel` RPC changes the log level **in memory only** — it is not per
 
 ## DebugService (read-only diagnostics)
 
-`oxla.admin.v1.DebugService` (`src/admin/proto/debug.proto`) is a read-only
+`oxla.admin.v1.DebugService` is a read-only
 diagnostics surface consumed by `rpk debug bundle`. All RPCs are unary and read
 internal state directly in-process (never through the SQL stack). Timestamps are
 Unix epoch milliseconds. Same URL pattern as any admin RPC:
 `POST /oxla.admin.v1.DebugService/<MethodName>`.
 
-RPCs (stable method names; request/response fields evolve — verify against
-`debug.proto`):
+RPCs (stable method names; request/response fields evolve between versions):
 
 | RPC | Purpose |
 |-----|---------|
@@ -235,7 +216,7 @@ curl -s -X POST \
 
 ## DebugBundleService (on-demand diagnostics bundle)
 
-`oxla.admin.v1.DebugBundleService` (`src/admin/proto/debug_bundle.proto`) lets an
+`oxla.admin.v1.DebugBundleService` lets an
 operator collect a cluster-wide diagnostics bundle in one call, without SSH/kubectl
 access to each node. The service spawns `rpk sql debug bundle` on the node,
 forwarding the authenticated caller's credentials and the node's TLS settings to
@@ -276,8 +257,8 @@ GET /v1/debug/bundle/file
 The service is controlled by the `admin_api.debug_bundle` config section (all keys
 **internal**, env-settable): `admin_api.debug_bundle.enabled`,
 `admin_api.debug_bundle.rpk_path`, `admin_api.debug_bundle.output_dir`, and
-`admin_api.debug_bundle.retention`. Read the shipped `config/{Release,Debug}/default_config.yml`
-at your deployed ref for current default values — do not assume them.
+`admin_api.debug_bundle.retention`. Read the current default values from the running
+node's configuration — do not assume them.
 
 ---
 
@@ -445,18 +426,3 @@ curl -s -X POST http://localhost:9090/oxla.admin.v1.LoggingService/SetLogLevel \
 | `admin_api.ssl.max_protocol_version` | `OXLA__ADMIN_API__SSL__MAX_PROTOCOL_VERSION` | `1.3` | float | Internal |
 
 The `admin_api` requires at least 1 worker thread (`workers > 0`). If set to 0, startup throws `"Admin API requires at least 1 worker thread"`.
-
----
-
-## Adding New Admin Services (Developer Notes)
-
-The admin server uses a ConnectRPC codegen pattern. To add a new service:
-
-1. Create a proto file in `src/admin/proto/` (e.g., `cluster.proto`)
-2. Add it to `proto/CMakeLists.txt` using `protobuf_generate_connect`
-3. Implement the generated `*ServiceBase` abstract class
-4. Register routes via `service_impl.registerRoutes(router)` in `server.cpp`
-
-URL pattern for any service: `POST /oxla.admin.v1.<ServiceName>/<MethodName>`
-
-Only unary RPCs are supported; the codegen rejects streaming RPCs. Handlers run synchronously on the server's worker threads — keep them fast.
