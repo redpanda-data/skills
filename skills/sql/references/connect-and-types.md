@@ -1,3 +1,5 @@
+Source: oxla `config/Release/default_config.yml` (default credentials and connection parameters), `src/sqlparser/sql/ColumnType.h` (`enum class DataType`), `src/schema/constraints_instance.h` (`map_key` constraint). File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Connect and Data Types
 
 ## Connection
@@ -7,7 +9,7 @@ Oxla listens on the PostgreSQL wire protocol. The default port is **5432**
 
 ### Default credentials
 
-From `config/Release/default_config.yml`:
+The defaults:
 
 ```yaml
 access_control:
@@ -167,7 +169,7 @@ list specifies users that always use password auth (not OIDC).
 
 ## Supported Data Types
 
-Grounded in `src/sqlparser/sql/ColumnType.h` (`enum class DataType`).
+These are the declarable column types.
 
 ### Integer types
 
@@ -463,7 +465,7 @@ SELECT PG_TYPEOF(ids) FROM vectors;
 
 `map(...)` is an Oxla extension (not PostgreSQL) that builds a map value inline,
 and `m[key]` looks a value up in it. There is **no `MAP` column type**: `MAP` is
-not one of the declarable types in `ColumnType.h`, so there is no
+not one of the declarable column types, so there is no
 `CREATE TABLE t (m MAP(...))` form. The constructor also takes **literals only**.
 So the shape of the constructor is a *constant lookup table applied to a column* —
 the map is constant, the subscript key is any expression. Map-typed **columns** do
@@ -520,8 +522,7 @@ on the ordinary function path, where they are rejected.
 - `map()` with no arguments only works where the target map type is already known
   from context; on its own it fails with `cannot determine type of empty map`.
 
-**Supported key types** (the `map_key` constraint, grounded in
-`schema/constraints_instance.h`): `INT`, `BIGINT`, `INT16`, `INT32`, `FLOAT`,
+**Supported key types**: `INT`, `BIGINT`, `INT16`, `INT32`, `FLOAT`,
 `DOUBLE`, `BOOL`, `TEXT`, `BYTEA`, `TIMESTAMP`, `TIMESTAMPTZ`, `TIME`, `DATE`,
 `UUID`, `OID`. Notably **not** supported as keys: `NUMERIC`/`DECIMAL`, `INTERVAL`,
 `JSON`, the geospatial types, and any array/composite/map type. The same check is

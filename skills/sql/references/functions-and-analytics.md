@@ -1,10 +1,6 @@
-# Functions and Analytics
+Source: oxla `tests/UT/query_planner/cases/select/{functions,aggregate,window,groupby}/`, `src/schema/predefined_functions.cpp` (the function registry). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
-All functions grounded in `tests/UT/query_planner/cases/select/functions/`,
-`tests/UT/query_planner/cases/select/aggregate/`,
-`tests/UT/query_planner/cases/select/window/`,
-`tests/UT/query_planner/cases/select/groupby/`, and
-`src/schema/predefined_functions.cpp` (the function registry; `predefined_functions.h` is the 21-line interface declaration and does not list function names).
+# Functions and Analytics
 
 ---
 
@@ -22,7 +18,6 @@ SELECT
     MAX(amount)        AS maximum
 FROM orders;
 
--- From test case: predefined_groupby_i32_null_column
 SELECT i0,
        SUM(i2 + i1) AS s,
        COUNT(i0)    AS c,
@@ -30,10 +25,8 @@ SELECT i0,
 FROM tb1
 GROUP BY i0;
 
--- From test case: predefined_sum_optimization
 SELECT SUM(i0 + 10) FROM tb1;
 
--- From test case: predefined_avg_of_group_by_integer_not_null
 SELECT AVG(agg), grp FROM tb1 GROUP BY grp;
 ```
 
@@ -93,7 +86,6 @@ SELECT CORR(i0, i1) FROM tb1;  -- both nullable
 Returns the value of one column corresponding to the min/max of another:
 
 ```sql
--- From test case: predefined_groupby_no_column_formin_formax
 SELECT FOR_MIN(i0, f0), FOR_MIN(i0, f1),
        FOR_MAX(i1, f0), FOR_MAX(i1, f1)
 FROM tb1;
@@ -208,7 +200,6 @@ FROM orders;
 ### FIRST_VALUE / LAST_VALUE / NTH_VALUE
 
 ```sql
--- From test case: predefined_first_nth_last_value
 SELECT FIRST_VALUE(i3) OVER (),
        NTH_VALUE(i3, 2) OVER (ROWS BETWEEN 3 PRECEDING AND 1 FOLLOWING),
        LAST_VALUE(i3) OVER (PARTITION BY i2 ORDER BY i3)
@@ -270,7 +261,6 @@ SELECT COUNT(*) OVER (
 ### ROW_NUMBER in subquery
 
 ```sql
--- From test case: predefined_many_functions_over_syntactically_the_same_window
 SELECT ROW_NUMBER() OVER w, subselect.row_plus_1
 FROM (
     SELECT i0, (ROW_NUMBER() OVER w + 1) AS row_plus_1
@@ -588,7 +578,6 @@ ORDER BY EXTRACT(YEAR FROM LO_ORDERDATE) ASC, SUM(LO_REVENUE);
 ### ClickBench-style aggregations
 
 ```sql
--- From predefined_clickbench_q10 test
 SELECT RegionID,
        SUM(AdvEngineID),
        COUNT(*) AS c,
@@ -599,7 +588,6 @@ GROUP BY RegionID
 ORDER BY c DESC
 LIMIT 4;
 
--- From predefined_clickbench_q17 test
 SELECT UserID, SearchPhrase, COUNT(*)
 FROM hits
 GROUP BY UserID, SearchPhrase

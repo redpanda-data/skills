@@ -1,6 +1,6 @@
-# DDL and DML
+Source: oxla `tests/UT/query_planner/cases/` (incl. `select/operators/`) and the SQL parser (`src/sqlparser/bison_parser/bison_parser.y`). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
-All statements grounded in `tests/UT/query_planner/cases/` and the SQL parser.
+# DDL and DML
 
 ---
 
@@ -489,7 +489,7 @@ DROP SCHEMA analytics RESTRICT;
 
 The `PASSWORD` clause is **mandatory** when creating a role; omitting it causes a parse error.
 
-Supported role options (from `create_role_statement` in bison_parser.y):
+Supported role options:
 - `LOGIN` — allows the role to log in
 - `SUPERUSER` / `NOSUPERUSER`
 - `PASSWORD 'value'` — required at creation
@@ -537,8 +537,7 @@ produce the identical grant, matching PostgreSQL.
 
 ### Valid GRANT/REVOKE targets
 
-Grounded in `privilege_statement` in bison_parser.y (lines ~2909-3094). The only
-supported object levels are:
+The only supported object levels are:
 
 | Target form | Level |
 |-------------|-------|
@@ -551,7 +550,7 @@ supported object levels are:
 > **`ON ALL TABLES IN SCHEMA` is NOT valid in Oxla.** The grammar has an
 > `ON ALL <object> IN SCHEMA <schema>` production, but it hard-errors with
 > `YYERROR` ("syntax error at or near \"tables\"") whenever the object word is
-> literally `tables` (case-insensitive, bison_parser.y line ~2953). So
+> literally `tables` (case-insensitive). So
 > `GRANT SELECT ON ALL TABLES IN SCHEMA public TO analyst;` is rejected at parse
 > time. Grant on each table individually, or grant at the `SCHEMA` level.
 
@@ -712,7 +711,7 @@ JOIN tb1 AS tr ON tl.i0 = tr.l0 / 10;
 
 ### Set Operations (UNION / INTERSECT / EXCEPT)
 
-All three accept an optional `ALL` qualifier. Without `ALL`, duplicates are eliminated (distinct semantics). Grounded in bison_parser.y lines 1927-1947 and `EXCEPT ALL` test cases.
+All three accept an optional `ALL` qualifier. Without `ALL`, duplicates are eliminated (distinct semantics).
 
 ```sql
 -- UNION ALL (keeps duplicates)
@@ -882,7 +881,6 @@ ORDER BY yr, mo;
 1. **Table destination** — `SELECT ... INTO new_table FROM ...` creates a new table (like PostgreSQL's `SELECT INTO`).
 2. **File destination** — `SELECT ... INTO 'path' (options) FROM ...` exports to a file (S3, local, etc.). The **parenthesized option list** is what selects the file form.
 
-Both are grounded in `opt_into_clause` in bison_parser.y (`kIntoClauseTable` and `kIntoClauseFile`).
 
 ```sql
 -- Table destination: create new_table from a query result
@@ -996,7 +994,7 @@ SELECT i0 FROM tb1 WHERE i0 = ANY(ARRAY[1,2,3]);
 
 ## Operators reference
 
-From `tests/UT/query_planner/cases/select/operators/`:
+Supported operators:
 
 | Operator | Example |
 |----------|---------|

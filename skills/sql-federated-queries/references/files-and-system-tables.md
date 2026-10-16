@@ -42,10 +42,10 @@ COPY <table_name> TO STDOUT ( FORMAT CSV );
 | `ORC` | Yes | Yes | Case-insensitive. File extension typically `.orc`. |
 | `CSV` | Yes | Yes | Standard CSV. STDIN/STDOUT supported. |
 
-Grounded in test cases:
-- `copy_to/predefined_copy_parquet/query.sql`: `COPY tb TO 'my_file.parquet' (FORMAT parquet);`
-- `copy_to/predefined_copy_orc_tbl/query.sql`: `COPY tb TO 'my_file.orc' (FORMAT ORC);`
-- `copy_from/`: `COPY tb from 'my_file.orc' (FORMAT ORC);` and `COPY tb from 'my_file.parquet' (FORMAT PARQUET);`
+Examples:
+- `COPY tb TO 'my_file.parquet' (FORMAT parquet);`
+- `COPY tb TO 'my_file.orc' (FORMAT ORC);`
+- `COPY tb from 'my_file.orc' (FORMAT ORC);` and `COPY tb from 'my_file.parquet' (FORMAT PARQUET);`
 
 ### Path formats and protocols
 
@@ -220,8 +220,7 @@ WITH (
 ## Inline COPY Credentials
 
 As an alternative to `CREATE STORAGE`, credentials can be supplied inline on
-each `COPY` statement via dedicated credential options. These are grounded in
-the COPY grammar's `import_option` production.
+each `COPY` statement via dedicated credential options.
 
 ### AWS_CRED
 

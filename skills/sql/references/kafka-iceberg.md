@@ -1,3 +1,5 @@
+Source: oxla `src/sqlparser/bison_parser/bison_parser.y` (grammar), `src/sqlparser/sql/connection_option_names.h` (`storage`, `iceberg`, `kafka` option namespaces), `src/catalog/kafka/conversions.cpp` (`KafkaConnectionOptions::k_option_definitions`, `KafkaSourceOptions::k_option_definitions`), `src/catalog/iceberg_catalog_parser.cpp`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Redpanda/Kafka Catalogs, Iceberg Catalogs, and Object Storage
 
 Oxla can attach **external sources** — Redpanda/Kafka topics and Apache Iceberg
@@ -21,10 +23,6 @@ This integration pairs with the corresponding Redpanda Enterprise features
 > / `CREATE ICEBERG CATALOG` / `CREATE STORAGE` / `CREATE TABLE ... WITH (...)`
 > statements documented here are the SQL surface that consumes those Redpanda
 > enterprise features.
-
-All grammar grounded in `src/sqlparser/bison_parser/bison_parser.y`; all option
-keys grounded in `src/sqlparser/sql/connection_option_names.h`,
-`src/catalog/kafka/conversions.cpp`, and `src/catalog/iceberg_catalog_parser.cpp`.
 
 ---
 
@@ -101,7 +99,7 @@ unit (see below), so a bare `TYPE = ABS` is rejected only for the missing
 
 ### Storage connection option keys
 
-Grounded in `connection_option_names.h` (`namespace storage`). Sensitive keys are
+Sensitive keys are
 redacted from logs/errors (marked **secret**).
 
 | Key | Applies to | Notes |
@@ -155,9 +153,6 @@ DROP ICEBERG CATALOG IF EXISTS my_iceberg;
 ```
 
 ### Iceberg catalog option keys
-
-Grounded in `connection_option_names.h` (`namespace iceberg`) and
-`iceberg_catalog_parser.cpp`.
 
 | Key | Notes |
 |-----|-------|
@@ -256,8 +251,7 @@ CREATE REDPANDA CATALOG my_rp USING CATALOG my_iceberg WITH (
 
 ### Catalog-level Kafka connection option keys
 
-Grounded in `connection_option_names.h` (`namespace kafka`) and the
-`KafkaConnectionOptions::k_option_definitions` list. `initial_brokers` and
+`initial_brokers` and
 `schema_registry_url` are **required**.
 
 | Key | Required | Type | Notes |
@@ -323,9 +317,6 @@ CREATE TABLE IF NOT EXISTS my_rp=>events WITH (topic = 'events');
 ```
 
 ### Per-table (Kafka source) option keys
-
-Grounded in `KafkaSourceOptions::k_option_definitions`
-(`src/catalog/kafka/conversions.cpp`).
 
 | Key | Required | Accepted values | Notes |
 |-----|----------|-----------------|-------|
@@ -395,8 +386,7 @@ REFRESH ns.my_ice=>sales.orders;    -- Iceberg: schema-qualified catalog, namesp
 
 ## External-source privileges (`GRANT ... ON EXTERNAL SOURCE`)
 
-Catalogs are governed with `ON EXTERNAL SOURCE` grants (grounded in
-`privilege_statement`):
+Catalogs are governed with `ON EXTERNAL SOURCE` grants:
 
 ```sql
 GRANT SELECT ON EXTERNAL SOURCE my_rp TO analyst;

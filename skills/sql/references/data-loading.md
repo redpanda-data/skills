@@ -1,9 +1,9 @@
+Source: oxla `tests/UT/query_planner/cases/copy_from/`, `tests/UT/query_planner/cases/copy_to/`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+
 # Data Loading
 
 Oxla loads data via `COPY FROM` (into a table) and exports via `COPY TO` (from
-a table or query). All grounded in
-`tests/UT/query_planner/cases/copy_from/` and
-`tests/UT/query_planner/cases/copy_to/`.
+a table or query).
 
 ---
 
@@ -18,11 +18,11 @@ COPY table_name FROM STDIN (FORMAT format_name [, options ...]);
 
 ### Supported formats
 
-| FORMAT | Test case | Notes |
-|--------|-----------|-------|
-| `CSV` | `predefined_copy_csv_from_stdin` | Standard comma-separated values |
-| `PARQUET` | `predefined_copy_from_parquet` | Apache Parquet columnar format |
-| `ORC` | `predefined_copy_from_orc` | Apache ORC columnar format |
+| FORMAT | Notes |
+|--------|-------|
+| `CSV` | Standard comma-separated values |
+| `PARQUET` | Apache Parquet columnar format |
+| `ORC` | Apache ORC columnar format |
 
 ### CSV from STDIN
 
