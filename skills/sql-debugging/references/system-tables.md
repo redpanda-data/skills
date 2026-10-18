@@ -1,298 +1,158 @@
-Source: oxla `src/metastore/metastore.cpp` (`createSystemTables()`), `src/metastore/system_{nodes,queries,transactions,storage,execs,catalogs}.cpp` (registration; `StorageConnections`), `src/processors/consts/show_shapes.cpp` (`nodeStateOutputSchema()`, `nodeQueriesOutputSchema()`, `nodeExecsOutputSchema()` column schemas), `src/scheduler/states/context.cpp` and `src/executor/executor.cpp` (`state` values), `config/Release/default_config.yml` (`allow_table_operations`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/reference/pages/sql/system-virtual-tables.adoc`, `modules/reference/pages/sql/sql-statements/{show-nodes,show-queries,show-execs}.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/reference/pages/sql/sql-data-types/time-type/time-operators.adoc` (`TIMESTAMP - TIMESTAMP`) (verified 2026-10-18). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
-# Oxla System Catalog Tables
+# Runtime System Tables
 
-Oxla exposes diagnostic state through virtual tables in the `system` schema (schema name `system`). These tables are **populated at query runtime** by distributed processors on each node — there is no materialized cache. Access follows Oxla's access-control model: superusers see everything; regular users see rows scoped to resources they have grants on.
+Redpanda SQL exposes cluster runtime state in three virtual tables in the `system`
+schema. Each is the SQL-queryable form of a `SHOW` statement, so you can filter,
+sort, and limit with `WHERE`, `ORDER BY`, and `LIMIT`.
 
-Connect with any PostgreSQL client:
+**Visibility:** `system.nodes`, `system.queries`, and `system.execs` (and `SHOW
+NODES`, `SHOW QUERIES`, `SHOW EXECS`) are visible only to a superuser, which in
+Redpanda Cloud is a user whose role has the *SQL: Manage* permission. A *SQL:
+Access* user cannot read them.
 
-```bash
-psql -h <host> -p 5432 -U oxla
-```
+Catalog and connection metadata tables (`system.catalogs`,
+`system.iceberg_catalogs`, `system.iceberg_tables`, `system.kafka_connections`,
+`system.kafka_sources`) are filtered by the caller's grants and documented in
+`/redpanda:sql-federated-queries`.
+
+Reference: [System virtual tables](https://docs.redpanda.com/cloud-data-platform/reference/sql/system-virtual-tables/).
 
 ---
 
-## nodes
+## system.nodes (SHOW NODES)
 
-Shows the state of every cluster node as seen from the querying node. Data is generated at runtime via `NodeState` processors on each node.
+Current state of each SQL node in the cluster. `SHOW NODES` is equivalent to
+`SELECT * FROM system.nodes`.
 
-**Table name:** `system.nodes`
+| Column | Description |
+|---|---|
+| `name` | Name of the node. |
+| `election_state` | Current state of the node, for example `LEADER`. Other nodes report a follower state such as `LEADER_FOLLOWER`. |
+| `followers_count` | Number of nodes following the leader. Meaningful only on the leader. |
+| `connected_nodes_count` | Total number of connected nodes, including the node itself. |
+| `degradation_error` | Error message if the node is not working correctly; otherwise `NULL`. |
 
-| Column | Type | Nullable | Description |
-|---|---|---|---|
-| `name` | TEXT | NO | Unique node name (matches `network.host_name` in config) |
-| `election_state` | TEXT | NO | Raft election state (e.g. `Leader`, `Follower`, `Candidate`) |
-| `followers_count` | INT | NO | Number of follower nodes known to this node |
-| `connected_nodes_count` | INT | NO | Number of inter-node connections currently established |
-| `degradation_error` | TEXT | YES | Non-NULL when the node is degraded; contains the error description |
-
-### Example queries
+`SHOW NODES` requires a ready cluster and a non-degraded scheduling node. A healthy
+leader reports every connected node, including degraded ones.
 
 ```sql
--- Full cluster overview
-SELECT name, election_state, followers_count, connected_nodes_count, degradation_error
-FROM system.nodes;
+SHOW NODES;
 
--- Find the leader
-SELECT name FROM system.nodes WHERE election_state = 'Leader';
-
--- Flag degraded nodes
-SELECT name, degradation_error
+-- Degraded nodes only
+SELECT name, election_state, degradation_error
 FROM system.nodes
 WHERE degradation_error IS NOT NULL;
 
--- Count connected nodes (useful for quorum checks)
-SELECT connected_nodes_count FROM system.nodes LIMIT 1;
+-- Which node is the leader, and how many nodes does it see?
+SELECT name, followers_count, connected_nodes_count
+FROM system.nodes
+WHERE election_state = 'LEADER';
 ```
+
+What to look for: one leader; `connected_nodes_count` equal to the node count on
+every row; `degradation_error` `NULL` everywhere. Compare the node count with the
+*Nodes* indicator on the *Redpanda SQL* card in the Cloud Console.
 
 ---
 
-## queries
+## system.queries (SHOW QUERIES)
 
-Shows active and recently completed queries across the cluster. Data is generated at runtime via `NodeQueries` processors on each node.
-
-**Table name:** `system.queries`
+Queries currently running on the cluster. `SHOW QUERIES` is equivalent to
+`SELECT * FROM system.queries`.
 
 | Column | Type | Nullable | Description |
 |---|---|---|---|
-| `qid` | TEXT | NO | Query ID (unique cluster-wide string) |
-| `requester` | TEXT | NO | Node that submitted the query |
-| `scheduler` | TEXT | NO | Node that accepted/scheduled the query |
-| `workers` | BIGINT | NO | Number of worker threads allocated |
-| `state` | TEXT | NO | Current query state: `created`, `scheduling`, `scheduled`, `executing`, `cancelling`, `cleanup`, `ready`, `finished` |
-| `created` | TIMESTAMP | NO | Timestamp when query was received |
-| `accepted` | TIMESTAMP | YES | Timestamp when query was admitted (column name; not a state value) |
-| `scheduled` | TIMESTAMP | YES | Timestamp when query was scheduled |
-| `executed` | TIMESTAMP | YES | Timestamp when execution started (column name; not a state value) |
-| `finished` | TIMESTAMP | YES | Timestamp when query completed (NULL = still running) |
+| `qid` | `text` | No | Query identifier. |
+| `requester` | `text` | No | Node that received the query from the client. |
+| `scheduler` | `text` | No | Node scheduling the query's execution tasks. |
+| `workers` | `bigint` | No | Number of worker tasks assigned to the query. |
+| `state` | `text` | No | Current state of the query. |
+| `created` | `timestamp` | No | Time the query was received. |
+| `accepted` | `timestamp` | Yes | Time the query was accepted for execution. `NULL` until accepted. |
+| `scheduled` | `timestamp` | Yes | Time the query's execution tasks were scheduled. `NULL` until scheduled. |
+| `executed` | `timestamp` | Yes | Time execution started. `NULL` until execution starts. |
+| `finished` | `timestamp` | Yes | Time execution finished. `NULL` while the query is still running. |
 
-**`state` value domain**: `created`, `scheduling`, `scheduled`, `executing`, `cancelling`, `cleanup`, `ready`, `finished`. Note that `accepted` and `executed` are **timestamp column names**, not state values.
-
-### Example queries
+`accepted` and `executed` are timestamp columns, not `state` values. Read `state`
+values from live rows rather than assuming a fixed list.
 
 ```sql
--- All active (not yet finished) queries, oldest first
-SELECT qid, requester, state, created,
-       EXTRACT(EPOCH FROM (NOW() - created)) AS age_seconds
+SHOW QUERIES;
+
+-- Running queries, oldest first
+SELECT qid, requester, state, workers, created
 FROM system.queries
 WHERE finished IS NULL
-ORDER BY created ASC;
+ORDER BY created;
 
--- Queries that took more than 10 seconds end-to-end
-SELECT qid, requester,
-       EXTRACT(EPOCH FROM (finished - created)) AS total_seconds
+-- Which phase is a query waiting in?
+--   accepted IS NULL  -> waiting to be accepted for execution
+--   scheduled IS NULL -> accepted, tasks not yet scheduled
+--   executed IS NULL  -> scheduled, execution not yet started
+-- TIMESTAMP - TIMESTAMP returns an interval (NULL while a phase is pending).
+SELECT qid, state, created,
+       accepted  - created   AS accept_wait,
+       scheduled - accepted  AS schedule_wait,
+       executed  - scheduled AS start_wait
 FROM system.queries
-WHERE finished IS NOT NULL
-  AND EXTRACT(EPOCH FROM (finished - created)) > 10
-ORDER BY total_seconds DESC;
-
--- Queries stuck in scheduling state
-SELECT qid, requester, state, created
-FROM system.queries
-WHERE finished IS NULL AND state = 'scheduling';
-
--- Time breakdown per query phase (latency profiling)
-SELECT qid,
-       EXTRACT(EPOCH FROM (accepted  - created))   AS admission_wait_s,
-       EXTRACT(EPOCH FROM (scheduled - accepted))  AS schedule_wait_s,
-       EXTRACT(EPOCH FROM (executed  - scheduled)) AS plan_wait_s,
-       EXTRACT(EPOCH FROM (finished  - executed))  AS execute_s
-FROM system.queries
-WHERE finished IS NOT NULL
-ORDER BY execute_s DESC NULLS LAST;
+WHERE finished IS NULL
+ORDER BY created;
 ```
 
 ---
 
-## transactions
+## system.execs (SHOW EXECS)
 
-Shows active catalog transactions. Requires the distributed catalog to be enabled (`distributed_catalog.*` in config). Data is read directly from the catalog head file via the filesystem layer.
-
-**Table name:** `system.transactions`
-
-| Column | Type | Nullable | Description |
-|---|---|---|---|
-| `transaction_id` | BIGINT | NO | Unique transaction ID |
-| `snapshot_id` | BIGINT | NO | Snapshot ID for this transaction |
-| `owner node name` | TEXT | NO | Node that owns the transaction (note: column name has spaces) |
-| `owner name` | TEXT | NO | Name of the owner (typically the query initiator) |
-
-### Example queries
-
-```sql
--- All active catalog transactions
-SELECT * FROM system.transactions;
-
--- Count active transactions
-SELECT COUNT(*) AS active_tx_count FROM system.transactions;
-```
-
-> If distributed catalog is not enabled, querying this table returns an error: `"Failed to find catalog metadata. Is distributed catalog enabled?"`
-
----
-
-## storage_connections
-
-Shows storage connections (external storage backends configured for the cluster). The virtual table is registered under the `system` schema as `storage_connections`.
-
-**Table name:** `system.storage_connections`
+Execution tasks currently running across the cluster. Each query in
+`system.queries` typically corresponds to one or more rows here. `SHOW EXECS` is
+equivalent to `SELECT * FROM system.execs`.
 
 | Column | Type | Nullable | Description |
 |---|---|---|---|
-| `name` | TEXT | NO | Connection name |
-| `type` | TEXT | NO | Storage type (e.g. `s3`, `gcs`, `azure`) |
-| `schema_name` | TEXT | NO | Oxla schema (namespace) this connection belongs to |
-| `database_name` | TEXT | NO | Oxla database this connection belongs to |
-| `parameters` | JSON | NO | Provider-specific parameters (url, region, endpoint, account_name, path_style, etc.) |
-
-The `parameters` column contains a JSON object whose keys depend on the storage provider. The `url` key is emitted first when a URL is configured and is present for all provider types:
-- **All types**: `url` (when configured)
-- **S3**: `region`, `endpoint`, `path_style`, `use_http`
-- **GCS**: `endpoint`
-- **Azure**: `account_name`, `tenant_id`, `client_id`, `endpoint`
-
-### Example queries
+| `node` | `text` | No | Node executing the task. |
+| `qid` | `text` | No | Identifier of the parent query. Join with `system.queries.qid`. |
+| `data_task_id` | `bigint` | Yes | Identifier of the data task within the query. |
+| `state` | `text` | No | Current state of the execution task. |
+| `memory` | `bigint` | No | Memory consumed by the task, in bytes. |
+| `privileged` | `boolean` | No | `TRUE` if the task runs with privileged access. |
 
 ```sql
--- List all storage connections
-SELECT name, type, schema_name, database_name FROM system.storage_connections;
+SHOW EXECS;
 
--- Inspect S3 connection parameters
-SELECT name, parameters FROM system.storage_connections WHERE type = 's3';
-```
-
----
-
-## execs
-
-Shows per-node execution fragments for queries. Data is generated at runtime via `NodeExecs` processors.
-
-**Table name:** `system.execs`
-
-| Column | Type | Nullable | Description |
-|---|---|---|---|
-| `node` | TEXT | NO | Node running this fragment |
-| `qid` | TEXT | NO | Query ID this fragment belongs to |
-| `data_task_id` | BIGINT | YES | ID of the data task (NULL for in-memory fragments) |
-| `state` | TEXT | NO | Execution fragment state |
-| `memory` | BIGINT | NO | Memory currently used by this fragment in bytes |
-| `privileged` | BOOLEAN | NO | Whether this fragment is running in privileged mode |
-
-### Example queries
-
-```sql
--- All running fragments with memory usage
-SELECT node, qid, state, memory, privileged
+-- Largest tasks by memory
+SELECT node, qid, state, memory
 FROM system.execs
 ORDER BY memory DESC;
 
--- Fragments for a specific query
-SELECT node, data_task_id, state, memory
+-- Memory per query, with its age
+SELECT e.qid, SUM(e.memory) AS memory_bytes, COUNT(*) AS tasks,
+       MIN(q.created) AS created
+FROM system.execs e
+JOIN system.queries q ON q.qid = e.qid
+GROUP BY e.qid
+ORDER BY memory_bytes DESC;
+
+-- Memory per node (is one node carrying the load?)
+SELECT node, SUM(memory) AS memory_bytes, COUNT(*) AS tasks
 FROM system.execs
-WHERE qid = '<your-qid-here>';
-
--- Total memory used by all running fragments
-SELECT SUM(memory) AS total_fragment_memory_bytes FROM system.execs;
+GROUP BY node
+ORDER BY memory_bytes DESC;
 ```
 
 ---
 
-## catalogs
+## Other user-level inspection commands
 
-Shows external catalogs registered in the cluster (Iceberg and Kafka/Redpanda connections).
-
-**Table name:** `system.catalogs`
-
-| Column | Type | Description |
-|---|---|---|
-| `name` | TEXT | Catalog name |
-| `namespace_name` | TEXT | Schema (namespace) this catalog lives in |
-| `type` | TEXT | `iceberg` or `redpanda` (Kafka connection) |
+These are not superuser-only; results are filtered by the caller's grants.
 
 ```sql
-SELECT * FROM system.catalogs;
+SHOW REDPANDA CATALOGS;   -- Redpanda catalogs
+SHOW ICEBERG CATALOGS;    -- Iceberg catalogs
+SHOW REDPANDA TABLES;     -- tables mapped to Redpanda topics
+DESCRIBE TABLE default_redpanda_catalog=>orders;   -- columns of a mapped table
 ```
 
----
-
-## databases, tables, columns
-
-These tables enumerate the user-visible Oxla schema objects.
-
-**databases** (`system.databases`): one column — `name TEXT`.
-
-**tables** (`system.tables`): `database_name TEXT`, `namespace_name TEXT`, `name TEXT`.
-
-**columns** (`system.columns`): `database_name TEXT`, `namespace_name TEXT`, `table_name TEXT`, `name TEXT`, `type TEXT`, `nullable BOOLEAN`.
-
-> **Note:** Querying `system.tables` and `system.columns` may be disabled depending on the `allow_table_operations` feature flag. If disabled, you will see the error: `"Querying system.tables is disabled."` Check the cluster config file for the `allow_table_operations` setting.
-
-```sql
--- All tables accessible to the current user
-SELECT database_name, namespace_name, name
-FROM system.tables
-ORDER BY database_name, namespace_name, name;
-
--- Column schema for a specific table
-SELECT name, type, nullable
-FROM system.columns
-WHERE database_name = 'default' AND table_name = 'my_table';
-```
-
----
-
-## information_schema views
-
-Oxla implements several standard SQL `information_schema` views for compatibility with PostgreSQL tooling.
-
-| View | Columns (subset) |
-|---|---|
-| `information_schema.tables` | `table_catalog`, `table_schema`, `table_name`, `table_type`, `is_insertable_into` |
-| `information_schema.columns` | Standard column metadata |
-| `information_schema.role_table_grants` | Grant information per table per role |
-| `information_schema.role_usage_grants` | Grant information for usage |
-
-```sql
--- List all user tables via information_schema (compatible with pg tooling)
-SELECT table_schema, table_name, table_type
-FROM information_schema.tables
-WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY table_schema, table_name;
-```
-
----
-
-## pg_catalog compatibility tables
-
-Oxla also implements several standard `pg_catalog` tables for driver compatibility (representative subset — more tables exist):
-
-- `pg_catalog.pg_class` — relations, with `relkind` telling them apart: `'r'`
-  table, `'i'` index, `'v'` view, `'m'` materialized view, `'f'` the root of an
-  external (Kafka/Iceberg) table's schema, `'c'` a nested composite type
-- `pg_catalog.pg_attribute` — columns
-- `pg_catalog.pg_views` — non-materialized views: `schemaname`, `viewname`,
-  `viewowner`, `definition`. `definition` is the view's stored `SELECT` text as
-  written (Oxla stores the text; PostgreSQL reprints it from the parse tree).
-  Rows are scoped like other catalog reads — a view is listed only for a role
-  with a grant reaching it. Note that `viewowner` is returned as an empty string
-  — do not rely on it to identify a view's owner. **Materialized views are
-  excluded** from this view and there is no `pg_matviews`; find them in
-  `pg_class` with `relkind = 'm'`.
-- `pg_catalog.pg_type` — type catalog
-- `pg_catalog.pg_namespace` — schema namespaces
-- `pg_catalog.pg_authid` / `pg_user` / `pg_roles` — role/user catalog
-- `pg_catalog.pg_settings` — configuration settings
-- `pg_catalog.pg_proc` — stored procedures/functions catalog
-- `pg_catalog.pg_database` — databases
-- `pg_catalog.pg_index`, `pg_constraint`, `pg_depend`, `pg_description`, `pg_am`, `pg_enum`, `pg_range`, `pg_policy`, `pg_tablespace`, `pg_statio_user_tables`, and others
-
-These allow standard PostgreSQL introspection tools (e.g., `\d`, `\dt` in psql) and JDBC/ODBC drivers to work correctly with Oxla.
-
----
-
-## Access control notes
-
-- **Superusers** see all rows in all tables.
-- **Regular users** see only rows for resources they have grants on: if the user has `USAGE` on a schema, all tables in that schema are visible; otherwise, only tables on which the user has an explicit grant appear.
-- This applies to `system.tables`, `system.columns`, `system.storage_connections`, `system.catalogs`, and `information_schema` views.
-- `system.nodes`, `system.queries`, and `system.execs` show cluster-wide data (no per-table scoping).
+The unqualified `SHOW TABLES` form is not supported and returns an error; use a
+typed variant or `SHOW TABLES FROM <catalog>`. Catalog metadata tables and their
+columns: `/redpanda:sql-federated-queries`.

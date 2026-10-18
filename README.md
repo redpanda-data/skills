@@ -1,7 +1,7 @@
 # Redpanda Agent Skills
 
 Agent Skills for Redpanda's five products — **Streaming** (the Kafka-compatible engine),
-**SQL** (Oxla), **Connect**, **Cloud** (Serverless, BYOC, Dedicated), and the **Agentic
+**SQL**, **Connect**, **Cloud** (Serverless, BYOC, Dedicated), and the **Agentic
 Data Plane** — unified by the **rpk** command-line experience. Each skill is grounded
 in Redpanda's own source code, documentation, and APIs.
 
@@ -45,11 +45,11 @@ The Kafka-compatible streaming engine (the Redpanda broker).
 - [**streaming-debugging**](./skills/streaming-debugging) — Diagnose a broker/cluster: debug bundles, metrics endpoints, logs, CPU profiling, partition/raft health, and failure-mode playbooks.
 
 ### 🧮 SQL
-Redpanda SQL — the distributed, columnar, PostgreSQL-compatible analytical database (Oxla).
-- [**sql**](./skills/sql) — Write SQL: connection (PostgreSQL wire protocol), data types, DDL/DML, functions, and analytical queries.
-- [**sql-admin-api**](./skills/sql-admin-api) — Operate a cluster: configuration, node roles and ports, leader election, storage backends, memory limits, and the gRPC admin service.
-- [**sql-federated-queries**](./skills/sql-federated-queries) — Query external data: Kafka topics via catalogs, Apache Iceberg tables, and S3/GCS/Azure parquet/ORC files.
-- [**sql-debugging**](./skills/sql-debugging) — Diagnose: system catalog tables, Prometheus metrics, log levels, memory/OOM monitoring, and query troubleshooting.
+Redpanda SQL — the distributed, columnar, PostgreSQL-compatible query engine on Redpanda Cloud BYOC clusters.
+- [**sql**](./skills/sql) — Write SQL: connecting and authenticating, data types, read-only queries, functions, and analytical queries.
+- [**sql-admin-api**](./skills/sql-admin-api) — Administer Redpanda SQL on BYOC: enable, scale, and disable it through the Cloud Console, Cloud API, or Terraform, plus authentication and the access model.
+- [**sql-federated-queries**](./skills/sql-federated-queries) — Query Redpanda topics through catalogs, including Iceberg-enabled topics and nested fields.
+- [**sql-debugging**](./skills/sql-debugging) — Diagnose: system virtual tables, degraded nodes, query out-of-memory errors, slow queries, and when to contact Redpanda Support.
 
 ### 🔌 Connect
 Redpanda Connect — declarative stream processing (formerly Benthos).
@@ -93,7 +93,7 @@ One CLI across every product.
 ## How these skills were built
 
 Each skill was drafted from a grounded spec (source paths into the Redpanda, Connect,
-and Oxla repositories plus the docs), then put through an **adversarial review at maximum
+and Redpanda SQL source plus the docs), then put through an **adversarial review at maximum
 model effort** that cross-checks every command, flag, config field, endpoint, and code
 example against the actual source — fixing hallucinated or outdated details — followed by
 a dedicated **enterprise-feature coverage** pass (the key differentiators, with their

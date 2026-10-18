@@ -32,7 +32,7 @@ human loop**:
 | ADP skills sync | `skills/adp/` | `redpanda-data/cloudv2` (private) | commit-watch, keyed off `adp/RELEASE_NOTES.md` |
 | Cloud skills sync | `skills/cloud-*` (3) | `cloudv2` + `cloud-docs` (private) | commit-watch, keyed off `whats-new-cloud.adoc` + OpenAPI diff |
 | Redpanda Core skills sync | `skills/streaming*`, `skills/rpk*` (12) | `redpanda-data/redpanda` + `docs` (public) | **release-pinned** (GitHub Release notes) |
-| SQL skills sync | `skills/sql*` (4) | `redpanda-data/oxla` (private) + `cloud-docs` | pin-watch: the Oxla version `cloudv2` pins, verified at that version's Oxla release tag (not the default branch) |
+| SQL skills sync | `skills/sql*` (4) | `cloud-docs` (private; the published Cloud SQL docs are the scope gate) + `redpanda-data/oxla` (private; confirms documented behavior only) | pin-watch: the Oxla version `cloudv2` pins, verified at that version's Oxla release tag (not the default branch) |
 | Connect skills sync | `skills/connect*` (10) | `connect` + `benthos` engine + `rp-connect-docs` (public) | **release-pinned** (Connect releases) |
 | Skills sync critic | reviews all generator PRs | (per skill's `SOURCES.md`) | every 6h, read-only |
 | Skills drift audit | all 30 source-grounded skills | (per skill's `SOURCES.md`) | monthly full re-verification |
@@ -78,7 +78,7 @@ when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 
 
 - **ADP / Cloud** → `cloudv2` (+ `cloud-docs`), private.
 - **Core** → `redpanda-data/redpanda` + `docs`, public (verify at the current stable release tag).
-- **SQL** → `redpanda-data/oxla` (private) + `cloud-docs` module `sql`. (`sql-admin-api` is source-only.)
+- **SQL** → `cloud-docs` module `sql` and the `reference/sql` pages (private), which set the scope: a skill covers only what the published Cloud docs document for users. `redpanda-data/oxla` (private) confirms the behavior of documented surfaces at the shipped tag and never adds undocumented ones (no engine config, env vars, admin API, raw metrics, or self-hosted deployment).
 - **Connect** → `redpanda-data/connect` + the `benthos` engine + the auto-generated `rp-connect-docs`.
 
 When adding a new source-grounded skill, add a `SOURCES.md` beside it and register it in the

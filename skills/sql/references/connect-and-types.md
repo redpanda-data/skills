@@ -1,775 +1,374 @@
-Source: oxla `config/Release/default_config.yml` (default credentials and connection parameters), `src/sqlparser/sql/ColumnType.h` (`enum class DataType`), `src/schema/constraints_instance.h` (`map_key` constraint). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/connect-to-sql/language-clients/{psycopg2,java-jdbc,php-pdo,dotnet-dapper}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/sql/pages/query-data/sql-editor.adoc`, `modules/reference/pages/sql/sql-data-types/**`, `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc` (verified 2026-10-18). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Connect and Data Types
 
-## Connection
+## Connection parameters
 
-Oxla listens on the PostgreSQL wire protocol. The default port is **5432**
-(configured via `network.postgresql.port` in `default_config.yml`).
+Redpanda SQL is reached only through the cluster's SQL endpoint on Redpanda Cloud
+BYOC. Read the host and port from the **SQL** tab of the cluster's **How to
+connect** panel in the Cloud Console and copy the connection string shown there;
+do not guess them.
 
-### Default credentials
+| Parameter | Value |
+|---|---|
+| Host | the SQL endpoint from the **SQL** tab |
+| Port | from the **SQL** tab (the published quickstart's string uses `5432`) |
+| Database | `oxla` (the single database Redpanda SQL exposes) |
+| TLS | required: `sslmode=require`; plain-text connections are rejected |
+| Auth | selected by the `options` connection parameter (below) |
 
-The defaults:
+Prerequisite: the user or service account has a Redpanda Cloud role with the
+*SQL: Access* or *SQL: Manage* data-plane permission. Assigning it provisions the
+matching user in the SQL engine. Role assignment and enabling SQL are covered by
+`/redpanda:sql-admin-api`.
 
-```yaml
-access_control:
-  mode: default
-  initial_password: oxla
-```
+## Authentication modes
 
-The default user is `oxla` and the default password is `oxla`.
-
-### psql
+| Mode | `options` | `user` | Password field | Use for |
+|---|---|---|---|---|
+| Bearer token | `auth_method=bearer` | ignored | JWT from `rpk cloud auth token` | people who signed in with `rpk cloud login` |
+| Client credentials | `auth_method=client_secret` | service account client ID | service account client secret | scheduled jobs, BI tools, service-to-service |
+| SCRAM password | omit | account or service-account email | password set with `ALTER USER` | legacy clients that cannot do OIDC |
 
 ```bash
-# Interactive session
-psql -h localhost -p 5432 -U oxla oxla
+# Bearer token
+rpk cloud login
+PGPASSWORD=$(rpk cloud auth token) \
+  psql "host=<sql-host> port=<sql-port> dbname=oxla user=ignored options='auth_method=bearer' sslmode=require"
 
-# One-liner with password in env var
-PGPASSWORD=oxla psql -h localhost -p 5432 -U oxla oxla
+# Client credentials (Redpanda SQL exchanges them for a token)
+PGPASSWORD="$CLIENT_SECRET" \
+  psql "host=<sql-host> port=<sql-port> dbname=oxla user=<client-id> options='auth_method=client_secret' sslmode=require"
 
-# Non-interactive single command
-PGPASSWORD=oxla psql -h localhost -p 5432 -U oxla oxla -c "SELECT 1;"
+# SCRAM (no options parameter)
+PGPASSWORD='shared_secret' \
+  psql "host=<sql-host> port=<sql-port> dbname=oxla user=service-account@example.com sslmode=require"
 ```
+
+Rules:
+
+- With a bearer token, `user=` is ignored and `current_user` is the principal from
+  the token.
+- A token sent **without** `options='auth_method=bearer'` is treated as a SCRAM
+  password and the login fails.
+- Tokens are short-lived and validated only at connect time. An open session keeps
+  running after expiry; reconnect with a fresh `rpk cloud auth token`.
+- SCRAM setup: assign the service account *SQL: Access* (or *SQL: Manage*), then a
+  *SQL: Manage* user sets a password, because the auto-provisioned password is not
+  exposed:
+
+  ```sql
+  ALTER USER "service-account@example.com" WITH PASSWORD 'shared_secret';
+  ```
+
+  The password survives cluster operations. If the account loses its SQL role in
+  Redpanda Cloud, `CONNECT` is revoked and the client can no longer sign in.
+
+## Language clients
+
+Any PostgreSQL driver can connect. Pass host, port, database `oxla`, user,
+password, TLS, and (for OIDC) the `options` value through the driver's own
+connection settings. Redpanda SQL is read-only, so drivers are for `SELECT` and
+the other published statements; driver features for writes, transactions, and
+server-side prepared statements do not apply.
 
 ### Python (psycopg2)
 
 ```python
+import os
 import psycopg2
 
+# export BEARER_TOKEN=$(rpk cloud auth token)
 conn = psycopg2.connect(
-    host="localhost",
-    port=5432,
-    user="oxla",
-    password="oxla",
-    dbname="oxla"
+    host="<sql-host>",
+    port=<sql-port>,
+    dbname="oxla",
+    user="ignored",
+    password=os.environ["BEARER_TOKEN"],
+    options="auth_method=bearer",
+    sslmode="require",
 )
 cur = conn.cursor()
-cur.execute("SELECT COUNT(*) FROM my_table")
-row = cur.fetchone()
-print(row)
+cur.execute("SELECT status, COUNT(*) FROM default_redpanda_catalog=>orders GROUP BY status")
+for row in cur.fetchall():
+    print(row)
 cur.close()
 conn.close()
 ```
 
-### Python (asyncpg)
+- Supported: `connect()`, cursors, `execute`, `executemany`, `fetchone` /
+  `fetchmany` / `fetchall`, `description`, `rowcount`, `server_version`,
+  `protocol_version`, encoding and status calls, and normal exception handling.
+- Limited: `isolation_level` and `copy_to`; `commit()`/`rollback()` exist but
+  transactions give no guarantees. `copy_from` does not apply, because `COPY
+  FROM` is not available.
+- Not supported: async connections (`poll`, `cancel`, `isexecuting`),
+  `batch_execute`; server-side cursors, notifications, prepared statements, and
+  pipeline mode may not work. Do not share connections or cursors across threads.
 
-```python
-import asyncpg
-import asyncio
+### Java / Kotlin (JDBC)
 
-async def main():
-    conn = await asyncpg.connect(
-        host="localhost", port=5432,
-        user="oxla", password="oxla", database="oxla"
-    )
-    row = await conn.fetchrow("SELECT COUNT(*) AS n FROM my_table")
-    print(row["n"])
-    await conn.close()
+Use the PostgreSQL JDBC driver with a `jdbc:postgresql://<host>:<port>/oxla` URL
+and pass the user and password (plus TLS and the `options` value) as connection
+properties.
 
-asyncio.run(main())
+```kotlin
+DriverManager.getConnection("jdbc:postgresql://$address:$port/$databaseName", user, password)
 ```
 
-### Go (pgx)
+Not supported: `Connection.createArrayOf`, `getTransactionIsolation`,
+`setTransactionIsolation`, `setSavepoint`, `prepareStatement` with an int array;
+`ResultSet.refreshRow`, `moveToCurrentRow`; `Statement.RETURN_GENERATED_KEYS`,
+`executeUpdate` with auto-generated keys, `execute` with an int array, `cancel`;
+`PreparedStatement.setDate`, `setObject`, and `setString` of a `PGInterval`.
 
-```go
-import (
-    "context"
-    "github.com/jackc/pgx/v5"
-)
+### PHP (PDO)
 
-conn, err := pgx.Connect(context.Background(),
-    "postgres://oxla:oxla@localhost:5432/oxla")
-if err != nil {
-    panic(err)
-}
-defer conn.Close(context.Background())
-
-var count int64
-conn.QueryRow(context.Background(),
-    "SELECT COUNT(*) FROM my_table").Scan(&count)
+```php
+$conn = new PDO(
+    "pgsql:host=<sql-host>;port=<sql-port>;dbname=oxla;sslmode=require",
+    "<username>",
+    "<password>",
+    [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => true,   // required, or queries fail with "prepared statement" errors
+    ]);
 ```
 
-### JDBC
+For full endpoint verification, append `sslmode=verify-full;sslrootcert=<path>` to
+the DSN. Not supported: large objects (`pgsqlLOBCreate`/`pgsqlLOBOpen`),
+`pgsqlGetPid`, the `pgsqlCopy*` helpers, `pgsqlGetNotify` (LISTEN/NOTIFY),
+`lastInsertId`, and the transaction methods; `rowCount` may be wrong.
 
-```java
-// Maven: org.postgresql:postgresql
-String url = "jdbc:postgresql://localhost:5432/oxla";
-Properties props = new Properties();
-props.setProperty("user", "oxla");
-props.setProperty("password", "oxla");
-Connection conn = DriverManager.getConnection(url, props);
+### C# (Dapper with Npgsql)
+
+```csharp
+var dataSource = NpgsqlDataSource.Create(connectionString);   // Npgsql connection string: host, port, Database=oxla, credentials, SSL
+var connection = dataSource.OpenConnection();
+var rows = connection.Query<Order>("SELECT order_id, customer FROM default_redpanda_catalog=>orders");
 ```
 
-### Connection string format
-
-```
-postgres://oxla:oxla@<host>:5432/oxla
-```
-
-## SSL / TLS
-
-SSL is controlled by `ssl.mode` in the config. Default is `"off"`.
-
-Supported modes:
-- `off` — no SSL
-- `optional` — both SSL and plain-text connections accepted
-- `require` — only SSL connections allowed
-
-To require SSL:
-
-```yaml
-ssl:
-  mode: "require"
-  ca_crt_file: "/path/to/ca.crt"
-  cert_file: "/path/to/server.crt"
-  key_file: "/path/to/server.key"
-  min_protocol_version: 1.2
-  max_protocol_version: 1.3
-```
-
-Override with env var:
-
-```bash
-OXLA__SSL__MODE=require
-```
-
-## Overriding the port
-
-```bash
-# Via config file
-network:
-  postgresql:
-    port: 5433
-
-# Via environment variable (OXLA__ prefix, __ as path separator)
-docker run -e OXLA__NETWORK__POSTGRESQL__PORT=5433 ...
-```
-
-## OIDC Authentication
-
-Oxla supports OIDC-based authentication (disabled by default):
-
-```yaml
-oidc:
-  enabled: false
-  issuer_url: ""
-  audience: ""
-  oidc_principal_mapping: "$.sub"
-  disable_password_auth: false
-  require_tls: true
-  protected_users:
-    - "oxla"
-```
-
-When OIDC is enabled, clients pass a JWT as the password. The `protected_users`
-list specifies users that always use password auth (not OIDC).
+Parameterized queries work, but Redpanda SQL does not support prepared statements:
+bound values are converted back into query text, so there is no security or
+performance gain. Not supported: `BeginTransaction`, `CommandType.StoredProcedure`,
+and function in/out parameters.
 
 ---
 
-## Supported Data Types
+## Data types
 
-These are the declarable column types.
+Topic-backed tables get their column types from the topic's registered schema
+(Avro, Protobuf, or JSON). The types below are what queries see and what casts
+target. Cast with `CAST(expr AS type)` or `expr::type`. Explicit casts can lose
+precision or clip out-of-range values, and overflow in arithmetic or aggregates is
+undefined; widen to `bigint` (or `int16`) where sums can grow.
 
-### Integer types
+| Type | Aliases | Notes |
+|---|---|---|
+| `int` | `integer` | 32-bit signed |
+| `bigint` | `long` | 64-bit signed |
+| `int16`, `int32` | — | 128-bit and 256-bit signed; for casts only |
+| `real` | `float4` | 32-bit IEEE 754 |
+| `double precision` | `double`, `float`, `float8` | 64-bit IEEE 754 |
+| `numeric(p, s)` | `decimal(p, s)` | exact; precision 1–76 |
+| `text` | — | UTF-8 |
+| `bytea` | — | raw bytes |
+| `bool` | `boolean` | `TRUE` / `FALSE` |
+| `date`, `time` | — | `YYYY-MM-DD`; `HH:MM:SS[.SSSSSS]` |
+| `timestamp` | timestamp without time zone | microsecond precision |
+| `timestamp with time zone` | — | see time zones below |
+| `interval` | — | span of time |
+| `json` | — | JSON document |
+| `uuid` | — | 128-bit identifier |
+| arrays | `type[]`, `type ARRAY` | single-dimensional |
+| `row` | — | composite (struct) |
+| `map` | — | key-value pairs |
+| `geometry`, `geography` | — | `POINT` values only |
 
-| Type | Alias | Width | `pg_typeof` |
-|------|-------|-------|-------------|
-| `INT` / `INTEGER` | — | 32-bit signed integer | `integer` |
-| `LONG` | `BIGINT` | 64-bit signed integer | `bigint` |
-| `INT16` | — | 128-bit (16-byte) wide signed integer | `int16` |
-| `INT32` | — | 256-bit (32-byte) wide signed integer | `int32` |
+### Numeric
 
-`INT16` and `INT32` are **Oxla-native wide-integer types** — the number is the
-byte width, not the bit width, so `INT16` is a 128-bit integer and `INT32` is a
-256-bit integer (distinct `DataType::INT16` / `DataType::INT32` keywords in the
-grammar, not aliases of `INT`). `pg_typeof()` reports them by their user-facing
-names `int16` / `int32` — the same spelling you use in DDL and `CAST` (earlier
-builds reported the internal names `i128` / `i256`). Do not confuse `INT32` with
-`INT`/`INTEGER` (the 32-bit type).
+- `float` means `double precision`, as in PostgreSQL. Use `real` for 32-bit.
+- Scientific notation works: `SELECT 1.1e+3, 1e-20;`.
+- `numeric`: `NUMERIC(p)` has scale 0; bare `NUMERIC` is `NUMERIC(18, 0)`; scale
+  cannot be negative and the value cannot be NaN or infinite. Values come from
+  Avro `decimal` fields (precision above 76 and Avro `big-decimal` are not
+  supported), from Iceberg `decimal(p, s)` columns, or from casts.
+- `numeric` works in comparisons, `GROUP BY`, `ORDER BY`, window partitions,
+  `JOIN` conditions, and `COALESCE` (same scale). It does **not** yet support
+  `+ - * /`, `sum`/`avg`/`min`/`max`, or `to_char`. Cast to `double precision` to
+  calculate; the result is not exact:
 
-```sql
-CREATE TABLE example (
-    normal_id INT,      -- 32-bit  (i32)
-    big_id    LONG,     -- 64-bit  (i64)
-    huge_id   INT16,    -- 128-bit (pg_typeof: int16)
-    vast_id   INT32     -- 256-bit (pg_typeof: int32)
-);
+  ```sql
+  SELECT order_id, amount
+  FROM default_redpanda_catalog=>orders
+  WHERE amount > '100.00'::NUMERIC(10, 2)
+  ORDER BY amount DESC;
 
--- The wide types report their user-facing names via pg_typeof:
-SELECT pg_typeof(CAST(1 AS int16));   -- int16
-SELECT pg_typeof(CAST(1 AS int32));   -- int32
-```
+  SELECT avg(amount::DOUBLE PRECISION) FROM default_redpanda_catalog=>orders;
+  ```
 
-### Floating-point types
+- A number literal with a decimal point (`12.50`) is read as floating point, about
+  15 significant digits. Cast a **string** literal (`'12.50'::NUMERIC(5, 2)`) to
+  keep every digit.
+- `int16`/`int32`: the number is the size in bytes. They cannot be stored in a
+  table in a Redpanda or Iceberg catalog; use them in casts. The sum of `int16`
+  values is `int32`:
 
-| Type | Width |
-|------|-------|
-| `FLOAT` | 32-bit IEEE 754 |
-| `DOUBLE` | 64-bit IEEE 754 |
+  ```sql
+  SELECT sum(views::INT16) AS total_views FROM default_redpanda_catalog=>page_events;
+  ```
 
-```sql
-CREATE TABLE metrics (
-    ratio  FLOAT,
-    value  DOUBLE
-);
-```
+### Text and bytea
 
-### Fixed-precision numeric
+- `text` is UTF-8; `length()` counts characters, not bytes.
+- `bytea` literals: `'\xDEADBEEF'::bytea` (hex) or `'\336\255'::bytea` (escape).
+  Supported operations are only `=` / `<>`, casting from a string literal,
+  `length()` and `octet_length()` (byte counts), and `encode(data, 'hex' |
+  'base64' | 'escape')` / `decode(text, format)`. Binary schema fields (Protobuf
+  `bytes`, Avro `bytes`/`fixed`, Iceberg binary/fixed) and record metadata such as
+  `redpanda.key` arrive as `bytea`.
 
-| Type | Syntax |
-|------|--------|
-| `NUMERIC` / `DECIMAL` | `NUMERIC(precision, scale)` |
-
-```sql
-CREATE TABLE pricing (
-    price NUMERIC(18, 4)
-);
-
--- Cast examples (from test cases)
-SELECT f0::decimal(8, 2)  FROM tb1;
-SELECT d0::decimal(15, 5) FROM tb1;
-SELECT t0::decimal(10, 0) FROM tb1;
-SELECT d0::int, d0::bigint FROM tb1;
-```
-
-### String types
-
-Oxla's bison grammar maps several keywords to the `STRING` internal type.
-Only the parameterized forms carry a length:
-
-| Type | Internal representation | Notes |
-|------|------------------------|-------|
-| `STRING` | `DataType::STRING` | Oxla-native keyword, unbounded |
-| `TEXT` | `DataType::STRING` | Alias for STRING |
-| `CHAR` (no length) | `DataType::STRING` | Bare CHAR collapses to STRING |
-| `VARCHAR` (no length) | `DataType::STRING` | Bare VARCHAR collapses to STRING |
-| `CHAR(n)` | `DataType::CHAR` | Fixed-length, carries `n` |
-| `VARCHAR(n)` | `DataType::VARCHAR` | Variable-length up to `n`, carries `n` |
-
-If you use `pg_typeof()` on a column declared as `TEXT`, `STRING`, or bare
-`VARCHAR`/`CHAR`, it will report the underlying STRING type.
+### Date, time, timestamp, interval
 
 ```sql
-CREATE TABLE users (
-    code  CHAR(3),         -- DataType::CHAR, length 3
-    name  VARCHAR(255),    -- DataType::VARCHAR, length 255
-    notes TEXT,            -- DataType::STRING
-    tag   STRING           -- DataType::STRING (Oxla-native)
-);
+SELECT DATE '2024-03-15', TIME '10:14:25', TIMESTAMP '2024-03-15 10:14:25.123456';
+SELECT INTERVAL '5 years 4 months 2 weeks 3 days 5 hours 10 minutes 25 seconds';
+SELECT INTERVAL '10 yr 8 months 6 d 5 hrs 10 min 20 s';
+SELECT INTERVAL '1-2 3 DAYS 04:05:06.070809';
+SELECT INTERVAL '2-4 5 DAYS 04:05:06.070809' YEAR TO MONTH;
 ```
 
-### Date and time types
+- Interval units: millennium, century, decade, year (`y`, `yr`, `yrs`), month,
+  week, day (`d`), hour (`h`, `hr`, `hrs`), minute (`min`, `mins`, `m`), second
+  (`s`, `sec`, `secs`), millisecond (`ms`), microsecond. Field qualifiers: `YEAR`,
+  `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND`, and the `X TO Y` ranges.
+- Interval arithmetic assumes 1 month = 30 days and 1 day = 24 hours, so adding
+  `30 days` is not always the same as adding `1 month`.
+- Arithmetic: `date ± integer`, `date ± interval`, `date - date`, `date + time`,
+  `time ± interval`, `time - time`, `timestamp ± interval`,
+  `timestamp - timestamp` (an interval), `interval ± interval`,
+  `interval * integer`, `interval * double precision`, `interval / number`.
+- Time zones: `timestamp with time zone` values are rendered in UTC; the
+  session display time zone is fixed to UTC. `ts AT TIME ZONE 'zone'` on a `timestamp`
+  interprets it in that zone and returns a `timestamp with time zone`:
 
-| Type | Notes |
-|------|-------|
-| `DATE` | Calendar date (year-month-day) |
-| `TIME` | Time of day without timezone |
-| `TIMETZ` | Time of day with timezone |
-| `TIMESTAMP` | Date + time without timezone |
-| `TIMESTAMPTZ` | Date + time with timezone |
-| `INTERVAL` | Duration / elapsed time |
+  ```sql
+  SELECT visit_ts, visit_ts AT TIME ZONE 'MST' AS visit_mst
+  FROM default_redpanda_catalog=>visits;
+  ```
+
+### JSON
 
 ```sql
-CREATE TABLE events (
-    event_date DATE,
-    start_time TIME,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMPTZ,
-    duration   INTERVAL
-);
-
--- Literals (from test cases)
-SELECT DATE '2001-02-16';
-SELECT TIMESTAMP '2022-1-3 14:17:34';
-SELECT INTERVAL '13 month';
-SELECT INTERVAL '73 day';
-SELECT '1 day 1 month'::INTERVAL;
-SELECT '533 minute'::INTERVAL;
+SELECT payload -> 'items'          AS items_json,   -- json
+       payload ->> 'customer'      AS customer,     -- text
+       json_extract_path_text(payload, 'customer') AS customer_too
+FROM default_redpanda_catalog=>orders_json;
 ```
 
-### Boolean
-
-```sql
-CREATE TABLE flags (
-    is_active BOOL
-);
-
-SELECT * FROM flags WHERE is_active;
-SELECT * FROM flags WHERE is_active IS TRUE;
-SELECT * FROM flags WHERE is_active IS NOT NULL;
-```
-
-### JSON types
-
-| Type | Notes |
-|------|-------|
-| `JSON` | JSON document stored as text |
-| `JSONB` | Binary JSON |
-
-JSON extraction operators (from test cases):
-
-```sql
--- Extract as JSON
-SELECT col->>'key'  FROM tb1;  -- operator_json_extract_as_text
--- Extract nested
-SELECT col->'key'   FROM tb1;  -- operator_json_extract_as_json
-```
-
-### Binary
-
-```sql
-CREATE TABLE blobs (
-    data BYTEA
-);
-```
+JSON equality is key-order-sensitive: `'{"a":1,"b":"c"}'::json =
+'{"b":"c","a":1}'::json` is false. Nested topic records mapped with
+`struct_mapping_policy = 'JSON'` arrive as `json` columns. JSON functions are in
+[functions-and-analytics.md](functions-and-analytics.md#json-functions).
 
 ### UUID
 
-`UUID` is a native, PostgreSQL-compatible type for RFC-4122 UUIDs. It is stored
-as a 128-bit value and reports its user-facing name via `pg_typeof` as `uuid`.
-It has a PostgreSQL OID and binary wire representation, so standard drivers
-(psycopg2, JDBC, pgx, …) map it to their native UUID type.
+UUID columns come from Avro fields with the `uuid` logical type (Protobuf and JSON
+have none) and from Iceberg history. Output is always the canonical
+36-character `8-4-4-4-12` form. There are no implicit casts, so cast explicitly:
 
 ```sql
-CREATE TABLE sessions (
-    id        UUID NOT NULL,
-    parent_id UUID,          -- nullable
-    trace_ids UUID[]         -- arrays of UUID are supported
-);
+SELECT id::text FROM default_redpanda_catalog=>events;
+SELECT * FROM default_redpanda_catalog=>events
+WHERE id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid;      -- or: id = uuid '...'
+SELECT gen_random_uuid(), uuidv4();
 ```
 
-Write a UUID with the typed-literal form `UUID '...'`, or as a bare string that
-is coerced to `UUID` on insert:
+Text input accepts any PostgreSQL form (upper or lower case, hyphens anywhere
+between groups of four or omitted, braces). `id::bytea` gives the 16-byte value,
+and a 16-byte `bytea` casts to `uuid`. Invalid text fails with `invalid input
+syntax for type uuid`.
+
+### Arrays
 
 ```sql
-INSERT INTO sessions VALUES
-    (UUID 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', NULL, ARRAY[UUID '...']),
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', NULL, NULL);   -- bare string coerced
-
-SELECT id FROM sessions;
-INSERT INTO archive SELECT * FROM sessions;                 -- INSERT ... SELECT
+SELECT ARRAY[1, 2, 3], '{a,b,c}'::text[];
+SELECT tags[1] AS first_tag, tags[1:2], tags[2:], tags[:]   -- 1-based; slices
+FROM default_redpanda_catalog=>events;
+SELECT * FROM default_redpanda_catalog=>events WHERE 'urgent' = ANY(tags);
 ```
 
-**Accepted input formats** (matching PostgreSQL): the canonical
-`8-4-4-4-12` hex form, uppercase, wrapped in braces (`{...}`), with no hyphens,
-or with hyphens on any 4-hex-digit boundary. Invalid input raises
-`invalid input syntax for type uuid: "..."` (SQLSTATE `22P02`). UUIDs are always
-**output** in canonical lowercase form.
+- Single-dimensional only. An index past the end returns `NULL`.
+- An array column cannot be the key of `ORDER BY`, `GROUP BY`, or `JOIN`
+  (`could not identify an ordering operator for type text[]`); ordering by another
+  column of the same table is fine.
+- Array columns cannot be exported with `COPY TO`. A variable-size value is
+  limited to 32 MB.
+- `||` appends elements to an array; `= ANY(array)` and `= ALL(array)` test
+  membership.
 
-**Casts.** `UUID` casts to and from the text types (`TEXT`, `VARCHAR`,
-`VARCHAR(n)`, `CHAR(n)`) and to and from `BYTEA` (the RFC-4122 big-endian
-16-byte serialization) in both directions; all of these casts are **explicit**
-(`CAST`/`::`). There is no cast between `UUID` and the integer or wide-integer
-(`INT16`/`INT32`) types.
+### Row (composite)
 
 ```sql
-SELECT CAST(UUID 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS TEXT);   -- uuid -> text
-SELECT CAST('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS UUID);        -- text -> uuid
-SELECT ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::VARCHAR(36))::uuid; -- via ::
-SELECT CAST(UUID 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AS BYTEA);  -- uuid -> bytea (16 bytes)
-SELECT CAST(data AS UUID) FROM blobs;                               -- bytea column -> uuid
+SELECT ROW(1, 'hello', 3.14), (1, 2, 3);           -- explicit and implicit tuples
+SELECT (ROW(1, 'hello')).f1;                       -- anonymous fields are f1, f2, ...
+SELECT (customer).region, (customer).id            -- named fields of a struct column
+FROM default_redpanda_catalog=>orders;
+SELECT (customer).* FROM default_redpanda_catalog=>orders;   -- expand all fields
 ```
 
-**`COPY` CSV.** A `UUID` column round-trips through `COPY ... TO` and
-`COPY ... FROM` in `FORMAT CSV`: `COPY FROM` accepts every textual form a UUID
-literal accepts (same parser as the cast from text), and `COPY TO` always writes
-the canonical lowercase hyphenated form, whatever form was ingested. A malformed
-value is an ordinary CSV parse error for that row — skip such rows with
-`ON_ERROR IGNORE` (see [data-loading.md](data-loading.md)).
+- Struct columns come from nested schema records under the default
+  `struct_mapping_policy = 'COMPOUND'`. Parentheses around the column are required
+  for field access.
+- Comparison (`=`, `<>`, `<`, `<=`, `>`, `>=`) is lexicographic; rows can be used
+  in `GROUP BY`, `ORDER BY`, and `JOIN` (`ON (a.x, a.y) = (b.x, b.y)`), and cast
+  to `text`.
+- `r IS NULL` is true when every field is null; `r IS NOT NULL` is true only when
+  every field is non-null, so a mixed row is neither. The checks do not recurse
+  into nested rows.
 
-In the current engine, comparison, ordering, and grouping operators are not yet
-defined on `UUID` (e.g. `WHERE id = ...`, `ORDER BY id`, `GROUP BY id`, and
-joins on UUID columns): a `uuid`-vs-`uuid` or `uuid`-vs-integer comparison
-raises `operator does not exist`. To filter or order by a UUID, cast it to text
-first (`WHERE id::text = 'a0eebc99-...'`).
-
-### OID
-
-`OID` is the PostgreSQL object-identifier type, provided for compatibility with
-tools and drivers (psql `\d`, pgx, ORMs, BI tools) that introspect the system
-catalogs and key off type OID **26**. It is a 32-bit-backed scalar that reports
-its user-facing name via `pg_typeof` as `oid`, is advertised by `pg_type`, and
-is sent and received on the wire in both text and binary (4-byte big-endian)
-formats, so binary-format bind parameters round-trip.
-
-`oid` is a **non-reserved** datatype keyword: `x::oid`, `CAST(x AS oid)`, and
-`col oid` in DDL all parse, while `oid` remains usable as an ordinary identifier
-or column name (it is itself a `pg_catalog` column name).
+### Map
 
 ```sql
-CREATE TABLE catalog_ref (
-    type_oid oid
-);
+SELECT attributes['color'] FROM default_redpanda_catalog=>products;   -- map column
+SELECT (map('a', 1, 'b', 2))['a'];        -- inline map: parenthesize before subscripting
+SELECT pg_typeof(map('a', 1));            -- map(text,integer)
 ```
 
-**Text input** follows PostgreSQL's `oidin`: it accepts the signed-`int4` or
-unsigned-`uint32` range and reinterprets a negative literal into the unsigned
-space, so `'-1'::oid` = `4294967295` and `'-2147483648'::oid` = `2147483648`;
-values outside `[INT32_MIN, UINT32_MAX]` are rejected. Output is always unsigned
-decimal text.
+- Map columns come from Avro or Protobuf map fields under the default `COMPOUND`
+  policy (`JSON` stores them as `json`), and from Iceberg history.
+- A missing key, a `NULL` lookup key, and a key whose value is `NULL` all return
+  `NULL`. Duplicate keys are kept in order and the **last** pair wins.
+- On the wire and in `psql`, a whole map shows as an array of `(key, value)` pairs:
+  `{"(a,1)","(b,2)"}`.
+- `map(...)` takes literal arguments only, in an even count; keys must be scalar
+  (no `row`, array, map, or decimal keys) and values cannot be decimal.
+- Not supported: slicing (`['a':'b']`), `GROUP BY` / `ORDER BY` / `DISTINCT` on a
+  map, casting a map to `text`, and subscripting a map whose key type is a `row`.
+- An Iceberg `list` of `list` or `list` of `map` fails at `CREATE TABLE` or
+  `REFRESH` (`Multi-dimensional arrays are not supported`, `Arrays of maps are not
+  supported`).
 
-**Equality, grouping, and joins.** `oid` is equality-comparable — `=`, `!=` /
-`<>`, and `IS DISTINCT FROM` are defined — so `GROUP BY`, `SELECT DISTINCT`,
-`UNION`, window `PARTITION BY`, and equi-joins all work on `oid` columns. An
-integer literal can meet an `oid` in a predicate via an implicit `int4 → oid`,
-so `WHERE type_oid = 26` works without an explicit cast.
+### Geometry and geography
 
-**No ordering.** `oid` has no order: `ORDER BY`, window `ORDER BY`, `<`, `<=`,
-`>`, `>=`, `min`, `max`, and `greatest`/`least` on an `oid` raise
-`operator does not exist` rather than comparing incorrectly. (PostgreSQL orders
-`oid`; this is a deliberate Oxla divergence.) To order by an `oid`, cast it to
-`int4` first.
-
-**Casts.** `int4 → oid` is **implicit**; `oid → int4`, `oid → text`, and
-`text → oid` are **explicit** (`CAST`/`::`). There is no cast between `oid` and
-the `bigint`, `boolean`, `numeric`, wide-integer (`INT16`/`INT32`), `bytea`, or
-`uuid` types.
+Both store `POINT` values only (no polygons or lines).
 
 ```sql
-SELECT CAST(26 AS oid);           -- int4 -> oid (also implicit in predicates)
-SELECT CAST(type_oid AS int) FROM catalog_ref;   -- oid -> int4 (explicit)
-SELECT '2147483648'::oid;         -- text -> oid (unsigned range)
+SELECT ST_ASTEXT(GEOMETRY 'POINT(1.5 2.5)'),
+       ST_DISTANCE(GEOMETRY 'POINT(0 0)', GEOMETRY 'POINT(3 4)');        -- Euclidean: 5
+
+SELECT ST_DISTANCE(GEOGRAPHY 'POINT(-73.9857 40.7484)',
+                   GEOGRAPHY 'POINT(-0.1278 51.5074)');                  -- meters (WGS84)
 ```
 
-### Array types
-
-Arrays are supported via the `ARRAY` data type. The element type is specified
-inline (e.g., `INT[]`, `FLOAT[]`). Grounded in `feature_flags.array_support: true`.
-
-```sql
-CREATE TABLE vectors (
-    ids    INT[],
-    scores FLOAT[]
-);
-
--- Array literal
-INSERT INTO vectors SELECT ARRAY[1, 2, 3], ARRAY[0.1, 0.2, 0.3];
-
--- Array indexing (1-based)
-SELECT (ARRAY[1, 2, 3])[2];
-
--- Array slice
-SELECT (ARRAY[1, 2, 3])[0:2];
-
--- Array functions
-SELECT ARRAY_APPEND(ids, 4)     FROM vectors;
-SELECT ARRAY_PREPEND(0, ids)    FROM vectors;
-SELECT ARRAY_UPPER(ids, 1)      FROM vectors;
-
--- pg_typeof
-SELECT PG_TYPEOF(ids) FROM vectors;
-```
-
-### Map values (`map(...)` and `m[key]`)
-
-`map(...)` is an Oxla extension (not PostgreSQL) that builds a map value inline,
-and `m[key]` looks a value up in it. There is **no `MAP` column type**: `MAP` is
-not one of the declarable column types, so there is no
-`CREATE TABLE t (m MAP(...))` form. The constructor also takes **literals only**.
-So the shape of the constructor is a *constant lookup table applied to a column* —
-the map is constant, the subscript key is any expression. Map-typed **columns** do
-exist, but only from an external schema (a Kafka source or an Iceberg table); see
-[Map columns from an external schema](#map-columns-from-an-external-schema) below.
-
-```sql
--- Constructor: alternating key, value, key, value, ...
-SELECT map('a', 1, 'b', 2);           -- {"(a,1)","(b,2)"}  (see wire form below)
-
--- Lookup by key; the result type is the map's value type
-SELECT (map('a', 1, 'b', 2))['a'];    -- 1
-SELECT (map('a', 1, 'b', 2))['c'];    -- NULL (miss)
-SELECT (map(1, 'x', 2, 'y'))[2];      -- 'y'
-
--- The useful form: constant code -> label map, keyed by a column
-SELECT (map(1, 'new', 2, 'shipped', 3, 'closed'))[status_code] FROM orders;
-
--- The map's own type is visible through pg_typeof
-SELECT pg_typeof(map('a', 1));        -- map(text,integer)
-```
-
-`map` is recognized by function name, not by a new reserved keyword, so an existing
-identifier called `map` is unaffected. Only the plain call form is a constructor:
-`map(DISTINCT ...)`, `map(...) OVER (...)`, and `map(...) WITHIN GROUP (...)` stay
-on the ordinary function path, where they are rejected.
-
-**Constructor rules:**
-
-- Every argument must be a **literal**. A column reference or a volatile call is
-  rejected: `SELECT map('a', random())` →
-  `map() constructor for non-literals is not supported`. Only the subscript key may
-  be a non-constant expression.
-- The argument list must have an **even** number of elements
-  (`map() requires an even number of arguments`).
-- Keys may not be `NULL` (`map keys cannot be NULL`). Values may be.
-- All keys are unified to one common key type, and all values to one common value
-  type; each element is then resolved against that unified type.
-- The key type must be a **primitive** type from the supported key set (below);
-  `map(ROW(1, 2), 'x')` → `map key type must be a primitive type`.
-- Neither keys nor values may carry decimal precision/scale — a
-  `NUMERIC(p,s)`/`DECIMAL(p,s)` key or value is rejected
-  (`map key type cannot have decimal precision/scale`, and the matching
-  `map value type ...` message).
-- Values are not restricted to primitives: a `ROW(...)` value works
-  (`map('a', ROW(1, 2))`).
-- A map may not be an array's element type: `SELECT ARRAY[map('a', 1)]` is
-  rejected with `Arrays of maps are not supported` (`FeatureNotSupported`), the
-  companion of `Multi-dimensional arrays are not supported`. The same rejection
-  applies when an external schema is resolved, naming the field (`field '<name>':
-  Arrays of maps are not supported`): a stored Avro/Protobuf type or an Iceberg
-  column shaped as a list of maps — or a list of lists — is rejected at schema
-  resolution / scan planning instead of resolving to a column.
-- `map()` with no arguments only works where the target map type is already known
-  from context; on its own it fails with `cannot determine type of empty map`.
-
-**Supported key types**: `INT`, `BIGINT`, `INT16`, `INT32`, `FLOAT`,
-`DOUBLE`, `BOOL`, `TEXT`, `BYTEA`, `TIMESTAMP`, `TIMESTAMPTZ`, `TIME`, `DATE`,
-`UUID`, `OID`. Notably **not** supported as keys: `NUMERIC`/`DECIMAL`, `INTERVAL`,
-`JSON`, the geospatial types, and any array/composite/map type. The same check is
-re-applied to a map whose type came from an external schema, so a lookup on a map
-with an unsupported key type is rejected when the query is planned.
-
-**Lookup semantics:**
-
-- Exactly one subscript. Maps do not support slicing — `(map('a', 1))['a':'b']` is
-  rejected with `map does not support slicing`, unlike array slices.
-- The lookup key is resolved to the map's key type, so a literal key is coerced
-  like any other comparison operand.
-- A missing key yields `NULL`, and a key stored with a `NULL` value yields `NULL`
-  too — **a stored NULL is indistinguishable from a miss**.
-- A `NULL` lookup key yields `NULL`.
-- Duplicate keys are stored verbatim in argument order, and a lookup resolves to
-  the **last** matching occurrence: `(map('a', 1, 'a', 2))['a']` → `2`.
-- Map entries and keys are non-nullable by construction; only the value type
-  participates in nullability.
-
-**How a whole map reaches the client:** a map has no PostgreSQL wire type of its
-own. It is physically an array of `{key, value}` pair composites, and that is what
-it reports over the wire, so projecting a whole map (rather than an `m[key]` lookup)
-arrives as an array of two-field records — `map('a', 1, 'b', 2)` renders as
-`{"(a,1)","(b,2)"}`, and `map('a', ROW(1, 2))` as `{"(a,\"(1,2)\")"}`.
-
-**What a map value does not support.** A map is neither an array nor a record, and
-it carries no equality, ordering, or cast operators of its own, so the map value
-itself cannot be grouped, sorted, deduplicated, concatenated, or cast — extract a
-value with `m[key]` first:
-
-| Expression | Error |
-|---|---|
-| `map('a', 1) \|\| 'x'::text` | `operator does not exist: map(text,integer) \|\| text` |
-| `SELECT map('a', 1) GROUP BY 1` | `could not identify an equality operator for type map(text,integer)` |
-| `SELECT map('a', 1) ORDER BY 1` | `could not identify an ordering operator for type map(text,integer)` |
-| `SELECT DISTINCT map('a', 1)` | `could not identify an equality operator for type map(text,integer)` |
-| `map('a', 1)::text` | `cannot cast type map(text,integer) to text` |
-
-There is also no map-to-map cast and no map-to-array cast. An array of
-`{key, value}` pairs can be coerced into a map type where a map is expected, since
-that is the map's physical shape.
-
-#### Map columns from an external schema
-
-A column can hold a map when its type comes from an external schema rather than
-from `CREATE TABLE`:
-
-- a Kafka source whose **Avro** schema has a `map` field or whose **Protobuf**
-  schema has a `map<K, V>` field, read under `struct_mapping_policy = 'COMPOUND'`
-  (under `'JSON'` the same field collapses to a single `JSON` column);
-- an **Iceberg** table with a `map` column.
-
-Such a column behaves like any other map value: subscript it with `m[key]`, and the
-lookup, miss-vs-stored-`NULL`, and last-duplicate-wins rules above all apply
-unchanged. A lookup result is a first-class value of the map's value type — descend
-into it (`(m['o']).a` for a record value, `m['nums'][2]` for an array value) or use
-it in an expression.
-
-The key-type check is re-applied to the external type, but it gates the **lookup**,
-not the column. An external schema can carry a key type outside the supported set —
-an Iceberg `map` with a struct key is the case in practice, since no Kafka schema
-format can express one. Such a column still `REFRESH`es, resolves to a `map(...)`
-type, and projects as a whole map; only `m[key]` is rejected, at planning time, with
-`map key type <key type> is not supported` — and it is rejected for **any** index
-expression, including one shaped like the key itself, because the complaint is about
-the key type rather than the index.
-
-```sql
--- Kafka source (COMPOUND policy) or Iceberg table with a map column
-SELECT id, attrs['region'], attrs['missing'] FROM my_kafka=>events;
-SELECT pg_typeof(attrs) FROM my_kafka=>events LIMIT 1;   -- e.g. map(text,bigint)
-```
-
-Because a whole map still has no wire type of its own, projecting the column itself
-(`SELECT attrs`) returns the array-of-pairs text form; project `m[key]` lookups to
-get typed values. Map columns cannot be created from SQL — there is no map column
-type in `CREATE TABLE`, and `CREATE TABLE` against an Iceberg catalog has no map
-type either. For how each format's map fields resolve, see
-`/redpanda:sql-federated-queries`.
-
-### Geospatial types
-
-| Type | Notes |
-|------|-------|
-| `GEOMETRY` | Generic geometry |
-| `GEOGRAPHY` | Geography with coordinate system |
-| `POINT` | Point geometry |
-
-```sql
-CREATE TABLE locations (
-    geom     GEOMETRY,
-    geo_area GEOGRAPHY,
-    pt       POINT
-);
-
--- Geospatial functions (from test cases)
-SELECT ST_ASEWKT(CAST(point0 AS GEOMETRY)) FROM locations;
-SELECT ST_DISTANCE(geography0, GEOGRAPHY 'POINT(60.1699 24.9384)') FROM locations;
-SELECT ST_DISTANCE(geography0, geography1) FROM locations;
-```
-
-**Geospatial values define neither equality nor ordering.** `GEOMETRY`,
-`GEOGRAPHY`, and `POINT` are excluded from both the `comparable` and the
-`equality_comparable_or_sortable` type sets, so a geospatial value cannot be
-grouped, deduplicated, ordered, or matched across the branches of a set
-operation:
-
-| Clause | Requires | Geospatial column |
+| | `geometry` | `geography` |
 |---|---|---|
-| `GROUP BY` | `equality_comparable_or_sortable` | rejected — `could not identify an equality operator for type <type>` |
-| `SELECT DISTINCT` | `comparable` | rejected — same equality message |
-| `INTERSECT` / `EXCEPT` / `UNION` (without `ALL`) | `equality_comparable_or_sortable` on the unified column type | rejected — same equality message |
-| `ORDER BY` | `sortable_or_composite` | rejected — `could not identify an ordering operator for type <type>` |
-| `UNION ALL` | nothing (no deduplication) | accepted |
+| Coordinates | planar (x y) | longitude latitude, SRID 4326 |
+| SRID | accepted, ignored | must be 4326 |
+| `st_distance` | Euclidean | meters; optional third argument `use_spheroid` (`false` = faster spherical) |
+| Input | WKT, EWKT, EWKB hex | WKT, EWKT, EWKB hex |
 
-The rejection reaches through composites: a `ROW(...)`/user composite type
-qualifies for `GROUP BY` and the set operations only if **every** leaf does, so a
-composite carrying a `POINT` (or a `JSON`) leaf is refused the same way. Project
-or compute a scalar first — for example group by a geohash or a rounded
-coordinate rather than by the geometry itself.
-
-### Composite / ROW types
-
-```sql
--- ROW literals (from test cases)
-SELECT ROW(1, 2.5, 'hello');
-SELECT ROW(1, ARRAY[10, 20]);
-SELECT ROW(i0, a0) FROM tb1;
-
--- Composite comparisons
-SELECT ROW(1, 'foo') = ROW(1, 'bar');
-SELECT ROW(1, 'foo') < ROW(2, 'bar');
-SELECT ROW(ROW(1, 2), 'foo') = ROW(ROW(3, 4), 'bar');
-```
-
----
-
-## Type Casting
-
-Use `::type` syntax or `CAST(expr AS type)`:
-
-```sql
-SELECT i0::bigint FROM tb1;
-SELECT f0::decimal(8,2) FROM tb1;
-SELECT d0::int FROM tb1;
-SELECT t0::decimal(10,0) FROM tb1;
-SELECT CAST(point0 AS GEOMETRY) FROM locations;
-SELECT CAST(s0 AS INT) FROM tb1;
-```
-
-### Casting to/from the wide-integer types (`INT16`/`INT32`)
-
-Casts between the builtin integer/float/text types and the wide-integer types
-`INT16` (128-bit) and `INT32` (256-bit) are supported in both directions,
-including `INT16 ↔ INT32`:
-
-```sql
-SELECT CAST(12345 AS int16);                 -- integer -> int16
-SELECT CAST(9223372036854775807 AS int32);   -- bigint  -> int32
-SELECT CAST(42.7 AS int16);                   -- float   -> int16 (rounds: 43)
-SELECT CAST(CAST(5 AS int16) AS int32);       -- int16   -> int32
-SELECT CAST(CAST(5 AS int16) AS bigint);      -- int16   -> bigint
-SELECT CAST('170141183460469231731687303715884105727' AS int16);  -- text -> int16
-```
-
-- Widening (e.g. `int -> int16`, `int16 -> int32`) is **implicit**; narrowing
-  and float↔wide casts are **explicit** (require `CAST`/`::`).
-- Narrowing that overflows the target raises an out-of-range error; non-finite
-  or over-range floats are rejected.
-- `bool ↔ INT16`/`INT32` is not allowed, matching the rest of the cast table.
-
-The six comparison operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work on the
-wide-integer types, returning `boolean`. They cover same-width (`INT16`↔`INT16`,
-`INT32`↔`INT32`), mixed-width (`INT16`↔`INT32`), and wide-vs-narrow (`INT16`/`INT32`
-compared with `INT`/`BIGINT`) — the narrower operand is implicitly widened.
-
-```sql
-SELECT INT16 '1' < INT16 '2';     -- boolean
-SELECT INT16 '1' = INT32 '2';     -- mixed width (INT16 vs INT32)
-SELECT huge_id >= 5 FROM my_table;-- wide vs narrow integer
-```
-
-Arithmetic, unary-sign, and bitwise operators are also defined on the
-wide-integer types — registered same-width (`INT16`⊕`INT16`, `INT32`⊕`INT32`),
-with a narrower integer operand implicitly widened:
-
-- Binary arithmetic: `+`, `-`, `*`, `/`, `%`.
-- Unary `+` / `-`. Negating a type's most-negative value overflows and raises an
-  out-of-range error (matching `INT`/`BIGINT`).
-- Bitwise / shift: `&`, `|`, `#` (XOR), `~`, `<<`, `>>` (the shift amount is an
-  ordinary `INTEGER`).
-
-```sql
-SELECT INT16 '10' + INT16 '5';    -- INT16
-SELECT 1 + INT16 '1';             -- INT16 (INT literal widened to INT16)
-SELECT -INT16 '5';                -- INT16
-SELECT INT16 '12' % INT16 '5';    -- INT16
-SELECT INT16 '6' << 2;            -- INT16
-```
-
-Integer literals that overflow `BIGINT` (64-bit) auto-promote to the narrowest
-wide type that holds them — `INT16` through the 128-bit range, then `INT32`
-through the 256-bit range; a literal beyond `INT32`'s range is rejected as out of
-range:
-
-```sql
-SELECT pg_typeof(9223372036854775808);                      -- int16
-SELECT pg_typeof(170141183460469231731687303715884105728);  -- int32
-```
-
-`ORDER BY` on a wide-integer column is supported, including the
-`ORDER BY ... LIMIT` (top-k) form.
-
-**Wide-integer bind parameters.** A wide-integer value can be sent as an
-extended-protocol bind parameter, in either the text or the binary parameter format:
-the value is its **decimal string** in both cases (the wide types are surfaced to
-clients as domains over text, so there is no packed 16-/32-byte binary form). With a
-standard driver, bind the parameter as a string and let the target column or cast
-coerce it:
-
-```java
-// pgJDBC
-PreparedStatement ps = conn.prepareStatement("SELECT CAST(? AS int16)");
-ps.setString(1, "170141183460469231731687303715884105727");
-```
-
-```php
-// PDO — turn emulated prepares off, or the driver interpolates client-side
-$conn->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
-$stmt = $conn->prepare('SELECT CAST(:wide AS int32)');
-$stmt->bindValue('wide', '57896044618658097711785492504343953926634992332820282019728792003956564819967', PDO::PARAM_STR);
-```
-
-Malformed wide-integer text is reported as
-`invalid input syntax for type int16: "..."` (or `int32`) with SQLSTATE `22P02`
-(`invalid_text_representation`), matching the `uuid`, point, and decimal parsers; a
-value that parses but exceeds the type's range is a separate out-of-range error
-(SQLSTATE `22003`).
-
----
-
-## What PostgreSQL features are NOT in Oxla
-
-- No `SERIAL` / `SEQUENCE` auto-increment columns (not found in test cases).
-- No PostgreSQL-style `EXPLAIN`. Oxla has an `EXPLAIN` statement, but it returns the explanation **as a relation** (`EXPLAIN`, `EXPLAIN PHYSICAL <query>`, `EXPLAIN TIMING <query>`, `EXPLAIN CONFIG`, plus the `explain()` table function) rather than plan text, and there is no `EXPLAIN ANALYZE` and no parenthesized option list such as `EXPLAIN (FORMAT JSON) …`. See [ddl-dml.md](ddl-dml.md#explain). The config flags `feature_flags.print_query_plan` and `feature_flags.pipeline_visualization` control server-side query-plan *logging*, which is separate from `EXPLAIN`.
-- No `CREATE OR REPLACE VIEW` and no `ALTER VIEW`. `CREATE VIEW` / `DROP VIEW` are supported, and a view body is privilege-checked as the view's **owner**, matching PostgreSQL's default (`security_invoker = false`); there is no `security_invoker` opt-out, and a definition over a relation the creator cannot read is refused up front — see [ddl-dml.md](ddl-dml.md#create--drop-view). Materialized views exist as their own statement family (`CREATE` / `REFRESH` / `DROP MATERIALIZED VIEW`, native tables only, refreshed only on demand, `pg_class.relkind = 'm'`, no `pg_matviews`) — see [ddl-dml.md](ddl-dml.md#create--refresh--drop-materialized-view).
-- No `FOREIGN KEY` constraints.
-- `ALTER TABLE ... ADD COLUMN` **is** supported on native tables (one column per statement, always nullable, no `DEFAULT` and no `NOT NULL`; pre-existing rows read as `NULL`). On a native table there is no `DROP COLUMN`, no `RENAME COLUMN` and no `ALTER COLUMN ... TYPE` — for those, create a new table with the shape you want and `INSERT INTO ... SELECT` into it (native `CREATE TABLE AS SELECT` is not supported) — see [ddl-dml.md](ddl-dml.md#alter-table). A table on an **Iceberg** catalog does take those forms (plus `SET`/`UNSET TBLPROPERTIES`, partition-field changes and `WRITE ORDERED BY`), one action per statement; see `/redpanda:sql-federated-queries`. The other `ALTER TABLE` forms re-bind an external Redpanda/Kafka catalog table via `ALTER TABLE IF EXISTS catalog=>table_name WITH (...)` and reassign ownership; see [kafka-iceberg.md](kafka-iceberg.md).
-- `SELECT INTO` supports both a table destination (`SELECT ... INTO new_table FROM ...`) and a file destination (`SELECT ... INTO 'path' (options) FROM ...`). See ddl-dml.md.
+Functions: `st_astext(g[, max_digits])`, `st_asewkt(g[, max_digits])`,
+`st_distance`. Casts: to/from `text`, `geometry` ↔ `geography`, and `geometry` ↔
+`point` (`geography` ↔ `point` is not supported).

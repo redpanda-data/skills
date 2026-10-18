@@ -1,378 +1,241 @@
 ---
 name: sql-federated-queries
 description: >-
-  Query external data from Oxla — Kafka topics via catalogs, Apache Iceberg
-  tables, and S3/GCS/Azure parquet/ORC files — alongside native Oxla tables. Use
-  when querying Kafka topics with CREATE KAFKA CATALOG or CREATE REDPANDA
-  CATALOG, reading Apache Iceberg tables with the catalog=>path.table syntax,
-  loading or exporting parquet/ORC files with COPY FROM/TO, joining external
-  data with native tables, or inspecting external metadata via
-  system.kafka_connections, system.kafka_sources, system.iceberg_catalogs, and
-  system.iceberg_tables. Also covers the Redpanda Enterprise features that
-  produce the data Oxla reads — Iceberg Topics, Tiered Storage, and Server-Side
-  Schema ID Validation.
+  Query Redpanda topics as SQL tables through Redpanda catalogs in Redpanda
+  SQL on Redpanda Cloud BYOC, including the Iceberg history of Iceberg-enabled
+  topics in the same query. Use when mapping a topic with CREATE TABLE
+  default_redpanda_catalog=>name, choosing schema subject, error handling,
+  struct mapping, or key and header decoding options, reading the redpanda
+  metadata column, querying nested fields, querying live and Iceberg records
+  together through a catalog linked with USING CATALOG, running REFRESH after a
+  schema change, or inspecting catalogs with SHOW, DESCRIBE, and the
+  catalog-metadata system tables. For SQL syntax, functions, data types, and
+  GRANT syntax, see `/redpanda:sql`. For enabling, scaling, users, roles, and
+  the access model, see `/redpanda:sql-admin-api`. For failing or slow
+  queries, see `/redpanda:sql-debugging`.
 ---
 
-# Redpanda SQL: Federated & External Queries
+# Redpanda SQL: Query Topics Through Catalogs
 
-Oxla can query external data — Kafka/Redpanda topics, Apache Iceberg tables, and
-object-store files — without ETL, joining them directly with native columnar tables
-using standard SQL. External sources are accessed through named catalog objects
-that Oxla stores in its own metastore. Schemas are decoded automatically from
-Avro, Protobuf, or JSON via the Schema Registry and can evolve transparently.
+Redpanda SQL is the managed analytical SQL engine on Redpanda Cloud BYOC
+(including BYOVPC) clusters. It reads Redpanda topics in place: each topic is
+mapped to a SQL table through a **Redpanda catalog**, and its columns come from
+the topic's schema in Schema Registry (Avro, Protobuf, or JSON). For
+Iceberg-enabled topics, a Redpanda catalog that is linked to an **Iceberg
+catalog** returns live records and the Iceberg-committed history in one result.
 
-Connect to Oxla via the PostgreSQL wire protocol. The port is configurable via
-`network.postgresql.port` (conventional default: 5432):
+**Redpanda SQL is read-only.** `INSERT`, `UPDATE`, `DELETE`, and `COPY FROM` are
+not available. Data enters through Redpanda topics; `CREATE TABLE` only maps a
+topic to a table through a catalog and never creates a standalone table with a
+user-defined schema.
 
-```bash
-psql -h <oxla-host> -p <port> -U <user>
+Connect with `psql` or any PostgreSQL client using the connection details on
+the **SQL** tab of the cluster's *How to connect* panel in the Cloud Console
+(see `/redpanda:sql` for connection and authentication).
+
+---
+
+## What Redpanda Cloud sets up for you
+
+When Redpanda SQL is enabled on a cluster:
+
+- A Redpanda catalog named **`default_redpanda_catalog`** (in schema `public`)
+  is created and points at the cluster. Map topics through it; you normally do
+  not need `CREATE REDPANDA CATALOG`.
+- If the cluster has an Iceberg REST catalog configured
+  (`iceberg_catalog_type = rest`), Redpanda Cloud also creates a storage
+  connection and an Iceberg catalog that match the cluster's REST catalog
+  configuration, and links `default_redpanda_catalog` to that Iceberg catalog
+  (`USING CATALOG`, with `pandaproxy_url` set).
+
+You don't run `CREATE STORAGE`, `CREATE ICEBERG CATALOG`, or `ALTER REDPANDA
+CATALOG ... USING CATALOG` yourself for this workflow. Leave these managed
+objects as Redpanda Cloud configured them. To see what was created, run:
+
+```sql
+DESCRIBE REDPANDA CATALOG default_redpanda_catalog;   -- tables and topic mappings
+SELECT name, iceberg_catalog FROM system.kafka_connections;   -- linked Iceberg catalog
+SHOW ICEBERG CATALOGS;
 ```
+
+Do not hardcode the managed Iceberg catalog or storage names; read them from
+`system.kafka_connections.iceberg_catalog`, `SHOW ICEBERG CATALOGS`, or
+`SHOW CATALOGS`.
 
 ---
 
 ## Quickstart
 
-### 1. Kafka Catalog — query a Redpanda/Kafka topic
-
 ```sql
--- Step 1: Create the catalog (connection to the broker + schema registry).
--- Required options: initial_brokers, schema_registry_url
-CREATE KAFKA CATALOG my_kafka
-WITH (
-  initial_brokers     = 'localhost:9092',
-  schema_registry_url = 'http://localhost:8081'
+-- 1. Map a topic (its value schema must be registered in Schema Registry).
+CREATE TABLE default_redpanda_catalog=>orders WITH (
+  topic          = 'orders',
+  schema_subject = 'orders-value'      -- optional; default is '<topic>-value'
 );
 
--- Step 2: Register the topic as a table inside the catalog.
--- Required option: topic
-CREATE TABLE my_kafka=>orders
-WITH (topic = 'orders-topic');
+-- 2. Query it like any table.
+SELECT * FROM default_redpanda_catalog=>orders LIMIT 10;
 
--- Step 3: Refresh the schema (pulls Avro/Protobuf/JSON schema from registry).
-REFRESH my_kafka=>orders;
+SELECT customer_id, SUM(amount) AS total
+FROM   default_redpanda_catalog=>orders
+WHERE  status = 'completed'
+GROUP  BY customer_id
+ORDER  BY total DESC
+LIMIT  10;
 
--- Step 4: Query it like any table.
-SELECT order_id, customer_id, amount
-FROM   my_kafka=>orders
-WHERE  amount > 100;
+-- 3. Record metadata lives in the auto-added `redpanda` struct column.
+SELECT (redpanda).partition, (redpanda)."offset", (redpanda).timestamp, order_id
+FROM   default_redpanda_catalog=>orders
+WHERE  (redpanda).timestamp >= now() - INTERVAL '1 hour';
 
--- Filter on Kafka metadata (partition, offset, timestamp).
-SELECT order_id, (redpanda).partition, (redpanda)."offset"
-FROM   my_kafka=>orders
-WHERE  (redpanda).timestamp > TIMESTAMP '2024-06-01 00:00:00';
+-- 4. Nested fields (default struct_mapping_policy = 'COMPOUND').
+SELECT order_id, (customer).name, (customer).region
+FROM   default_redpanda_catalog=>orders
+WHERE  (customer).region = 'EMEA';
 ```
 
-### 2. Iceberg Catalog — query Apache Iceberg tables
-
-```sql
--- Step 0: Create a storage connection (required before any ICEBERG CATALOG).
-CREATE STORAGE my_s3
-TYPE = S3
-WITH (region = 'us-east-1', access_key_id = '...', secret_access_key = '...');
-
--- Step 1: Create an Iceberg REST catalog (STORAGE clause is mandatory).
-CREATE ICEBERG CATALOG my_ice
-STORAGE public.my_s3
-WITH (
-  uri      = 'https://iceberg.example.com',
-  auth_type = 'oauth2',
-  oauth2_client_id     = 'my-client-id',
-  oauth2_client_secret = 'my-client-secret'
-);
-
--- Step 2: Query an Iceberg table using the catalog=>namespace.table syntax.
-SELECT customer_id, total
-FROM   my_ice=>sales.orders
-WHERE  order_date >= DATE '2024-01-01';
-
--- Step 3: Inspect what tables are known.
-SELECT * FROM system.iceberg_tables WHERE catalog_name = 'my_ice';
-```
-
-### 3. File-based — COPY FROM parquet on S3
-
-```sql
--- Load a parquet file from S3 into a native table.
-COPY my_table FROM 's3://my-bucket/data/file.parquet' (FORMAT parquet);
-
--- Export a native table to parquet on S3.
-COPY my_table TO 's3://my-bucket/exports/file.parquet' (FORMAT parquet);
-
--- Load ORC.
-COPY my_table FROM 's3://my-bucket/data/file.orc' (FORMAT ORC);
-```
+If the topic is Iceberg-enabled and `default_redpanda_catalog` is linked to an
+Iceberg catalog, the same `SELECT` returns live records plus Iceberg-committed
+history with no overlap. Redpanda SQL plans the union; you don't write
+`UNION ALL`. See [iceberg.md](references/iceberg.md).
 
 ---
 
-## Kafka Catalogs
+## Catalog model
 
-Kafka catalogs connect Oxla to a Kafka or Redpanda cluster. Both `CREATE KAFKA CATALOG`
-and `CREATE REDPANDA CATALOG` are accepted (synonyms).
+| Object | What it is | Statements |
+|--------|------------|------------|
+| Storage connection | Named object-storage credentials (`TYPE = S3 \| GCS`) that back an Iceberg catalog | `CREATE` / `ALTER` / `DROP STORAGE`, `DESCRIBE STORAGE` |
+| Redpanda catalog | Connection to a Redpanda cluster (brokers + Schema Registry, optional HTTP Proxy) | `CREATE` / `ALTER` / `DROP REDPANDA CATALOG`, `DESCRIBE REDPANDA CATALOG` |
+| Iceberg catalog | Connection to an Iceberg REST catalog; used only when linked to a Redpanda catalog | `CREATE` / `ALTER` / `DROP ICEBERG CATALOG`, `DESCRIBE ICEBERG CATALOG` |
+| Table | A topic mapped as `catalog_name=>table_name` | `CREATE` / `ALTER` / `DROP TABLE`, `DESCRIBE TABLE`, `REFRESH` |
 
-### Connection options (`CREATE KAFKA CATALOG ... WITH (...)`)
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `initial_brokers` | Yes | Bootstrap broker list (e.g. `'broker1:9092,broker2:9092'`) |
-| `schema_registry_url` | Yes | Schema Registry URL (`http://` or `https://`) |
-| `pandaproxy_url` | No | Panda Proxy URL for transparent Iceberg queries |
-| `sasl_mechanism` | No | `'SCRAM-SHA-256'` or `'SCRAM-SHA-512'` |
-| `sasl_user` | No | SASL username |
-| `sasl_password` | No | SASL password (stored encrypted) |
-| `truststore` | No | PEM CA bundle for TLS verification |
-| `key_store_key` | No | PEM private key for mTLS |
-| `key_store_cert` | No | PEM certificate for mTLS |
-| `connection_timeout` | No | Timeout in milliseconds (integer) |
-| `rd_kafka_debug` | No | librdkafka debug contexts (e.g. `'all'`) |
-
-### Table options (`CREATE TABLE catalog=>name WITH (...)`)
-
-| Option | Required | Default | Description |
-|--------|----------|---------|-------------|
-| `topic` | Yes | — | Kafka topic name |
-| `schema_subject` | No | `<topic>-value` | Schema Registry subject name |
-| `schema_lookup_policy` | No | `LATEST` | `LATEST` (pin to latest schema) or `SCHEMA_ID` (per-record schema ID) |
-| `error_handling_policy` | No | `FAIL` | `FAIL`, `FILL_NULL`, or `DROP_RECORD` on decode errors |
-| `struct_mapping_policy` | No | `COMPOUND` | `COMPOUND` (nested struct, and map fields as map columns) or `JSON` (collapse nested records and maps to SQL JSON) |
-| `output_schema_message_full_name` | No | — | Protobuf message full name (e.g. `com.example.Order`) |
-| `confluent_wire_protocol` | No | `true` | `true` or `false`; only for `LATEST` policy |
-| `key_decode_mode` | No | `binary` | Decode the record key: `binary`, `string`, `schema_latest`, or `schema_id_prefix` |
-| `key_schema_subject` | No | — | Schema Registry subject for the key schema (`schema_*` key modes) |
-| `key_confluent_wire_protocol` | No | `false` | `true`/`false`; only when `key_decode_mode = 'schema_latest'` |
-| `key_schema_message_full_name` | No | — | Protobuf key message full name (`schema_*` key modes) |
-| `header_value_type` | No | `binary` | Decode header values as `binary` (`BYTEA`) or `string` (`TEXT`) |
-
-`key_decode_mode` and `header_value_type` are fixed once set — `ALTER` rejects changing them (see `references/kafka-catalogs.md`).
-
-### Querying
-
-Use the `catalog=>table` syntax in any SELECT:
-
-```sql
--- Simple select
-SELECT * FROM my_kafka=>orders;
-
--- Join with a native table
-SELECT o.order_id, c.name, o.amount
-FROM   my_kafka=>orders o
-JOIN   customers c ON o.customer_id = c.id;
-
--- Access Kafka metadata via the `redpanda` struct column
-SELECT (redpanda).partition,
-       (redpanda)."offset",
-       (redpanda).timestamp,
-       order_id
-FROM   my_kafka=>orders;
-```
-
-### Altering and refreshing
-
-```sql
--- Change table options after creation
-ALTER TABLE my_kafka=>orders
-WITH (error_handling_policy = 'FILL_NULL');
-
--- Change catalog-level options
-ALTER KAFKA CATALOG my_kafka
-WITH (connection_timeout = 30000);
-
--- Relink a Kafka catalog to a different Iceberg catalog (for transparent queries)
-ALTER KAFKA CATALOG my_kafka USING CATALOG my_ice;
-
--- Detach the Iceberg link
-ALTER KAFKA CATALOG my_kafka USING CATALOG NULL;
-
--- Refresh schema from Schema Registry
-REFRESH my_kafka=>orders;
-```
+Catalogs live in a schema (`public` by default; qualify as `schema.catalog_name`
+to use another). Querying an Iceberg catalog's tables on their own (outside a
+linked Redpanda catalog) is not supported.
 
 ---
 
-## Iceberg Catalogs
-
-Oxla connects to Apache Iceberg REST catalogs (e.g., Polaris, AWS Glue, Tabular).
-
-### Connection options (`CREATE ICEBERG CATALOG ... WITH (...)`)
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `uri` | Yes | REST catalog endpoint URL |
-| `warehouse` | No | Warehouse path or identifier |
-| `base_location` | No | Root for newly created tables (`<base_location>/<namespace>.db/<table>`); wins over `warehouse` and over a namespace's own location |
-| `auth_type` | No | `'oauth2'`, `'basic'`, or `'aws_sigv4'` |
-| `oauth2_client_id` | OAuth2 | OAuth2 client ID |
-| `oauth2_client_secret` | OAuth2 | OAuth2 client secret (stored encrypted) |
-| `oauth2_scope` | No | OAuth2 scope (default: `PRINCIPAL_ROLE:ALL`) |
-| `oauth2_token_endpoint_url` | No | Token endpoint URL (auto-discovered from /config if omitted) |
-| `oauth2_token_refresh_margin_seconds` | No | Seconds before expiry to refresh token |
-| `username` | Basic | HTTP basic auth username |
-| `password` | Basic | HTTP basic auth password (stored encrypted) |
-| `aws_region` | SigV4 | AWS region (e.g., `'us-east-1'`) |
-| `aws_access_key_id` | SigV4 | AWS access key (omit to use instance IAM role) |
-| `aws_secret_access_key` | SigV4 | AWS secret key |
-| `aws_service_name` | No | SigV4 service name (default: `'glue'`) |
-| `ssl_verify` | No | TLS verification: `'true'` or `'false'` |
-| `ssl_ca_info` | No | Path to CA bundle |
-| `ssl_ca_path` | No | Path to directory of CA certs |
-| `ssl_crl_file` | No | Path to CRL file |
-
-### Querying
+## Map a topic: `CREATE TABLE ... WITH (...)`
 
 ```sql
--- Single-level namespace
-SELECT id, name FROM my_ice=>ns.table1;
-
--- Multi-level namespace
-SELECT age, name FROM my_ice=>my.path.table1;
-
--- Partition filter (pushes predicate to Iceberg scan plan)
-SELECT id FROM my_ice=>my.path.partitioned_table
-WHERE id = 1;
-
--- Range filter on a partition column
-SELECT id, name FROM my_ice=>my.path.range_table
-WHERE id < 3;
-
--- Date/timestamp partition filters
-SELECT id FROM my_ice=>my.path.partitioned_table
-WHERE val_date = DATE '2024-01-02';
-
-SELECT id FROM my_ice=>my.path.partitioned_table
-WHERE val_ts = TIMESTAMP '2024-01-03 12:00:00';
+CREATE TABLE [IF NOT EXISTS] catalog_name=>table_name
+WITH (option = 'value' [, ...]);
 ```
 
-### Creating and dropping Iceberg tables and namespaces (DDL)
+| Option | Default | Values / notes |
+|--------|---------|----------------|
+| `topic` | (required) | Redpanda topic to map |
+| `schema_subject` | `<topic>-value` | Schema Registry subject for the value schema |
+| `schema_lookup_policy` | `LATEST` | `LATEST` is the only supported value |
+| `error_handling_policy` | `FAIL` | `FAIL` (raise an error), `FILL_NULL` (failed fields become NULL; raw bytes kept in `redpanda_raw`), `DROP_RECORD` (skip the record) |
+| `struct_mapping_policy` | `COMPOUND` | `COMPOUND` (nested structures become typed fields, `(col).field`) or `JSON` (nested structures become JSON; required for recursive schemas) |
+| `output_schema_message_full_name` | first message in the schema | Fully qualified Protobuf message for the value |
+| `confluent_wire_protocol` | `'true'` | `'true'` / `'false'`: whether values carry the Schema Registry wire-format prefix. Only valid with `schema_lookup_policy = 'LATEST'` |
+| `key_decode_mode` | `binary` | `binary`, `string`, `schema_latest`, `schema_id_prefix`. Fixed for the table's lifetime |
+| `key_schema_subject` | `<topic>-key` | Subject for the key schema |
+| `key_schema_message_full_name` | first message in the schema | Fully qualified Protobuf message for the key |
+| `key_confluent_wire_protocol` | `'false'` | Only valid with `key_decode_mode = 'schema_latest'` |
+| `header_value_type` | `binary` | `binary` (`bytea`) or `string` (`text`). Fixed for the table's lifetime |
 
-Oxla can also issue DDL against the Iceberg REST catalog itself. A table path
-always needs a namespace (`catalog=>namespace.table`).
+Full option semantics, examples, and decoding behavior:
+[redpanda-catalogs.md](references/redpanda-catalogs.md).
+
+### Auto-added columns
+
+Every mapped table gets two reserved struct columns (a topic schema cannot use
+these names):
+
+- `redpanda`: `partition` (int), `offset` (bigint), `timestamp` (timestamptz,
+  nullable), `headers` (array of `{key text, value bytea}`), `key` (bytea by
+  default), `timestamp_type` (int: `0` CreateTime, `1` LogAppendTime).
+- `redpanda_raw`: `key` and `value` bytea, populated only when
+  `error_handling_policy = 'FILL_NULL'` and a record fails to decode.
+
+### Change or remove a mapping
 
 ```sql
--- Namespaces
-CREATE NAMESPACE my_ice=>sales;
-DROP NAMESPACE my_ice=>sales;              -- RESTRICT (default); must be empty
-
--- Tables (explicit column list; optional PARTITION BY and WITH properties)
-CREATE TABLE my_ice=>sales.orders (id INT, amount BIGINT NOT NULL, label TEXT);
-CREATE TABLE my_ice=>sales.events (id INT, d DATE)
-PARTITION BY (day(d), bucket(8, id));
-
-DROP TABLE my_ice=>sales.orders;           -- add PURGE to also delete data files
+ALTER TABLE default_redpanda_catalog=>orders WITH (error_handling_policy = 'FILL_NULL');
+DROP TABLE IF EXISTS default_redpanda_catalog=>orders;   -- the topic is not deleted
 ```
 
-`NOT NULL` columns become required Iceberg fields; `NUMERIC(p,s)` maps to
-`decimal(p,s)`; types with no Iceberg equivalent (`INTERVAL`, `JSON`/`JSONB`,
-`UUID`, `INT16`/`INT32`, geo types) are rejected. `CREATE TABLE ... AS SELECT`
-**is** supported on a catalog (the table is created when the plan runs), while
-`DROP NAMESPACE ... CASCADE` parses but is not supported. `ALTER TABLE
-cat=>ns.table <action>` evolves a table's schema — `ADD`/`DROP`/`RENAME COLUMN`,
-`ALTER COLUMN ... TYPE`, `SET`/`UNSET TBLPROPERTIES`, partition-field changes,
-`WRITE ORDERED BY` — one action per statement. Iceberg DDL is authorized against
-the catalog's owner. See [iceberg.md](references/iceberg.md) for the full
-grammar, partition transforms, and type mapping.
+`ALTER TABLE` cannot change `key_decode_mode` or `header_value_type`; drop and
+recreate the table instead.
+
+### After a schema change: `REFRESH`
+
+After any shape change to a topic's schema or its Iceberg table, run
+`REFRESH default_redpanda_catalog=>orders;` to update the schema view used for
+planning. Without it, a linked query fails with
+`Schema not found for Iceberg table '<table>'`. `REFRESH` updates only the
+schema view, not data.
 
 ---
 
-## File-Based External Data (COPY FROM/TO)
-
-Oxla supports `COPY FROM` and `COPY TO` with parquet and ORC on S3, GCS, and Azure.
+## Inspect catalogs and tables
 
 ```sql
--- Load parquet
-COPY my_table FROM 's3://bucket/path/file.parquet' (FORMAT parquet);
+SHOW CATALOGS;                         -- also: SHOW REDPANDA CATALOGS, SHOW ICEBERG CATALOGS
+SHOW REDPANDA TABLES default_redpanda_catalog;
+SHOW TABLES FROM default_redpanda_catalog;   -- unqualified SHOW TABLES is an error
+DESCRIBE TABLE default_redpanda_catalog=>orders;   -- columns, including decoded key type
+DESCRIBE REDPANDA CATALOG default_redpanda_catalog;
 
--- Load ORC
-COPY my_table FROM 's3://bucket/path/file.orc' (FORMAT ORC);
-
--- Export parquet
-COPY my_table TO 's3://bucket/path/out.parquet' (FORMAT parquet);
-
--- Export ORC
-COPY my_table TO 's3://bucket/path/out.orc' (FORMAT ORC);
-
--- Load from STDIN (CSV)
-COPY my_table FROM STDIN (FORMAT CSV);
-```
-
-Storage credentials can be configured either via `CREATE STORAGE` (persistent
-named connection; see the sql-admin-api skill) or inline per-statement using
-`AWS_CRED(...)`, `GCS_CRED(...)`, or `AZURE_CRED(...)` options on the `COPY`
-statement (see [files-and-system-tables.md](references/files-and-system-tables.md)).
-Path protocols: `s3://`, `gs://`, `az://` or `wasbs://` (Azure), `local://`.
-
----
-
-## System Tables for External Metadata
-
-These virtual tables live in the `system` schema and are accessible in every database.
-
-```sql
--- Kafka catalog connections
-SELECT * FROM system.kafka_connections;
--- Columns: database_name, namespace_name, name, options, iceberg_catalog (nullable)
-
--- Kafka topic sources
-SELECT * FROM system.kafka_sources;
--- Columns: database_name, namespace_name, name, connection_name, topic_name,
---          subject_name, lookup_policy, error_handling_policy, struct_mapping_policy,
---          output_schema_full_message_name
-
--- Iceberg catalogs
-SELECT * FROM system.iceberg_catalogs;
--- Columns: name, uri, warehouse, auth_type, namespace_name, database_name,
---          base_location
-
--- Iceberg tables (REFRESHed into local catalog)
-SELECT * FROM system.iceberg_tables;
--- Columns: database_name, namespace_name, catalog_name, name, oid
-
--- Examples
-SELECT name, topic_name, lookup_policy
+SELECT name, topic_name, subject_name, error_handling_policy
 FROM   system.kafka_sources
-WHERE  connection_name = 'my_kafka';
-
-SELECT name, uri, auth_type
-FROM   system.iceberg_catalogs;
+WHERE  connection_name = 'default_redpanda_catalog';
 ```
+
+`SHOW KAFKA CATALOGS` / `SHOW KAFKA TABLES` are synonyms for the `REDPANDA`
+forms. These statements and the catalog system tables only show objects in
+schemas where you have `USAGE`. Column reference for `system.catalogs`,
+`system.kafka_connections`, `system.kafka_sources`, `system.iceberg_catalogs`,
+and `system.iceberg_tables`:
+[files-and-system-tables.md](references/files-and-system-tables.md).
 
 ---
 
-## Redpanda Enterprise Source Config (producing the data Oxla reads)
+## Access
 
-The Iceberg tables, Tiered Storage segments, and validated schemas that Oxla
-queries are produced on the Redpanda side by **Enterprise Edition** features
-(valid license required). When Oxla reads an Iceberg table or runs a transparent
-Kafka-Iceberg query, the Redpanda cluster must first be configured to write it.
+A *SQL: Manage* user can read every topic and create catalogs and tables. A
+*SQL: Access* user can query a topic only after a *SQL: Manage* user grants it,
+for example
+`GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog => 'orders' TO "alice@example.com";`.
+Creating a catalog or storage connection as a non-superuser needs `CREATE` on
+the schema. `GRANT` / `REVOKE` syntax: `/redpanda:sql`. Roles, the access
+model, and authentication: `/redpanda:sql-admin-api`.
 
-| Oxla read path | Redpanda enterprise feature | Key config |
-|----------------|-----------------------------|------------|
-| `CREATE ICEBERG CATALOG`, `cat=>ns.table` | Iceberg Topics | `iceberg_enabled=true`; topic `redpanda.iceberg.mode` |
-| Transparent Kafka-Iceberg (`USING CATALOG`) | Iceberg Topics + catalog backing | `iceberg_catalog_type`, `iceberg_rest_catalog_endpoint` |
-| Long-retention / object-store reads | Tiered Storage | `cloud_storage_enabled=true` |
-| Avro/Protobuf/JSON decoding via registry | Server-Side Schema ID Validation | `enable_schema_id_validation=true`; topic `redpanda.value.schema.id.validation` |
+---
 
-```bash
-# Redpanda side (Enterprise): produce an Iceberg table Oxla can read.
-rpk cluster config set cloud_storage_enabled true        # Tiered Storage (prereq)
-rpk cluster config set iceberg_enabled true              # Iceberg Topics
-rpk cluster config set iceberg_catalog_type rest
-rpk cluster config set iceberg_rest_catalog_endpoint http://catalog:8181
-rpk topic alter-config clicks --set redpanda.iceberg.mode=value_schema_id_prefix
-```
+## Producing the data (Iceberg Topics)
 
-The `redpanda.iceberg.*` topic properties (`mode`, `delete`,
-`invalid.record.action`, `partition.spec`, `target.lag.ms`), the
-`iceberg_rest_catalog_*` cluster properties, and the schema-validation knobs are
-documented in
-[redpanda-iceberg-source-config.md](references/redpanda-iceberg-source-config.md).
-Point Oxla's `CREATE ICEBERG CATALOG` `uri` / `auth_type` at the same REST
-catalog Redpanda writes to (`iceberg_rest_catalog_endpoint` /
-`iceberg_rest_catalog_authentication_mode`).
+The Iceberg history that a linked catalog reads is written by Redpanda's
+Iceberg Topics on the cluster. Redpanda SQL's Iceberg queries require
+`iceberg_catalog_type = rest` (the `object_storage` catalog type is not
+supported for Redpanda SQL queries), `iceberg_enabled = true`, and a topic
+`redpanda.iceberg.mode` with a registered schema. The topic's Iceberg mode also
+decides which `key_decode_mode` / `header_value_type` the SQL table must use.
+See [redpanda-iceberg-source-config.md](references/redpanda-iceberg-source-config.md).
 
 ---
 
 ## Reference Directory
 
-- [kafka-catalogs.md](references/kafka-catalogs.md): Complete reference for `CREATE KAFKA CATALOG`, `CREATE TABLE catalog=>name`, `ALTER KAFKA CATALOG/TABLE`, `REFRESH`, all options, schema decoding (Avro/Protobuf/JSON) including map columns and their lookup semantics, the `redpanda` metadata struct with metadata-predicate read pruning, and transparent Kafka-Iceberg queries.
-- [iceberg.md](references/iceberg.md): Querying Apache Iceberg REST catalogs — `CREATE ICEBERG CATALOG`, the `catalog=>path.table` syntax, partition pruning and range/date/timestamp filters, all auth modes (OAuth2/Basic/SigV4), and multi-file partition scans. Also covers reading `map` columns, concurrent-commit conflicts (SQLSTATE `40001`), and **catalog DDL**: `CREATE/DROP TABLE` (with `PARTITION BY` transforms, `PURGE`, and the SQL→Iceberg type mapping) and `CREATE/DROP NAMESPACE`.
-- [files-and-system-tables.md](references/files-and-system-tables.md): `COPY FROM/TO` with parquet and ORC on S3/GCS/Azure, storage path protocols (`s3://`, `gs://`, `az://`/`wasbs://`, `local://`), `CREATE STORAGE` credential configuration, inline per-statement `AWS_CRED`/`GCS_CRED`/`AZURE_CRED` credentials, and the four external-metadata system tables with their column schemas and example queries.
-- [redpanda-iceberg-source-config.md](references/redpanda-iceberg-source-config.md): The Redpanda **Enterprise** features that produce the data Oxla reads — Iceberg Topics (`iceberg_enabled`, the `redpanda.iceberg.mode`/`delete`/`invalid.record.action`/`partition.spec`/`target.lag.ms` topic properties, the four Iceberg modes, DLQ tables), the REST and `object_storage` catalog backing (`iceberg_catalog_type`, all `iceberg_rest_catalog_*` properties) and how to align them with Oxla's `CREATE ICEBERG CATALOG`, Tiered Storage as a prerequisite (`cloud_storage_enabled`), and Server-Side Schema ID Validation (`enable_schema_id_validation`, `redpanda.key/value.schema.id.validation`, subject-name strategies). Notes license requirements and expiration behavior.
+- [redpanda-catalogs.md](references/redpanda-catalogs.md): `CREATE` / `ALTER` /
+  `DROP REDPANDA CATALOG` and their options, `CREATE` / `ALTER` / `DROP TABLE`
+  with every option, value decoding, key and header decoding, the `redpanda`
+  and `redpanda_raw` columns, nested fields with `COMPOUND` versus `JSON`,
+  recursive schemas, and type notes.
+- [iceberg.md](references/iceberg.md): Querying Iceberg-enabled topics through
+  a linked Redpanda catalog: what Redpanda Cloud configures, `REFRESH`, schema
+  differences between topic and Iceberg table, key and header mode matching,
+  Iceberg type limitations, and the `CREATE` / `ALTER` / `DROP ICEBERG
+  CATALOG` and `CREATE` / `ALTER` / `DROP STORAGE` syntax and options.
+- [files-and-system-tables.md](references/files-and-system-tables.md): The
+  catalog-metadata system tables (`system.catalogs`, `system.kafka_connections`,
+  `system.kafka_sources`, `system.iceberg_catalogs`, `system.iceberg_tables`),
+  `SHOW` / `DESCRIBE` forms, and exporting query results with `COPY TO`.
+- [redpanda-iceberg-source-config.md](references/redpanda-iceberg-source-config.md):
+  The Iceberg Topics cluster and topic properties a BYOC user sets so Redpanda
+  SQL can query Iceberg history, REST catalog connection and secrets, Iceberg
+  modes and key/value/header translation, and Server-Side Schema ID Validation.

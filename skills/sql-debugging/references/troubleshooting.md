@@ -1,522 +1,313 @@
-Source: oxla `src/scheduler/states/context.cpp` and `src/executor/executor.cpp` (query `state` values), `src/mem/limits.h` (`k_oom_monitor_margin_factor = 0.01`) and the OOM monitor (`OOMMonitor`), `config/Release/default_config.yml` (memory settings). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/troubleshoot/{degraded-state-handling,query-out-of-memory}.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/get-started/{sql-quickstart,deploy-sql-cluster}.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/query-data/query-streaming-topics.adoc`, `modules/reference/pages/sql/sql-statements/{create-table,set-show,show-tables,grant,revoke}.adoc`, `modules/reference/pages/sql/system-virtual-tables.adoc`; docs `modules/reference/partials/rpk-sql/rpk-sql-debug-bundle.adoc` (verified 2026-10-18). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
-# Oxla Troubleshooting Playbooks
+# Redpanda SQL Troubleshooting Playbooks
+
+All steps run from a SQL client connected to the cluster's SQL endpoint, or from the
+Cloud Console. Steps marked *(SQL: Manage)* read superuser-only system tables.
 
 ---
 
-## Playbook 1: Investigate a Slow or Stuck Query
+## Playbook 1: Cannot connect
 
-### Step 1 — Find the query in system.queries
+1. **Use the connection string from the Cloud Console.** It is on the *SQL* tab of
+   the cluster's *How to connect* panel. Use a recent `psql` and `rpk`; the
+   [quickstart](https://docs.redpanda.com/cloud-data-platform/sql/get-started/sql-quickstart/)
+   gives the minimum versions.
+
+   ```bash
+   rpk cloud login
+   PGPASSWORD=$(rpk cloud auth token) \
+     psql "host=<sql-host> port=<sql-port> dbname=oxla user=ignored options='auth_method=bearer' sslmode=require"
+   ```
+
+2. **Bearer token rejected.** A bearer token in the password field without
+   `options='auth_method=bearer'` is treated as a SCRAM password and the connection
+   fails. Add the option.
+3. **Worked earlier, fails now.** OIDC bearer tokens are short-lived. The token is
+   validated once at connection time; existing sessions continue after it expires,
+   but new connections need a fresh token. Run `rpk cloud auth token` again.
+4. **No SQL user.** Redpanda Cloud provisions the SQL user when the user's role has
+   the *SQL: Access* or *SQL: Manage* data-plane permission (*Organization IAM >
+   Roles*, *Data Plane* tab). No `CREATE USER` is needed for Cloud users.
+5. **Engine not ready.** On the cluster overview, the *Redpanda SQL* card shows the
+   engine status and a *Nodes* indicator. Until all nodes show as ready, the engine
+   is still provisioning.
+6. **Every connection returns a degradation error.** The leader node is degraded;
+   go to Playbook 4.
+
+Reference: [Authenticate to Redpanda SQL](https://docs.redpanda.com/cloud-data-platform/sql/connect-to-sql/authenticate/).
+
+---
+
+## Playbook 2: A query is slow or appears stuck
+
+### Step 1: Find the query and its phase *(SQL: Manage)*
 
 ```sql
--- Active queries, oldest first
-SELECT qid, requester, scheduler, state,
-       workers,
-       EXTRACT(EPOCH FROM (NOW() - created)) AS age_seconds,
+SELECT qid, requester, scheduler, state, workers,
        created, accepted, scheduled, executed
 FROM system.queries
 WHERE finished IS NULL
-ORDER BY created ASC;
+ORDER BY created;
 ```
 
-If a query has been running for unexpectedly long, note its `qid` and `state`.
+- `accepted` still `NULL` long after `created`: the query has not yet been accepted
+  for execution. Look at what else is running (Step 2), and reduce concurrency.
+- `executed` set and `finished` still `NULL`: the query is executing. Check its memory and
+  task spread (Step 2), then its shape (Step 3).
 
-**State interpretation** (actual `state` column values):
-
-| State | Meaning |
-|---|---|
-| `created` | Received by the requester node, not yet admitted |
-| `scheduling` | Being processed by the admission/scheduler |
-| `scheduled` | Picked up by the scheduler on a worker node |
-| `executing` | Execution started |
-| `cancelling` | Cancellation in progress |
-| `cleanup` | Post-execution cleanup |
-| `ready` | Ready to execute |
-| `finished` | Completed (and visible in system.queries for a short period) |
-
-Note: `accepted` and `executed` are **timestamp column names** in the schema, not `state` values.
-
-A query stuck in `created` or `scheduling` for a long time suggests admission control pressure (see Playbook 3).
-
-### Step 2 — Check per-node execution fragments
+### Step 2: Look at execution tasks *(SQL: Manage)*
 
 ```sql
--- Execution fragments for the specific query
-SELECT node, data_task_id, state, memory, privileged
+-- Tasks for one query
+SELECT node, data_task_id, state, memory
 FROM system.execs
-WHERE qid = '<qid-from-step-1>'
+WHERE qid = '<qid>'
 ORDER BY memory DESC;
 
--- Total memory used by that query
-SELECT SUM(memory) AS total_bytes
-FROM system.execs
-WHERE qid = '<qid-from-step-1>';
-```
-
-### Step 3 — Check Prometheus metrics for execution patterns
-
-```bash
-# Query error counters — are there oom or execution errors?
-curl -s http://<host>:8080/metrics | grep oxla_query_errors_total
-
-# Is the admission queue backed up?
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_admission_(active|enqueued|timeout)'
-
-# How many queries are ongoing right now?
-curl -s http://<host>:8080/metrics | grep oxla_net_postgres_queries_ongoing
-```
-
-### Step 4 — Query duration histograms
-
-```bash
-# p99 duration for select queries (requires Prometheus server)
-# histogram_quantile(0.99, rate(oxla_query_duration_seconds_bucket{stmt_type="select"}[5m]))
-
-# Without a Prometheus server, look at individual components
-curl -s http://<host>:8080/metrics | grep -E 'oxla_query_(parse|plan|execute)_duration_seconds'
-```
-
-### Step 5 — Look at storage read throughput
-
-```bash
-# Are single-file reads progressing?
-curl -s http://<host>:8080/metrics | grep oxla_sf_read_bytes
-
-# Is the file cache hit rate reasonable?
-curl -s http://<host>:8080/metrics | grep oxla_file_cache_use_total
-```
-
-### Step 6 — Increase log level for targeted investigation
-
-```bash
-# Runtime — no restart required
-grpcurl -plaintext \
-  -d '{"level": "LOG_LEVEL_DEBUG"}' \
-  <host>:9090 \
-  oxla.admin.v1.LoggingService/SetLogLevel
-
-# Watch the log file ($TMPDIR defaults to /tmp when unset)
-tail -f ${TMPDIR:-/tmp}/oxla/server.*.log | grep -i "<qid-substring>"
-
-# When done, reset to INFO
-grpcurl -plaintext \
-  -d '{"level": "LOG_LEVEL_INFO"}' \
-  <host>:9090 \
-  oxla.admin.v1.LoggingService/SetLogLevel
-```
-
-### Step 7 — Explain the query's planning and its plan
-
-`EXPLAIN` returns its explanation as a relation, so it can be inspected from any
-SQL client without touching server config or log levels.
-
-```sql
--- Where planning time went (works under either planner)
-EXPLAIN TIMING SELECT region, SUM(amount) FROM orders GROUP BY region;
-
--- The operations the engine will run. Requires the pipeline planner:
-SET oxla.query_planner.pipeline = on;
-EXPLAIN PHYSICAL SELECT region, SUM(amount) FROM orders GROUP BY region;
-
--- Which planner options are in force for this session
-EXPLAIN CONFIG;
-```
-
-- `EXPLAIN TIMING` returns `measurement`, `attribution`, `invocations`, and
-  `elapsed` (microseconds) per planning stage — use it when a query is slow
-  *before* execution starts, or when planning itself is suspected.
-- `EXPLAIN PHYSICAL` returns one row per operator output; join or filter it like
-  a table (`SELECT ... FROM explain('<query>', 'physical_plan') WHERE ...`) to
-  narrow a large plan. A query that fails to plan still explains itself, with the
-  failure attributed to the stage that produced it.
-- `EXPLAIN CONFIG` lists each `oxla.query_planner.*` option with its session
-  value, which is the quickest way to confirm whether an optimization was
-  switched off in this session.
-
-Full mode, column, and `explain()` argument reference: `/redpanda:sql`
-(`references/ddl-dml.md`).
-
-### Step 8 — For a slow Parquet or Iceberg scan, test the read strategy
-
-A native Parquet read normally uses **late materialization**: it decodes the
-columns a pushed-down predicate needs first, then decodes the remaining columns
-only for the rows that survived. That is a win when the predicate rejects most
-rows and a loss when it rejects almost none, since the scan then pays for two
-passes over the data. The session option turns the split off, forcing a one-pass
-read of every column:
-
-```sql
--- What is in force for this session (the live surface — do not assume a default)
-SHOW oxla.parquet_late_materialization;
-
--- Force single-pass reads for this session, then re-run the query
-SET oxla.parquet_late_materialization = off;
-
--- Restore
-SET oxla.parquet_late_materialization = on;
-```
-
-- The value is boolean (`on`/`off`, `1`/`0`); anything else is rejected with
-  `parameter "oxla.parquet_late_materialization" requires Boolean value`.
-- It is per-session and captured when the query is planned, so set it before
-  running the query you are measuring — it does not affect queries already planned.
-- It reaches every native Parquet read, which includes Iceberg table scans.
-- Switching it off never changes results, only the read strategy. If the query
-  gets faster with it off, the predicate was not selective enough to repay the
-  split; if nothing changes, the planner had already declined to split.
-
----
-
-## Playbook 2: Diagnose Memory / OOM Pressure
-
-### Background
-
-Oxla's out-of-memory monitor runs a background thread every 100 ms that reads the process RSS from `/proc/self/status` (it reads RSS from that file; it does not write it). When RSS exceeds the operational limit — `total - 1%`, where `total` is the computed memory limit derived from `memory.max` or auto-detection — it takes emergency action:
-
-1. Cancels all running tasks/queries.
-2. Evicts the entire storage cache.
-3. Logs an allocation-state report.
-
-Memory is configured in the cluster config file (exact path is deployment-dependent):
-
-```yaml
-memory:
-  max: 0            # 0 = auto-detect available RAM; set explicitly if needed (e.g. 16G)
-  max_non_query: 6442M  # memory reserved for non-query overhead; must be at least 6442M
-```
-
-### Step 1 — Check current RSS
-
-```bash
-curl -s http://<host>:8080/metrics | grep oxla_process_memory_total
-# Output example: oxla_process_memory_total{} 17179869184
-# That's 17 GB RSS
-```
-
-### Step 2 — Check admission control — are queries being queued due to load?
-
-```bash
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_admission_(active_queries|enqueued_queries|timeout_queries_failed_total)'
-```
-
-- If `oxla_admission_enqueued_queries > 0` and is growing, the system is under load.
-- If `oxla_admission_timeout_queries_failed_total` is increasing, queries are timing out waiting for admission — reduce the query load or increase `resource_management.max_concurrent_queries` (with caution).
-
-### Step 3 — Check for OOM-caused query errors
-
-```bash
-curl -s http://<host>:8080/metrics | grep 'oxla_query_errors_total.*oom'
-```
-
-An increasing `oom` count in `oxla_query_errors_total` confirms the OOM monitor is firing.
-
-### Step 4 — Look at admission wait times
-
-```bash
-curl -s http://<host>:8080/metrics | grep oxla_admission_wait_milliseconds
-```
-
-Long admission waits indicate the system is near capacity.
-
-### Step 5 — Tune memory config
-
-If OOM events are recurring, set an explicit memory limit that leaves headroom for the OS and other processes:
-
-```yaml
-memory:
-  max: 12G        # Example: 12 GB on a 16 GB machine
-  max_non_query: 6442M
-```
-
-Adjust `resource_management.max_concurrent_queries` to reduce peak concurrent memory usage:
-
-```yaml
-resource_management:
-  max_concurrent_queries: 50     # Reduce under memory pressure; the shipped
-                                 # default varies by version — read the running
-                                 # value before changing it
-  query_queue_timeout: 30 s      # How long a query waits before admission timeout
-```
-
-### Step 6 — Identify memory-hungry queries
-
-Use `system.execs` to find which query fragments are using the most memory:
-
-```sql
-SELECT qid, SUM(memory) AS total_memory_bytes
+-- Everything running, largest memory first
+SELECT qid, SUM(memory) AS memory_bytes, COUNT(*) AS tasks
 FROM system.execs
 GROUP BY qid
-ORDER BY total_memory_bytes DESC;
+ORDER BY memory_bytes DESC;
 ```
+
+A query with memory climbing toward the node's capacity is a candidate for an
+out-of-memory cancellation (Playbook 3). Many concurrent queries each holding
+memory slow everyone down.
+
+### Step 3: Reduce the work the query does
+
+- Narrow the scan with tighter `WHERE` filters.
+- Reduce the number of joins, or pre-filter each side before joining.
+- Break a large aggregation into smaller ones.
+
+### Step 4: Session settings
+
+Only the options on the published
+[SET and SHOW](https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/set-show/)
+page are supported. Two are relevant to debugging:
+
+```sql
+-- Trade floating-point precision for speed in math functions (session only)
+SET oxla.enable_fast_math = ON;
+SHOW oxla.enable_fast_math;
+
+-- Which message levels the server sends to this client
+SET client_min_messages TO 'NOTICE';
+SHOW client_min_messages;
+```
+
+`client_min_messages` accepts `DEBUG5`, `DEBUG4`, `DEBUG3`, `DEBUG2`, `DEBUG1`,
+`LOG`, `NOTICE`, `WARNING`, and `ERROR`.
+
+### Step 5: Scale or escalate
+
+If the workload legitimately needs more capacity, scale the SQL engine
+(`/redpanda:sql-admin-api`). If a single query stays stuck with no progress, note its
+`qid` and contact Redpanda Support (Playbook 7).
 
 ---
 
-## Playbook 3: Diagnose Node Health / Cluster State
+## Playbook 3: Query out of memory
 
-### Step 1 — Check node states
+### `ERROR: Query Out of Memory!`
+
+The engine canceled the query to free its memory so other queries can continue. This
+is expected protection, not a cluster failure.
+
+Why it happens: filters and projections stream with roughly constant memory, but
+hash tables for `JOIN` and `GROUP BY`, heaps for `ORDER BY` and top-K, and network
+buffers between nodes are held in memory. All of it, plus the final result set, must
+fit in the aggregate memory across SQL nodes. The engine does not spill to disk. All
+concurrently running queries share that memory, so a query can fail because of
+other load.
+
+Recovery, in order:
+
+1. **Retry.** The cancellation freed the memory, and other queries may have
+   finished.
+2. **Reduce concurrency.** Run fewer queries in parallel.
+3. **Simplify the query.** Tighter `WHERE` filters, fewer joins, smaller
+   aggregations. Joins, sorts, and distinct aggregations drive memory the most.
+4. **Scale the SQL engine** for more aggregate memory: `/redpanda:sql-admin-api`.
+
+To see which queries hold memory right now *(SQL: Manage)*:
 
 ```sql
--- Full node overview
-SELECT name, election_state, followers_count, connected_nodes_count, degradation_error
-FROM system.nodes;
+SELECT e.qid, SUM(e.memory) AS memory_bytes, MIN(q.created) AS created
+FROM system.execs e
+JOIN system.queries q ON q.qid = e.qid
+GROUP BY e.qid
+ORDER BY memory_bytes DESC;
 ```
 
-**What to look for:**
+### `cancelled due to OOM prevention`
 
-- `election_state` should be `Leader` for exactly one node and `Follower` for all others.
-- `connected_nodes_count` should be `(total_nodes - 1)` on each node.
-- `degradation_error IS NOT NULL` — a degraded node needs immediate attention.
-- No node shows `Leader` → cluster has lost quorum.
+A separate node-level safeguard canceled running queries on a node to keep the
+engine operational. It is rare and almost always indicates a memory-accounting
+problem or an unexpected workload pattern. Contact
+[Redpanda Support](https://support.redpanda.com/hc/en-us/requests/new) with the time
+of the error, the affected `qid` values, and the query text (Playbook 7).
 
-### Step 2 — Check the cluster leader metric
-
-```bash
-curl -s http://<host>:8080/metrics | grep oxla_cluster_has_leader_bool
-# Expected: oxla_cluster_has_leader_bool{} 1
-```
-
-If this is 0, the cluster has no leader and queries will fail or block.
-
-### Step 3 — Check node ready/degraded status via Prometheus
-
-```bash
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_node_is_(leader|ready|degraded)_bool'
-```
-
-Expected steady state per node:
-- `oxla_node_is_ready_bool{} 1`
-- `oxla_node_is_degraded_bool{} 0`
-- `oxla_node_is_leader_bool{} 1` on exactly one node.
-
-### Step 4 — Check connected peer count
-
-```bash
-curl -s http://<host>:8080/metrics | grep oxla_num_nodes_connected
-```
-
-If this drops below `(total_nodes - 1)` on any node, there is a network partition or a node is down.
-
-### Step 5 — Check logs on the degraded node
-
-```bash
-# Look at the log file on the suspect node ($TMPDIR defaults to /tmp when unset)
-tail -200 ${TMPDIR:-/tmp}/oxla/server.*.log | grep -E 'ERROR|FATAL|degraded'
-
-# Or temporarily enable debug logging to get more context
-grpcurl -plaintext \
-  -d '{"level": "LOG_LEVEL_DEBUG"}' \
-  <host>:9090 \
-  oxla.admin.v1.LoggingService/SetLogLevel
-```
-
-### Step 6 — Network partition check
-
-If multiple nodes show low `connected_nodes_count`:
-
-```bash
-# On each node: can it reach other cluster nodes on port 5771 (inter-node)?
-nc -zv <other-node-ip> 5771
-
-# Check the heartbeat timeout in config (default: 60 seconds)
-# If heartbeat.timeout elapses without a response, the node is considered disconnected
-```
+Reference: [Troubleshoot query out-of-memory errors](https://docs.redpanda.com/cloud-data-platform/sql/troubleshoot/query-out-of-memory/).
 
 ---
 
-## Playbook 4: Kafka Ingestion Stalled
+## Playbook 4: Degraded node or cluster
 
-If data is not flowing from Kafka into Oxla:
+A degraded node cannot run most queries and returns a degradation error. Terms:
 
-### Step 1 — Check Kafka metrics
+- **Liveness:** the node accepts client connections (returning an error still
+  counts).
+- **Readiness:** the cluster can run queries. This requires a non-degraded leader.
 
-```bash
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_kafka_(messages_consumed|messages_failed|bytes_consumed)'
-```
+| Effect | Details |
+|---|---|
+| Connections | If the leader is degraded, all connection attempts return the degradation error. |
+| Queries | A degraded node answers with the degradation error. If the leader is degraded, most queries are not processed. |
+| Planning | Permanently degraded nodes are excluded from query planning; temporarily degraded nodes are expected to recover. |
 
-If `oxla_kafka_messages_consumed_total` is not increasing, ingestion has stopped.
-If `oxla_kafka_messages_failed_total` is increasing, there are message processing errors.
+### Steps
 
-### Step 2 — Check catalog entries
+1. If you can connect, run `SHOW NODES` *(SQL: Manage)* and read
+   `degradation_error` per node. `SHOW NODES` needs a ready cluster and a
+   non-degraded scheduling node.
+2. Check the *Redpanda SQL* card on the cluster overview in the Cloud Console for
+   engine status and node readiness.
+3. **Temporary degradation** (for example, a node that has not finished
+   initializing) clears on its own. Re-check after a few minutes.
+4. **Permanent degradation** is an unrecoverable node error that requires a node
+   restart. Users cannot restart SQL nodes. Contact Redpanda Support with the
+   `degradation_error` text and the time it started.
+
+Reference: [Degraded state handling](https://docs.redpanda.com/cloud-data-platform/sql/troubleshoot/degraded-state-handling/).
+
+---
+
+## Playbook 5: Topic mapping and deserialization errors
+
+A topic is queryable after it is mapped with `CREATE TABLE <catalog>=><table> WITH
+(...)`. Redpanda SQL reads the column definitions from the topic's Schema Registry
+subject (Protobuf, JSON, or Avro). Full options: `/redpanda:sql-federated-queries`
+and [CREATE TABLE](https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/create-table/).
+
+### Step 1: Check what the table is mapped to
 
 ```sql
--- Are the Kafka connections registered?
-SELECT * FROM system.catalogs WHERE type = 'redpanda';
+SHOW REDPANDA TABLES;
+DESCRIBE TABLE default_redpanda_catalog=><table>;
 
--- Are the Kafka tables visible?
-SELECT * FROM system.tables WHERE namespace_name IN (
-  SELECT namespace_name FROM system.catalogs WHERE type = 'redpanda'
+-- Topic, subject, and policies for each mapping (filtered by your grants)
+SELECT name, topic_name, subject_name, lookup_policy,
+       error_handling_policy, struct_mapping_policy,
+       output_schema_full_message_name
+FROM system.kafka_sources
+WHERE connection_name = 'default_redpanda_catalog';
+```
+
+### Step 2: Match the symptom
+
+| Symptom | Cause and fix |
+|---|---|
+| Topic has no schema, or columns are wrong | The topic needs a schema registered in Schema Registry. `schema_subject` defaults to `<topic>-value`; set it if the producer uses a different subject. |
+| Message-type mismatch error on a Protobuf topic | The schema defines more than one message and the first one is not the record type. Set `output_schema_message_full_name` (and `key_schema_message_full_name` for keys). |
+| Records fail to decode although the schema is right | Possible wire-format mismatch. `confluent_wire_protocol` defaults to `'true'` (magic byte plus schema ID before the payload). For raw Protobuf or Avro values, map with `confluent_wire_protocol = 'false'`. |
+| Query errors on a bad record | `error_handling_policy` defaults to `FAIL`. Use `FILL_NULL` to keep the row (raw bytes land in `redpanda_raw`) or `DROP_RECORD` to skip it. |
+| Rows missing compared with the topic | The table uses `DROP_RECORD`, so undecodable records are skipped. Remap with `FILL_NULL` to see them. |
+| `CREATE TABLE` fails on a recursive schema | `COMPOUND` struct mapping (default) does not support cyclic types. Use `struct_mapping_policy = 'JSON'`. |
+| Schema rejected | `redpanda` and `redpanda_raw` are reserved column names; type names starting with `__redpanda_` and a top-level JSON property `__json_root` are rejected. |
+| Need to change key or header decoding | `key_decode_mode` and `header_value_type` are fixed for the table's lifetime. Drop and recreate the table. |
+
+### Step 3: Inspect failed records with `FILL_NULL`
+
+```sql
+CREATE TABLE IF NOT EXISTS default_redpanda_catalog=>orders_debug WITH (
+  topic = 'orders',
+  schema_subject = 'orders-value',
+  error_handling_policy = 'FILL_NULL'
 );
+
+-- Rows that failed to decode keep their raw payload
+SELECT redpanda, redpanda_raw
+FROM default_redpanda_catalog=>orders_debug
+WHERE redpanda_raw IS NOT NULL
+LIMIT 20;
 ```
 
-### Step 3 — Enable debug logging for Kafka-related messages
-
-```bash
-grpcurl -plaintext \
-  -d '{"level": "LOG_LEVEL_DEBUG"}' \
-  <host>:9090 \
-  oxla.admin.v1.LoggingService/SetLogLevel
-
-tail -f ${TMPDIR:-/tmp}/oxla/server.*.log | grep -i kafka
-```
-
-Look for connection errors, authentication failures, or consumer group rebalance issues.
-
-### Step 4 — If a Kafka-source query reads more of the topic than expected
-
-A query filtering on `(redpanda).timestamp` normally has that bound translated into
-per-partition start offsets via a broker timequery. When the timequery fails, the
-scan degrades to reading without its timestamp bounds instead of failing the query:
-results stay exact, but the read volume grows. The fallback is logged as a warning
-carrying the query ID and the failure reason, so grep for it before hunting
-elsewhere:
-
-```bash
-tail -f ${TMPDIR:-/tmp}/oxla/server.*.log | grep -iE 'timestamp-to-offset|timestamp pruning'
-```
-
-Fixes: restore broker reachability, or filter by `(redpanda)."offset"` /
-`(redpanda).partition`, which prune without a broker call.
-
-### Step 5 — If the source is a Redpanda Iceberg Topic, check the upstream side
-
-If `system.catalogs` shows an `iceberg` (or `redpanda`) source and the table looks
-stale or rows are missing, the cause is often on the Redpanda cluster, not in Oxla.
-See [redpanda-iceberg-source.md](redpanda-iceberg-source.md) for the full
-symptom-to-cause checklist: `redpanda.iceberg.target.lag.ms` (commit cadence),
-the `<topic>~dlq` dead-letter table, `redpanda.iceberg.invalid.record.action`,
-`iceberg_enabled` / Enterprise license / Tiered Storage prerequisite, and REST
-catalog auth (`iceberg_rest_catalog_*`).
+The `redpanda` column carries `partition`, `offset`, `timestamp`, `headers`, `key`,
+and `timestamp_type` for every row, which locates the bad record in the topic.
 
 ---
 
-## Playbook 5: Query Admission Timeouts
+## Playbook 6: Access and grant problems
 
-Symptoms: queries return errors immediately without executing, or wait a long time before failing.
+Kafka ACLs do not gate query-time access: every query reaches topics under one
+internal credential. Access is enforced inside Redpanda SQL by `GRANT` and `REVOKE`.
 
-### Step 1 — Check admission metrics
+| Symptom | Fix (run as *SQL: Manage*) |
+|---|---|
+| A *SQL: Access* user cannot read any topic | By default they own nothing. `GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog => '<topic>' TO "<email>";` |
+| Catalog not visible in `SHOW CATALOGS` or `system.catalogs` | The user needs `USAGE` on the schema: `GRANT USAGE ON SCHEMA public TO "<email>";` |
+| A non-superuser cannot create a Redpanda catalog or storage | `GRANT CREATE ON SCHEMA public TO "<email>";` |
+| `GRANT ALL PRIVILEGES` on a catalog did not give more access | Only `SELECT` has effect on a Redpanda catalog. |
+| `REVOKE ... => 'pattern'` errors | The pattern matches no existing grant. The catalog-level form without a pattern is idempotent. |
+| Runtime tables (`system.nodes`, ...) are not visible | They are superuser-only. Use a *SQL: Manage* user. |
 
-```bash
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_admission_(active|enqueued|timeout|wait)'
-```
-
-- `oxla_admission_enqueued_queries` persistently > 0 → queue is backed up
-- `oxla_admission_timeout_queries_failed_total` increasing → queries are timing out
-
-### Step 2 — Check current active queries
-
-```sql
-SELECT COUNT(*) AS active_query_count
-FROM system.queries
-WHERE finished IS NULL;
-```
-
-Compare against the cluster's own `resource_management.max_concurrent_queries`.
-The shipped default has changed across Oxla versions, so read the running value
-(from the node's config file, or the admin API's config surface) rather than
-assuming one.
-
-### Step 3 — Check if specific queries are holding the system
+The user identifier is the email on the user's Redpanda Cloud account. Wildcards are
+allowed only at the end of a pattern (`'orders_*'`). To see current grants:
 
 ```sql
--- Long-running queries that should be investigated
-SELECT qid, requester, state,
-       EXTRACT(EPOCH FROM (NOW() - created)) AS age_seconds
+SELECT * FROM information_schema.role_external_relation_grants;
+SELECT * FROM information_schema.role_table_grants;   -- catalog-level grants appear with table_name = catalog name
+```
+
+Reference: [Manage access to Redpanda SQL](https://docs.redpanda.com/cloud-data-platform/sql/manage/manage-access/).
+
+---
+
+## Playbook 7: Escalate to Redpanda Support
+
+Users cannot reach SQL node logs, engine configuration, or engine metrics. Redpanda
+Support collects them with `rpk sql debug bundle`, run from inside the SQL pods. The
+bundle contains each node's configuration, logs, crash reports, resource usage,
+metrics samples, and the cluster topology, plus active and recent queries (SQL text
+masked by default). Collecting it does not change the cluster. Users do not run it.
+
+Include in the case:
+
+- Cluster ID and the time window (with time zone) of the problem.
+- The exact error text returned to the client.
+- `qid` values from `system.queries`, and the query text if you can share it.
+- `SHOW NODES` output, if you have *SQL: Manage*.
+- What you already tried (retry, reduced concurrency, scaling).
+
+Open a case at [Redpanda Support](https://support.redpanda.com/hc/en-us/requests/new).
+
+---
+
+## Quick checklist
+
+```sql
+-- 1. Node health (SQL: Manage)
+SHOW NODES;
+
+-- 2. Oldest running queries (SQL: Manage)
+SELECT qid, state, created
 FROM system.queries
 WHERE finished IS NULL
-ORDER BY age_seconds DESC
+ORDER BY created
 LIMIT 10;
+
+-- 3. Memory by query (SQL: Manage)
+SELECT qid, SUM(memory) AS memory_bytes
+FROM system.execs
+GROUP BY qid
+ORDER BY memory_bytes DESC;
+
+-- 4. Mappings and their error handling (any user, filtered by grants)
+SELECT name, topic_name, error_handling_policy FROM system.kafka_sources;
 ```
 
-### Step 4 — Adjust admission config
-
-```yaml
-# cluster config file (exact path is deployment-dependent)
-resource_management:
-  max_concurrent_queries: 50    # Reduce to reduce memory pressure
-  query_queue_timeout: 60 s     # Increase timeout if queries are worth waiting for
-```
-
-Reload the config by restarting the node (there is no live config reload for these parameters).
-
----
-
-## Playbook 6: Storage / S3 Issues
-
-### Step 1 — Check file I/O metrics
-
-```bash
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_(sf_read_bytes|file_cache_use|aws_bytes|s3_connections)'
-```
-
-- `oxla_sf_read_bytes` not increasing → reads are stalled
-- `oxla_file_cache_use_total{use_type="miss"}` high → poor cache hit rate (too small cache or first-access scan)
-- `oxla_s3_connections_started_total` / `oxla_s3_connections_finished_total` — track connection lifecycle
-
-### Step 2 — Check storage connections
-
-```sql
-SELECT name, type, parameters FROM system.storage_connections;
-```
-
-Verify that the expected storage backend is registered with the correct endpoint and parameters.
-
-### Step 3 — Check active file readers/writers
-
-```bash
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_(readers|writers)_(opened|closed)_total'
-
-# Calculate open readers: opened - closed
-```
-
----
-
-## Quick-Reference Diagnostic Checklist
-
-Run this sequence whenever Oxla is behaving unexpectedly:
-
-```bash
-# 1. Is the cluster healthy? (Prometheus)
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_(cluster_has_leader|node_is_ready|node_is_degraded|num_nodes_connected)'
-
-# 2. Any query errors? (Prometheus)
-curl -s http://<host>:8080/metrics | grep oxla_query_errors_total
-
-# 3. Memory pressure? (Prometheus)
-curl -s http://<host>:8080/metrics | grep oxla_process_memory_total
-
-# 4. Admission queue? (Prometheus)
-curl -s http://<host>:8080/metrics | grep oxla_admission_enqueued_queries
-```
-
-```sql
--- 5. Node health (psql)
-SELECT name, election_state, degradation_error FROM system.nodes;
-
--- 6. Stuck queries (psql)
-SELECT qid, requester, state,
-       EXTRACT(EPOCH FROM (NOW() - created)) AS age_seconds
-FROM system.queries
-WHERE finished IS NULL
-ORDER BY age_seconds DESC;
-```
-
-If the above does not yield a clear root cause, increase the log level to DEBUG on the suspect node:
-
-```bash
-grpcurl -plaintext \
-  -d '{"level": "LOG_LEVEL_DEBUG"}' \
-  <host>:9090 \
-  oxla.admin.v1.LoggingService/SetLogLevel
-```
-
-And monitor `${TMPDIR:-/tmp}/oxla/server.*.log` for error or warning messages.
-
-Cross-reference [sql-admin-api](../../sql-admin-api/SKILL.md) for configuration details and [sql](../../sql/SKILL.md) for writing queries against these tables.
+For writing queries see `/redpanda:sql`; for enabling and scaling the engine see
+`/redpanda:sql-admin-api`.

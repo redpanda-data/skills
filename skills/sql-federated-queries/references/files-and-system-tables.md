@@ -1,434 +1,182 @@
-Source: oxla `src/filesystem/path/protocol.h` (path-to-provider mapping), `src/filesystem/proto/credentials.proto`, `src/filesystem/providers/{s3,gcs,azure}/proto/credentials.proto` (credential fields), `src/sqlparser/sql/connection_option_names.h` (storage namespace option names), `src/sqlparser/bison_parser/bison_parser.y` (COPY `import_option` production), `src/metastore/system_kafka_connections.cpp`, `src/metastore/system_kafka_sources.cpp`, `src/metastore/system_iceberg_catalogs.cpp`, `src/metastore/system_iceberg_tables.cpp`, `src/metastore/metastore.cpp` (`createSystemTables`), `tests/UT/query_planner/cases/copy_from/` and `copy_to/`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/reference/pages/sql/system-virtual-tables.adoc` (catalog-metadata tables), `modules/reference/pages/sql/sql-statements/{show-catalogs,show-tables,describe,copy-to}.adoc`, `modules/sql/pages/manage/manage-access.adoc`; verified 2026-10-18. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
-# Oxla: File-Based External Data & System Tables
+# Catalog Metadata Tables and Exports
 
-Oxla supports reading and writing parquet and ORC files from object storage
-(S3, GCS, Azure Blob Storage) and local paths via `COPY FROM` / `COPY TO`.
-Four system virtual tables expose the metadata of all registered external
-connections.
+This file covers how to inspect catalogs and mapped tables (`SHOW`,
+`DESCRIBE`, and the catalog-metadata tables in the `system` schema) and how to
+export query results with `COPY TO`.
 
+Redpanda SQL is read-only: there is no `COPY FROM` and no loading of files into
+tables. Data reaches Redpanda SQL only through Redpanda topics mapped through
+catalogs.
 
----
-
-## COPY FROM / COPY TO
-
-`COPY FROM` loads data from an external file into a native Oxla table.
-`COPY TO` exports a native table to an external file.
-
-### Syntax
-
-```sql
--- Load from a file
-COPY <table_name> FROM '<path>' ( FORMAT <format> );
-
--- Load from STDIN
-COPY <table_name> FROM STDIN ( FORMAT <format> );
-
--- Export to a file
-COPY <table_name> TO '<path>' ( FORMAT <format> );
-
--- Export a query result to a file
-COPY ( SELECT ... ) TO '<path>' ( FORMAT <format> );
-
--- Export to STDOUT (e.g., for CSV streaming)
-COPY <table_name> TO STDOUT ( FORMAT CSV );
-```
-
-### Supported formats
-
-| Format | COPY FROM | COPY TO | Notes |
-|--------|-----------|---------|-------|
-| `PARQUET` | Yes | Yes | Case-insensitive. File extension typically `.parquet`. |
-| `ORC` | Yes | Yes | Case-insensitive. File extension typically `.orc`. |
-| `CSV` | Yes | Yes | Standard CSV. STDIN/STDOUT supported. |
-
-Examples:
-- `COPY tb TO 'my_file.parquet' (FORMAT parquet);`
-- `COPY tb TO 'my_file.orc' (FORMAT ORC);`
-- `COPY tb from 'my_file.orc' (FORMAT ORC);` and `COPY tb from 'my_file.parquet' (FORMAT PARQUET);`
-
-### Path formats and protocols
-
-The path string determines the storage provider:
-
-| Protocol prefix | Provider | Example |
-|-----------------|----------|---------|
-| `s3://` | Amazon S3 (or S3-compatible) | `'s3://my-bucket/data/file.parquet'` |
-| `gs://` | Google Cloud Storage | `'gs://my-bucket/data/file.parquet'` |
-| `az://` | Azure Blob Storage (short form) | `'az://my-container@my-account.blob.core.windows.net/file.parquet'` |
-| `wasbs://` | Azure Blob Storage (long form) | `'wasbs://my-container@my-account.blob.core.windows.net/file.parquet'` |
-| `abfss://` / `abfs://` | Azure Blob Storage (ADLS Gen2 spelling) | `'abfss://my-container@my-account.dfs.core.windows.net/file.parquet'` |
-| `local://` or no prefix | Local filesystem | `'local:///tmp/file.parquet'` or `'/tmp/file.parquet'` |
-
-All four Azure spellings — `az://`, `wasbs://`, `abfss://` and `abfs://` — are
-accepted and resolve to the same provider. The account may be named in the path
-itself; where a storage connection also carries `account_name`, the two must
-agree, or the statement is refused with `azure storage connection 'url' names
-account '<a>' but account_name is '<b>'`. In the `<container>@<account>.<host>`
-form the host must be `blob.core.windows.net` or `dfs.core.windows.net`; any
-other host is rejected (`unsupported Azure storage host`) rather than silently
-redirected to the public-cloud endpoint. A storage connection's optional
-`endpoint` option (Azure Stack, emulators) is a separate setting from the path
-host.
-
-### Examples
-
-```sql
--- Load parquet from S3
-COPY orders FROM 's3://my-bucket/data/orders.parquet' (FORMAT parquet);
-
--- Load ORC from GCS
-COPY events FROM 'gs://my-bucket/data/events.orc' (FORMAT ORC);
-
--- Load from Azure Blob Storage
-COPY metrics FROM 'wasbs://container@myaccount.blob.core.windows.net/metrics.parquet'
-(FORMAT parquet);
-
--- Export to S3
-COPY orders TO 's3://my-bucket/exports/orders.parquet' (FORMAT parquet);
-
--- Export query result to ORC
-COPY (SELECT order_id, amount FROM orders WHERE amount > 1000)
-TO 's3://my-bucket/exports/large_orders.orc' (FORMAT ORC);
-
--- Load multi-node ORC (3-node cluster; distributed read)
-COPY orders FROM 's3://my-bucket/data/orders.orc' (FORMAT ORC);
-
--- Load from STDIN
-COPY orders FROM STDIN (FORMAT CSV);
-
--- Stream CSV to STDOUT
-COPY orders TO STDOUT (FORMAT CSV);
-```
+The runtime tables `system.nodes`, `system.queries`, and `system.execs` are
+superuser-only diagnostics; see `/redpanda:sql-debugging`.
 
 ---
 
-## CREATE STORAGE (Configuring Object Store Credentials)
+## Visibility
 
-Before `COPY FROM/TO` can access a remote path, a storage connection must be
-created with the credentials for that provider.
+Catalog-metadata tables, `SHOW CATALOGS`, and `SHOW ... TABLES` filter rows by
+the caller's grants: you see only objects in schemas where you have `USAGE`
+(granted with `GRANT USAGE ON SCHEMA public TO "<user>";`, see
+`/redpanda:sql-admin-api`). All of these tables support `WHERE`, `ORDER BY`,
+and `LIMIT`.
 
-```sql
-CREATE STORAGE [IF NOT EXISTS] [<schema>.]<connection_name>
-TYPE = <type>
-[ WITH ( <option> = <value> [, ...] ) ];   -- WITH clause is optional
-```
-
-The `WITH (...)` clause is optional in the grammar. Whether a bare `TYPE =
-<type>` is accepted depends on the provider: `GCS` accepts it and falls back to
-Application Default Credentials (see GCS section); `S3` still requires `region`
-or `endpoint`; `ABS` still requires its account/credential options.
-
-### S3 storage options
-
-`TYPE = S3` is a dedicated clause in the `CREATE STORAGE` statement (before
-`WITH`), not a key inside `WITH(...)`. The following options go inside `WITH`:
-
-| Option | Description |
-|--------|-------------|
-| `region` | AWS region (e.g., `'us-east-1'`) |
-| `access_key_id` | AWS access key ID (stored encrypted) |
-| `secret_access_key` | AWS secret access key (stored encrypted) |
-| `endpoint` | Custom endpoint URL for S3-compatible services (e.g., MinIO) |
-| `path_style` | `'true'` to force path-style addressing (required for most S3-compatible services) |
-| `use_http` | `'true'` to use HTTP instead of HTTPS |
-| `session_token` | AWS STS session token for temporary credentials |
-
-```sql
--- S3 with static credentials
-CREATE STORAGE my_s3
-TYPE = S3
-WITH (
-  region            = 'us-east-1',
-  access_key_id     = 'AKIAIOSFODNN7EXAMPLE',
-  secret_access_key = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
-);
-
--- S3-compatible (MinIO) with path-style addressing
-CREATE STORAGE minio
-TYPE = S3
-WITH (
-  region     = 'us-east-1',
-  endpoint   = 'http://minio.example.com:9000',
-  path_style = 'true',
-  use_http   = 'true',
-  access_key_id     = 'minioadmin',
-  secret_access_key = 'minioadmin'
-);
-```
-
-### GCS storage options
-
-| SQL option name | Proto field | Description |
-|-----------------|-------------|-------------|
-| `service_account_key` | `credentials` (string) | Optional service-account JSON key. The SQL option key is `service_account_key`; it maps to the proto field named `credentials`. Omit it (or pass empty) to use Application Default Credentials (ADC) — Workload Identity on GKE, else the GCP credential chain. |
-| `endpoint` | `endpoint` (string) | Optional: override default GCS endpoint |
-
-```sql
--- Static service-account key
-CREATE STORAGE my_gcs
-TYPE = GCS
-WITH (
-  service_account_key = '{"type":"service_account","project_id":"my-project",...}'
-);
-
--- Keyless via ADC / Workload Identity (WITH clause omitted entirely)
-CREATE STORAGE my_gcs_adc TYPE = GCS;
-```
-
-### Azure storage options
-
-Option names:
-
-| Option | Description |
-|--------|-------------|
-| `tenant_id` | Azure AD tenant ID — optional, but see the all-or-none rule below |
-| `client_id` | Azure AD client/app ID — optional, same rule |
-| `client_secret` | Azure AD client secret (stored encrypted) — optional, same rule |
-| `account_name` | Storage account name (**required**; lowercased when stored) |
-| `endpoint` | Optional: custom blob endpoint (for Azure Stack or emulators) |
-
-`tenant_id`, `client_id` and `client_secret` must **either all be set or all be
-omitted** — a partially configured connection is refused with `azure storage
-connection options 'tenant_id', 'client_id' and 'client_secret' must either all
-be set or all be omitted`. Omitting all three gives a **keyless** connection that
-uses the node's ambient Azure identity — the default credential chain
-(environment, workload identity, managed identity, Azure CLI) — which is the
-Azure counterpart of the keyless GCS form above. `account_name` is required
-either way.
-
-The valid TYPE identifier for Azure is `ABS` (Azure Blob Storage). The grammar
-also accepts `S3` and `GCS`; `ABS` maps internally to the azure provider.
-`TYPE = AZURE` is **not** a valid identifier and will produce a parse error.
-
-```sql
-CREATE STORAGE my_azure
-TYPE = ABS
-WITH (
-  tenant_id     = '00000000-0000-0000-0000-000000000000',
-  client_id     = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-  client_secret = 'my-secret',
-  account_name  = 'mystorageaccount'
-);
-```
+| Table | Equivalent statement |
+|-------|----------------------|
+| `system.catalogs` | `SHOW CATALOGS` |
+| `system.iceberg_catalogs` | `SHOW ICEBERG CATALOGS` |
+| `system.iceberg_tables` | `SHOW ICEBERG TABLES` |
+| `system.kafka_connections` | `SHOW REDPANDA CATALOGS` (`SHOW KAFKA CATALOGS`) |
+| `system.kafka_sources` | `SHOW REDPANDA TABLES` (`SHOW KAFKA TABLES`) |
 
 ---
 
-## Inline COPY Credentials
+## `system.catalogs`
 
-As an alternative to `CREATE STORAGE`, credentials can be supplied inline on
-each `COPY` statement via dedicated credential options.
+All Redpanda and Iceberg catalogs visible to the caller.
 
-### AWS_CRED
-
-```sql
-COPY my_table FROM 's3://my-bucket/data/file.parquet' (
-  FORMAT parquet,
-  AWS_CRED(
-    AWS_REGION       'us-east-1',
-    AWS_KEY_ID       'AKIAIOSFODNN7EXAMPLE',
-    AWS_PRIVATE_KEY  'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
-    -- Optional:
-    -- AWS_SESSION_TOKEN 'my-session-token',
-    -- ENDPOINT          'https://custom.endpoint.example.com'
-  )
-);
-```
-
-Tokens accepted inside `AWS_CRED(...)`:
-
-| Token | Required | Description |
-|-------|----------|-------------|
-| `AWS_REGION` | Yes | AWS region string (e.g. `'us-east-1'`) |
-| `AWS_KEY_ID` | Yes | AWS access key ID |
-| `AWS_PRIVATE_KEY` | Yes | AWS secret access key |
-| `AWS_SESSION_TOKEN` | No | STS session token for temporary credentials |
-| `ENDPOINT` | No | Custom S3-compatible endpoint URL |
-
-### GCS_CRED
+| Column | Type | Description |
+|--------|------|-------------|
+| `name` | text | Catalog name |
+| `namespace_name` | text | Schema containing the catalog |
+| `type` | text | `REDPANDA` or `ICEBERG` |
 
 ```sql
-COPY my_table FROM 'gs://my-bucket/data/file.parquet' (
-  FORMAT parquet,
-  GCS_CRED('{"type":"service_account","project_id":"my-project",...}')
-);
+SELECT * FROM system.catalogs;
 ```
 
-`GCS_CRED` takes a single string argument: the Application Default Credentials
-(ADC) JSON content.
+## `system.kafka_connections`
 
-### AZURE_CRED
-
-```sql
-COPY my_table FROM 'wasbs://container@account.blob.core.windows.net/file.parquet' (
-  FORMAT parquet,
-  AZURE_CRED(
-    TENANT_ID     '00000000-0000-0000-0000-000000000000',
-    CLIENT_ID     'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-    CLIENT_SECRET 'my-client-secret'
-  )
-);
-```
-
-Tokens accepted inside `AZURE_CRED(...)`:
-
-| Token | Required | Description |
-|-------|----------|-------------|
-| `TENANT_ID` | Yes | Azure AD tenant ID |
-| `CLIENT_ID` | Yes | Azure AD application (client) ID |
-| `CLIENT_SECRET` | Yes | Azure AD client secret |
-
-Inline credentials are per-statement; they are not persisted. Storage credentials
-can alternatively be configured via `CREATE STORAGE` (see above), which avoids
-repeating credentials in every query.
-
----
-
-## System Tables for External Metadata
-
-These four virtual tables in the `system` schema provide metadata about all
-registered external connections. They are created at startup.
-
-### `system.kafka_connections`
-
-One row per registered Kafka/Redpanda catalog connection.
+Redpanda catalog connections, including any linked Iceberg catalog.
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
-| `database_name` | TEXT | No | Oxla database containing this connection |
-| `namespace_name` | TEXT | No | Oxla schema (namespace) containing this connection |
-| `name` | TEXT | No | Catalog name |
-| `options` | TEXT | No | Formatted connection options (bootstrap_brokers, schema_registry_hostname/port/use_ssl, pandaproxy settings, librdkafka_configs) |
-| `iceberg_catalog` | TEXT | Yes | Linked Iceberg catalog in `namespace.name` format; NULL if no link or caller lacks privileges to see it |
+| `database_name` | text | No | Database containing the connection |
+| `namespace_name` | text | No | Schema containing the connection |
+| `name` | text | No | Catalog name |
+| `options` | text | No | Connection options as comma-separated `key: value` pairs (brokers, timeouts, Schema Registry endpoint, client settings; HTTP Proxy options when configured) |
+| `iceberg_catalog` | text | Yes | Linked Iceberg catalog as `schema.name`; `NULL` if not linked, or if the caller lacks `CONNECT` on its database and `USAGE` on its schema |
 
 ```sql
--- List all Kafka connections
-SELECT name, namespace_name, iceberg_catalog
-FROM   system.kafka_connections;
-
--- Find connections linked to a specific Iceberg catalog
-SELECT name
-FROM   system.kafka_connections
-WHERE  iceberg_catalog = 'public.my_ice';
+SELECT name, iceberg_catalog FROM system.kafka_connections;
 ```
 
-### `system.kafka_sources`
+## `system.kafka_sources`
 
-One row per registered Kafka topic source (i.e., each `CREATE TABLE catalog=>name`).
+One row per `CREATE TABLE catalog=>name WITH (...)` mapping.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `database_name` | TEXT | Oxla database |
-| `namespace_name` | TEXT | Oxla schema |
-| `name` | TEXT | Source name (table name within the catalog) |
-| `connection_name` | TEXT | Name of the parent Kafka connection |
-| `topic_name` | TEXT | Kafka topic being consumed |
-| `subject_name` | TEXT | Schema Registry subject name (empty string if using the default `<topic>-value`) |
-| `lookup_policy` | TEXT | `RECORD_SCHEMA_ID` or `LATEST_SCHEMA` |
-| `error_handling_policy` | TEXT | `FAIL`, `FILL_NULL`, or `DROP_RECORD` |
-| `struct_mapping_policy` | TEXT | `COMPOUND`, `JSON`, `FLATTEN`, or `VARIANT` |
-| `output_schema_full_message_name` | TEXT | Protobuf full message name (empty if not set) |
+| `database_name` | text | Database containing the table |
+| `namespace_name` | text | Schema containing the table |
+| `name` | text | Table name |
+| `connection_name` | text | Redpanda catalog the table belongs to |
+| `topic_name` | text | Source topic |
+| `subject_name` | text | Schema Registry subject; empty if not configured |
+| `lookup_policy` | text | Schema lookup policy |
+| `error_handling_policy` | text | Deserialization error-handling policy |
+| `struct_mapping_policy` | text | Nested-struct mapping policy |
+| `output_schema_full_message_name` | text | Protobuf message name; empty if not configured |
 
 ```sql
--- List all topic sources
-SELECT * FROM system.kafka_sources;
-
--- Find sources for a specific connection
-SELECT name, topic_name, lookup_policy, error_handling_policy
+SELECT name, topic_name, subject_name
 FROM   system.kafka_sources
-WHERE  connection_name = 'my_kafka';
-
--- Find sources using per-record schema IDs
-SELECT connection_name, name, topic_name
-FROM   system.kafka_sources
-WHERE  lookup_policy = 'RECORD_SCHEMA_ID';
+WHERE  connection_name = 'default_redpanda_catalog';
 ```
 
-### `system.iceberg_catalogs`
-
-One row per registered Iceberg catalog connection.
+## `system.iceberg_catalogs`
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `name` | TEXT | Catalog name |
-| `uri` | TEXT | REST catalog URI |
-| `warehouse` | TEXT | Warehouse path (empty if not configured) |
-| `auth_type` | TEXT | `'oauth2'`, `'basic'`, `'aws_sigv4'`, or `''` (unauthenticated) |
-| `namespace_name` | TEXT | Oxla schema containing this catalog |
-| `database_name` | TEXT | Oxla database containing this catalog |
-
-The `auth_type` is derived from the proto's `auth_case()`:
-`kOauth2` → `"oauth2"`, `kBasic` → `"basic"`, `kAwsSigv4` → `"aws_sigv4"`.
+| `name` | text | Iceberg catalog name |
+| `uri` | text | REST catalog endpoint URI |
+| `warehouse` | text | Warehouse identifier or location |
+| `auth_type` | text | `oauth2`, `basic`, `aws_sigv4`, `gcp`, or empty (no authentication) |
+| `namespace_name` | text | Schema containing the catalog |
+| `database_name` | text | Database containing the catalog |
 
 ```sql
--- List all Iceberg catalogs
 SELECT name, uri, auth_type FROM system.iceberg_catalogs;
-
--- Find AWS SigV4-authenticated catalogs
-SELECT name, uri FROM system.iceberg_catalogs WHERE auth_type = 'aws_sigv4';
 ```
 
-### `system.iceberg_tables`
+## `system.iceberg_tables`
 
-One row per Iceberg table whose schema has been REFRESHed into Oxla's local
-catalog. Only root-level Iceberg types (3-segment internal names) are listed;
-nested types and Kafka sources are excluded.
+Iceberg tables whose schema has been loaded into the local catalog (by
+`REFRESH`, or automatically when the table is created). One row per root Iceberg table.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `database_name` | TEXT | Oxla database |
-| `namespace_name` | TEXT | Oxla schema |
-| `catalog_name` | TEXT | Iceberg catalog name |
-| `name` | TEXT | Qualified Iceberg table path (e.g., `ns1.ns2.tbl`) |
-| `oid` | INT | OID of the root UserType (joinable with `system.schema_types.oid` and `pg_type.oid`) |
+| `database_name` | text | Database containing the registration |
+| `namespace_name` | text | Schema containing the registration |
+| `catalog_name` | text | Iceberg catalog the table belongs to |
+| `name` | text | Qualified Iceberg table path, for example `ns1.ns2.tbl` |
+| `oid` | int | Object identifier of the table type; joinable with `pg_type.oid` |
 
-Note: stale entries persist — dropping a table from the REST catalog does not
-automatically remove it from `system.iceberg_tables`. The entry remains until
-explicitly dropped in Oxla.
+Entries can be stale: a table dropped from the REST catalog stays listed until
+its registration is dropped explicitly (the same holds for
+`system.kafka_sources`).
 
 ```sql
--- List all known Iceberg tables
-SELECT * FROM system.iceberg_tables;
-
--- Filter by catalog
-SELECT name FROM system.iceberg_tables WHERE catalog_name = 'my_ice';
-
--- Count tables per catalog
-SELECT catalog_name, COUNT(*) AS table_count
-FROM   system.iceberg_tables
-GROUP BY catalog_name;
-
--- Join with system.iceberg_catalogs for the catalog URI
-SELECT t.name, t.catalog_name, c.uri
-FROM   system.iceberg_tables t
-JOIN   system.iceberg_catalogs c ON t.catalog_name = c.name;
+SELECT catalog_name, name FROM system.iceberg_tables;
 ```
 
 ---
 
-## Combining External Data with Native Tables
+## SHOW and DESCRIBE
 
 ```sql
--- Load a parquet snapshot into a native table, then join with Kafka data
-COPY orders_snapshot FROM 's3://my-bucket/snapshot/orders.parquet' (FORMAT parquet);
+SHOW CATALOGS;
+SHOW REDPANDA CATALOGS;            -- synonym: SHOW KAFKA CATALOGS
+SHOW ICEBERG CATALOGS;
 
-SELECT ks.order_id, ks.amount, snap.status
-FROM   my_kafka=>orders ks
-JOIN   orders_snapshot snap ON ks.order_id = snap.order_id
-WHERE  snap.status = 'pending';
+SHOW TABLES FROM default_redpanda_catalog;    -- catalog name required
+SHOW REDPANDA TABLES [ [schema.]catalog_name ];   -- synonym: SHOW KAFKA TABLES
+SHOW ICEBERG TABLES  [ [schema.]catalog_name ];
+
+DESCRIBE TABLE default_redpanda_catalog=>orders;   -- columns and types
+DESCRIBE REDPANDA CATALOG default_redpanda_catalog;  -- table and topic mappings
+DESCRIBE ICEBERG CATALOG <iceberg_catalog>;   -- endpoint, warehouse, auth type, namespace scoping
+DESCRIBE STORAGE <storage>;                   -- type, schema, parameters
 ```
+
+The unqualified `SHOW TABLES` form is not supported and returns an error.
+`DESCRIBE` requires `USAGE` on the schema that holds the object.
 
 ---
 
-## Notes
+## Export results: COPY TO
 
-- Storage credentials for `s3://`, `gs://`, and `wasbs://` paths can be
-  supplied either via `CREATE STORAGE` (persistent, named connection) or inline
-  per-statement using `AWS_CRED(...)`, `GCS_CRED(...)`, or `AZURE_CRED(...)`
-  options on the `COPY` statement (see "Inline COPY Credentials" above).
-- `FORMAT` values are case-insensitive (`parquet`, `PARQUET`, `Parquet` are all
-  accepted).
-- Multi-node Oxla clusters distribute parquet/ORC file reads using a hash-based
-  assignment across nodes. Individual files are not split across nodes.
-- The `mem://` protocol exists for internal/testing use; it is not intended for
-  production data loading.
+`COPY TO` exports a query result as CSV to the client (`STDOUT`) or to cloud
+storage. It does not import.
+
+```sql
+COPY { table_name [ ( column_name [, ...] ) ] | ( query ) }
+TO { 'file_path' | STDOUT }
+[ WITH ( option [, ...] ) ];
+```
+
+Options: `FORMAT` (only `CSV`), `DELIMITER` (single character, default `,`),
+`HEADER` (`ON`/`TRUE`/`1` or `OFF`/`FALSE`/`0`, default `OFF`), `NULL`
+(replacement string, default empty), and cloud credentials `AWS_CRED(...)` or
+`GCS_CRED(...)`. An existing destination file is overwritten.
+
+```sql
+-- To the client
+COPY (SELECT * FROM default_redpanda_catalog=>orders WHERE status = 'open') TO STDOUT;
+
+-- To S3
+COPY (SELECT * FROM default_redpanda_catalog=>orders) TO 's3://<bucket-name>/<file-name>'
+WITH (AWS_CRED(AWS_REGION '<region>', AWS_KEY_ID '<aws-key-id>', AWS_PRIVATE_KEY '<access-key>',
+               ENDPOINT '<s3-endpoint>'),
+      FORMAT CSV, HEADER ON, NULL 'unknown');
+
+-- To GCS with a service-account key (on a GCP cluster GCS_CRED can be omitted to use ADC)
+COPY (SELECT * FROM default_redpanda_catalog=>orders) TO 'gs://<bucket-name>/<file-name>'
+WITH (GCS_CRED('<credentials-json-contents>'));
+```
+
+`AWS_CRED` tokens: `AWS_REGION`, `AWS_KEY_ID`, `AWS_PRIVATE_KEY`, `ENDPOINT`.
+`GCS_CRED` has no endpoint override; to reach GCS through its S3-compatible XML
+API, use `AWS_CRED` with HMAC keys and `ENDPOINT 'https://storage.googleapis.com'`.

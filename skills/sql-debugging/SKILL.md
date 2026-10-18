@@ -1,225 +1,162 @@
 ---
 name: sql-debugging
 description: >-
-  Diagnose and observe an Oxla distributed analytical database using system
-  catalog tables
-  (system_nodes/system_queries/system_transactions/system_storage/system_execs),
-  Prometheus metrics, runtime log-level changes, and troubleshooting workflows
-  for slow queries, node health, and memory/OOM pressure. Also covers debugging
-  Oxla's external data sources — the Redpanda/Kafka ingestion path and the
-  Apache Iceberg catalog Oxla reads — including correlating stale-data or
-  missing-row symptoms with the upstream Redpanda Iceberg Topics integration.
-  Use when troubleshooting Oxla query performance or node health, auditing
-  storage connections and active transactions, or diagnosing Kafka/Redpanda
-  ingestion stalls and stale or missing rows in Iceberg tables.
+  Diagnose Redpanda SQL problems on Redpanda Cloud from the SQL endpoint, using the
+  superuser system virtual tables and SHOW statements for nodes, running queries, and
+  execution tasks, plus the published recovery steps for degraded nodes, query
+  out-of-memory errors, topic-mapping and deserialization failures, and stale or
+  failing Iceberg-enabled topic queries. Use when a Redpanda SQL query is slow, stuck,
+  or canceled for memory, when SHOW NODES reports a degradation error, when a mapped
+  topic returns errors or missing rows, or when a query that spans live and Iceberg
+  history fails to plan. For writing queries, see `/redpanda:sql`. For enabling,
+  scaling, or disabling the SQL engine, see `/redpanda:sql-admin-api`. For catalogs,
+  table mappings, and catalog metadata tables, see `/redpanda:sql-federated-queries`.
 ---
 
-# Redpanda SQL: Debugging & Observability
+# Redpanda SQL: Debugging
 
-Oxla is a closed-source C++ distributed columnar analytical database that speaks the PostgreSQL wire protocol. Its observability surface is three-layered: **system catalog virtual tables** (query via psql), a **Prometheus metrics endpoint** (HTTP on port 8080), and **structured log output** with a runtime-configurable level. There is no REST admin API — administration uses YAML config, environment variable overrides, a ConnectRPC admin service, and SQL system tables.
+Redpanda SQL is a managed analytical engine on Redpanda Cloud BYOC clusters that
+speaks the PostgreSQL wire protocol. Everything a user can inspect is reachable
+through SQL on the cluster's SQL endpoint (psql, a driver, or SQL Studio in the
+Cloud Console) and through the Cloud Console. Node-level diagnostics (logs, engine
+configuration, metrics, crash reports) are collected by Redpanda Support, not by
+users.
 
-This skill covers the complete debugging workflow: from "what is running?" through "why is it slow?" to "is memory pressure causing OOM?".
+## Who can see what
+
+| Surface | Who |
+|---|---|
+| *Redpanda SQL* card on the cluster overview (status, active sessions, queries per minute, node count) | Anyone who can open the cluster in the Cloud Console |
+| `system.nodes` / `SHOW NODES`, `system.queries` / `SHOW QUERIES`, `system.execs` / `SHOW EXECS` | Superuser only: a user whose role has the *SQL: Manage* permission |
+| Catalog and table metadata (`system.catalogs`, `system.kafka_sources`, `SHOW REDPANDA TABLES`, ...) | Filtered by the caller's grants (`USAGE` on the schema, plus per-relation grants) |
+| Grants (`information_schema.role_external_relation_grants`, `information_schema.role_table_grants`) | Filtered by the caller's grants |
+
+A *SQL: Access* user who cannot see runtime tables is not hitting a bug. Ask a
+*SQL: Manage* user to run the diagnostics.
 
 ## Quickstart
 
 ```bash
-# 1. Connect to Oxla (PostgreSQL wire protocol, default port 5432)
-psql -h <host> -p 5432 -U oxla
-
-# 2. See all cluster nodes and their election state
-SELECT name, election_state, connected_nodes_count, degradation_error
-FROM system.nodes;
-
-# 3. See active (and recently completed) queries across the cluster
-SELECT qid, requester, state, created, accepted, scheduled, executed, finished
-FROM system.queries
-ORDER BY created DESC;
-
-# 4. Scrape Prometheus metrics (no auth required by default)
-curl -s http://<host>:8080/metrics | grep -E 'oxla_(query_errors|process_memory|num_nodes|admission)'
+# Connection details are on the SQL tab of the cluster's "How to connect" panel.
+rpk cloud login
+PGPASSWORD=$(rpk cloud auth token) \
+  psql "host=<sql-host> port=<sql-port> dbname=oxla user=ignored options='auth_method=bearer' sslmode=require"
 ```
-
-## System Catalog Tables
-
-Oxla exposes virtual tables in the `system` schema for diagnostics. They are populated at query runtime — there is no materialized cache. See [system-tables.md](references/system-tables.md) for full column reference and example queries.
-
-### Key tables at a glance
-
-| Table | What it shows |
-|---|---|
-| `system.nodes` | Per-node election state, follower count, connected-node count, degradation error |
-| `system.queries` | Query lifecycle (created → scheduling → scheduled → executing → finished), state, workers |
-| `system.transactions` | Active catalog transactions (transaction_id, snapshot_id, owner node, owner name) |
-| `system.storage_connections` | Storage connections (name, type, schema, database, parameters JSON) |
-| `system.execs` | Per-node execution fragments (qid, data_task_id, state, memory bytes, privileged flag) |
-| `system.catalogs` | External catalogs (Iceberg, Kafka/Redpanda) by name and type |
-| `system.databases` | All databases accessible to the current role |
-| `system.tables` | Tables by database, namespace, name |
-| `system.columns` | Columns with type and nullability |
-| `information_schema.tables` | Standard SQL information schema view of tables |
-| `information_schema.columns` | Standard SQL information schema view of columns |
-
-### Quick diagnostics
 
 ```sql
--- Is any node degraded?
-SELECT name, election_state, degradation_error
-FROM system.nodes
-WHERE degradation_error IS NOT NULL;
+-- Node health (SQL: Manage)
+SHOW NODES;
 
--- What queries are stuck (not yet finished)?
-SELECT qid, requester, state, created,
-       EXTRACT(EPOCH FROM (NOW() - created)) AS age_seconds
+-- Running queries, oldest first (SQL: Manage)
+SELECT qid, state, created, accepted, scheduled, executed
 FROM system.queries
 WHERE finished IS NULL
-ORDER BY created ASC;
+ORDER BY created;
 
--- Active catalog transactions (distributed catalog must be enabled)
-SELECT * FROM system.transactions;
+-- Memory per running query (SQL: Manage)
+SELECT qid, SUM(memory) AS memory_bytes
+FROM system.execs
+GROUP BY qid
+ORDER BY memory_bytes DESC;
 ```
 
-## Prometheus Metrics
-
-The metrics endpoint listens on port 8080 (configured in `metrics.port` in the cluster config file). No authentication is required by default. All metric names are prefixed `oxla_`.
-
-```bash
-# Full scrape
-curl -s http://<host>:8080/metrics
-
-# Filter to health indicators
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_(cluster_has_leader|node_is_ready|node_is_degraded|num_nodes_connected)'
-
-# Query error rate
-curl -s http://<host>:8080/metrics | grep oxla_query_errors_total
-
-# Memory usage
-curl -s http://<host>:8080/metrics | grep oxla_process_memory_total
-```
-
-See [metrics-and-logging.md](references/metrics-and-logging.md) for the full metric catalog with types, labels, and Prometheus query examples.
-
-## Log Levels
-
-Oxla uses the `plog` library. Log levels in ascending verbosity order:
-
-`FATAL` → `ERROR` → `WARNING` → `INFO` → `DEBUG` → `VERBOSE`
-
-Default is `INFO`. Logs are written to stdout (with colors in TTY mode) and to files under `$TMPDIR/oxla/` (defaults to `/tmp/oxla/` when `$TMPDIR` is unset) with the path pattern `server.<DATETIME>.log` (no PID; the `<PID>` appears only on the separate `startup.<DATETIME>.<PID>.log` tee file).
-
-### Set log level in config (requires restart)
-
-```yaml
-# cluster config file (exact path is deployment-dependent)
-logging:
-  level: "DEBUG"
-```
-
-Or via environment variable (no restart needed at launch; restart required to pick up env change):
-
-```bash
-OXLA__LOGGING__LEVEL=DEBUG ./oxla_server
-```
-
-### Set log level at runtime (no restart) via admin gRPC service
-
-The admin gRPC service listens on port 9090 by default (configured in `admin_api.port`). It speaks ConnectRPC (HTTP/1.1 or HTTP/2 with protobuf or JSON encoding).
-
-```bash
-# Using grpcurl — set level to DEBUG
-grpcurl -plaintext \
-  -d '{"level": "LOG_LEVEL_DEBUG"}' \
-  <host>:9090 \
-  oxla.admin.v1.LoggingService/SetLogLevel
-
-# Get current level
-grpcurl -plaintext \
-  -d '{}' \
-  <host>:9090 \
-  oxla.admin.v1.LoggingService/GetLogLevel
-```
-
-Valid `level` values: `LOG_LEVEL_NONE`, `LOG_LEVEL_FATAL`, `LOG_LEVEL_ERROR`, `LOG_LEVEL_WARNING`, `LOG_LEVEL_INFO`, `LOG_LEVEL_DEBUG`, `LOG_LEVEL_VERBOSE`.
-
-See [metrics-and-logging.md](references/metrics-and-logging.md) for full details.
-
-## Memory / OOM Monitoring
-
-Oxla runs an internal out-of-memory monitor that checks the process RSS (Resident Set Size) from `/proc/self/status` every 100 ms. When RSS exceeds the operational limit — `total - 1%`, where `total` is the computed memory limit derived from `memory.max` or auto-detection — it triggers emergency actions: (1) cancel all running tasks/queries and (2) evict the storage cache, logging an allocation-state report.
-
-The memory limit is set in the cluster config file (exact path is deployment-dependent):
-
-```yaml
-memory:
-  max: 0          # 0 = auto-detect available RAM; otherwise set explicitly (e.g. 16G)
-  max_non_query: 6442M  # RAM reserved for non-query overhead; minimum 6442M
-```
-
-Monitor memory via Prometheus:
-
-```bash
-# Current process RSS in bytes
-curl -s http://<host>:8080/metrics | grep oxla_process_memory_total
-
-# Admission queue (queries waiting due to memory/concurrency limits)
-curl -s http://<host>:8080/metrics \
-  | grep -E 'oxla_admission_(active_queries|enqueued_queries|timeout_queries_failed_total)'
-```
-
-See [troubleshooting.md](references/troubleshooting.md) for the full OOM investigation workflow.
-
-## Troubleshooting Workflows
+## Triage
 
 | Symptom | First move |
 |---|---|
-| Queries stuck / not progressing | `system.queries` WHERE `finished IS NULL`; check `state` |
-| Node not participating | `system.nodes` — look for `degradation_error IS NOT NULL` |
-| Out-of-memory / process killed | `oxla_process_memory_total` metric; check `memory.max` config |
-| Query admission failures / timeouts | `oxla_admission_timeout_queries_failed_total` metric |
-| Kafka ingestion stalled | `oxla_kafka_messages_consumed_total` and `oxla_kafka_messages_failed_total` |
-| Iceberg table stale / rows missing | Check upstream Redpanda `redpanda.iceberg.target.lag.ms`, DLQ table, REST catalog auth — see [redpanda-iceberg-source.md](references/redpanda-iceberg-source.md) |
-| Storage reads slow | `oxla_sf_read_bytes` (single-file reader throughput) |
-| No cluster leader | `oxla_cluster_has_leader_bool == 0` |
-| Background tasks stalled | `oxla_tasks_ongoing_total{scheduler_role,file_task_type}` (compaction/merge) |
+| Cannot connect with a bearer token | Include `options='auth_method=bearer'`. Without it, the token is treated as a SCRAM password and the connection fails. |
+| Connection worked earlier, now fails | The OIDC token expired. Run `rpk cloud auth token` again and reconnect. Open sessions continue; only new connections need a fresh token. |
+| Every query returns a degradation error | `SHOW NODES` and read `degradation_error`. See [Degraded nodes](#degraded-nodes). |
+| `ERROR: Query Out of Memory!` | Retry, then reduce concurrency or simplify the query. See [Query out of memory](#query-out-of-memory). |
+| `cancelled due to OOM prevention` | Contact Redpanda Support with the time of the error. |
+| Query slow or appears stuck | `system.queries` (which phase it is in), then `system.execs` (memory per task). See [troubleshooting.md](references/troubleshooting.md) Playbook 2. |
+| Mapped topic returns decode errors or missing rows | Check the table's `error_handling_policy`, schema subject, and Protobuf message name. See [troubleshooting.md](references/troubleshooting.md) Playbook 5. |
+| Access error, or a catalog or table is invisible | Grants: `SELECT` on the external source plus `USAGE` on the schema. See [troubleshooting.md](references/troubleshooting.md) Playbook 6. |
+| `Schema not found for Iceberg table '<table>'` | Run `REFRESH <catalog>=><table>`. |
+| `Kafka schema must be a name-superset of Iceberg schema` | A column was removed from the topic's value subject; re-add it. See [redpanda-iceberg-source.md](references/redpanda-iceberg-source.md). |
+| Iceberg history lags live data, or rows are missing from history | Topic `redpanda.iceberg.target.lag.ms`, the DLQ table, and `redpanda.iceberg.invalid.record.action`. See [redpanda-iceberg-source.md](references/redpanda-iceberg-source.md). |
 
-See [troubleshooting.md](references/troubleshooting.md) for step-by-step playbooks.
+## Runtime system tables
 
-## External Data Sources: Redpanda / Kafka & Iceberg
+`system.nodes`, `system.queries`, and `system.execs` expose cluster runtime state
+and are visible only to a superuser. Each has a `SHOW` equivalent; the table form
+supports `WHERE`, `ORDER BY`, and `LIMIT`.
 
-Oxla ingests from external systems registered in `system.catalogs` (`type` is
-`redpanda` for a Kafka-protocol connection, or `iceberg` for an Apache Iceberg
-catalog). When ingestion stalls or an Iceberg table looks stale, the root cause is
-frequently on the **Redpanda side**, in Redpanda's **Iceberg Topics** integration
-— the producer of the Iceberg tables Oxla reads.
+| Table | Statement | Columns |
+|---|---|---|
+| `system.nodes` | `SHOW NODES` | `name`, `election_state`, `followers_count`, `connected_nodes_count`, `degradation_error` |
+| `system.queries` | `SHOW QUERIES` | `qid`, `requester`, `scheduler`, `workers`, `state`, `created`, `accepted`, `scheduled`, `executed`, `finished` |
+| `system.execs` | `SHOW EXECS` | `node`, `qid`, `data_task_id`, `state`, `memory`, `privileged` |
 
-```sql
--- What external sources are registered, and of what type?
-SELECT name, namespace_name, type FROM system.catalogs;
-```
+Join `system.execs.qid` to `system.queries.qid` to attribute execution tasks to a
+query. Rows are runtime state: read them live rather than assuming a fixed set of
+`state` values. Full column descriptions and example queries are in
+[system-tables.md](references/system-tables.md).
 
-Redpanda Iceberg Topics (and its Tiered Storage prerequisite, and Server-Side
-Schema ID Validation) are **Redpanda Enterprise Edition** features — without a
-valid Redpanda license, topics cannot be created or modified with
-`redpanda.iceberg.mode`. Verify on the Redpanda cluster with
-`rpk cluster license info`.
+## Degraded nodes
 
-Key upstream knobs to correlate with an Oxla symptom:
+A degraded node cannot run most queries and returns a degradation error instead.
+If the leader is degraded, the whole cluster is degraded: connections fail with
+the degradation error and most queries are not processed.
 
-| Symptom in Oxla | Upstream Redpanda setting |
-|---|---|
-| Iceberg table stale / lags real time | `redpanda.iceberg.target.lag.ms` (commit cadence) |
-| Rows silently missing | `redpanda.iceberg.invalid.record.action` (`drop` vs `dlq_table`) + the `<topic>~dlq` table |
-| Table cannot be loaded | `iceberg_catalog_type=rest` auth keys (`iceberg_rest_catalog_*`) |
-| Table vanished after topic delete | `redpanda.iceberg.delete` (default `true`) |
-| No Iceberg data ever produced | `iceberg_enabled`, Enterprise license, Tiered Storage prerequisite |
+- Degradation is either *temporary* (for example, the node has not finished
+  initializing; it is expected to recover) or *permanent* (an unrecoverable error;
+  the node needs a restart, which users cannot perform).
+- `SHOW NODES` needs a ready cluster and a non-degraded scheduling node. A healthy
+  leader reports every connected node, including degraded ones.
 
-Full property tables (cluster-level `iceberg_*`, topic-level `redpanda.iceberg.*`,
-REST catalog auth keys, DLQ inspection, and the symptom-to-cause checklist) are in
+What a user does: run `SHOW NODES`, wait a few minutes and re-check if the error
+looks like initialization, check the *Redpanda SQL* card in the Cloud Console, and
+contact Redpanda Support with the `degradation_error` text if it persists.
+
+## Query out of memory
+
+`ERROR: Query Out of Memory!` means the engine canceled one query to free memory.
+It is a protection mechanism, not a cluster failure. The engine does not spill to
+disk, so joins, `GROUP BY` hash tables, sorts, and distinct aggregations must fit in
+the aggregate memory across SQL nodes, shared with every other running query.
+
+1. Retry. Other queries may have finished.
+2. Reduce concurrency: run fewer queries in parallel.
+3. Simplify the query: tighter `WHERE` filters, fewer joins, smaller aggregations.
+4. Scale the SQL engine for more aggregate memory: `/redpanda:sql-admin-api`.
+
+`cancelled due to OOM prevention` is different: a node-level safeguard canceled
+running queries. It is rare and usually indicates a memory-accounting problem.
+Contact [Redpanda Support](https://support.redpanda.com/hc/en-us/requests/new)
+with the time of the error and the affected query IDs.
+
+## Ingestion from topics
+
+Each Redpanda topic is mapped to a SQL table with `CREATE TABLE
+<catalog>=><table> WITH (topic = '...', ...)` and reads fields from the topic's
+Schema Registry subject. Most mapping problems are one of: the wrong subject, a
+multi-message Protobuf schema without `output_schema_message_full_name`, a
+wire-format mismatch (`confluent_wire_protocol`), or records that fail to
+deserialize under the default `error_handling_policy = 'FAIL'`. Kafka ACLs do not
+gate query access; `GRANT` and `REVOKE` in Redpanda SQL do. See
+[troubleshooting.md](references/troubleshooting.md) Playbooks 5 and 6.
+
+## Iceberg-enabled topics
+
+When the cluster's Iceberg REST catalog is configured, `default_redpanda_catalog`
+is linked to an Iceberg catalog, and one query returns both live topic records and
+Iceberg-committed history. Stale history, missing rows, and planning errors usually
+trace to the topic's `redpanda.iceberg.*` properties or to schema drift between
+the topic subject and the Iceberg table. See
 [redpanda-iceberg-source.md](references/redpanda-iceberg-source.md).
+
+## Escalation
+
+Redpanda Support collects node-level diagnostics with `rpk sql debug bundle`, which
+they run from inside the SQL pods. The bundle holds each node's configuration, logs,
+crash reports, resource usage, metrics samples, and the cluster topology, plus
+active and recent queries with SQL text masked by default. Users do not run it.
+When opening a case, provide the cluster ID, the time window, the exact error text,
+any `qid` values, and the `SHOW NODES` output if you have *SQL: Manage*.
 
 ## Reference Directory
 
-- [system-tables.md](references/system-tables.md): Full column schema for every diagnostic system catalog table, with copy-pasteable example queries for node health, active queries, transactions, storage connections, and execution fragments.
-- [metrics-and-logging.md](references/metrics-and-logging.md): Prometheus endpoint setup, the complete metric catalog (names, types, labels, descriptions), log level control via config/env/admin gRPC, and example PromQL queries.
-- [troubleshooting.md](references/troubleshooting.md): Step-by-step workflows for diagnosing slow queries (including `EXPLAIN TIMING` / `EXPLAIN PHYSICAL` / `EXPLAIN CONFIG`, and the `oxla.parquet_late_materialization` session option for a slow Parquet or Iceberg scan), memory/OOM pressure, node health problems, Kafka ingestion issues, and admission control failures.
-- [redpanda-iceberg-source.md](references/redpanda-iceberg-source.md): Debugging Oxla's external data sources — the Redpanda/Kafka ingestion path and the Apache Iceberg catalog Oxla reads. Documents the upstream Redpanda **Iceberg Topics** integration (Enterprise-licensed): cluster properties (`iceberg_enabled`, `iceberg_catalog_type`, `iceberg_default_catalog_namespace`, `iceberg_delete`, `iceberg_invalid_record_action`, `iceberg_default_partition_spec`), REST catalog auth keys (`iceberg_rest_catalog_*`), topic properties (`redpanda.iceberg.mode`/`delete`/`invalid.record.action`/`partition.spec`/`target.lag.ms`), Schema ID Validation interplay, the `<topic>~dlq` dead-letter queue, and an Oxla-symptom-to-Redpanda-cause checklist. Notes the Enterprise license requirement.
+- [system-tables.md](references/system-tables.md): Columns and example queries for `system.nodes`, `system.queries`, and `system.execs` and their `SHOW` equivalents, with the superuser visibility rule.
+- [troubleshooting.md](references/troubleshooting.md): Playbooks for connection and authentication failures, slow or stuck queries, query out-of-memory errors, degraded nodes, topic mapping and deserialization errors, and access and grant problems.
+- [redpanda-iceberg-source.md](references/redpanda-iceberg-source.md): Debugging queries over Iceberg-enabled topics on BYOC: the REST catalog requirement, `REFRESH`, schema-superset and key-mode errors, the Cloud-settable `iceberg_*` cluster and `redpanda.iceberg.*` topic properties, the DLQ table, and the Redpanda Iceberg metrics in the Cloud metrics export.

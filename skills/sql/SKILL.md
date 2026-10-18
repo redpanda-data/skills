@@ -1,497 +1,328 @@
 ---
 name: sql
 description: >-
-  Redpanda SQL (Oxla), the distributed PostgreSQL-wire-compatible columnar
-  analytical database, for writing and running SQL queries. Use when connecting
-  via psql or a PostgreSQL driver, creating tables and schemas, loading data
-  with COPY (CSV/Parquet/ORC, S3), running analytical queries with joins,
-  aggregate and window functions, CTEs, or set operations, creating views,
-  explaining a query plan with EXPLAIN, or working with
-  Oxla's data types and role-based grants. Also covers Oxla's external-source
-  integration for querying Redpanda/Kafka topics and Apache Iceberg tables
-  directly with SQL, including CREATE REDPANDA/KAFKA CATALOG, CREATE ICEBERG
-  CATALOG, CREATE STORAGE, and mapping PostgreSQL SQL features to what Oxla
-  supports.
+  Writes and runs read-only Redpanda SQL queries on Redpanda Cloud, covering how
+  to connect to the SQL endpoint and the query language itself. Use when a user
+  wants to connect to Redpanda SQL with psql, a PostgreSQL driver, or SQL Studio
+  using an OIDC bearer token or a SCRAM password; write analytical queries with
+  joins, aggregates, window functions, and CTEs over topic-backed tables; export
+  results with COPY TO; grant access with GRANT and REVOKE; inspect metadata
+  through information_schema or pg_catalog; or check how Redpanda SQL differs
+  from PostgreSQL. For enabling SQL, the SQL Manage and SQL Access
+  roles, and the access model, see `/redpanda:sql-admin-api`. For catalogs,
+  mapping topics with CREATE TABLE, and Iceberg-enabled topics, see
+  `/redpanda:sql-federated-queries`. For errors, slow queries, and degraded
+  nodes, see `/redpanda:sql-debugging`.
 ---
 
-# Redpanda SQL (Oxla)
+# Redpanda SQL
 
-Oxla is a distributed columnar analytical database that speaks the PostgreSQL wire protocol (port 5432). Any `psql` client, JDBC driver, `psycopg2`, or `pgx` application connects to it without modification. Oxla is purpose-built for analytical (OLAP) workloads — large scans, aggregations, multi-table joins, and window functions over wide tables — and differs from standard PostgreSQL in execution architecture (columnar, distributed, parallel) and in which DDL/DML features it supports.
+Redpanda SQL is the analytical (OLAP) SQL engine that runs on Redpanda Cloud BYOC
+clusters. It speaks the PostgreSQL wire protocol, so `psql` and standard
+PostgreSQL drivers connect to it, and Cloud Console includes a built-in editor,
+SQL Studio. It queries Redpanda topics in place: a topic is mapped to a SQL table
+through a catalog, and a query against that table reads the live topic and, for an
+Iceberg-enabled topic, its Iceberg history in one result.
 
-Key differences from PostgreSQL to keep in mind:
-- `EXPLAIN` exists but is not PostgreSQL's: it returns the explanation **as a relation**, not as plan text, and there is no `EXPLAIN ANALYZE` and no parenthesized option list. `EXPLAIN` alone renders a help table of the modes; `EXPLAIN PHYSICAL <query>`, `EXPLAIN TIMING <query>`, and `EXPLAIN CONFIG` are the modes. See [ddl-dml.md](references/ddl-dml.md#explain).
-- `COPY FROM/TO` uses explicit `FORMAT` option names (`CSV`, `PARQUET`, `ORC`).
-- `SELECT INTO` supports two forms: `SELECT ... INTO new_table FROM ...` (creates a new table) and `SELECT ... INTO 'path' (options) FROM ...` (writes to a file). The parenthesized option list selects the file form.
-- `CREATE TABLE ... AS SELECT` (CTAS) is **not** supported on native tables (`CREATE TABLE AS SELECT is supported only on iceberg catalogs ("catalog=>namespace.table")`); it works only on an Iceberg catalog (`/redpanda:sql-federated-queries`). To materialize or reshape a native table, `CREATE TABLE` with a column list and then `INSERT INTO ... SELECT`.
-- `GENERATE_SERIES(start, stop[, step])` is supported as a table-valued function.
+Ground rules for an agent helping a user:
 
-## Quickstart
+- **Redpanda SQL is read-only.** `INSERT`, `UPDATE`, `DELETE`, and bulk import
+  (`COPY FROM`) are not available. Data arrives by producing to Redpanda topics;
+  SQL reads it through catalog mappings. Do not suggest loading data with SQL.
+- **`CREATE TABLE` maps a topic; it does not create a standalone table** with
+  user-defined columns. Mapping topics, catalogs, and Iceberg belong to
+  `/redpanda:sql-federated-queries`.
+- **Tables are referenced as `catalog=>table`.** When SQL is enabled, a catalog
+  named `default_redpanda_catalog` points at the cluster, so most queries read
+  `FROM default_redpanda_catalog=>orders`.
+- **Stay within the published surface.** Only the statements, functions, and types
+  in the [Redpanda SQL reference](https://docs.redpanda.com/cloud-data-platform/reference/sql/)
+  are supported for users. If a PostgreSQL feature is not listed there, say so
+  rather than assuming it works.
+- Never invent the host, port, or credentials: they come from the Cloud Console.
+
+## Connect
+
+Connection details are on the **SQL** tab of the **How to connect** panel for the
+cluster in the Cloud Console. Every connection uses TLS (`sslmode=require`); the
+SQL endpoint rejects plain-text connections. The database is `oxla`.
 
 ```bash
-# Connect with psql (default password: oxla)
-psql -h localhost -p 5432 -U oxla oxla
+# Bearer token (a human user): log in once, then mint a short-lived token
+rpk cloud login
+PGPASSWORD=$(rpk cloud auth token) \
+  psql "host=<sql-host> port=<sql-port> dbname=oxla user=ignored options='auth_method=bearer' sslmode=require"
 ```
 
+Copy the exact string from the **SQL** tab; the published quickstart's string uses
+port `5432`.
+
+| Mode | `options` value | `user` | Password field |
+|---|---|---|---|
+| Bearer token | `auth_method=bearer` | ignored (identity comes from the token) | a token from `rpk cloud auth token` |
+| Client credentials | `auth_method=client_secret` | the service account's client ID | the client secret |
+| SCRAM password | omit `options` | the account or service account email | a password set with `ALTER USER` |
+
+- A token in the password field **without** `options='auth_method=bearer'` is
+  treated as a SCRAM password, and the connection fails.
+- A token is checked once at connect time. When it expires, open sessions keep
+  running but new connections need a fresh token.
+- SCRAM is for clients that cannot do OIDC. A *SQL: Manage* user sets a known
+  password first: `ALTER USER "svc@example.com" WITH PASSWORD '...';`.
+- To query in the browser with no client or credentials, use **SQL Studio** (the
+  **SQL** item in the cluster's left navigation).
+
+Driver examples (psycopg2, JDBC, PHP PDO, C# Dapper/Npgsql) and each driver's
+unsupported features are in [references/connect-and-types.md](references/connect-and-types.md).
+Who may connect is governed by the Cloud RBAC roles *SQL: Manage* (SQL superuser)
+and *SQL: Access* (regular user); for enabling SQL and the access model, see
+`/redpanda:sql-admin-api`.
+
+## SQL Studio
+
+SQL Studio is the Cloud Console editor. It uses the Console session, so it needs
+no separate credentials, only the *SQL: Access* or *SQL: Manage* role (and, for
+*SQL: Access*, a `GRANT SELECT` on each table).
+
+- Browse catalogs, namespaces, tables, and column types in the catalog panel; a
+  table backed by an Iceberg-enabled topic carries an **Iceberg** badge.
+- Run the active tab with **Run** (Cmd/Ctrl+Enter) or only the selected text with
+  **Run selection**. Multiple tabs, **Format**, and a per-browser **History** are
+  available.
+- Results show row count and elapsed time; a **Truncated** badge means the
+  server's row limit was hit. Export the result as CSV or JSON. A **Bridge
+  query** chip means the result spans live records and Iceberg history.
+- *SQL: Manage* users get an **Add a topic** wizard that runs the `CREATE TABLE`
+  mapping for `default_redpanda_catalog`.
+- **Statement limits:** SQL Studio is for read queries. The Console blocks some
+  statements in the editor; for `GRANT`/`REVOKE` and other statements the engine
+  supports, connect with `psql` or a driver. The engine and the user's grants
+  remain the authority over what can run.
+
+## Quickstart query
+
 ```sql
--- 1. Create a table
-CREATE TABLE orders (
-    order_id   INT,
-    customer   VARCHAR,
-    region     VARCHAR,
-    amount     DOUBLE,
-    order_date DATE
-);
+-- Topics already mapped as tables
+SHOW REDPANDA TABLES default_redpanda_catalog;
+DESCRIBE TABLE default_redpanda_catalog=>orders;
 
--- 2. Insert a few rows (native VALUES form)
-INSERT INTO orders VALUES
-    (1, 'Acme',   'EMEA', 1250.50, DATE '2024-01-15'),
-    (2, 'Globex', 'APAC', 3400.00, DATE '2024-01-16'),
-    (3, 'Acme',   'EMEA',  980.00, DATE '2024-02-01');
+-- Sample, filter, aggregate
+SELECT * FROM default_redpanda_catalog=>orders LIMIT 10;
 
--- INSERT … SELECT is the form used for transformed or bulk loads:
-INSERT INTO orders SELECT order_id, customer, region, amount * 1.1, order_date
-FROM orders_staging;
+SELECT status, COUNT(*) AS total_orders
+FROM default_redpanda_catalog=>orders
+GROUP BY status;
 
--- 3. COPY from a Parquet file (local or S3)
--- Local file:
-COPY orders FROM 'orders.parquet' (FORMAT PARQUET);
+SELECT order_id, customer, product, amount
+FROM default_redpanda_catalog=>orders
+WHERE amount > 10000
+ORDER BY amount DESC
+LIMIT 20;
+```
 
--- 4. Run a GROUP BY aggregation
-SELECT region,
-       COUNT(*)        AS order_count,
-       SUM(amount)     AS total_revenue,
-       AVG(amount)     AS avg_order
-FROM orders
-GROUP BY region
-ORDER BY total_revenue DESC;
+If the topic is not mapped yet, a *SQL: Manage* user maps it (see
+`/redpanda:sql-federated-queries`), for example
+`CREATE TABLE default_redpanda_catalog=>orders WITH (topic = 'orders');`.
 
--- 5. Window function: running total per region
-SELECT order_date,
-       region,
-       amount,
-       SUM(amount) OVER (PARTITION BY region ORDER BY order_date
-                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total
-FROM orders
-ORDER BY region, order_date;
+## Query patterns
 
--- 6. CTE (WITH)
-WITH monthly AS (
-    SELECT EXTRACT(YEAR FROM order_date)  AS yr,
-           EXTRACT(MONTH FROM order_date) AS mo,
-           SUM(amount)                    AS revenue
-    FROM orders
-    GROUP BY yr, mo
+Full clause and statement reference: [references/statements.md](references/statements.md).
+
+```sql
+-- CTE (non-materialized: each use is inlined and optimized separately)
+WITH completed AS (
+    SELECT customer, amount
+    FROM default_redpanda_catalog=>orders
+    WHERE status = 'completed'
 )
-SELECT * FROM monthly
-ORDER BY yr, mo;
+SELECT customer, SUM(amount) AS revenue
+FROM completed
+GROUP BY customer
+HAVING SUM(amount) > 10000
+ORDER BY revenue DESC;
+
+-- Joins: JOIN ... ON, JOIN ... USING, LEFT / RIGHT / FULL OUTER, CROSS JOIN
+SELECT o.order_id, c.region
+FROM default_redpanda_catalog=>orders AS o
+LEFT JOIN default_redpanda_catalog=>customers AS c ON o.customer = c.customer;
+
+-- Window functions with a named window and a frame (ROWS or RANGE)
+SELECT order_id, customer, amount,
+       ROW_NUMBER() OVER w AS rn,
+       SUM(amount) OVER (PARTITION BY customer ORDER BY order_id
+                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total
+FROM default_redpanda_catalog=>orders
+WINDOW w AS (PARTITION BY customer ORDER BY amount DESC);
+
+-- Set operations: UNION, INTERSECT, EXCEPT, each with an optional ALL
+SELECT customer FROM default_redpanda_catalog=>orders
+EXCEPT
+SELECT customer FROM default_redpanda_catalog=>refunds;
+
+-- Nested fields: (column).field for a struct column, column['key'] for a map,
+-- column[n] (1-based) for an array, -> / ->> for JSON
+SELECT (customer_info).region, attributes['color'], tags[1], payload ->> 'sku'
+FROM default_redpanda_catalog=>events;
 ```
 
-## Connecting
+`SELECT DISTINCT ON (...)` is not supported; use `SELECT DISTINCT` or a
+`ROW_NUMBER()` filter. The `GROUPS` frame mode and frame exclusion are not
+supported.
 
-See [references/connect-and-types.md](references/connect-and-types.md) for full driver connection strings, SSL config, and the default `initial_password`.
-
-Default connection parameters:
-
-| Parameter | Default |
-|-----------|---------|
-| Host | localhost |
-| Port | 5432 |
-| User | oxla |
-| Password | oxla |
-| Database | oxla |
-
-```bash
-# psql one-liner
-PGPASSWORD=oxla psql -h localhost -p 5432 -U oxla oxla
-
-# Python (psycopg2)
-conn = psycopg2.connect(host="localhost", port=5432, user="oxla", password="oxla", dbname="oxla")
-
-# Go (pgx)
-conn, _ := pgx.Connect(ctx, "postgres://oxla:oxla@localhost:5432/oxla")
-```
-
-## Supported Data Types
-
-Full type reference: [references/connect-and-types.md](references/connect-and-types.md).
-
-Supported column types:
-
-| Oxla Type | Notes |
-|-----------|-------|
-| `INT` / `INTEGER` | 32-bit integer (`i32`) |
-| `LONG` / `BIGINT` | 64-bit integer (`i64`) |
-| `INT16` | 128-bit (16-byte) wide integer (`pg_typeof`: `int16`); Oxla-native, **not** 16-bit |
-| `INT32` | 256-bit (32-byte) wide integer (`pg_typeof`: `int32`); Oxla-native, **not** an alias of `INT` |
-| `FLOAT` | 32-bit float |
-| `DOUBLE` | 64-bit float |
-| `NUMERIC(p,s)` / `DECIMAL(p,s)` | Fixed-precision |
-| `CHAR(n)` / `VARCHAR(n)` / `TEXT` | String types |
-| `DATE` | Calendar date |
-| `TIME` / `TIMETZ` | Time of day |
-| `TIMESTAMP` / `TIMESTAMPTZ` | Date+time |
-| `INTERVAL` | Duration |
-| `BOOL` | Boolean |
-| `JSON` / `JSONB` | JSON document |
-| `BYTEA` | Binary data |
-| `UUID` | RFC-4122 UUID (`pg_typeof`: `uuid`); literal `UUID '...'`, casts to/from text and `BYTEA` |
-| `OID` | PostgreSQL object identifier (`pg_typeof`: `oid`, type 26); equality/grouping/joins only, no ordering; implicit `int4`→`oid`, explicit `oid`↔`int4`/`text` |
-| `ARRAY` | Arrays (`INT[]`, `FLOAT[]`, etc.) |
-| `GEOMETRY` / `GEOGRAPHY` / `POINT` | Geospatial |
-
-There is no `MAP` column type in `CREATE TABLE`, but map-typed values reach a query
-two ways: the `map(...)` expression-level Oxla extension, which builds a
-**literals-only** map (in practice a constant lookup table keyed by a column), and
-**map columns of an external table** — a Kafka topic whose Avro or Protobuf schema
-has a map field, or an Iceberg table with a `map` column. Either is read with the
-`m[key]` subscript:
-
-```sql
--- Constant lookup table applied to a column
-SELECT (map(1, 'new', 2, 'shipped', 3, 'closed'))[status_code] FROM orders;
-
--- Map column of an external table (Kafka source or Iceberg table)
-SELECT id, attrs['region'] FROM my_kafka=>events;
-```
-
-A miss and a stored `NULL` both return `NULL`; duplicate keys resolve to the last
-occurrence; keys must be primitive and non-`NULL` (no `NUMERIC`/`DECIMAL`,
-`INTERVAL`, `JSON`, or geospatial keys); slicing is rejected; and the map value
-itself cannot be grouped, sorted, deduplicated, concatenated, or cast. See
-[references/connect-and-types.md](references/connect-and-types.md), and
-`/redpanda:sql-federated-queries` for how an external schema's map fields resolve.
-
-## DDL and DML
-
-Full reference: [references/ddl-dml.md](references/ddl-dml.md).
-
-```sql
--- CREATE TABLE
-CREATE TABLE sales (
-    id         INT,
-    product    VARCHAR,
-    qty        INT,
-    price      DOUBLE,
-    sold_at    TIMESTAMP
-);
-
--- Native CREATE TABLE ... AS SELECT is NOT supported (Iceberg catalogs only).
--- To copy / reshape a native table: declare it, then INSERT ... SELECT.
-CREATE TABLE sales_2024 (id INT, product VARCHAR, qty INT, price DOUBLE, sold_at TIMESTAMP);
-INSERT INTO sales_2024
-    SELECT * FROM sales WHERE sold_at >= TIMESTAMP '2024-01-01 00:00:00';
-
--- DROP TABLE
-DROP TABLE sales;
-DROP TABLE IF EXISTS sales;
-
--- ALTER TABLE ... ADD COLUMN (native tables only; metadata-only, no data rewrite)
-ALTER TABLE sales ADD COLUMN discount BIGINT;             -- COLUMN keyword optional
-ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount BIGINT;
--- Always nullable: rows written before the ALTER read back as NULL. One column per
--- statement; NOT NULL and DEFAULT are rejected; no DROP/RENAME COLUMN. Refused on a
--- view and on Kafka/Redpanda topic tables (an Iceberg catalog=>ns.table has its own
--- ALTER TABLE, below). See references/ddl-dml.md.
--- The other ALTER TABLE forms re-bind an external Redpanda/Kafka catalog table
--- (ALTER TABLE IF EXISTS my_catalog=>my_table WITH (schema_lookup_policy='LATEST'))
--- and reassign ownership. For DROP/RENAME/retype a column on a native table,
--- create a new table and INSERT ... SELECT; a table on an Iceberg catalog takes the Iceberg
--- schema-evolution forms of ALTER TABLE instead (/redpanda:sql-federated-queries).
-
--- NOTE: GRANT ... ON ALL TABLES IN SCHEMA is NOT valid in Oxla (parser rejects
--- the literal 'tables'). Valid targets: ON table, ON TABLE table, ON SCHEMA name,
--- ON DATABASE name, ON EXTERNAL SOURCE catalog. See references/ddl-dml.md.
-
--- TRUNCATE
-TRUNCATE TABLE sales;
-
--- CREATE / DROP VIEW — non-materialized: the SELECT text is stored and inlined
--- on every use, so the view always reads current base data. Privileges are
--- owner-based (PostgreSQL's default): reading needs SELECT on the view alone,
--- and the body is checked against the view's owner under the search path
--- captured at CREATE. A definition over a relation the creator cannot read is refused.
-CREATE VIEW emea_orders AS
-    SELECT * FROM orders WHERE region = 'EMEA';
-DROP VIEW emea_orders;
-
--- CREATE / REFRESH / DROP MATERIALIZED VIEW — stores the result. Native tables
--- only, gated by feature_flags.allow_table_operations; REFRESH rebuilds it in
--- full and is the only way to update it (no WITH (...), so no refresh interval).
--- pg_class reports relkind = 'm'. See references/ddl-dml.md.
-CREATE MATERIALIZED VIEW regional_summary AS
-    SELECT region, SUM(amount) AS total FROM orders GROUP BY region;
-REFRESH MATERIALIZED VIEW regional_summary;
-DROP MATERIALIZED VIEW IF EXISTS regional_summary;
-
--- INSERT — native VALUES form (literal rows)
-INSERT INTO sales VALUES (1, 'Widget', 10, 9.99, TIMESTAMP '2024-01-15 12:00:00');
-
--- INSERT … SELECT (for transformed or bulk loads)
-INSERT INTO dest SELECT col1, col2 FROM source WHERE condition;
-
--- UPDATE / DELETE
-UPDATE orders SET amount = 0 WHERE order_id = 1;
-DELETE FROM orders WHERE order_date < DATE '2020-01-01';
-
--- Transactions
-BEGIN;
-INSERT INTO orders VALUES (99, 'Test', 'EMEA', 1.0, CURRENT_DATE);
-ROLLBACK;
-
--- PREPARE / EXECUTE
-PREPARE get_region(VARCHAR) AS
-  SELECT * FROM orders WHERE region = $1;
-EXECUTE get_region('EMEA');
-```
-
-## Data Loading
-
-Full reference: [references/data-loading.md](references/data-loading.md).
-
-```sql
--- COPY FROM CSV via STDIN
-COPY orders FROM STDIN (FORMAT CSV);
-
--- COPY FROM Parquet file
-COPY orders FROM 'orders.parquet' (FORMAT PARQUET);
-
--- COPY FROM ORC file
-COPY orders FROM 'orders.orc' (FORMAT ORC);
-
--- COPY TO CSV
-COPY orders TO 'export.csv' (NULL '', DELIMITER ',', HEADER ON);
-
--- COPY TO Parquet
-COPY orders TO 'export.parquet' (FORMAT parquet);
-
--- SELECT INTO file form (parenthesized options → writes to file, not table)
-SELECT id, amount
-INTO 's3://bucket/prefix/out.csv'
-     (NULL '', DELIMITER ',', HEADER ON,
-      aws_cred(aws_region 'eu-central-1',
-               aws_key_id 'AKID...',
-               aws_private_key 'secret...',
-               endpoint 'https://s3.amazonaws.com'))
-FROM orders
-WHERE sold_at >= TIMESTAMP '2024-01-01 00:00:00';
-```
-
-## Redpanda/Kafka and Iceberg External Sources (enterprise differentiator)
-
-Full reference: [references/kafka-iceberg.md](references/kafka-iceberg.md).
-
-Oxla can attach Redpanda/Kafka topics and Apache Iceberg tables as external
-sources and query them with plain SQL — the central Oxla + Redpanda enterprise
-differentiator. The Redpanda-side features it consumes (Iceberg Topics, Tiered
-Storage, Cloud Topics) each require a **Redpanda Enterprise license**.
-
-External tables use the `catalog=>table_name` reference syntax.
-
-```sql
--- 1. Object-storage connection (s3 / gcs / abs)
-CREATE STORAGE my_s3 TYPE = S3 WITH (
-    region = 'us-west-2', access_key_id = 'AKID...', secret_access_key = 'secret...');
-
--- 2. Iceberg catalog (e.g. Redpanda Iceberg Topics, Glue, Polaris)
-CREATE ICEBERG CATALOG my_iceberg STORAGE my_s3 WITH (
-    uri = 'https://rest-catalog', warehouse = 's3://wh/', auth_type = 'oauth2',
-    oauth2_client_id = 'id', oauth2_client_secret = 'secret');
-
--- 3. Redpanda/Kafka catalog (initial_brokers + schema_registry_url required)
-CREATE REDPANDA CATALOG my_rp WITH (
-    initial_brokers = 'localhost:9092', schema_registry_url = 'http://localhost:8081');
-
--- 4. Bind a topic to a queryable table (topic option required)
-CREATE TABLE my_rp=>orders WITH (
-    topic = 'orders', schema_lookup_policy = 'LATEST', struct_mapping_policy = 'JSON');
-
--- 5. Query it like any table
-SELECT region, COUNT(*) FROM my_rp=>orders GROUP BY region;
-
--- Rebind/reconfigure (IF EXISTS + catalog=>table both required)
-ALTER TABLE IF EXISTS my_rp=>orders WITH (error_handling_policy = 'DROP_RECORD');
-
--- Refresh external metadata; grant access
-REFRESH my_rp=>orders;
-GRANT SELECT ON EXTERNAL SOURCE my_rp TO analyst;
-```
-
-Related Redpanda Enterprise Iceberg-topic properties (set on the Redpanda side):
-`redpanda.iceberg.mode` (`disabled`/`key_value`/`value_schema_id_prefix`/
-`value_schema_latest`), `redpanda.iceberg.delete`, `redpanda.iceberg.partition.spec`,
-`redpanda.iceberg.target.lag.ms`, `redpanda.iceberg.invalid.record.action`
-(`drop` or `dlq_table`; default `dlq_table`).
-
-## Functions and Analytics
+## Functions
 
 Full reference: [references/functions-and-analytics.md](references/functions-and-analytics.md).
 
-### Aggregate functions
-
 ```sql
-SELECT COUNT(*), SUM(amount), AVG(amount), MIN(amount), MAX(amount)
-FROM orders;
+-- Aggregates, statistics, ordered-set aggregates
+SELECT COUNT(DISTINCT customer), AVG(amount), STDDEV(amount),
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount) AS median,
+       MODE() WITHIN GROUP (ORDER BY product)                AS top_product
+FROM default_redpanda_catalog=>orders;
 
--- Ordered-set aggregates
-SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY amount DESC) AS median FROM orders;
-SELECT percentile_cont(ARRAY[0.25, 0.75]) WITHIN GROUP (ORDER BY amount) AS quartiles FROM orders;
-SELECT mode() WITHIN GROUP (ORDER BY region) FROM orders;
+-- FOR_MAX: the value of one column at the row where another is largest
+SELECT customer, FOR_MAX(amount, order_id) AS biggest_order
+FROM default_redpanda_catalog=>orders
+GROUP BY customer;
+
+-- Time bucketing
+SELECT TIMESTAMP_TRUNC(created_at, HOUR) AS hr, COUNT(*)
+FROM default_redpanda_catalog=>events
+GROUP BY TIMESTAMP_TRUNC(created_at, HOUR)
+ORDER BY hr;
+
+-- Strings, conditionals, nulls
+SELECT UPPER(customer), STARTS_WITH(product, 'key'),
+       IF(amount > 10000, 'large', 'small'),
+       COALESCE(status, 'unknown')
+FROM default_redpanda_catalog=>orders;
 ```
 
-### Window functions
+## Data types
 
-```sql
--- Ranking
-SELECT order_id, region, amount,
-       RANK()       OVER (PARTITION BY region ORDER BY amount DESC) AS rnk,
-       DENSE_RANK() OVER (PARTITION BY region ORDER BY amount DESC) AS dense_rnk,
-       ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) AS rn
-FROM orders;
+Full reference: [references/connect-and-types.md](references/connect-and-types.md#data-types).
 
--- LAG / LEAD
-SELECT order_date, amount,
-       LAG(amount, 1) OVER (ORDER BY order_date)  AS prev_amount
-FROM orders;
+Published types: `int` (alias `integer`), `bigint` (alias `long`), `real` (alias
+`float4`), `double precision` (aliases `double`, `float`, `float8`),
+`numeric(p, s)` / `decimal`, `int16` and `int32` (wide integers, casts only),
+`text`, `bool`, `bytea`, `date`, `time`, `timestamp`, `timestamp with time zone`,
+`interval`, `json`, `uuid`, arrays, `row`, `map`, `geometry`, `geography`.
 
--- Named window
-SELECT SUM(amount) OVER w, AVG(amount) OVER w
-FROM orders
-WINDOW w AS (PARTITION BY region ORDER BY order_date
-             ROWS BETWEEN 2 PRECEDING AND CURRENT ROW);
+Points that trip up PostgreSQL users:
+
+- `float` is `double precision`, as in PostgreSQL; use `real` for 32-bit.
+- `numeric` supports comparison, grouping, ordering, and joins, but **not**
+  arithmetic or `sum`/`avg`/`min`/`max` yet. Cast to `double precision` to
+  calculate (the result is not exact).
+- `int16`/`int32` are 128-bit and 256-bit integers for casts, for example
+  `SUM(views::INT16)` to avoid `bigint` overflow; they cannot be table columns.
+- Topic columns arrive typed from the topic's registered schema; `CAST(x AS type)`
+  and `x::type` both work.
+
+## Export results
+
+`COPY TO` writes CSV only, from a table or a query:
+
+```bash
+psql "<connection string>" \
+  -c "COPY (SELECT * FROM default_redpanda_catalog=>orders WHERE status = 'pending') TO STDOUT WITH (FORMAT CSV, HEADER ON)" \
+  > pending_orders.csv
 ```
 
-### String functions
+`TO STDOUT` returns the data to the client. A quoted file path is written on the
+SQL engine's side, so use `STDOUT` or an `s3://` / `gs://` destination with
+`AWS_CRED(...)` / `GCS_CRED(...)`. Array columns cannot be exported. SQL Studio
+can also download a result as CSV or JSON. Details:
+[references/statements.md](references/statements.md#copy-to).
+
+## Access statements
+
+Only a superuser (*SQL: Manage*) can grant and revoke. The user identifier is the
+Redpanda Cloud account or service-account email, double-quoted.
 
 ```sql
-SELECT UPPER(customer), LOWER(region),
-       CONCAT(customer, ' / ', region),
-       LENGTH(customer),
-       SUBSTR(customer, 1, 4),
-       STARTS_WITH(customer, 'A'),
-       ENDS_WITH(customer, 'e'),
-       STRPOS(customer, 'me'),
-       REPLACE(customer, 'Acme', 'ACME'),
-       REGEXP_REPLACE(customer, 'G.*', 'Corp', 'i')
-FROM orders;
+-- One topic, a trailing-wildcard pattern, or every topic in the catalog
+GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog => 'orders'   TO "alice@example.com";
+GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog => 'orders_*' TO "alice@example.com";
+GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog               TO "alice@example.com";
+
+-- Schema visibility (needed to see catalogs in SHOW CATALOGS / system.catalogs)
+GRANT USAGE ON SCHEMA public TO "alice@example.com";
+
+REVOKE SELECT ON EXTERNAL SOURCE default_redpanda_catalog => 'orders' FROM "alice@example.com";
+
+-- Inspect what is granted
+SELECT grantee, source_name, relation_pattern, privilege_type
+FROM information_schema.role_external_relation_grants;
 ```
 
-### Math functions
+Users are provisioned from Redpanda Cloud IAM when a role with *SQL: Access* or
+*SQL: Manage* is assigned; `CREATE USER`, `DROP USER`, and `ALTER USER ...
+SUPERUSER` exist but the Cloud operator reconciles them back to IAM, so manage
+users in Redpanda Cloud. `ALTER USER ... WITH PASSWORD` (for SCRAM) persists.
+Full syntax and behavior: [references/statements.md](references/statements.md#access-control).
+
+## Inspect metadata and the session
 
 ```sql
-SELECT ABS(-1.5), CEIL(1.2), FLOOR(1.9), ROUND(1.567),
-       SQRT(16.0), EXP(1.0), LN(2.718), LOG10(100.0),
-       SIN(3.14), COS(0.0), TAN(0.785),
-       PI(), SIGN(-5);
+SHOW CATALOGS;                                   -- also SHOW REDPANDA CATALOGS / SHOW ICEBERG CATALOGS
+SHOW REDPANDA TABLES default_redpanda_catalog;   -- unqualified SHOW TABLES is an error
+DESCRIBE REDPANDA CATALOG default_redpanda_catalog;
+SELECT * FROM information_schema.columns WHERE table_name = 'orders';
+SELECT current_user, current_database(), current_schema(), version();
+SHOW timezone;
+SET timezone TO 'UTC';
 ```
 
-### Date/time functions
+`SHOW NODES`, `SHOW QUERIES`, `SHOW EXECS` and their `system.*` tables are
+superuser-only; for using them to troubleshoot, see `/redpanda:sql-debugging`.
 
-```sql
-SELECT EXTRACT(YEAR FROM order_date),
-       EXTRACT(MONTH FROM order_date),
-       EXTRACT(DAY FROM order_date),
-       TIMESTAMP_TRUNC(sold_at, HOUR),
-       MAKE_DATE(2024, 3, 15),
-       CURRENT_TIMESTAMP,
-       CURRENT_TIMESTAMP(3)
-FROM orders;
-```
+## Differences from PostgreSQL
 
-## Joins
+- Read-only: no `INSERT`/`UPDATE`/`DELETE`/`COPY FROM`, no upserts, no
+  standalone tables, no PostgreSQL extensions (pgvector, PostGIS, pg_cron).
+- Transaction syntax (`BEGIN`, `COMMIT`, `END TRANSACTION`, `ROLLBACK`) is
+  accepted for tool compatibility, but statements run immediately and `ROLLBACK`
+  undoes nothing.
+- Prepared statements give no benefit: bound parameters are turned back into
+  query text. PHP PDO needs `PDO::ATTR_EMULATE_PREPARES => true`.
+- JSON `=` is key-order-sensitive. Unnamed result columns are named generically
+  (`f`, `f_1`, ...) rather than after the function; alias them with `AS`.
+- Some math edge cases differ: `LN(0)` returns Infinity and `LOG10(-1)` returns
+  NaN instead of raising an error.
+- `pg_catalog` tables exist for tool compatibility and mostly hold placeholder
+  data; use `information_schema`, `DESCRIBE`, and `SHOW` for real metadata.
 
-```sql
--- INNER JOIN
-SELECT o.order_id, c.name
-FROM orders o
-JOIN customers c ON o.customer = c.name;
+See [Redpanda SQL vs PostgreSQL](https://docs.redpanda.com/cloud-data-platform/sql/get-started/redpanda-sql-vs-postgresql/).
 
--- LEFT / RIGHT / FULL JOIN
-SELECT o.order_id, p.product_name
-FROM orders o
-LEFT JOIN products p ON o.product = p.id;
+## Catalogs, topic mappings, and Iceberg
 
--- FULL OUTER JOIN
-SELECT o.order_id, r.label
-FROM orders o
-FULL JOIN regions r ON o.region = r.code;
-
--- CROSS JOIN
-SELECT * FROM (SELECT amount FROM orders LIMIT 5)
-CROSS JOIN (SELECT region FROM regions LIMIT 3);
-
--- Multi-table (star-schema style)
-SELECT d.year, p.category, SUM(f.revenue) AS total
-FROM fact_sales f
-JOIN dim_date    d ON f.date_key = d.date_key
-JOIN dim_product p ON f.product_key = p.product_key
-GROUP BY d.year, p.category
-ORDER BY d.year, total DESC;
-```
-
-## Set Operations
-
-UNION, INTERSECT, and EXCEPT each accept an optional `ALL` qualifier. Without `ALL`, duplicates are eliminated (distinct semantics).
-
-```sql
--- UNION ALL (keeps duplicates)
-SELECT region FROM orders WHERE amount > 1000
-UNION ALL
-SELECT region FROM returns;
-
--- UNION (distinct)
-SELECT region FROM orders
-UNION
-SELECT region FROM returns;
-
--- INTERSECT ALL
-SELECT region FROM orders
-INTERSECT ALL
-SELECT region FROM targets;
-
--- EXCEPT [ALL] — rows in left but not right
-SELECT region FROM orders
-EXCEPT
-SELECT region FROM blacklist;
-
-SELECT i0 FROM tb1
-EXCEPT ALL
-SELECT i0 FROM tb2;
-```
-
-## EXPLAIN
-
-`EXPLAIN` returns its explanation as a **relation**, so it can be filtered and
-ordered with plain SQL. Four modes; an unrecognized spelling renders the help
-table rather than an error.
-
-```sql
-EXPLAIN;                                    -- help: the modes and an example of each
-EXPLAIN CONFIG;                             -- query-planner options + session values
-EXPLAIN TIMING SELECT * FROM orders;        -- planning-stage breakdown
-SET oxla.query_planner.pipeline = on;       -- required for PHYSICAL only
-EXPLAIN PHYSICAL SELECT * FROM orders;      -- operator topology, one row per output
-
--- Same explanations as a queryable relation
-SELECT operation, value FROM explain('SELECT 1', 'physical_plan') ORDER BY row_num;
-```
-
-Only `SELECT` queries can be explained. See
-[ddl-dml.md](references/ddl-dml.md#explain) for the per-mode result columns, the
-`explain()` argument rules, and the `steps=n` option.
-
-## GENERATE_SERIES
-
-```sql
-SELECT * FROM generate_series(1, 10);
-SELECT * FROM generate_series(0, 100, 10);
-SELECT gs FROM generate_series(1, 5) AS gs;
-SELECT * FROM generate_series(10, 1, -1);
-```
+Defining catalogs (`CREATE REDPANDA CATALOG`, `CREATE STORAGE`), mapping topics
+(`CREATE TABLE catalog=>table WITH (topic = ...)`, `ALTER TABLE`, `DROP TABLE`),
+decode options such as `struct_mapping_policy` and `confluent_wire_protocol`, and
+querying Iceberg-enabled topics are covered by `/redpanda:sql-federated-queries`.
+In Redpanda Cloud, the storage connection and Iceberg catalog for Iceberg-enabled
+topics are configured automatically when SQL is enabled on a cluster with an
+Iceberg REST catalog.
 
 ## Reference Directory
 
-- [connect-and-types.md](references/connect-and-types.md): PostgreSQL wire protocol connection (port 5432, psql/JDBC/psycopg2/pgx), authentication (`initial_password`), SSL config, and the full supported data-type list, including the wide-integer (`INT16`/`INT32`) cast and operator matrix plus how to bind wide-integer parameters, and the map surface (`map(...)` constructor, `m[key]` lookup on both constructed maps and external-schema map columns, supported key types, miss-vs-stored-NULL semantics).
-- [ddl-dml.md](references/ddl-dml.md): CREATE/DROP TABLE, CREATE TABLE AS SELECT (CTAS — not supported on native tables; use `INSERT ... SELECT`), CREATE/DROP VIEW (non-materialized, inlined per use, pinned column contract, owner-based privileges with the creator's search path captured at CREATE, `pg_views`), CREATE/REFRESH/DROP MATERIALIZED VIEW (native tables only, gated by `allow_table_operations`, full rebuild on REFRESH, `relkind = 'm'`), the `EXPLAIN` statement and `explain()` table function (help/physical_plan/timing/config modes, per-mode result columns, `steps=n`), CREATE/DROP SCHEMA, TRUNCATE, CREATE ROLE, GRANT/REVOKE (valid targets: ON table / ON TABLE / ON SCHEMA / ON DATABASE / ON EXTERNAL SOURCE — `ON ALL TABLES IN SCHEMA` is rejected by the parser), the three `ALTER TABLE` forms (`ADD COLUMN` on a native table — nullable-only, metadata-only, one column per statement, with the `NOT NULL`/`DEFAULT`/view/external-table rejections; the `IF EXISTS catalog=>table WITH (...)` Kafka-catalog rebind; and `OWNER TO`), SELECT/INSERT VALUES/INSERT SELECT/UPDATE/DELETE, SELECT INTO (table or file destination), PREPARE/EXECUTE, and transactions.
-- [kafka-iceberg.md](references/kafka-iceberg.md): Oxla + Redpanda enterprise differentiator — querying Redpanda/Kafka topics and Apache Iceberg tables via SQL. CREATE/ALTER/DROP STORAGE (s3/gcs/abs), CREATE/ALTER/DROP ICEBERG CATALOG (uri/warehouse/auth_type oauth2|basic|aws_sigv4|gcp + nested keys), CREATE/ALTER/DROP REDPANDA|KAFKA CATALOG (initial_brokers/schema_registry_url required, sasl_*, truststore, key_store_*, USING CATALOG bind/detach), CREATE TABLE / ALTER TABLE IF EXISTS catalog=>topic WITH (topic/schema_lookup_policy/error_handling_policy/struct_mapping_policy/confluent_wire_protocol plus the key/header decode options key_decode_mode/key_schema_subject/key_confluent_wire_protocol/key_schema_message_full_name/header_value_type), REFRESH, DESCRIBE/SHOW, GRANT ON EXTERNAL SOURCE, and the Redpanda Enterprise Iceberg-topic properties (redpanda.iceberg.mode/delete/partition.spec/target.lag.ms/invalid.record.action). Notes Redpanda Enterprise license requirements.
-- [data-loading.md](references/data-loading.md): COPY FROM / COPY TO with CSV/Parquet/ORC formats, STDIN/STDOUT, S3 credentials via `aws_cred(...)`, and bulk-loading patterns for analytical ingestion.
-- [functions-and-analytics.md](references/functions-and-analytics.md): Complete function reference — aggregates (SUM/AVG/COUNT/percentile_disc/percentile_cont/mode/CORR), string (CONCAT/SUBSTR/REPLACE/REGEXP_REPLACE/STARTS_WITH/ENDS_WITH/STRPOS/LENGTH/UPPER/LOWER), math (ABS/CEIL/FLOOR/ROUND/SQRT/EXP/LN/LOG10/trig), date-time (EXTRACT/TIMESTAMP_TRUNC/MAKE_DATE/MAKE_TIMESTAMP/CURRENT_TIMESTAMP), window functions, CTEs, CASE/IF, and ARRAY functions — all grounded in test cases.
+- [connect-and-types.md](references/connect-and-types.md): connecting from psql
+  and each published language client (psycopg2, JDBC, PHP PDO, C# Dapper/Npgsql)
+  with the three authentication modes and each driver's unsupported features, and
+  the published data types with their aliases, casts, and limitations (numeric,
+  wide integers, text, bytea, date/time and interval, JSON, UUID, arrays, row,
+  map, geometry and geography).
+- [statements.md](references/statements.md): the published statement set and
+  clauses: `SELECT` (WHERE, GROUP BY, HAVING, ORDER BY, LIMIT/FETCH, OFFSET,
+  joins, subqueries, WITH, set operations, DISTINCT), operators, `COPY TO`,
+  `SET`/`SHOW` options, `DESCRIBE` and `SHOW` statements, transactions, SQL
+  schemas, comments, `GRANT`/`REVOKE` and `CREATE`/`ALTER`/`DROP USER` with their
+  Cloud behavior, `information_schema`, system virtual tables, and `pg_catalog`.
+- [functions-and-analytics.md](references/functions-and-analytics.md): the
+  published functions: aggregates and statistics, ordered-set aggregates,
+  `FOR_MIN`/`FOR_MAX`, window functions and frames, string and regex, math and
+  trigonometric, timestamp and interval, JSON, UUID, `generate_series`,
+  conditional and system-information functions, plus analytical query patterns.
+- [SOURCES.md](references/SOURCES.md): the published documentation pages each
+  file derives from.

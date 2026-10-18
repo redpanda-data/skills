@@ -1,54 +1,53 @@
 # sql-federated-queries Skill Source Map
 
-Maps each file in `skills/sql-federated-queries/` to the source paths it derives from, so
-future syncs and human maintainers know exactly where to verify claims.
+Maps each file in `skills/sql-federated-queries/` to the published Redpanda Cloud docs it
+derives from. The skill serves Redpanda Cloud users of Redpanda SQL (the managed engine on
+BYOC and BYOVPC clusters): querying Redpanda topics through Redpanda catalogs, including the
+Iceberg history of Iceberg-enabled topics through a linked Iceberg catalog.
 
-This skill documents **Oxla** (Redpanda's SQL query engine) querying external data — Kafka
-topic catalogs, Apache Iceberg REST catalogs, and object-store parquet/ORC/CSV files. The
-Oxla engine is C++ in the **PRIVATE** repo `redpanda-data/oxla`; read it **only** via the
-Redpanda-Github-Read MCP connector (`get_file_contents`, `search_code`) — never `gh`, never
-clone. The one exception is `redpanda-iceberg-source-config.md`, which documents the
-**Redpanda producer side** (the Iceberg tables/Tiered-Storage/validated schemas Oxla reads):
-its grounding is the **public** repos `redpanda-data/redpanda` (`src/v/datalake/`, `iceberg_*`
-cluster properties in `src/v/config/`) and `redpanda-data/docs` (Iceberg + licensing pages).
-Before writing or changing any fact, re-open the cited source and confirm exact SQL keywords,
-option names, proto field names, and property keys.
+**Scope gate: the published Redpanda Cloud docs; the engine source is used only to confirm
+behavior of documented surfaces, never to add undocumented ones.** Anything a user cannot
+reach on the managed engine (operator settings, gated features, self-hosted deployment,
+direct reads or writes against an Iceberg catalog's own tables) stays out of the skill.
 
-All Oxla paths below were verified to exist via the connector (`redpanda-data/oxla`, default
-branch); all redpanda/docs paths against `redpanda-data/redpanda` and `redpanda-data/docs`.
+Read the docs from the private `redpanda-data/cloud-docs` repo at `origin/main`
+(`git -C <cloud-docs> show origin/main:<path>`) or the live site
+(https://docs.redpanda.com/cloud-data-platform/). Pages under `modules/manage/` and
+`modules/reference/pages/properties/` are single-sourced from the private
+`redpanda-data/docs` repo; read the included source there and keep only the
+`ifdef::env-cloud[]` branches and the `redpanda-cloud`-tagged properties.
+
+Verified 2026-10-18.
 
 ## File-to-source table
 
-| Skill file | Source paths (all `redpanda-data/oxla` unless noted) |
+All paths are in `redpanda-data/cloud-docs` unless noted.
+
+| Skill file | Published source paths |
 |---|---|
-| `SKILL.md` | Aggregates all reference sources below. Grammar/keywords: `src/sqlparser/bison_parser/bison_parser.y`, `src/sqlparser/sql/connection_option_names.h`, `src/sqlparser/sql/CreateStatement.h`, `CreateCatalogStatement.h`, `AlterKafkaCatalogStatement.h`, `AlterKafkaTableStatement.h`, `RefreshStatement.h`, `ImportStatement.h`. Metastore system tables: `src/metastore/system_{kafka_connections,kafka_sources,iceberg_catalogs,iceberg_tables}.cpp`, `metastore.cpp`. Enterprise/producer section grounded in `redpanda-data/redpanda` + `redpanda-data/docs` (see last row). |
-| `references/kafka-catalogs.md` | `src/catalog/kafka/conversions.cpp`, `src/sqlparser/sql/CreateStatement.h`, `AlterKafkaCatalogStatement.h`, `connection_option_names.h`, `src/kafka/types.h`, `src/kafka/metadata_columns.h`, `src/kafka/decoders/schema_lookup_policy.h`, `src/kafka/decoders/logical_types.h`, `src/external_schema/avro/avro_sql_mapping.cpp` (Avro logical→SQL type map; `uuid` on either `string` or `fixed(16)` backing → `SQL_UUID`), `src/external_schema/protobuf/protobuf_sql_mapping.h`, `src/external_schema/json/`, `tests/MT/query_planner/cases/predefined_transparent_kafka_iceberg_*/`. **Map columns**: `src/external_schema/avro/avro_user_type_builder.cpp` (`buildNode` — an `AVRO_MAP` leaf becomes a map node under `StructMappingPolicy::Compound`, with the key tag from the map's key leaf and the value built recursively (nullable-union unwrap, arrays, records); under `Json` it collapses to the `RecordAsJson` sentinel, i.e. one json column), `src/external_schema/avro/avro_sql_mapping.cpp` (`AvroLogicalType::Map` is not a scalar — maps never reach the scalar mapper), `src/external_schema/protobuf/protobuf_user_type_builder.cpp` (`field.is_map()` — key from the synthetic `*Entry` message's `map_key()`, value from `map_value()`; a non-COMPOUND policy emits one json column), `src/catalog/stored_schema_resolver.cpp` (`resolveMapNode` — the alias-tagged array-of-entry-composites shape, validated via `checkValid`), `src/query_planner/visitors/transparent_query_expansion.cpp` + `src/query_planner/visitors/plan_generator/select/cast.cpp` (map columns unify across the two legs of a transparent source; map casts exist only inside that expansion). Behavior goldens: `tests/blackbox/pit/kafka/test_redpanda_integration_avro.py` and `test_redpanda_integration_proto.py` (`test_queries_compound_map_columns` — the resolved types per format, record-/array-valued hits, empty maps, duplicate-key entry lists), `tests/blackbox/pit/kafka/test_transparent_kafka_iceberg.py` (map columns through all three legs), `tests/blackbox/kafka_protos/map_types.proto`. **Metadata-predicate read pruning**: `src/query_planner/visitors/kafka_offset_pruner.{h,cpp}` (`resolveAndPublishBounds` — batched parallel broker timequeries for a `(redpanda).timestamp` bound; a resolution failure degrades the scans to reading without timestamp bounds, keeps offset/partition pruning, and logs a warning with the query ID) |
-| `references/iceberg.md` | **Direct-Iceberg gate** (the callout at the top of the file — described by behavior, without naming the cluster parameter; `/redpanda:sql-admin-api` carries the parameter itself): `src/catalog/catalog_manager_scheduler.cpp` (`checkIcebergQueriesAllowed` and its call sites; `_translateRefresh` has none, by design), `src/query_planner/visitors/resolve/scan.cpp` (`tryResolveExternalCatalog` — the `SELECT` check and the transparent-query exemption), `tests/blackbox/pit/iceberg/test_iceberg_direct_queries_flag.py` (the end-to-end authority, including the statements its fixtures run with the gate off). **Struct-keyed Iceberg maps** (the "key type Oxla *can* represent but does not accept" paragraph): `tests/blackbox/pit/iceberg/test_iceberg_maps.py` — `REFRESH` succeeds, `pg_typeof` reports a `map(...)` over the synthesized key type, whole-map projection works, and only `m[key]` is refused with `map key type … is not supported`, for every index shape. `src/sqlparser/sql/CreateCatalogStatement.h`, `connection_option_names.h`, `src/catalog/iceberg_catalog_parser.cpp`, `src/iceberg_client/rest_catalog_config.h`, `src/iceberg_client/apache_iceberg_client/apache_iceberg_client.h`, `src/metastore/system_iceberg_catalogs.cpp`, `src/metastore/system_iceberg_tables.cpp`, `tests/MT/query_planner/cases/predefined_iceberg_*/`. **Iceberg table/namespace DDL** (`CREATE/DROP TABLE`, `CREATE/DROP NAMESPACE`, `PARTITION BY`, `PURGE`, SQL→Iceberg type mapping): `src/sqlparser/bison_parser/bison_parser.y` (`create_namespace_statement`, `create_table_body`, `iceberg_partition_term`, `drop_statement` `DROP_EXTERNAL_TABLE`/`DROP_NAMESPACE`, `opt_purge`/`opt_drop_behavior`), `src/sqlparser/sql/{CreateStatement.h,DropStatement.h,PartitionTerm.h}`, `src/external_schema/iceberg/iceberg_schema_builder.cpp` (type mapping + `IcebergSchemaIncompatible` rejections), `src/catalog/catalog_manager_scheduler.cpp`, `tests/blackbox/pit/iceberg/test_iceberg_ddl.py` (authoritative behavior golden). **`map` columns**: `src/db/iceberg_table.cpp` (`fieldTypeToLogicalColumn`'s map arm — key and value converted by the same field rules, lowered to the array-of-entries shape and tagged `TypeAlias::Kind::Map`, with `checkValid` turning an unrepresentable shape into an `IcebergSchemaIncompatible` error), `tests/UT/iceberg_client/to_logical_schema_test.cpp`, `tests/blackbox/pit/iceberg/test_iceberg_maps.py` (`pg_typeof` → `map(text,bigint)`, whole-map text form, last-duplicate/tombstone/revive lookup over a hand-seeded Parquet entry list). **Commit conflicts / SQLSTATE `40001`**: `src/error/proto/error.proto` + `src/error/error.cpp` (`IcebergCommitIsConflicting` and its message), `src/iceberg_client/apache_iceberg_client/error_translator.h` (which iceberg-cpp error kinds map to it), `src/iceberg_client/client.h` (retry-then-conflict contract), `src/net/postgres/session.cpp` (→ `SerializationFailure`, i.e. SQLSTATE `40001`, for SQL clients), `tests/UT/iceberg_client/error_translator_test.cpp` |
-| `references/files-and-system-tables.md` | `src/filesystem/path/protocol.{h,cpp}`, `src/filesystem/proto/credentials.proto`, `src/filesystem/providers/{s3,gcs,azure}/proto/credentials.proto`, `src/sqlparser/sql/connection_option_names.h` (storage namespace), `src/sqlparser/bison_parser/bison_parser.y` (`AWS_CRED`/`GCS_CRED`/`AZURE_CRED` import options), `src/metastore/system_{kafka_connections,kafka_sources,iceberg_catalogs,iceberg_tables}.cpp`, `src/metastore/metastore.cpp` (`createSystemTables`), `tests/UT/query_planner/cases/copy_from/`, `copy_to/` |
-| `references/redpanda-iceberg-source-config.md` | **`redpanda-data/redpanda`:** `src/v/datalake/` (producer side — `partition_spec_parser.cc`, `record_schema_resolver.cc`, `table_definition.cc`, `schema_registry.cc`), `iceberg_*` cluster properties in `src/v/config/configuration.{cc,h}` (`iceberg_catalog_type`, `iceberg_rest_catalog_endpoint`, `iceberg_rest_catalog_*`), `src/v/config/validators.{h,cc}`. **`redpanda-data/docs`:** `modules/manage/pages/iceberg/about-iceberg-topics.adoc`, `use-iceberg-catalogs.adoc`, `modules/reference/partials/properties/topic-properties.adoc` (auto-generated), `modules/reference/attachments/redpanda-properties-v26.1.10.json` (see TODO — skill cites v26.1.8), `modules/get-started/pages/licensing/overview.adoc`, `disable-enterprise-features.adoc` |
+| `SKILL.md` | `modules/sql/pages/query-data/{redpanda-catalogs,query-streaming-topics,query-iceberg-topics,query-nested-fields}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{index,create-table,alter-table,drop-table,describe,show-catalogs,show-tables}.adoc`, `modules/reference/pages/sql/system-virtual-tables.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc` (connection panel) |
+| `references/redpanda-catalogs.md` | `modules/reference/pages/sql/sql-statements/{create,alter,drop}-redpanda-catalog.adoc`, `{create,alter,drop}-table.adoc`, `modules/sql/pages/query-data/{redpanda-catalogs,query-streaming-topics,query-nested-fields,query-iceberg-topics}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/reference/pages/sql/sql-data-types/{row,map,uuid,bytea,numeric-type/numeric}.adoc` |
+| `references/iceberg.md` | `modules/sql/pages/query-data/{query-iceberg-topics,redpanda-catalogs,query-nested-fields}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{create,alter,drop}-iceberg-catalog.adoc`, `{create,alter,drop}-storage.adoc`, `alter-redpanda-catalog.adoc`, `create-table.adoc`, `describe.adoc`, `modules/reference/pages/sql/sql-data-types/{map,uuid,numeric-type/numeric}.adoc` |
+| `references/files-and-system-tables.md` | `modules/reference/pages/sql/system-virtual-tables.adoc` (catalog-metadata tables only: `system.catalogs`, `system.kafka_connections`, `system.kafka_sources`, `system.iceberg_catalogs`, `system.iceberg_tables`), `modules/reference/pages/sql/sql-statements/{show-catalogs,show-tables,describe,copy-to,index}.adoc`, `modules/sql/pages/manage/manage-access.adoc` |
+| `references/redpanda-iceberg-source-config.md` | `modules/manage/pages/iceberg/{about-iceberg-topics,use-iceberg-catalogs,specify-iceberg-schema}.adoc`, `modules/manage/pages/iceberg/rest-catalog/index.adoc`, `modules/manage/pages/schema-reg/schema-id-validation.adoc`, `modules/reference/pages/properties/{cluster-properties,topic-properties}.adoc`, `modules/sql/pages/query-data/query-iceberg-topics.adoc`. Single-sourced content: `redpanda-data/docs` `modules/manage/pages/iceberg/*.adoc`, `modules/manage/pages/schema-reg/schema-id-validation.adoc`, `modules/reference/partials/properties/{cluster-properties,topic-properties}.adoc` (Cloud view only) |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Deferred to live introspection (not drift)
 
-- **External catalog contents** — namespaces/tables in a live Iceberg REST catalog, and topics on a Kafka/Redpanda broker. Discovered at runtime via `ApacheIcebergClient` + the Schema Registry; inspect via `system.iceberg_tables` / `system.kafka_sources` after `REFRESH`.
-- **Runtime query results** — row counts, `system.*` contents, partition-pruning plans.
-- **Version-specific defaults / accepted values** for Redpanda cluster/topic properties (`redpanda.iceberg.*`, `iceberg_rest_catalog_*`, schema-validation knobs) — broker config, not Oxla; docs property partials + `configuration.cc` are the citation of record and move with the release.
-- **Oxla deployment config** — `network.postgresql.port` (conventional 5432) is set at deploy time.
+- Names of the managed storage connection and Iceberg catalog: read from
+  `system.kafka_connections.iceberg_catalog`, `SHOW ICEBERG CATALOGS`, `DESCRIBE`.
+- Topic and table contents, catalog contents, `system.*` rows.
+- Cluster and topic property defaults: the Cloud Console and Cloud property references.
+- Supported cloud providers and REST catalog providers: the published pages.
 
-## TODO / re-verify
+## Open questions for human review
 
-- **Sync 2026-10-14:** verified at the shipped Oxla tag `1.4.0-rc5` (`release/1.4`; the version `cloudv2` pins at head in both install packs and the ADP image map). Added from source at that tag: Iceberg `CREATE TABLE ... AS SELECT` (`src/query_planner/insert_planner/iceberg_ctas_planner.cpp`, `src/catalog/iceberg_create_table_service.cpp`, `bison_parser.y` `ctas_clauses`), the Iceberg `ALTER TABLE` action set (`bison_parser.y` `alter_iceberg_table_statement`/`alter_iceberg_action`, `src/external_schema/iceberg/iceberg_alter_builder.{h,cpp}` — the one-action-per-statement diagnostic, the add-required and set-required rejections, and the struct/`element`/`key`/`value` path walk), the catalog `base_location` option and the `system.iceberg_catalogs.base_location` column (`src/sqlparser/sql/connection_option_names.h`, `src/catalog/iceberg_catalog_parser.cpp`, `src/catalog/proto/iceberg_catalog.proto`, `src/metastore/system_iceberg_catalogs.cpp`), `ALTER {REDPANDA|KAFKA} CATALOG ... RESET (...)` with the required-option/set-and-reset/unit-clearing rules and the empty-string rejection (`bison_parser.y` `opt_reset_clause`/`option_key_list`, `src/sqlparser/sql/AlterKafkaCatalogStatement.h`, `src/catalog/kafka/conversions.cpp`), and the Azure storage surface (`src/filesystem/path/protocol.h` — `wasbs`/`az`/`abfss`/`abfs`; `src/catalog/storage_parser.cpp` + `src/filesystem/providers/azure/proto/identity.h` — required `account_name`, the all-or-none AAD triple, and the URL/`account_name` agreement check).
-
-- **Attachment version drift**: `redpanda-iceberg-source-config.md` cites `modules/reference/attachments/redpanda-properties-v26.1.8.json`, but the file present in `redpanda-data/docs` is now `redpanda-properties-v26.1.10.json`. Update the citation (or drop the version pin).
-- **`topic-properties.adoc` is auto-generated** (>55 KB). Upstream source of truth for `redpanda.iceberg.*` / schema-validation topic properties is `redpanda-data/redpanda` (`src/v/config/configuration.cc`, `src/v/datalake/`). Per-property defaults not each line-verified this pass.
-- **Oxla PostgreSQL wire / `network.postgresql.port`** (SKILL quickstart) not verified against an Oxla config source path this pass — locate/cite the Oxla network-config definition or mark as deploy-time config.
-- **Verify Oxla claims at the shipped tag, not the default branch**: the `<version>-rcN` tag on `release/X.Y` for the version `redpanda-data/cloudv2` pins (`vars.redpanda_oxla_version` in `install-pack/*.yml`, `redpanda-oxla:` in `adp/images.yaml`; the lowest if they differ). The Oxla paths in this map were located on the default branch; re-confirm them at that tag.
-- Individual SQL option **defaults and accepted-value enums** (e.g. `struct_mapping_policy` `FLATTEN`/`VARIANT` "parsed but rejected", `schema_lookup_policy` naming) come from `conversions.cpp` / `schema_lookup_policy.h` / the metastore `.cpp` files — re-open and confirm exact string literals before editing.
-
-## Usage
-
-For each file being reviewed or updated, open the listed source paths first and confirm every claim
-still matches. Read Oxla sources **only** through the Redpanda-Github-Read connector (`redpanda-data/oxla`
-is private). For `redpanda-iceberg-source-config.md`, verify producer-side facts against
-`redpanda-data/redpanda` (`src/v/datalake/`, `src/v/config/configuration.cc`) and the
-`redpanda-data/docs` Iceberg + licensing pages. Re-confirm exact SQL keywords, option names, proto
-field names, and property keys before writing any new fact.
+- `system-virtual-tables.adoc` says Iceberg schemas are auto-loaded "when you `CREATE TABLE`
+  against an Iceberg catalog", while `create-table.adoc` requires a Redpanda catalog and
+  `create-iceberg-catalog.adoc` says standalone Iceberg querying is not supported. The skill
+  says only "automatically when the table is created".
+- The managed Iceberg catalog is named `default_iceberg_catalog` in
+  `create-iceberg-catalog.adoc` but shown as `lakehouse_catalog` / `iceberg_storage` in
+  `query-iceberg-topics.adoc`. The skill avoids hardcoding either name.
+- `copy-to.adoc` examples write to server-side paths (`'/path/to/...'`); on the managed engine
+  the useful targets are `STDOUT` and cloud storage. The skill keeps the documented syntax and
+  examples only for `STDOUT`, S3, and GCS.

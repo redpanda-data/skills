@@ -1,608 +1,221 @@
-Source: oxla `src/sqlparser/sql/CreateCatalogStatement.h`, `src/sqlparser/sql/connection_option_names.h` (`hsql::option_names::iceberg`), `src/catalog/iceberg_catalog_parser.cpp`, `src/iceberg_client/rest_catalog_config.h`, `src/iceberg_client/apache_iceberg_client/apache_iceberg_client.h`, `tests/MT/query_planner/cases/predefined_iceberg_*/`; table/namespace DDL: `src/sqlparser/bison_parser/bison_parser.y`, `src/sqlparser/sql/{CreateStatement.h,DropStatement.h,PartitionTerm.h}`, `src/external_schema/iceberg/iceberg_schema_builder.cpp`, `tests/blackbox/pit/iceberg/test_iceberg_ddl.py`; system tables: `src/metastore/system_iceberg_catalogs.cpp`, `src/metastore/system_iceberg_tables.cpp`. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/query-data/{query-iceberg-topics,redpanda-catalogs}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{create,alter,drop}-iceberg-catalog.adoc`, `{create,alter,drop}-storage.adoc`, `{create,alter}-redpanda-catalog.adoc`, `create-table.adoc`, `describe.adoc`, `modules/reference/pages/sql/sql-data-types/{map,uuid,numeric-type/numeric}.adoc`; verified 2026-10-18. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
-# Oxla: Apache Iceberg Queries
+# Query Iceberg-enabled Topics
 
-Oxla connects to Apache Iceberg REST catalogs (e.g., Apache Polaris, AWS Glue
-Data Catalog, Tabular) and can query Iceberg tables using the `catalog=>path.table`
-syntax. Partition pruning and predicate pushdown are applied automatically.
+With Iceberg Topics, a topic's records are also committed to an Apache Iceberg
+table and persist after they age out of topic retention. Redpanda SQL queries
+both through one table: a **Redpanda catalog linked to an Iceberg catalog**
+(`USING CATALOG`) returns live topic records and Iceberg-committed history in
+a single result, with no overlap. You don't write a `UNION ALL`.
 
-> **Direct Iceberg access is gated at the cluster level.** One cluster setting
-> controls every direct interaction with an Iceberg catalog's tables and
-> namespaces — `SELECT`, `CREATE TABLE`/`ALTER TABLE`/`DROP TABLE`, and
-> `CREATE NAMESPACE`/`DROP NAMESPACE`. Where it is not enabled, each of those is
-> refused with `FeatureNotSupported` and the message
-> `Direct queries on iceberg tables are not supported.` Defining the catalog is
-> **not** gated (`CREATE ICEBERG CATALOG`, `CREATE STORAGE`), and neither is
-> `REFRESH`: a transparent Kafka+Iceberg query resolves its Iceberg leg from the
-> schema that `REFRESH` registers, so `REFRESH` works regardless. Transparent
-> Kafka+Iceberg queries are unaffected throughout. For the parameter itself and
-> how an operator sets it, see `/redpanda:sql-admin-api`.
+This is the only supported way to read Iceberg data in Redpanda SQL. An Iceberg
+catalog is used through a linked Redpanda catalog; querying an Iceberg
+catalog's own tables standalone is not supported.
 
+## Prerequisites
+
+- A Redpanda BYOC cluster with Redpanda SQL enabled. Check the supported cloud
+  providers on the
+  [Query Iceberg-enabled Topics](https://docs.redpanda.com/cloud-data-platform/sql/query-data/query-iceberg-topics/)
+  page.
+- An external Iceberg REST catalog that you provide, with the cluster property
+  `iceberg_catalog_type = rest`. The `object_storage` catalog type does not
+  support Iceberg queries from Redpanda SQL.
+- An Iceberg-enabled topic with a Protobuf, Avro, or JSON schema registered in
+  Schema Registry. Cluster and topic settings:
+  [redpanda-iceberg-source-config.md](redpanda-iceberg-source-config.md).
+
+## What Redpanda Cloud configures
+
+When Redpanda SQL is enabled on a BYOC cluster with an Iceberg REST catalog
+configured, Redpanda Cloud runs the equivalent of these statements for you,
+with options taken from the cluster's REST catalog configuration (endpoint,
+credentials, region):
+
+```sql
+-- 1. Storage connection with the REST catalog's object-storage credentials
+--    (TYPE = S3 on AWS; TYPE = GCS on GCP)
+CREATE STORAGE <storage> TYPE = S3 WITH (
+  endpoint = '<rest-catalog-storage-endpoint>',
+  access_key_id = '<access-key-id>',
+  secret_access_key = '<secret-access-key>',
+  region = '<region>',
+  path_style = 'true'
+);
+
+-- 2. Iceberg catalog pointing at the REST catalog
+CREATE ICEBERG CATALOG <iceberg_catalog> STORAGE <storage> WITH (
+  uri = '<rest-catalog-uri>',
+  warehouse = '<warehouse>',
+  auth_type = '<auth-type>'
+);
+
+-- 3. Link the default Redpanda catalog (pandaproxy_url is required when linked)
+ALTER REDPANDA CATALOG default_redpanda_catalog
+USING CATALOG <iceberg_catalog> WITH (pandaproxy_url = '<pandaproxy-url>');
+```
+
+You don't run these yourself, and you should not alter or drop the managed
+storage connection, Iceberg catalog, or link. Inspect them instead:
+
+```sql
+DESCRIBE REDPANDA CATALOG default_redpanda_catalog;
+SELECT name, iceberg_catalog FROM system.kafka_connections;
+SHOW ICEBERG CATALOGS;
+DESCRIBE ICEBERG CATALOG <iceberg_catalog>;   -- REST endpoint, warehouse, auth type
+```
 
 ---
 
-## CREATE ICEBERG CATALOG
+## Map and query
 
 ```sql
-CREATE ICEBERG CATALOG [IF NOT EXISTS] [<schema>.]<catalog_name>
-  STORAGE <storage_schema>.<storage_name>
-  WITH ( <option> = <value> [, ...] );
+CREATE TABLE default_redpanda_catalog=>orders WITH (
+  topic = 'orders',
+  schema_subject = 'orders-value'
+);
+
+SELECT * FROM default_redpanda_catalog=>orders LIMIT 10;
 ```
 
-The `STORAGE` clause is **required** and names a previously created storage
-connection (created via `CREATE STORAGE`) for object-store credentials.
-`WITH (...)` carries catalog-level options.
+The table gets the same `redpanda` and `redpanda_raw` metadata columns as any
+topic table (see [redpanda-catalogs.md](redpanda-catalogs.md#auto-added-columns)).
+Use `struct_mapping_policy = 'COMPOUND'` (the default) so nested fields stay
+typed across live and Iceberg records; `JSON` does not align cleanly because
+Iceberg always exposes nested structures as typed columns.
 
-### Options reference
+Iceberg-committed data persists independently of topic retention, so queries
+keep returning records past the retention window, provided they were
+committed to Iceberg first.
 
-Iceberg catalog options:
+### REFRESH after a shape change
 
-**Required:**
+After any shape change to the Iceberg table or the topic's schema, run:
 
-| Option | Description |
-|--------|-------------|
-| `uri` | REST catalog endpoint URL (e.g., `'https://catalog.example.com'`) |
+```sql
+REFRESH default_redpanda_catalog=>orders;
+```
 
-**General:**
+Without it, the next query fails at planning time with
+`Schema not found for Iceberg table '<table>'`. `REFRESH` updates only the
+schema view used for planning, not data; you don't run it between writes.
 
-| Option | Description |
-|--------|-------------|
-| `warehouse` | Warehouse path or identifier (catalog-specific) |
-| `base_location` | Root under which newly created tables are placed: a table is created at `<base_location>/<dot-joined namespace>.db/<table>`, sent as the location on the create request. Takes precedence over a location published by the namespace and over `warehouse`, and applies to every backend — including the ones that would otherwise choose the location themselves. |
-| `auth_type` | Authentication mode: `'oauth2'`, `'basic'`, `'aws_sigv4'`, or `'gcp'`. Omit for unauthenticated. |
+---
 
-**OAuth2 options** (when `auth_type = 'oauth2'`):
+## Match the key and header options to the topic's Iceberg mode
+
+For an Iceberg-enabled topic, the table's key and header options must match how
+the topic's `redpanda.iceberg.mode` encodes keys and headers into the Iceberg
+table:
+
+| Topic `redpanda.iceberg.mode` | `CREATE TABLE` options |
+|-------------------------------|------------------------|
+| `value_schema_id_prefix` | Omit the key options (the key stays `bytea`) |
+| `key:mode=schema_id_prefix;value:mode=schema_id_prefix` | `key_decode_mode = 'schema_id_prefix'` |
+| `key:mode=string;value:mode=schema_id_prefix` | `key_decode_mode = 'string'` |
+| `headers:value_type=string;value:mode=schema_id_prefix` | `header_value_type = 'string'` |
+
+A mismatch fails at planning time with a type mismatch rather than returning
+wrong data. A topic whose mode nests value fields under a `value` struct
+(`value:layout=nested`) is not supported: it fails with
+`Kafka schema must be a name-superset of Iceberg schema`.
+
+```sql
+CREATE TABLE default_redpanda_catalog=>orders_keyed WITH (
+  topic = 'orders',
+  schema_subject = 'orders-value',
+  key_decode_mode = 'schema_id_prefix',
+  header_value_type = 'string'
+);
+
+SELECT ((redpanda).key).customer_id, (redpanda).headers
+FROM   default_redpanda_catalog=>orders_keyed;
+```
+
+`key_decode_mode` and `header_value_type` are fixed for the table's lifetime;
+drop and recreate the table to change them.
+
+---
+
+## Schema differences between topic and Iceberg table
+
+Redpanda writes the Iceberg table forward-only: it adds columns when the topic
+schema widens but never drops them when it narrows. Redpanda SQL treats the
+topic's Schema Registry subject as canonical:
+
+- Column order, count, and types come from the topic schema.
+- A column the topic schema has but the Iceberg table lacks returns `NULL` on
+  Iceberg-side rows (common right after adding a field).
+- A column the Iceberg table has but the topic schema lacks fails the query at
+  planning time with `Kafka schema must be a name-superset of Iceberg schema`.
+  Fix it by re-adding the field to the topic's subject so the topic schema
+  covers every Iceberg column.
+
+## Iceberg type limitations
+
+These apply only to columns read from the Iceberg schema, not to live-record
+columns:
+
+- Iceberg `decimal(p, s)` becomes `numeric(p, s)`; some `numeric` operations
+  (arithmetic, aggregates) are not supported yet.
+- A `list` whose element is a `list` or a `map` is not supported: `CREATE
+  TABLE` or `REFRESH` fails. Lists of primitives, and lists of structs without
+  unsupported types, work.
+- `map` columns are read from both live records and Iceberg history.
+- UUID columns read as `uuid`; cast with `id::text` before using string
+  functions.
+
+---
+
+## Iceberg catalog statements
+
+On Redpanda Cloud the Iceberg catalog for this workflow is created and managed
+for you. The syntax is documented so you can understand what is configured.
+Every form requires an existing storage connection.
+
+```sql
+CREATE ICEBERG CATALOG [IF NOT EXISTS] catalog_name STORAGE storage_name
+  WITH (option = 'value' [, ...]);
+
+ALTER ICEBERG CATALOG [IF EXISTS] catalog_name STORAGE storage_name  -- STORAGE is required
+  WITH (option = 'value' [, ...]);
+
+DROP ICEBERG CATALOG [IF EXISTS] catalog_name;   -- fails while a Redpanda catalog is linked to it
+```
 
 | Option | Required | Description |
 |--------|----------|-------------|
-| `oauth2_client_id` | Yes | Client ID |
-| `oauth2_client_secret` | Yes | Client secret (stored encrypted) |
-| `oauth2_scope` | No | OAuth2 scope. Default: `'PRINCIPAL_ROLE:ALL'` (matches Redpanda's default). |
-| `oauth2_token_endpoint_url` | No | Token endpoint URL. When omitted, Oxla discovers it from the catalog's `/config` endpoint (works with Polaris). Set explicitly for external IdPs (Okta, Azure AD). |
-| `oauth2_token_refresh_margin_seconds` | No | Seconds before token expiry to trigger a refresh. Must be between 0 and INT32_MAX. |
+| `uri` | Yes | REST catalog endpoint URI |
+| `warehouse` | No | Warehouse identifier or location |
+| `auth_type` | No | `oauth2`, `basic`, `aws_sigv4`, or `gcp`. Omit for no authentication. Auth-specific options without `auth_type` are rejected |
+| `oauth2_client_id`, `oauth2_client_secret` | With `oauth2` | OAuth2 client credentials |
+| `oauth2_scope` | No | OAuth2 scope to request |
+| `oauth2_token_endpoint_url` | No | Override the catalog's default token endpoint |
+| `oauth2_token_refresh_margin_seconds` | No | Seconds before expiry to refresh (0 to 2147483647) |
+| `username`, `password` | With `basic` | Basic-auth credentials |
+| `aws_region` | With `aws_sigv4` | Region for SigV4 signing |
+| `aws_access_key_id`, `aws_secret_access_key` | No | Set together or omit both to use the AWS default credential chain |
+| `gcp_project_id` | With `gcp` | Project that BigLake requests are billed to; authenticates with Application Default Credentials |
+| `ssl_verify` | No | `'true'` (default) or `'false'` |
+| `ssl_ca_info`, `ssl_ca_path`, `ssl_crl_file` | No | CA file, CA directory, and CRL file paths |
+| `flat_namespaces` | No | `'true'` / `'false'`: whether the backend is flat. Auto-derived `true` for SigV4 Glue and S3 Tables, `false` otherwise |
+| `allowed_namespaces` | No | Comma-separated dotted namespace paths that scope discovery (for example `'analytics, logs.audit'`). Empty or overlapping entries are rejected; on flat backends entries must be single-segment |
 
-**Basic auth options** (when `auth_type = 'basic'`):
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `username` | Yes | HTTP basic auth username |
-| `password` | Yes | HTTP basic auth password (stored encrypted) |
-
-**AWS SigV4 options** (when `auth_type = 'aws_sigv4'`):
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `aws_region` | Yes | AWS region (e.g., `'us-east-1'`) |
-| `aws_access_key_id` | No* | AWS access key. Omit to use the default credential chain (env vars → shared config → STS web identity → IMDSv2/ECS). Both `aws_access_key_id` and `aws_secret_access_key` must either both be set or both be omitted. |
-| `aws_secret_access_key` | No* | AWS secret access key |
-| `aws_service_name` | No | SigV4 service segment. Default: `'glue'`. Use `'s3tables'` for S3 Tables REST catalog, `'execute-api'` for API Gateway-fronted catalogs. |
-
-**GCP options** (when `auth_type = 'gcp'`):
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `gcp_project_id` | Yes | GCP project ID. Authenticates via GCP Application Default Credentials (ADC). |
-
-**TLS options:**
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `ssl_verify` | `'true'` | TLS verification: `'true'` or `'false'` |
-| `ssl_ca_info` | — | Path to CA bundle file (CURLOPT_CAINFO) |
-| `ssl_ca_path` | — | Path to directory of CA certificates (CURLOPT_CAPATH) |
-| `ssl_crl_file` | — | Path to PEM-formatted CRL file (CURLOPT_CRLFILE) |
-
-### Examples
-
-Each example assumes a storage connection named `my_s3` (or the provider-specific
-name) already exists. Create it with `CREATE STORAGE` first (see the
-`files-and-system-tables.md` reference or the sql-admin-api skill).
+## Storage connection statements
 
 ```sql
--- Unauthenticated local catalog (e.g., dev environment)
-CREATE ICEBERG CATALOG local_cat
-STORAGE public.my_local_storage
-WITH (uri = 'http://localhost:8181');
-
--- Polaris with OAuth2 (token endpoint auto-discovered)
-CREATE ICEBERG CATALOG polaris
-STORAGE public.my_s3
-WITH (
-  uri                  = 'https://polaris.example.com/api/catalog',
-  warehouse            = 'my-warehouse',
-  auth_type            = 'oauth2',
-  oauth2_client_id     = 'my-client-id',
-  oauth2_client_secret = 'my-client-secret'
-);
-
--- Polaris with explicit scope and token endpoint
-CREATE ICEBERG CATALOG polaris_explicit
-STORAGE public.my_s3
-WITH (
-  uri                         = 'https://polaris.example.com/api/catalog',
-  auth_type                   = 'oauth2',
-  oauth2_client_id            = 'client',
-  oauth2_client_secret        = 'secret',
-  oauth2_scope                = 'PRINCIPAL_ROLE:ALL',
-  oauth2_token_endpoint_url   = 'https://polaris.example.com/oauth/tokens'
-);
-
--- AWS Glue with static credentials
-CREATE ICEBERG CATALOG glue
-STORAGE public.my_s3
-WITH (
-  uri                    = 'https://glue.us-east-1.amazonaws.com/iceberg',
-  auth_type              = 'aws_sigv4',
-  aws_region             = 'us-east-1',
-  aws_access_key_id      = 'AKIAIOSFODNN7EXAMPLE',
-  aws_secret_access_key  = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
-);
-
--- AWS Glue with EC2 instance-profile IAM role (no static keys)
-CREATE ICEBERG CATALOG glue_iam
-STORAGE public.my_s3
-WITH (
-  uri        = 'https://glue.us-east-1.amazonaws.com/iceberg',
-  auth_type  = 'aws_sigv4',
-  aws_region = 'us-east-1'
-);
-
--- Basic auth catalog
-CREATE ICEBERG CATALOG basic_cat
-STORAGE public.my_s3
-WITH (
-  uri       = 'https://iceberg.example.com',
-  auth_type = 'basic',
-  username  = 'admin',
-  password  = 'secret'
-);
-
--- Catalog with TLS verification disabled (dev/self-signed)
-CREATE ICEBERG CATALOG dev_ice
-STORAGE public.my_s3
-WITH (
-  uri        = 'https://dev-catalog.internal',
-  ssl_verify = 'false'
-);
+CREATE STORAGE [IF NOT EXISTS] storage_name TYPE = S3 | GCS [WITH (option = 'value' [, ...])];
+ALTER STORAGE [IF EXISTS] storage_name TYPE = S3 | GCS [WITH (option = 'value' [, ...])];  -- TYPE is required
+DROP STORAGE [IF EXISTS] storage_name;
+DESCRIBE STORAGE storage_name;
 ```
 
----
-
-## Creating and dropping Iceberg tables and namespaces (DDL)
-
-Beyond querying, Oxla can issue DDL **against an Iceberg REST catalog** through
-SQL: create and drop namespaces, and create and drop tables (including their
-partition spec). The catalog is addressed with the same `catalog=>path` operator
-used for queries. These statements act on the external catalog directly — the
-created table/namespace shows up for any Iceberg client, not just Oxla.
-
-An Iceberg **table path always requires a namespace**: use
-`catalog=>namespace.table`. A bare `catalog=>table` is a syntax error
-(`iceberg table paths require a namespace; use "catalog=>namespace.table"`).
-
-### Namespaces
-
-```sql
--- Create a namespace (one or more dot-separated segments after =>)
-CREATE NAMESPACE my_ice=>sales;
-CREATE NAMESPACE IF NOT EXISTS my_ice=>sales;
-CREATE NAMESPACE my_ice=>sales.eu WITH (key = 'value');   -- properties forwarded to the catalog
-
--- Drop a namespace. RESTRICT (the default) requires it to be empty.
-DROP NAMESPACE my_ice=>sales;              -- RESTRICT (default)
-DROP NAMESPACE my_ice=>sales RESTRICT;
-DROP NAMESPACE IF EXISTS my_ice=>sales;
-```
-
-`CREATE NAMESPACE` without `IF NOT EXISTS` on an existing namespace fails
-(duplicate schema); with `IF NOT EXISTS` it is a no-op. `DROP NAMESPACE ...
-CASCADE` **parses but is rejected** (`DROP NAMESPACE CASCADE is not supported on
-this catalog`) — drop the namespace's tables first, then drop it with the
-default `RESTRICT` behavior.
-
-### Tables
-
-```sql
--- Create a table with an explicit column list (namespace required)
-CREATE TABLE my_ice=>sales.orders (
-    id      INT,
-    amount  BIGINT NOT NULL,
-    label   TEXT
-);
-
-CREATE TABLE IF NOT EXISTS my_ice=>sales.orders (id INT);
-
--- Partitioned table: PARTITION BY takes Iceberg partition transforms
-CREATE TABLE my_ice=>sales.events (id INT, nm TEXT, d DATE)
-PARTITION BY (day(d), bucket(8, id), truncate(4, nm));
-
--- Optional WITH (...) carries table properties forwarded to the catalog
-CREATE TABLE my_ice=>sales.t (id INT) WITH (key = 'value');
-
--- Drop a table. Plain DROP removes only the catalog entry; PURGE also deletes
--- the table's data/metadata files from object storage.
-DROP TABLE my_ice=>sales.orders;
-DROP TABLE my_ice=>sales.orders PURGE;
-DROP TABLE IF EXISTS my_ice=>sales.orders;
-```
-
-`CREATE TABLE ... AS SELECT` (CTAS) **is supported** on an Iceberg catalog. The
-`SELECT` is planned first, the new table's columns are derived from the planned
-output, and the table is created when the plan runs, so that it is published
-together with its first files wherever the catalog supports a staged create
-(Glue and S3 Tables do not, so against those the table is created immediately).
-An optional column-name list, `PARTITION BY (...)` and `WITH (...)` table
-properties all apply to the CTAS form as they do to a plain `CREATE TABLE`.
-
-```sql
--- Copy a table within a catalog
-CREATE TABLE my_ice=>sales.orders_2026 AS
-    SELECT * FROM my_ice=>sales.orders WHERE sold_at >= DATE '2026-01-01';
-
--- Partition the new table as it is created
-CREATE TABLE my_ice=>sales.by_day PARTITION BY (day(sold_at)) AS
-    SELECT id, sold_at FROM my_ice=>sales.orders;
-
-CREATE TABLE IF NOT EXISTS my_ice=>sales.top AS SELECT id FROM orders LIMIT 10;
-```
-
-`IF NOT EXISTS` against an existing table is resolved as a lookup at planning
-time, and on an existing table the statement is a no-op that still reports the
-`CREATE TABLE AS` tag. A statement that fails after the table was created drops it
-again, as does a transaction that ends without committing. CTAS is the one
-`CREATE` form that runs as a query rather than as catalog DDL, so two gates apply:
-`feature_flags.allow_table_operations` (off ⇒ `CREATE TABLE AS SELECT is not
-supported.`, before the target is even examined) and the direct-Iceberg gate at the
-top of this file. Like the rest of the Iceberg DDL it is authorized against the
-catalog's owner, and `SELECT ... INTO` in the body is rejected.
-
-The options-only form `CREATE TABLE cat=>tbl WITH (...)` (no column list and no
-`AS SELECT`) is the *Kafka* topic-binding form; on an **Iceberg** catalog it is
-rejected (`... is an iceberg catalog; creating a table on it requires a column
-definition list`).
-
-### `ALTER TABLE` (Iceberg schema evolution)
-
-An Iceberg-catalog table takes a schema-evolution form of `ALTER TABLE` that
-native tables do not have:
-
-```sql
-ALTER TABLE [IF EXISTS] <catalog>=><namespace>.<table> <action>;
-```
-
-It is covered by the direct-Iceberg gate described at the top of this file, is
-authorized against the **catalog's owner** like the rest of the Iceberg DDL, and
-needs a namespace in the path (`iceberg table paths require a namespace; use
-"catalog=>namespace.table"`). On a catalog that is not an Iceberg catalog it is
-refused with `ALTER TABLE is only supported on Iceberg tables, and "<name>" is
-not an Iceberg catalog`.
-
-**One action per statement.** The grammar accepts a comma-separated list only so
-that it can refuse it with a diagnostic instead of a syntax error: `ALTER TABLE
-takes one action per statement; issue one statement per change`.
-
-| Action | Notes |
-|--------|-------|
-| `ADD COLUMN [IF NOT EXISTS] [<parent path>.]<col> <type> [FIRST \| AFTER <col>]` | The new column must be nullable: a required one is refused with `cannot add required column "<col>": rows already written have no value for it. Add it as nullable instead.` |
-| `DROP COLUMN [IF EXISTS] <path>` | |
-| `RENAME COLUMN <path> TO <name>` | Whether the new name collides is decided by the catalog itself |
-| `ALTER COLUMN <path> TYPE <type>` | Whether the change is a legal widening is decided by the catalog itself |
-| `ALTER COLUMN <path> DROP NOT NULL` | Makes the field optional |
-| `ALTER COLUMN <path> SET NOT NULL` | **Rejected**: `cannot make column "<col>" required: rows already written cannot be checked against it. Declare it NOT NULL when creating the table instead.` |
-| `ALTER COLUMN <path> FIRST \| AFTER <col>` | Moves the column |
-| `SET TBLPROPERTIES ('k' = 'v' [, ...])` | Table properties, as forwarded by `CREATE TABLE ... WITH (...)` |
-| `UNSET TBLPROPERTIES ('k' [, ...])` | |
-| `ADD PARTITION FIELD <transform> [AS <name>]` | `<transform>` is a partition term, as in `PARTITION BY` below |
-| `DROP PARTITION FIELD <transform>` | |
-| `REPLACE PARTITION FIELD <old> WITH <new> [AS <name>]` | Applied as a drop followed by an add |
-| `WRITE ORDERED BY (<transform> [ASC \| DESC] [NULLS FIRST \| NULLS LAST] [, ...])` | Sets the table's write sort order. Without an explicit nulls position, Iceberg's own default applies: nulls first when ascending, nulls last when descending |
-
-A column path is dotted and follows Iceberg's own field naming: struct fields by
-name, a list's `element`, and a map's `key` / `value` — for example
-`ALTER TABLE my_ice=>sales.orders DROP COLUMN shipping.address.zip`. An action
-excused by `IF EXISTS` / `IF NOT EXISTS` is dropped from the statement instead of
-failing it.
-
-```sql
-ALTER TABLE my_ice=>sales.orders ADD COLUMN discount DOUBLE AFTER amount;
-ALTER TABLE my_ice=>sales.orders RENAME COLUMN amount TO gross_amount;
-ALTER TABLE my_ice=>sales.orders ALTER COLUMN qty TYPE BIGINT;
-ALTER TABLE my_ice=>sales.orders SET TBLPROPERTIES ('write.format.default' = 'parquet');
-ALTER TABLE my_ice=>sales.orders ADD PARTITION FIELD day(sold_at) AS sold_day;
-ALTER TABLE my_ice=>sales.orders WRITE ORDERED BY (sold_at DESC NULLS LAST);
-```
-
-### `PARTITION BY` transforms
-
-`PARTITION BY (...)` accepts a comma-separated list of Iceberg partition
-transforms over the table's columns. A column reference may be dot-separated to
-descend into a struct field.
-
-| Transform | Meaning |
-|-----------|---------|
-| `col` | identity — partition by the column value |
-| `bucket(N, col)` | hash into `N` buckets |
-| `truncate(W, col)` | truncate to width `W` |
-| `year(col)` / `month(col)` / `day(col)` / `hour(col)` | date/time truncation |
-
-`N` and `W` must be in `[1, 2147483647]` (Iceberg's signed 32-bit int range); an
-out-of-range value is a parse error.
-
-### SQL → Iceberg type mapping
-
-Column types are translated to Iceberg types when the table is created:
-
-| SQL column type | Iceberg type |
-|-----------------|--------------|
-| `BOOL` | `boolean` |
-| `INT` | `int` |
-| `BIGINT` | `long` |
-| `REAL` | `float` |
-| `DOUBLE PRECISION` | `double` |
-| `DATE` | `date` |
-| `TIME` | `time` |
-| `TIMESTAMP` | `timestamp` |
-| `TIMESTAMPTZ` | `timestamptz` |
-| `TEXT` | `string` |
-| `BYTEA` | `binary` |
-| `NUMERIC` (no params) | `decimal(18, 0)` |
-| `NUMERIC(p, s)` | `decimal(p, s)` |
-| `T[]` (array) | `list` of the element type |
-| composite type (`CREATE TYPE ... AS (...)`) | `struct` of the fields |
-
-- `NOT NULL` columns become **required** Iceberg fields; a plain or `NULL`
-  column is optional. Array elements and composite/struct fields are always
-  optional (SQL has no syntax for their nullability).
-- Composite type names resolve through the session search path; qualify the name
-  (`schema.type`) to reference a type in a schema off the search path.
-- Types with no Iceberg equivalent are **rejected** with
-  `column "<name>" has a type that cannot be represented in Iceberg`:
-  `INTERVAL`, `JSON`, `JSONB`, `UUID`, `INT16`/`INT32` (the 128-/256-bit wide
-  integers, wider than Iceberg's `long`), and the geo types `GEOMETRY`,
-  `GEOGRAPHY`, `POINT`. The same applies when one of these is nested inside a
-  composite or array; the error names the full column path (e.g. `c.span`,
-  `c[]`).
-- There is no SQL side to Iceberg's `map` type: SQL has no declarable map column
-  type, so `CREATE TABLE` cannot produce a `map` column. A `map` column created by
-  another Iceberg writer is readable — see
-  [Reading `map` columns](#reading-map-columns).
-
-### Concurrent commits
-
-Iceberg commits are optimistic: the client re-reads the table metadata and retries
-internally (per the table's `commit.retry` properties). When retries are exhausted,
-or a commit-time validation fails, the statement fails with a dedicated
-concurrent-modification error reported to SQL clients as SQLSTATE **`40001`**
-(`serialization_failure`, message `iceberg commit conflicts with a concurrent table
-change`) — the standard "re-run the statement" signal. Retry it; the retry re-reads
-the table first. Any other failure keeps its own error code, so `40001`
-specifically means another writer changed the table underneath this statement.
-
-### Authorization
-
-Iceberg DDL is authorized against the **catalog's owner**: a role that can see a
-catalog but does not own it cannot run `CREATE`/`DROP` against it (`permission
-denied: must be owner of table <catalog>`). A schema-qualified reference
-`schema.catalog=>...` additionally requires `USAGE` on that schema — denied
-identically whether or not the catalog exists, so catalog names in a schema are
-not discoverable without `USAGE`.
-
----
-
-## Querying Iceberg Tables
-
-Use the `catalog=>path.to.table` syntax. The path after `=>` is a dot-delimited
-Iceberg namespace + table name.
-
-```sql
--- Simple select — all columns
-SELECT * FROM my_ice=>my.path.table1;
-
--- Project specific columns
-SELECT age, name FROM test_iceberg_catalog=>my.path.table1;
-
--- Single-namespace table
-SELECT id, name FROM my_ice=>ns.orders;
-```
-
-### Reading `map` columns
-
-An Iceberg `map<K, V>` column resolves to an Oxla map column — for example a
-`map<string, long>` reads as `map(text,bigint)` — and is queried with the `m[key]`
-subscript. Both the key and the value type are translated by the same rules as any
-other Iceberg column, so a type Oxla cannot represent makes the column's schema
-incompatible rather than silently degrading it.
-
-A key type that Oxla *can* represent but does not accept as a map key is a
-different case, and a **struct-keyed** Iceberg map is the one that occurs in
-practice (no Kafka schema format can express one). The column is not rejected:
-`REFRESH` registers it, `pg_typeof` reports a `map(...)` type over the synthesized
-key type, and projecting the whole column works. Only the subscript is refused, at
-planning time, with `map key type <key type> is not supported` — for any index
-expression, including one shaped like the key itself. Project the whole map and
-work with the entry text, or reshape the table, if you need those rows.
-
-```sql
-SELECT id, vals['region'], vals['nope'] FROM my_ice=>ns.events;
-SELECT pg_typeof(vals) FROM my_ice=>ns.events LIMIT 1;   -- map(text,bigint)
-```
-
-A Parquet map is physically an entry list with no key-uniqueness guarantee, so the
-lookup rules are the same as for a Kafka map column: duplicate keys are kept
-verbatim and a lookup returns the **last** matching entry (a later `NULL`
-tombstones the key, a later value revives it), a miss and a stored `NULL` both
-yield `NULL`, and projecting the whole column emits the array-of-pairs text form.
-`REFRESH` picks map columns up like any other schema change. See
-[kafka-catalogs.md](kafka-catalogs.md#map-columns) for the per-format mapping and
-`/redpanda:sql` for full map semantics.
-
-### Partition Pruning
-
-Oxla pushes equality and range predicates on partition columns to the Iceberg
-scan planner. The scan plan is computed by the Apache Iceberg C++ library via
-`planScan`, which returns only the data files relevant to the filter.
-
-```sql
--- Equality filter on an integer partition column
-SELECT id FROM test_iceberg_catalog=>my.path.partitioned_table
-WHERE id = 1;
-
--- Boolean partition column
-SELECT id FROM test_iceberg_catalog=>my.path.partitioned_table
-WHERE val_bool = false;
-
--- Date partition column
-SELECT id FROM test_iceberg_catalog=>my.path.partitioned_table
-WHERE val_date = DATE '2024-01-02';
-
--- Timestamp partition column (Iceberg days() transform)
-SELECT id FROM test_iceberg_catalog=>my.path.partitioned_table
-WHERE val_ts = TIMESTAMP '2024-01-03 12:00:00';
-
--- Range filter on integer partition
-SELECT id, name FROM test_iceberg_catalog=>my.path.range_table
-WHERE id < 3;
-
--- UNION ALL — each predicate prunes independently
-SELECT id FROM test_iceberg_catalog=>my.path.partitioned_table WHERE id = 1
-UNION ALL
-SELECT id FROM test_iceberg_catalog=>my.path.partitioned_table WHERE val_bool = false;
-```
-
-### Multi-file Partitions
-
-Tables with multiple data files per partition are supported transparently. Oxla
-distributes file reads across nodes using a hash-based assignment.
-
-```sql
-SELECT id, name FROM test_iceberg_catalog=>my.path.multi_table
-WHERE id = 1;
-```
-
-### Joins with Native Tables
-
-```sql
--- Join an Iceberg table with a native Oxla table
-SELECT o.order_id, c.name, o.total
-FROM   my_ice=>sales.orders o
-JOIN   customers c ON o.customer_id = c.id;
-```
-
----
-
-## Internal Client Details
-
-The Iceberg client (`ApacheIcebergClient`) connects to the REST catalog and
-provides:
-
-- `listChildNamespaces` — browse catalog namespaces
-- `listTables` — list tables in a namespace
-- `getTableMetadata` — fetch full table metadata including schema, partitioning, and snapshots
-- `getTableSchema` — fetch schema for a specific snapshot
-- `planScan` — compute the set of data files to read given predicates
-
-Note from the source: "Residual filters are not yet returned, so the consumer is
-expected to handle all filtering during actual file scan." This means Oxla applies
-the predicates again during the actual data read even after partition pruning.
-
----
-
-## System Tables for Iceberg
-
-Two system virtual tables expose Iceberg catalog metadata.
-
-### `system.iceberg_catalogs`
-
-Lists all Iceberg catalogs registered in the current database.
-
-Columns:
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `name` | TEXT | Catalog name |
-| `uri` | TEXT | REST catalog URI |
-| `warehouse` | TEXT | Warehouse path (empty if not set) |
-| `auth_type` | TEXT | Authentication type: `'oauth2'`, `'basic'`, `'aws_sigv4'`, `'gcp'`, or `''` |
-| `namespace_name` | TEXT | Oxla schema (namespace) containing this catalog |
-| `database_name` | TEXT | Oxla database containing this catalog |
-| `base_location` | TEXT | Root for newly created tables (empty if not set) |
-
-```sql
--- List all Iceberg catalogs
-SELECT * FROM system.iceberg_catalogs;
-
--- Find catalogs using OAuth2
-SELECT name, uri FROM system.iceberg_catalogs WHERE auth_type = 'oauth2';
-```
-
-### `system.iceberg_tables`
-
-Lists all Iceberg tables that have been REFRESHed into Oxla's local catalog.
-One row per root Iceberg `UserType` (the 3-segment internal name with
-`source == Iceberg`). Nested types and Kafka user types are excluded.
-
-Note: Dropping an Iceberg table from the REST catalog leaves its `UserType`
-in Oxla's catalog until explicitly dropped; the view continues to list it.
-
-Columns:
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `database_name` | TEXT | Oxla database |
-| `namespace_name` | TEXT | Oxla schema (namespace) |
-| `catalog_name` | TEXT | Iceberg catalog name (owner segment of the internal name) |
-| `name` | TEXT | Qualified Iceberg table path (e.g., `ns1.ns2.tbl`) |
-| `oid` | INT | OID of the root UserType (joinable with `system.schema_types.oid` and `pg_type.oid`) |
-
-```sql
--- List all known Iceberg tables
-SELECT * FROM system.iceberg_tables;
-
--- Filter by catalog
-SELECT catalog_name, name
-FROM   system.iceberg_tables
-WHERE  catalog_name = 'my_ice';
-
--- Find tables in a specific Oxla namespace
-SELECT name, catalog_name
-FROM   system.iceberg_tables
-WHERE  namespace_name = 'public';
-```
-
----
-
-## Transparent Kafka-Iceberg Queries
-
-When a Kafka catalog has an Iceberg catalog linked to it (via `USING CATALOG`),
-Oxla can read Kafka topics through their Iceberg table representation. This is
-called a "transparent" query.
-
-The Kafka catalog connection must include a `pandaproxy_url` (the Panda Proxy
-endpoint). The `using_catalog` and `using_catalog_schema` fields in the Kafka
-catalog's internal proto control which Iceberg catalog and namespace to use for
-schema lookup.
-
-```sql
--- Kafka catalog with Iceberg link (full setup).
--- NOTE: USING CATALOG comes BEFORE the WITH clause on CREATE.
-CREATE KAFKA CATALOG my_kafka
-USING CATALOG my_iceberg_catalog
-WITH (
-  initial_brokers     = 'localhost:9092',
-  schema_registry_url = 'http://localhost:8081',
-  pandaproxy_url      = 'http://localhost:8082'
-);
-
--- Query the Kafka topic; Oxla reads schema from Iceberg
-SELECT age, name FROM my_kafka=>users;
-```
-
-In transparent mode, the topic's data columns are read from Iceberg data files.
-The `redpanda` metadata struct is present and has the same fields as a direct
-Kafka query: `partition` (INT), `offset` (BIGINT), `timestamp` (TIMESTAMPTZ),
-`headers` (ARRAY of STRUCT), `key` (BYTEA), `timestamp_type` (INT).
-
-Schema widening: if the Kafka Avro/Protobuf schema is a strict name-superset
-of the Iceberg schema (additional fields in Kafka not present in Iceberg), Oxla
-widens the column type to accommodate both. Arrays with widened struct elements
-are also handled.
+S3 options: `region` and/or `endpoint` (at least one), `access_key_id` and
+`secret_access_key` (set together, or omit both for the AWS default credential
+chain), `session_token`, `url` (`s3://<bucket>/<path>`), `path_style`
+(default `false`), `use_http` (default `false`).
+
+GCS options: `url` (`gs://<bucket>/<path>`), `service_account_key` (key JSON;
+omit to use Application Default Credentials), `endpoint`.
+
+A non-superuser needs `CREATE` on the schema to create a storage connection.
