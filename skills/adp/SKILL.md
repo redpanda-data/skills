@@ -9,8 +9,9 @@ description: >-
   with `rpk ai mcp-server` (including code mode and user-delegated OAuth), setting up
   LLM providers or discovering models with `rpk ai llm-provider` and `rpk ai model`,
   writing Cedar access policies with `rpk ai policy`, reading conversation transcripts
-  or the audit log with `rpk ai agent transcript` and `rpk ai auditlog`, or working with
-  budgets, guardrails, and cost reporting in the ADP UI. For the
+  or the audit log with `rpk ai agent transcript` and `rpk ai auditlog`, tracing a slow or
+  failed run in the Traces view, launching a coding tool with `rpk ai run`, or working with
+  API keys, budgets, guardrails, and cost reporting in the ADP UI. For the
   separate rpk cloud mcp control-plane MCP server, see `/redpanda:rpk-cloud`.
 ---
 
@@ -20,7 +21,7 @@ The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agen
 
 **How to operate it.** ADP has two supported operator surfaces: the **`rpk ai` CLI** and the **ADP UI** (ai.redpanda.com). Applications and agents then call the endpoints ADP exposes: the AI Gateway's per-provider LLM URLs, each MCP server's URL, and each agent's A2A endpoint. Operate ADP with `rpk ai`, and send the user to the UI for tasks the CLI does not cover. Confirm the live surface with `--help` before acting.
 
-**Maturity.** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, and MCP output format are Preview. Each reference file names these markers.
+**Maturity.** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, MCP output format, and the Traces view are Preview. Each reference file names these markers.
 
 ## Where each task lives
 
@@ -39,8 +40,10 @@ The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agen
 | Budgets, cost and usage, guardrail authoring | none | Budgets, Cost and usage, Guardrails |
 | Transcripts | `rpk ai agent transcript` | Agent → Transcripts |
 | Audit log | `rpk ai auditlog` | Audit log |
+| Traces: one row per run, span by span (Preview) | none | Agents → Traces |
 | Agent network, conversation sessions | none | Agents → Agent network, Agent Playground history |
-| Coding tools through the gateway | `rpk ai run claude`, `rpk ai run codex` | — |
+| API keys for long-lived clients | none | API keys |
+| Coding tools through the gateway | `rpk ai run claude`, `rpk ai run codex`, `rpk ai run agy` | — |
 
 ## Components
 
@@ -80,6 +83,7 @@ See [references/governance.md](references/governance.md).
 
 - **Transcripts** (`rpk ai agent transcript list|get`, UI): what an agent did in a conversation: turns, tool calls, models, timing.
 - **Audit log** (`rpk ai auditlog list|get`, UI): who was allowed or refused what across ADP, which policy decided, and on whose behalf an agent acted.
+- **Traces** (Preview, UI): one row per agent run or gateway call, expandable into a span waterfall — model calls, tool calls, subagent hand-offs, gateway calls, and the guardrail and data-policy decisions each met. Start here to find which call made a run slow, expensive, or wrong.
 - **Home, Agent network, Playground history** (UI): headline metrics, agent-to-resource topology, and per-agent conversation sessions.
 
 See [references/observability.md](references/observability.md).
@@ -98,6 +102,8 @@ rpk ai agent list             # now works
 Scripts can branch on the exit code: `3` is an authentication or authorization failure (re-login and retry once), `4` is an A2A task that ended failed, canceled, or rejected, `1` is anything else. See [rpk-ai.md](references/rpk-ai.md#exit-codes).
 
 `rpk ai auth status` shows token state; `rpk ai env show` prints the resolved environment. For headless use, pass `--token <bearer>`. Under `rpk ai` an ambient `RPAI_TOKEN` environment variable is **ignored**. To override the gateway endpoint for one invocation, pass `--rpai-endpoint <url>`; it is flag-only. Define a local gateway with `rpk ai env add <name> --ai-gateway-url <url> --auth-mode none`.
+
+**A sign-in is not a client credential.** The sign-in authenticates the management commands. A client sending traffic through the gateway presents an **ADP API key** (`X-Redpanda-Api-Key`, created in the UI under **API keys**, authenticating as its creator) or **OIDC client credentials** (for applications, CI, and self-managed agents, where the caller should be a service account). Every `rpk ai run` session uses an API key it creates and renews for you. See [governance.md](references/governance.md#api-keys) and [gateway-and-providers.md](references/gateway-and-providers.md#how-a-client-authenticates-to-the-gateway).
 
 See [references/rpk-ai.md](references/rpk-ai.md).
 
@@ -122,7 +128,8 @@ rpk ai model list                      # model catalog (optionally --provider-ty
 - **Use `rpk ai` or the UI.** When a task has no CLI command (budgets, cost reporting, guardrail authoring), direct the user to the UI instead of inventing a command. There is no `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail`. The audit log **does** have one — `rpk ai auditlog` — so do not send a reader to the UI for it.
 - **Cost unit.** The UI shows dollars. Raw cost values in manifests or `-o yaml` output are **USD microcents** ($1 = 100,000,000 microcents). Never treat them as cents.
 - **Creating an LLM provider turns transcript content capture ON.** If the create does not mention transcripts, prompts and completions are recorded verbatim. To opt out, pass `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set them in the manifest). Existing providers are not changed. See [gateway-and-providers.md](references/gateway-and-providers.md#transcript-recording-defaults-to-on).
-- **A passthrough provider takes two credentials and cannot be health-checked.** With authorization passthrough, the caller's upstream credential goes in `Authorization` and the Redpanda Cloud token in `X-Redpanda-Cloud-Token`. On OpenAI-family providers, a call without the gateway header is refused with **HTTP 400**, and an upstream redirect becomes **HTTP 502**. A connection check reports it as not configured, which is expected; don't gate a create on it. See [gateway-and-providers.md](references/gateway-and-providers.md#authorization-passthrough).
+- **A passthrough provider takes two credentials, one of which must be an API key, and cannot be health-checked.** With authorization passthrough the caller's upstream credential goes in `Authorization`, and the gateway credential must be an **ADP API key** in `X-Redpanda-Api-Key` — a sign-in or client-credentials token is refused with **HTTP 400** on Anthropic, OpenAI and OpenAI-compatible alike. Anthropic also returns **400** when `Authorization` is empty, and on the OpenAI family an upstream redirect becomes **HTTP 502**. A connection check reports a passthrough provider as not configured, which is expected; don't gate a create on it. See [gateway-and-providers.md](references/gateway-and-providers.md#authorization-passthrough).
+- **An `rpk ai run` session is authenticated by an API key, never by the sign-in.** `run claude`, `run codex` and `run agy` create a 30-day key on the first launch in an environment (`--api-key=yes` to skip the prompt where nothing can answer it), reuse it until its last tenth, then replace it. There is no fallback to the login token: if no key can be obtained, the launch stops. Creating one needs the *Sandboxed* template or above, and only a user who signs in directly can hold one — so a service account cannot start a session. See [rpk-ai.md](references/rpk-ai.md#the-session-credential-is-an-adp-api-key).
 - **A new agent has no policy of its own.** Creating an agent writes no policy for it. `rpk ai agent create` says so on stderr (its notice reads that the agent has no access until a policy names it) and keeps stdout parseable, and in the UI a managed agent's **Permissions** tab warns until you author one. Bind one with `rpk ai policy create --agent <name> --template readonly|sandboxed|standard|full`, or with Cedar whose principal is that agent. Registering a self-managed agent in the UI is the exception: its required **Access** section writes the first policy for you. See [governance.md](references/governance.md#give-a-new-agent-access).
 - **Agent writes are model-checked.** Create and update reject a model the provider type does not know, and on Bedrock also a model not enabled on the provider. OpenAI-compatible providers are not model-checked. See [agents.md](references/agents.md#write-time-validation).
 - **Reasoning effort is a provider-owned string, validated per model.** Set `reasoning.effort` in the agent manifest using the exact spelling the model catalog lists for every model the agent and its subagents use. Never assume a level exists, and leave it unset on OpenAI-compatible providers. See [agents.md](references/agents.md#reasoning-effort).
@@ -144,7 +151,7 @@ For the `rpk cloud mcp` control-plane server, which manages Redpanda Cloud clust
 
 - [references/agents.md](references/agents.md): agent commands, managed agent spec, validation, reasoning effort, subagents, A2A, sessions, credentials, triggers.
 - [references/mcp-servers.md](references/mcp-servers.md): MCP server commands and fields, remote auth modes, `user_oauth` behavior, code mode, output format, data policies, managed catalog.
-- [references/gateway-and-providers.md](references/gateway-and-providers.md): provider management, provider types and credentials, connection tests, failed-call investigation, transcript capture default, authorization passthrough, models, pricing overrides, gateway scope.
-- [references/governance.md](references/governance.md): budgets, cost and usage, guardrails, Cedar access policies, roles and permissions, data policies, OAuth clients, providers, and connections.
-- [references/observability.md](references/observability.md): transcripts (CLI and UI), audit log, and other monitoring views.
-- [references/rpk-ai.md](references/rpk-ai.md): `rpk ai` install and lifecycle, authentication, global flags, command tree, per-group details, GitOps `apply`/`diff`, `run claude` / `run codex`, common errors.
+- [references/gateway-and-providers.md](references/gateway-and-providers.md): provider management, provider types and credentials, connection tests, failed-call investigation, transcript capture default, client authentication, authorization passthrough, models, pricing overrides, gateway scope.
+- [references/governance.md](references/governance.md): budgets, cost and usage, guardrails, Cedar access policies, roles and permissions, API keys, data policies, OAuth clients, providers, and connections.
+- [references/observability.md](references/observability.md): traces, transcripts (CLI and UI), audit log, and other monitoring views.
+- [references/rpk-ai.md](references/rpk-ai.md): `rpk ai` install and lifecycle, authentication, global flags, command tree, per-group details, GitOps `apply`/`diff`, `run claude` / `run codex` / `run agy` and their session credential, common errors.

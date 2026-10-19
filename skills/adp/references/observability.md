@@ -1,8 +1,8 @@
-Source: `cloudv2 apps/rpai/internal/cmd/agent/transcript.go` (transcript list/get flags, columns, output) and `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent` command tree, `trigger runs`, global flags); `adp-docs modules/monitor/pages/transcripts.adoc`, `adp-docs modules/monitor/pages/audit-log.adoc`, `adp-docs modules/monitor/pages/agent-network.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc`, `adp-docs modules/get-started/pages/adp-quickstart.adoc` (Home page); `cloudv2 adp/RELEASE_NOTES.md` (shipped-feature checks). Evidence date: 2026-09-23. The grouped-call flow and the event detail pane re-verified 2026-09-28 against `adp-docs modules/monitor/pages/audit-log.adoc`. Sync 2026-10-05: the transcript context-compaction markers (Detailed view only, the proactive and reactive passes, dropped messages and pruned tool results, the seven request parts with before/after sizes, estimates rather than billed usage) verified against `adp-docs modules/monitor/pages/transcripts.adoc` (Context compaction), `modules/connect/pages/concepts.adoc` (context-window limits) and `modules/monitor/pages/troubleshoot-ai-agents.adoc`. Sync 2026-10-12: the `rpk ai auditlog` command group (aliases `audit-log`, `audit`; read-only `list` and `get`; the `--since` 24h default and `all`; the OR-within-a-flag / AND-across-flags filter algebra, `!` negation and `\,` escaping; `--denied` as `--outcome denied,partial`; the any-resource match on the resource, parent, `--policy` and `--status` flags; the `--group` four-value server limit; `--order-by` default `time desc`; `--fields`/`--fields all`; the `--limit` 50 default with the exit-0 cut-off and the stderr continuation flags; the self-audit `--operation '!ListAuditLogEntries'`; `--correlation-id` expansion to one row per resource, denials first and unbounded unless `--since` is set; `get` reading one event so its resources field is never filled; exit 3 on missing `dataplane_adp_auditlog_list`) verified against `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`rpai auditlog`, `auditlog list`, `auditlog get` help sections, and the `auditlog` row of both root-help listings) at the current ADP release tag, and against `adp-docs modules/monitor/pages/audit-log.adoc` (the same-events framing, the self-audit tip, the shared permission, the `rpk ai upgrade` hint) and `modules/cli/pages/index.adoc` (the command-group row). The per-turn context chip (last-model-step prompt vs. the turn's input total, the known-window provider types, the omitted chip) verified against `adp-docs modules/monitor/pages/transcripts.adoc`; the tool-call dialog opening for every call and naming unrecorded payloads against `adp-docs modules/monitor/partials/transcripts-ui-guide.adoc`; the delegation row and the delegated-turn dialog (its own row instead of an ordinary tool call, the subagent name and Delegated badge, the collapsed delegating-call payload, the not-yet-available state, older conversations showing delegations as tool calls) against `adp-docs modules/monitor/pages/transcripts.adoc` (Delegations to a subagent), verified 2026-10-12. `--query` matching re-verified at adp/v0.2.86 (2026-10-15): cloudv2 `apps/adp-api/internal/storage/transcript/repository_oxla.go` `buildListSQL` and `repository_pg.go` match title or conversation_id only.
+Source: `cloudv2 apps/rpai/internal/cmd/agent/transcript.go` (transcript list/get flags, columns, output) and `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent` command tree, `trigger runs`, global flags); `adp-docs modules/monitor/pages/transcripts.adoc`, `adp-docs modules/monitor/pages/audit-log.adoc`, `adp-docs modules/monitor/pages/agent-network.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc`, `adp-docs modules/get-started/pages/adp-quickstart.adoc` (Home page); `cloudv2 adp/RELEASE_NOTES.md` (shipped-feature checks). Also `cloudv2 proto/public/cloud/redpanda/api/adp/v1alpha2/trace.proto`, `cloudv2 apps/adp-ui/src/components/traces/`, `adp-docs modules/monitor/pages/traces.adoc`, and `adp-docs modules/control/pages/permissions-reference.adoc` (Trace permissions). Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
 
 # Agentic Data Plane Observability Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. The docs carry no Preview or Experimental marker on transcripts, the audit log, the Agent network view, or the Home dashboard.
+**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. The docs carry no Preview or Experimental marker on transcripts, the audit log, the Agent network view, or the Home dashboard. **Traces** is Preview: its sidebar entry carries a Preview badge, and the page is documented as Preview.
 
 Audience: an AI agent answering "what did my agent do?" and "who was allowed to do what?" through `rpk ai` and the ADP UI (ai.redpanda.com).
 
@@ -24,17 +24,49 @@ rpk ai auditlog --help
 rpk ai auditlog list --help
 ```
 
-The Home dashboard and the Agent network view have no `rpk ai` command. They are UI-only: confirm with `rpk ai --help` before concluding otherwise.
+The Traces view, the Home dashboard, and the Agent network view have no `rpk ai` command. They are UI-only: confirm with `rpk ai --help` before concluding otherwise.
 
 ## Where each question is answered
 
 | Question | Surface |
 |---|---|
+| Which call made a run slow, expensive, or wrong, across every agent and the gateway? | **Agents > Traces** (UI, Preview) |
 | What happened in one agent conversation (turns, tool calls, tokens, latency, errors)? | Transcripts: `rpk ai agent transcript`, or the agent's **Transcripts** tab |
 | Who called what, was it allowed, which policy decided, what changed? | Audit log: `rpk ai auditlog list`, or **Audit log** in the UI |
 | Which agents call which models and MCP tools, and where are errors clustering? | **Agents > Agent network** (UI) |
 | Spend and traffic at a glance | **Home** (UI); for breakdowns, **Cost and usage** (see [governance.md](governance.md)) |
 | Try an agent live, token/context estimate, reopen a past session | Agent **Playground** tab (UI, managed agents only; see [agents.md](agents.md)) |
+
+## Traces (Preview)
+
+A **trace** is the record of one agent run, broken into **spans**: a model call, a tool call, a subagent hand-off, a gateway call. A call that only the AI Gateway handled gets a trace of its own. Traces answer "where did this run spend its time, and which call failed?" across every agent and the gateway at once, without opening each agent separately.
+
+UI only: **Agents** in the sidebar → **Traces**. Default range is Last 1 hour, newest first; click a row to expand it into its span waterfall beside a pane holding either the trace summary or the selected span's detail. The summary reports the run's duration, tokens sent, received and cached, cost, model and tool call counts with how many failed, span count, where the time went (model, tools, orchestration), the tools used, and every guardrail or data-policy decision met.
+
+| Status | Meaning |
+|---|---|
+| Completed | The run finished. A run that finished *with* a failed tool call inside it is Completed, not Error — the failed-call count appears beside the status |
+| Error | The run itself failed |
+| Running | The root span is still open, or the trace has no root span and spans arrived in the last 15 minutes |
+| Incomplete | No root span and no span in the last 15 minutes, so the record is partial |
+
+A trace that only the gateway saw is never Running or Incomplete, because the gateway records each call after it serves it; its Agent cell stays empty unless an agent made the call. **Cost** covers the run's model calls in US dollars, as the gateway priced each; a tool call carries no cost of its own. Under $0.0001 it reads `<$0.0001`, an **asterisk** means only some of the run's calls could be priced, and a run whose calls could not be priced at all shows no cost.
+
+**Span kinds** (the waterfall badges) are `AGENT` (one run or turn), `SUBAGENT` (a run handed off), `LLM` (one model call), `TOOL` (one tool call), `GATEWAY` (what the gateway saw of a call it served, nested under the agent's own call), `COMPACTION` (a [context-compaction](#context-compaction) pass) and `SPAN` (anything else). A span's tabs follow its kind — a model call carries tokens, cost, messages and offered tools; a tool call or hand-off its input and output; a gateway span the caller, route, HTTP status and timings — and every readable span also carries its OpenTelemetry attributes and the raw stored span. Spans that arrive before the span opening the run sit under a stand-in labeled **Run in progress**, or **Run incomplete** once the run stopped sending spans.
+
+Traps worth knowing:
+
+- **The Conversation cell navigates** to that conversation's transcript. To narrow the list to one conversation, use the Conversation filter instead.
+- **Status is a tab row** — All, Errors, Running, Incomplete — one at a time, counting within everything else you filtered on. There is no Completed tab and no failed-calls tab, so to find a run that recovered from a failed tool call, read the Status column.
+- **Each filter facet takes at most 20 values, and past that it silently stops applying** rather than reporting an error. The facets are Agent, User, Conversation, MCP server (servers whose tools the run called), and LLM provider (where OpenAI also matches OpenAI-compatible providers, which have no option of their own).
+- **An absent trace is not proof that nothing happened.** A gateway record holding *only* upkeep nobody ran on purpose — MCP session setup and keepalives, tool and resource discovery, token issuance, internal ADP calls — is dropped before storage. A record holding a real model or tool call is kept whole, keepalives included.
+- **A model can only call a tool it was offered**, so a run that skipped a tool you expected is often a run that was never offered it. A model call's **Tools** tab reports how many tools it offered and how many it used, grouped by the MCP server they came from, with the agent's own tools under *Not via gateway*. A gateway span's Tools tab reports only the count, and a call whose offered tools were not recorded has no Tools tab at all.
+- **A restricted span still shows its shape.** A span whose content your permissions don't reach reads **Restricted** but keeps its kind, timing, token use, emitting agent, error code and gateway status visible; prompts, messages and tool payloads stay hidden. A trace whose content you can't read shows **Restricted** in place of its title and reports no user.
+- **Open transcript** is in the trace's *toolbar*, not the summary pane, and only for a trace that ran an agent: it opens that agent's transcript at the turn holding the selected span.
+
+### Permissions
+
+`dataplane_adp_trace_list` opens the list and its timeline, `dataplane_adp_trace_get` expands one trace and reads its spans, and `dataplane_adp_trace_content_read` reads the content of spans no agent or person owns and of other people's gateway calls. Without `_list` the page reports that permission was denied. The built-in *Read only* template and every template above it grant all three; in an access policy, name `Action::"Trace.list"`, `Action::"Trace.get"` and `Action::"Trace.read_content"`. Without `_content_read`, content follows ownership: an agent's spans need `dataplane_adp_transcript_get` on that agent (or `dataplane_adp_transcript_list` for a call made outside any conversation), and your own gateway calls are always yours to read.
 
 ## Transcripts
 
@@ -210,12 +242,13 @@ The audit log records calls that were made, not MCP protocol chatter. An MCP ses
 
 So a session that opens, lists tools, and stays alive leaves no entries until its first tool call. Do not count sessions from the audit log, and do not read a missing `initialize` entry as "no session was opened." The handshake and `tools/list` entries you do see are the refusals and failures.
 
-## Accountability: transcripts vs. the audit log
+## Accountability: traces vs. transcripts vs. the audit log
 
-- **Transcripts:** execution-level observability of one agent conversation: turns, tool calls and their payloads, models, latency, tokens, errors. Grouped by conversation ID.
-- **Audit log:** authorization-level accountability across the platform: who (user, service account, or agent) attempted what against which resource, whether it was allowed, denied, or masked, which policy decided, and what configuration changed.
+- **Traces** (Preview): one row per run across every agent and the AI Gateway, with timing, token use, cost, and the span tree. Start here to find *where* a run spent its time or *which* call failed.
+- **Transcripts:** execution-level observability of one agent conversation: turns, tool calls and their payloads, models, latency, tokens, errors. Grouped by conversation ID. Start here to read what the agent and the person said to each other.
+- **Audit log:** authorization-level accountability across the platform: who (user, service account, or agent) attempted what against which resource, whether it was allowed, denied, or masked, which policy decided, and what configuration changed. Start here for an access question.
 
-A transcript tells you what an agent did. The audit log tells you what any principal was allowed or refused to do. An investigation often needs both: find the decision in the audit log, then open the agent's transcript for execution detail.
+A trace and a transcript cover the same run from different angles, and **Open transcript** crosses from the selected span to the matching turn. An investigation often needs more than one surface: the decision in the audit log, the slow or failed call in traces, the execution detail in the transcript.
 
 ## Other monitoring views (UI)
 
@@ -225,4 +258,4 @@ A transcript tells you what an agent did. The audit log tells you what any princ
 
 ## Permissions
 
-Transcript reads (`dataplane_adp_transcript_*`) are separate from agent configuration reads and expose full conversation content. The audit log needs `dataplane_adp_auditlog_list` on both surfaces — the UI page and `rpk ai auditlog` — and the Agent network view needs `dataplane_adp_agentnetwork_get`. The built-in *Read only* policy template and every template above it include transcript and audit-log reads. See [governance.md](governance.md#roles-and-permissions).
+Transcript reads (`dataplane_adp_transcript_*`) are separate from agent configuration reads and expose full conversation content. The audit log needs `dataplane_adp_auditlog_list` on both surfaces — the UI page and `rpk ai auditlog` — the Agent network view needs `dataplane_adp_agentnetwork_get`, and Traces needs the three `dataplane_adp_trace_*` permissions above. The built-in *Read only* policy template and every template above it include transcript and audit-log reads. See [governance.md](governance.md#roles-and-permissions).
