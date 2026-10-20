@@ -81,9 +81,11 @@ when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 
   release-notes page has a `== vX.Y.Z (date)` section for it. `v26.2.2` is the last release published
   as a GitHub Release, and the public repo carries no tag or branch head for later releases, so verify
   in this order: the public source at the release's tag, when one exists; otherwise the generated docs
-  in `docs` (property partials, rpk reference), which are regenerated from the shipped build;
-  otherwise describe the change only as far as the release notes state it, with a version marker, and
-  record it as a TODO in the skill's `SOURCES.md`.
+  in `docs` (property partials, rpk reference), but only once the commit that last regenerated them
+  names that release or a later one (the rpk reference can lag several releases behind the property
+  partials, and generated docs from an earlier release are not evidence for or against a later
+  release's change); otherwise describe the change only as far as the release notes state it, with a
+  version marker, and record it as a TODO in the skill's `SOURCES.md`.
 - **SQL** → `cloud-docs` module `sql` and the `reference/sql` pages (private), which set the scope: a skill covers only what the published Cloud docs document for users. `redpanda-data/oxla` (private) confirms the behavior of documented surfaces at the shipped tag and never adds undocumented ones (no engine config, env vars, admin API, raw metrics, or self-hosted deployment).
 - **Connect** → `redpanda-data/connect` + the `benthos` engine + the auto-generated `rp-connect-docs`.
 
