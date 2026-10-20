@@ -53,8 +53,8 @@ must not "correct" them into hardcoded values:
   it into a skill.
 - **`-v` configuration provenance** (`x-flags-and-config.md`, added for
   `v26.2.3`): the claim that `-v` reports the loaded config files, the selected
-  profile and what selected it, overriding `RPK_*`/`-X` values, and that secrets
-  are never logged, is grounded in the release notes for `v26.2.3` only — the
+  profile and what selected it, overriding environment-variable/`-X` values,
+  and that secrets are never logged, is grounded in the release notes for `v26.2.3` only — the
   generated rpk reference still describes `-v` as "Enable verbose logging", and
   the public Go source is frozen before that release (see above). Re-confirm
   the exact log lines against a live `rpk -v` run and sharpen or trim this note.

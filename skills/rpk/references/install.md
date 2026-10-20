@@ -11,7 +11,7 @@ client when you need to talk to a remote cluster.
 
 > **Download host**: rpk archives are published at
 > `https://rpk.redpanda.com/<release>/`, where `<release>` is either `latest`
-> (the newest stable release) or a version tag such as `v26.2.5`. GitHub
+> (the newest stable release) or a version tag (`v<version>`). GitHub
 > release assets no longer carry new rpk versions, so a
 > `github.com/redpanda-data/redpanda/releases/latest/download/...` URL now
 > resolves to the last rpk published there rather than failing — it installs a
@@ -42,8 +42,8 @@ curl -fLO https://rpk.redpanda.com/latest/rpk-darwin-arm64.zip \
   && export PATH="$HOME/.local/bin:$PATH" \
   && unzip rpk-darwin-arm64.zip -d ~/.local/bin/
 
-# Specific version (replace <version> with e.g. 26.2.5 — note the checksums
-# file name carries no leading `v`)
+# Specific version (replace <version> with the release number, without a
+# leading `v` — the URL path adds the `v`, the checksums file name does not)
 curl -fLO https://rpk.redpanda.com/v<version>/rpk-darwin-arm64.zip \
   && curl -fLO https://rpk.redpanda.com/v<version>/rpk_<version>_checksums.txt \
   && shasum -a 256 --ignore-missing -c rpk_<version>_checksums.txt \
@@ -147,18 +147,34 @@ brew upgrade redpanda-data/tap/redpanda
 
 ---
 
+## Make the PATH permanent
+
+Add the following to your shell's rc file (`~/.bashrc`, `~/.zshrc`, etc.):
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then reload:
+```bash
+source ~/.zshrc   # or ~/.bashrc
+```
+
+---
+
 ## Release archives
 
-Every release directory under `https://rpk.redpanda.com/` carries the same set
-of files:
+Each version directory under `https://rpk.redpanda.com/` (`v<version>/`)
+carries the six archives below and `rpk_<version>_checksums.txt`. `latest/`
+also carries the checksums as `rpk_checksums.txt`, a file name with no version:
 
 | File | Contents |
 |---|---|
 | `rpk-linux-amd64.zip`, `rpk-linux-arm64.zip` | Linux builds |
 | `rpk-darwin-amd64.zip`, `rpk-darwin-arm64.zip` | macOS builds (Intel, Apple Silicon) |
 | `rpk-windows-amd64.zip`, `rpk-windows-arm64.zip` | Windows builds — published, but rpk on Windows is supported only through WSL (see above) |
-| `rpk_<version>_checksums.txt` | SHA-256 checksums for a version-tagged release |
-| `rpk_checksums.txt` | SHA-256 checksums under `latest/`, where the file name carries no version |
+| `rpk_<version>_checksums.txt` | SHA-256 checksums (the file name carries no leading `v`) |
+| `rpk_checksums.txt` | SHA-256 checksums, `latest/` only |
 
 Each archive contains a single `rpk` binary (no external deps).
 

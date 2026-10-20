@@ -44,7 +44,7 @@ brew install redpanda-data/tap/redpanda
 ```
 
 Manual downloads come from `https://rpk.redpanda.com/<release>/`, where
-`<release>` is `latest` or a version tag such as `v26.2.5`. GitHub release
+`<release>` is `latest` or a version tag (`v<version>`). GitHub release
 assets no longer carry new rpk versions, so a `releases/latest/download/...`
 URL installs a stale binary. See [install.md](references/install.md) for
 checksum verification and pinned versions.

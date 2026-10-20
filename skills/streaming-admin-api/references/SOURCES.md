@@ -41,7 +41,7 @@ services.)
 - **Per-version endpoint availability** (which paths/methods exist in a given release): source from the live Admin API — the served Swagger at `GET /v1/` / the `api-doc/*.json` at the target tag — not a fixed list. New ConnectRPC services (`redpanda.core.admin.v2.*`) are v25.3+.
 - **ConnectRPC message shapes** (ShadowLinkService `CreateShadowLink`, `FailOver`, nested `ShadowLinkConfigurations`): the authoritative structure is `proto/redpanda/core/admin/v2/shadow_link.proto` at the target ref, or the generated SDK. Field names drift; verify against the proto.
 - **Self-test request body** (`{"tests":[...]}`): not modeled in `api-doc/debug.json`; derived from `rpk` + cluster source. Confirm against `debug.cc` / live behavior.
-- **Cluster-config schema metadata key set** (`cluster-config.md`): which metadata keys `/v1/cluster_config/schema` returns is release-dependent — releases after v26.2.2 add per-property default value, numeric bounds and enterprise-license restrictions, and widen accepted-value reporting. The skill's table is the key set common to supported releases; the live endpoint is the source of truth for a given cluster. Do not hardcode the newer key names until they can be read from source or a live cluster (see TODO).
+- **Cluster-config schema metadata key set** (`cluster-config.md`): which metadata keys `/v1/cluster_config/schema` returns is release-dependent — v26.2.4 and later add per-property default value, numeric bounds and enterprise-license restrictions, and widen accepted-value reporting. The skill's table is the key set common to supported releases; the live endpoint is the source of truth for a given cluster. Do not hardcode the newer key names until they can be read from source or a live cluster (see TODO).
 - **`upsert` value coercion** (`cluster-config.md`): Swagger declares `additionalProperties: {type: string}` but the server coerces JSON scalars — behavior; verify against handler.
 
 ## Naming note
@@ -54,7 +54,7 @@ broker-side module is `cluster_link` — search source for `shadow_link` and `cl
 
 ## TODO / re-verify
 
-- **Schema-endpoint metadata added after v26.2.2 — key names not pinned
+- **Schema-endpoint metadata added in v26.2.4 — key names not pinned
   (2026-10-20).** The `v26.2.4` release notes
   (`modules/reference/pages/releases/redpanda.adoc` in the private
   `redpanda-data/docs` repo) state that `/v1/cluster_config/schema` now reports
@@ -64,7 +64,7 @@ broker-side module is `cluster_link` — search source for `shadow_link` and `cl
   `enable_consumer_group_metrics` and `http_authentication` report accepted
   values. The exact JSON key names are **not** verifiable from the public repo:
   `cluster_config_schema_util.cc` and `api-doc/cluster_config.json` there still
-  emit only the pre-v26.2.3 key set, because the public repo carries no tag or
+  emit only the pre-v26.2.4 key set, because the public repo carries no tag or
   branch head for releases after `v26.2.2`. The skill therefore describes the
   added metadata without naming its keys and points at the live endpoint. Pin
   the key names from a live cluster on `v26.2.4`+ (or from the served Swagger)

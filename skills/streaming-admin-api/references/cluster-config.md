@@ -43,7 +43,7 @@ Each property in the schema object has:
 | `aliases` | Legacy names that can be used in PUT requests |
 
 > **The metadata set grows across releases — read the live response, not this
-> table.** Redpanda releases after v26.2.2 extend each property's metadata with
+> table.** Redpanda v26.2.4 and later extend each property's metadata with
 > its default value, its numeric bounds where applicable, and its
 > enterprise-license restrictions, and report accepted values for more
 > enum-valued properties (`sasl_mechanisms`, for one, also reports which of its
