@@ -165,14 +165,13 @@ source ~/.zshrc   # or ~/.bashrc
 ## Release archives
 
 Each version directory under `https://rpk.redpanda.com/` (`v<version>/`)
-carries the six archives below and `rpk_<version>_checksums.txt`. `latest/`
+carries the archives below and `rpk_<version>_checksums.txt`. `latest/`
 also carries the checksums as `rpk_checksums.txt`, a file name with no version:
 
 | File | Contents |
 |---|---|
 | `rpk-linux-amd64.zip`, `rpk-linux-arm64.zip` | Linux builds |
 | `rpk-darwin-amd64.zip`, `rpk-darwin-arm64.zip` | macOS builds (Intel, Apple Silicon) |
-| `rpk-windows-amd64.zip`, `rpk-windows-arm64.zip` | Windows builds — published, but rpk on Windows is supported only through WSL (see above) |
 | `rpk_<version>_checksums.txt` | SHA-256 checksums (the file name carries no leading `v`) |
 | `rpk_checksums.txt` | SHA-256 checksums, `latest/` only |
 
