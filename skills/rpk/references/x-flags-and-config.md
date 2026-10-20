@@ -14,6 +14,12 @@ corresponding `RPK_*` environment variable. For persistent configuration use
 3. **rpk profile** in `rpk.yaml` — persistent, recommended
 4. **`redpanda.yaml` rpk section** — system-wide defaults (self-managed only)
 
+To find out which source actually won, re-run the command with `-v`: rpk then
+logs where each configuration value came from — the config files it loaded, the
+profile it selected and what selected it, and any value overridden by an
+`RPK_*` environment variable or a `-X` flag. Secret values are never logged.
+(rpk v26.2.3+.)
+
 ---
 
 ## Quick reference: -X → RPK_ mapping

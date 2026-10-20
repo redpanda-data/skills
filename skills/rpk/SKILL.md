@@ -43,9 +43,15 @@ disagree.
 brew install redpanda-data/tap/redpanda
 ```
 
+Manual downloads come from `https://rpk.redpanda.com/<release>/`, where
+`<release>` is `latest` or a version tag such as `v26.2.5`. GitHub release
+assets no longer carry new rpk versions, so a `releases/latest/download/...`
+URL installs a stale binary. See [install.md](references/install.md) for
+checksum verification and pinned versions.
+
 **macOS — Apple Silicon (M1/M2/M3/M4), manual**
 ```bash
-curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-darwin-arm64.zip \
+curl -fLO https://rpk.redpanda.com/latest/rpk-darwin-arm64.zip \
   && mkdir -p ~/.local/bin \
   && export PATH="$HOME/.local/bin:$PATH" \
   && unzip rpk-darwin-arm64.zip -d ~/.local/bin/
@@ -53,7 +59,7 @@ curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-
 
 **macOS — Intel, manual**
 ```bash
-curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-darwin-amd64.zip \
+curl -fLO https://rpk.redpanda.com/latest/rpk-darwin-amd64.zip \
   && mkdir -p ~/.local/bin \
   && export PATH="$HOME/.local/bin:$PATH" \
   && unzip rpk-darwin-amd64.zip -d ~/.local/bin/
@@ -61,7 +67,7 @@ curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-
 
 **Linux — amd64**
 ```bash
-curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-amd64.zip \
+curl -fLO https://rpk.redpanda.com/latest/rpk-linux-amd64.zip \
   && mkdir -p ~/.local/bin \
   && export PATH="$HOME/.local/bin:$PATH" \
   && unzip rpk-linux-amd64.zip -d ~/.local/bin/
@@ -69,7 +75,7 @@ curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-
 
 **Linux — arm64**
 ```bash
-curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-arm64.zip \
+curl -fLO https://rpk.redpanda.com/latest/rpk-linux-arm64.zip \
   && mkdir -p ~/.local/bin \
   && export PATH="$HOME/.local/bin:$PATH" \
   && unzip rpk-linux-arm64.zip -d ~/.local/bin/

@@ -42,6 +42,17 @@ Each property in the schema object has:
 | `enum_values` | For enum properties: list of valid values |
 | `aliases` | Legacy names that can be used in PUT requests |
 
+> **The metadata set grows across releases — read the live response, not this
+> table.** Redpanda releases after v26.2.2 extend each property's metadata with
+> its default value, its numeric bounds where applicable, and its
+> enterprise-license restrictions, and report accepted values for more
+> enum-valued properties (`sasl_mechanisms`, for one, also reports which of its
+> values require an enterprise license). This means a property's default and
+> permitted range are available from the cluster itself: read them from the
+> endpoint rather than assuming a value. The table above names the keys present
+> in every supported release; for the exact key names a given cluster returns,
+> inspect one property of the live response.
+
 Example: inspect the schema for `log_retention_ms`:
 
 ```bash

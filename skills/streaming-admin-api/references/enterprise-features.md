@@ -414,6 +414,12 @@ To bring a cluster back into compliance without a license (mirrors `rpk cluster 
 | FIPS | `fips_mode=disabled` (node config) |
 | RBAC | delete roles (`DELETE /v1/security/roles/{role}`) |
 
+On releases after v26.2.2, `GET /v1/cluster_config/schema` reports each
+property's enterprise-license restrictions — and, for `sasl_mechanisms`, which
+of its accepted values need a license. Enumerate the license-gated settings from
+that response when you need the set a specific cluster enforces; the table above
+is the curated list of the features this skill covers, not a live inventory.
+
 Example:
 
 ```bash
