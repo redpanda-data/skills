@@ -1,0 +1,216 @@
+{
+  "name": "cloud-byoc skill vs docs",
+  "skill": "cloud-byoc",
+  "description": "Measures whether the cloud-byoc skill adds value over the published Redpanda Cloud docs for BYOC provisioning, scaling, connectivity, tags, the rpk BYOC plugin, and shadow-link schema replication through the Control Plane API.",
+  "test_cases": [
+    {
+      "id": "scale-broker-count-zone-multiple",
+      "query": "My Redpanda Cloud BYOC cluster on AWS runs 3 brokers spread across 3 availability zones. Traffic is up a bit, so I want to add just one more broker through the Control Plane API by setting the broker count to 4. What request do I send, and will that work?",
+      "why": "Self-service BYOC scaling sets redpanda_node_count through a cluster PATCH, and on a multi-AZ cluster the count must be a multiple of the zone count, so 4 is rejected and the next step is 6. In the recorded baseline runs the model guessed the multiple-of-zones rule but did not know the redpanda_node_count field, and said cluster size is tied to the throughput tier.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/"
+      ],
+      "required_patterns": [
+        "redpanda_node_count"
+      ],
+      "invariants": [
+        {
+          "name": "rejects_count_not_multiple_of_zones",
+          "failure_condition": "Fails if the response says a count of 4 will be accepted, or does not explain that a multi-AZ cluster's broker count must be a multiple of its zone count (steps of 3 here). Passes if it says 4 is rejected because brokers must stay evenly spread across the 3 zones, and points to 6 (or another multiple of 3) as the valid next count."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "scale-tier-cross-architecture",
+      "query": "Our BYOC cluster is on the tier-2-aws-v3-arm usage tier and we need to move it to an x86 machine type because of a native library our team depends on. How do I make that change with the Redpanda Cloud Control Plane API?",
+      "why": "A self-service throughput_tier change must stay within the same cloud provider, machine family, and CPU architecture. A move from ARM to x86 is refused with FAILED_PRECONDITION and has to go through Redpanda Support. Without the docs, a model presents a throughput_tier PATCH to an x86 tier as the way to do it.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/"
+      ],
+      "invariants": [
+        {
+          "name": "cross_architecture_needs_support",
+          "failure_condition": "Fails if the response presents a throughput_tier PATCH to an x86 tier as a working self-service path, or only hedges that it might not be supported. Passes if it states that the API refuses a tier change across CPU architecture or machine family and that the change goes through Redpanda Support. Also offering a new-cluster migration as an alternative, or noting that client architecture is independent of the brokers, is fine."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "dual-listener-same-topology",
+      "query": "We have a public AWS BYOC cluster. I want in-VPC consumers to reach the Kafka API over a private endpoint while external clients keep the public one, but I want HTTP Proxy and Schema Registry to stay public only. How do I configure that through the Cloud API?",
+      "why": "Dual listener mode sets a per-service connections list, and if connections is set on one service it must be set on kafka_api, http_proxy, and schema_registry with the same topology. A Kafka-only dual listener with the other services public-only is rejected. Without the docs, a model reaches for PrivateLink and security groups and does not know the connections model or its topology rule.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/networking/byoc/aws/dual-listener-mode/"
+      ],
+      "required_patterns": [
+        "connections"
+      ],
+      "invariants": [
+        {
+          "name": "all_services_same_topology",
+          "failure_condition": "Fails if the response says the API can give only the Kafka API a private listener while HTTP Proxy and Schema Registry stay public-only, or never states the rule that all three services must use the same topology. Passes if it says that once connections is set, all three services (Kafka API, HTTP Proxy, Schema Registry) must set it with the same topology, so the exact split is not possible, and offers a workaround such as making all three dual and only handing out the private Kafka endpoint."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "dual-listener-migrate-permission",
+      "query": "I'm trying to add a private listener next to the existing public one on a standard (not BYOVPC) AWS BYOC cluster by PATCHing the cluster's connections through the Cloud API, and I get a permission error even though I can update other cluster settings. What do I need?",
+      "why": "Migrating between public-only and dual listener mode is self-service, but the caller's role needs the controlplane_cluster_migrate_connectivity permission on the cluster, which ordinary update rights do not include. The permission name is not general knowledge.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/networking/byoc/aws/dual-listener-mode/"
+      ],
+      "required_patterns": [
+        "controlplane_cluster_migrate_connectivity"
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "gcp-network-tag-prefix",
+      "query": "How do I apply a GCE network tag to the broker VMs of my Redpanda BYOC cluster on GCP so my firewall rules can target them?",
+      "why": "On GCP, a cloud_provider_tags key that starts with gcp.network-tag. tells the agent to apply the named network tag to the cluster's GCE instances, set at create time or with a cluster PATCH. Without the docs, a model says no supported setting exists and suggests service-account firewall targets or editing the node pool, which the docs warn against.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/byoc/gcp/create-byoc-cluster-gcp/"
+      ],
+      "required_patterns": [
+        "cloud_provider_tags",
+        "gcp\\.network-tag\\."
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "custom-properties-integers-as-strings",
+      "query": "I'm creating a Redpanda Cloud BYOC cluster through the Control Plane API and want to set a few Redpanda cluster properties at create time under cluster_configuration.custom_properties, including some integer-valued ones like log_segment_size and a retention byte limit. How should I write those values in the JSON body?",
+      "why": "cluster_configuration.custom_properties is a protobuf Struct, and the API contract in product source says integer and number properties are to be provided as JSON strings to avoid precision loss; the server parses those strings into the property's type. Product source also converts a bare JSON number, so a small value sent unquoted still lands, and the published examples show bare numbers, but only the string form is exact past 2^53, and nothing published says strings are accepted. In the recorded baseline runs the model reasoned from Struct semantics, told the user to send plain JSON numbers, and said quoted values might be rejected or should be avoided. Sampled from the full skill's references at commit b492f09; the thin skill no longer carries this claim, so the skill arm is expected to miss it.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "integers_sent_as_strings",
+          "failure_condition": "Fails if the response says quoted strings are wrong, rejected, or should be avoided for integer-valued properties, or offers them only as an untested fallback, or never says that the API takes integer and number values as JSON strings. Passes if it says the API contract has integer (and number) values in custom_properties sent as JSON strings, for example \"134217728\", which the server parses into the property's type, and shows them quoted. Also saying that plain numbers are accepted for values that fit exactly in a double is fine."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "byovpc-dual-listener-public-subnets",
+      "query": "We run a Redpanda BYOC cluster on a customer-managed VPC in AWS (BYOVPC), registered as a Network in Redpanda Cloud. We now want the cluster to serve an internet-facing Kafka listener alongside the private one. What has to change on the Network resource first, and can we adjust that setting again later?",
+      "why": "On an AWS BYOVPC network, a cluster that serves a public listener alongside the private one needs customer_managed_resources.aws.public_subnets on the Network, one public subnet per availability zone that has a broker subnet, and the field is write-once: it can be set on a network that has none but not changed or cleared afterwards. In the recorded baseline runs the model treated public exposure as a cluster connection-type setting, did not name the public_subnets field, and could not say whether the setting can change later. Sampled from the full skill's references at commit b492f09; the thin skill no longer carries this claim, so the skill arm is expected to miss it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "public_subnets"
+      ],
+      "invariants": [
+        {
+          "name": "per_zone_and_write_once",
+          "failure_condition": "Fails if the response does not say the public subnets must cover each availability zone that has a broker (private) subnet, or says the public subnets can be changed or removed later, or never addresses whether they can be changed. Passes if it says to provide one public subnet per availability zone that has a broker subnet and that the setting is write-once, so it can be added to a network that has none but cannot be changed or cleared afterwards."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "connect-pipeline-egress-allowlist",
+      "query": "Our Redpanda Connect pipelines running on a Redpanda BYOC cluster need to reach a Postgres database at 10.5.0.0/16 on port 5432 and an internal API in 10.6.0.0/16 on ports 8000 through 8100, both in a peered VPC. How do I allow that outbound traffic for the pipelines through the Redpanda Cloud Control Plane API?",
+      "why": "Outbound destinations for Redpanda Connect pipelines are allowlisted on the cluster with redpanda_connect.allowed_destination_cidr_ports, settable on create and through a cluster PATCH. Each entry is a cidr with port_start and an optional port_end, where a port_end of 0 or omitted means a single port. In the recorded baseline runs the model said it knew no API field for this, argued none is needed on BYOC, and sent the user to route tables and security group egress rules instead. Sampled from the full skill's references at commit b492f09; the thin skill no longer carries this claim, so the skill arm is expected to miss it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "allowed_destination_cidr_ports",
+        "port_start"
+      ],
+      "invariants": [
+        {
+          "name": "single_port_and_range_shape",
+          "failure_condition": "Fails if the response invents a different field or entry shape (for example a ports array or a \"8000-8100\" range string), or presents the field name only as a guess. Passes if it uses redpanda_connect.allowed_destination_cidr_ports with entries that give port_start alone for 5432 and port_start plus port_end for the 8000 to 8100 range."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "shadow-sr-exact-context-mapping-scope",
+      "query": "I'm setting up a Redpanda shadow link that replicates schemas from a Confluent Schema Registry over its HTTP API, and I want the source contexts .prod and .staging to land under different context names on the Redpanda side. Are there any gotchas with that explicit context mapping?",
+      "why": "In Schema Registry API-mode shadowing, an exact context mapping requires every source context in the effective source scope to have exactly one mapping, so source_filter.contexts must be scoped to the mapped contexts. Leaving the filter empty puts the whole registry, including the default context, in scope. In the recorded baseline runs the model declined to name the config fields and listed generic things to test, treating what happens to unmapped contexts as an open question. Sampled from the full skill's references at commit b492f09; the thin skill no longer carries this claim, so the skill arm is expected to miss it.",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/dev/proto/redpanda/core/admin/v2/shadow_link.proto"
+      ],
+      "invariants": [
+        {
+          "name": "every_in_scope_context_mapped",
+          "failure_condition": "Fails if the response does not state that every source context in scope must have exactly one mapping, or does not tell the user to limit the source filter to the contexts being mapped (or otherwise warns that unmapped contexts such as the default context break the sync). Passes if it states that rule and says to restrict the source context filter to .prod and .staging, noting that an empty filter brings the whole registry into scope."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "tags-patch-echo-reserved-keys",
+      "query": "My automation does read-modify-write on a Redpanda BYOC cluster's cloud_provider_tags through the Cloud API: it GETs the cluster, edits the tag map, and PATCHes it back. The map it reads includes keys Redpanda put there, like redpanda-id and redpanda-org. Do I need to strip those keys before sending the PATCH, or will it be rejected?",
+      "why": "A cloud_provider_tags PATCH is checked against the tags the cluster already stores: product source rejects it only when it introduces a reserved key or changes a stored reserved key's value, so echoing redpanda-id or redpanda-org back unchanged is accepted, as is leaving them out. In the recorded baseline runs the model said acceptance and rejection were equally plausible and suggested testing on a non-production cluster. The published Reserved tag keys section says Redpanda rejects these keys when you update tags with the Control Plane API, without the stored-value exception, so the docs conflict with product source here; a docs-arm failure on this case reflects that conflict, not a skill win.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "unchanged_echo_accepted",
+          "failure_condition": "Fails if the response says the PATCH will be rejected for carrying the reserved keys back unchanged, or says the user must strip them. Passes if it says echoing stored reserved keys with unchanged values is accepted (and omitting them is also fine), and that a PATCH is rejected only when it adds a reserved key or changes a stored reserved key's value."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "byoc-plugin-skip-version-check",
+      "query": "Our CI runners cannot download binaries from the internet, so we bake the Redpanda BYOC plugin into the runner image ahead of time. How do I stop rpk cloud byoc aws apply from trying to download or re-verify a plugin version for the cluster, and is there any catch?",
+      "why": "rpk pins the BYOC plugin to the version the control plane names for the cluster and downloads it when the checksum does not match. Setting RPK_CLOUD_SKIP_VERSION_CHECK to 1 or true makes rpk run the installed plugin as is, but only when a plugin is already installed; with no plugin present, rpk still fetches one. In the recorded baseline runs the model said it could not name the setting and told the user to look for a flag in --help.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "RPK_CLOUD_SKIP_VERSION_CHECK"
+      ],
+      "invariants": [
+        {
+          "name": "only_when_already_installed",
+          "failure_condition": "Fails if the response does not say the skip only takes effect when the plugin is already installed in rpk's managed plugin location, or recommends a flag such as --no-validate as the mechanism. Passes if it names the environment variable and says it is honored only when a plugin is already installed, so the image must place the plugin where rpk manages it."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "byoc-validate-without-cluster-id",
+      "query": "Before we create any cluster in Redpanda Cloud, can I check whether our AWS account meets the BYOC prerequisites using rpk? We don't have a cluster ID yet.",
+      "why": "rpk cloud byoc aws validate is the one BYOC subcommand that needs no --redpanda-id; with no cluster to pin to, rpk downloads the latest BYOC plugin to run it. In the recorded baseline runs the model said the BYOC commands are tied to a cluster ID, knew of no cluster-agnostic preflight, and offered manual AWS checks instead.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "byoc\\s+aws\\s+validate"
+      ],
+      "invariants": [
+        {
+          "name": "no_cluster_id_needed",
+          "failure_condition": "Fails if the response says a cluster ID is required to check prerequisites with rpk, or tells the user to create a cluster first to get one. Passes if it says the validate subcommand runs without --redpanda-id."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "dual-listener-no-way-back",
+      "query": "A while ago we switched our AWS BYOC cluster to the per-service connections lists (a public and a private listener on the Kafka API, HTTP Proxy, and Schema Registry) through the Redpanda Cloud API. Now we want to undo that and put the cluster back on the plain cluster-level connection_type setting it had before. What API call do I send?",
+      "why": "Once a cluster uses per-service connections, there is no path back to connection_type: connection_type is not an updatable field, a connections list cannot be cleared, and each service must keep at least one connection. The closest equivalent is to keep connections with only the topology you want. In the recorded baseline runs the model floated a PATCH that sets connection_type and clears the connections lists as the likely revert, or only guessed that a revert might not be supported.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "connections_are_one_way",
+          "failure_condition": "Fails if the response gives a PATCH that sets connection_type or clears the connections lists as a working revert, or only speculates that a revert might not be possible. Passes if it states that the change cannot be undone through the API because connection_type cannot be updated and the connections lists cannot be cleared (each service keeps at least one connection), and points to editing the connections lists to the desired topology instead."
+        }
+      ],
+      "origin": "targeted"
+    }
+  ]
+}

@@ -1,62 +1,48 @@
 # Redpanda SQL (`sql`) Skill Source Map
 
-Scope gate: the published Redpanda Cloud docs; the engine source is used only to
-confirm behavior of documented surfaces, never to add undocumented ones.
+Scope gate: what a Redpanda Cloud user can do with the Redpanda SQL engine that Cloud runs.
+The thin `SKILL.md` restates nothing the published docs cover; it keeps procedures and the
+facts the docs lack or state wrongly. Each claim below maps to the source that confirms it.
 
-The published docs live in the private `redpanda-data/cloud-docs` repo and are
-served at https://docs.redpanda.com/cloud-data-platform/. Read them with
-`git -C <cloud-docs clone> show origin/main:<path>` or the Redpanda-Github-Read
-connector. The published statement set is exactly the files under
-`modules/reference/pages/sql/sql-statements/`; list it with
-`git ls-tree -r --name-only origin/main modules/reference/pages/sql/`.
+Engine claims are checked against `redpanda-data/oxla` at the release tag that the Cloud
+install pack pins (`vars.redpanda_oxla_version` in `redpanda-data/cloudv2`
+`install-pack/<version>.yml`; read the pin, do not copy it here). User-sync claims are checked
+against `redpanda-data/cloudv2` at the `redpanda_oxla_api_version` the same install pack pins.
+Read both private repos with the GitHub API; do not clone them.
 
-## File-to-source table
+## Claim-to-source table
 
-All paths are in `redpanda-data/cloud-docs`.
-
-| Skill file | Published sources |
+| `SKILL.md` claim | Source |
 |---|---|
-| `SKILL.md` | `modules/reference/pages/sql/sql-statements/index.adoc` (read-only note, statement set), `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/query-data/sql-editor.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc`, `modules/reference/pages/sql/sql-statements/{copy-to,grant,revoke,create-user,alter-user,drop-user,show-tables,show-catalogs,describe,create-table}.adoc`, `modules/reference/pages/sql/sql-data-types/{index,numeric-type/numeric,numeric-type/numeric-data-type-aliases}.adoc`, `modules/reference/pages/sql/transactions.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc` |
-| `references/connect-and-types.md` | `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/connect-to-sql/language-clients/{psycopg2,java-jdbc,php-pdo,dotnet-dapper}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/reference/pages/sql/sql-data-types/**` (all type pages, incl. `time-type/time-operators.adoc`), `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc` |
-| `references/statements.md` | `modules/reference/pages/sql/sql-statements/{index,select,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/sql/pages/manage/manage-access.adoc` |
-| `references/functions-and-analytics.md` | `modules/reference/pages/sql/sql-functions/**` (every category index and function page), `modules/reference/pages/sql/sql-clauses/over-window.adoc`, `modules/reference/pages/sql/sql-data-types/{geometry,geography,uuid}.adoc`, `modules/reference/pages/sql/sql-statements/set-show.adoc` (`oxla.enable_fast_math`) |
+| `catalog=>table` references, `SHOW REDPANDA TABLES`, `DESCRIBE TABLE`, unqualified `SHOW TABLES` is an error | cloud-docs `modules/reference/pages/sql/sql-statements/{show-tables,describe}.adoc` |
+| Read-only engine; topics mapped through catalogs | cloud-docs `modules/reference/pages/sql/sql-statements/index.adoc` |
+| Login follows the IAM role; **Organization IAM > Roles** | cloud-docs `modules/sql/pages/manage/manage-access.adoc` |
+| `has_database_privilege(<user>, current_database(), 'CONNECT')` as the login check | cloudv2 `apps/redpanda-oxla-api/internal/controller/user_sync_db.go` (`queryCurrentUsersSQL`) |
+| User sync owns `CONNECT` and superuser for email-named users; revokes a manual grant for a user with no SQL role; never drops users; manages only names containing `@` that hold `CONNECT` | cloudv2 `apps/redpanda-oxla-api/internal/controller/user_sync_db.go` (`queryCurrentOxlaUsersDB`, `buildUserOpSQL`), `reconcile_users.go` (`computeUserDiff`) |
+| Role removal revokes only `CONNECT` and superuser; grants survive; re-assigning restores `CONNECT` on the existing user | cloudv2 `user_sync_db.go` (`opRevoke`, `applyCreateBatchWithRepair`, `repairExistingUser`) |
+| `GRANT SELECT ON EXTERNAL SOURCE`, `USAGE` on schema, Kafka ACLs do not apply | cloud-docs `modules/sql/pages/manage/manage-access.adoc` |
+| `REVOKE` with a pattern that matches no stored grant is an error | oxla `src/access_control/grant_revoke.cpp`; cloud-docs `manage-access.adoc` |
+| Catalog-wide grant listed in `information_schema.role_table_grants` (`table_name` = catalog) | oxla `src/metastore/information_schema_role_table_grants.cpp`, `src/metastore/information_schema_role_external_relation_grants.cpp` |
+| Revoking the catalog-wide grant removes per-topic grants | oxla `tests/blackbox/pit/kafka/test_redpanda_source_grants.py` (`test_revoke_metadata_grant_cascades_to_external_relation_grants`) |
+| `timestamp with time zone` rendered in the session time zone after `SET TIMEZONE` | oxla `tests/blackbox/pit/timestamps/test_set_timezone.py` |
+| `bytea` ordering operators, `IN`, `ORDER BY`, `GROUP BY`, `DISTINCT`, joins, `min`/`max`, `\|\|`, `substr`, `position` | oxla `tests/blackbox/pit/types/test_bytea.py` |
+| `uuid` column compares with a string literal | oxla `tests/blackbox/pit/operators/test_compare_uuid.py` (`test_uuid_column_compared_with_string_literal`), `tests/blackbox/pit/join/test_uuid_join.py` |
+| `GROUP BY` on an array: `could not identify an equality operator for type text[]` | oxla `tests/blackbox/pit/arrays/test_array_group_by.py` |
+| Docs URLs | served at https://docs.redpanda.com/cloud-data-platform/ from cloud-docs |
 
-Catalog, storage, topic-mapping, and Iceberg statements (`create-redpanda-catalog`,
-`create-storage`, `create-iceberg-catalog`, `create-table`, `alter-table`,
-`drop-table`, and `modules/sql/pages/query-data/**`) are owned by
-`sql-federated-queries`; this skill only points to it.
+## Known docs errors the skill corrects
 
-## Deferred to live introspection (not drift)
+- `sql-data-types/timestamp-with-time-zone.adoc` says a `SELECT` ignores the session time zone
+  and returns values as stored.
+- `sql-data-types/bytea.adoc` lists only `=` and `<>` among comparisons.
+- `sql-data-types/uuid.adoc` says a `uuid` does not cast implicitly and filters with an explicit
+  cast; the cast works, but comparison with a string literal also works.
+- `sql-data-types/array.adoc` shows only the `ORDER BY` error for array keys.
 
-- Host, port, and connection string: read from the Cloud Console **How to connect**
-  panel, never pinned beyond what the quickstart shows.
-- Session setting values (`SHOW <option>`), result rows, and `pg_typeof` output.
-- Which statements SQL Studio blocks: the published page states the block exists
-  but not the list; do not enumerate it.
+## Checked and left out
 
-## Known inconsistencies in the published docs (do not copy into the skill)
-
-- Many type, clause, and function pages illustrate with `CREATE TABLE (...)` plus
-  `INSERT`, and the language-client pages create and insert into tables, although
-  the statements index says Redpanda SQL is read-only. The skill uses
-  `default_redpanda_catalog=>table` examples instead.
-- `grant.adoc` and `revoke.adoc` list a "native SQL table" privilege level
-  (`ON TABLE`, with `INSERT`/`UPDATE`/`DELETE`) and a `GRANT SELECT, INSERT ON
-  TABLE` example, although users cannot create native tables. The skill omits
-  the table level and documents only the external-source, schema, and database
-  levels.
-- `timestamp-with-time-zone.adoc` says values are returned "exactly as stored"
-  but its example output is converted to UTC; the skill follows the example and
-  `timestamp-without-time-zone.adoc` (display time zone fixed to UTC).
-- The window-functions index says frames are restricted to `ROWS`; the
-  `over-window.adoc` clause page and the function pages document `ROWS` and
-  `RANGE`. The skill follows the clause page.
-- `has-database-privilege.adoc` examples use a database named `redpanda`, while
-  `grant.adoc` says the single database is `oxla`.
-
-## Usage
-
-Before changing a claim, re-read the cited page at `origin/main`. Add a statement,
-function, type, or option only when a published page documents it; if a needed
-behavior is only in engine source, leave it out or flag it as a TODO for human
-review.
+- GCS through `AWS_CRED` with an `ENDPOINT` (HMAC keys): the docs show a `gs://` destination.
+  The engine picks the provider from the credential type, not the path scheme, so a `gs://`
+  path with `AWS_CRED` appears to reach the S3 client; the only test uses `s3://` (with
+  `COPY FROM`). Whether `s3://` is required for `COPY TO` is unconfirmed. TODO for human review.
+- `COPY TO` writes CSV only; the docs cover it, so the skill does not restate it.

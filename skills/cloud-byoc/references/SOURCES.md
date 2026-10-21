@@ -1,73 +1,48 @@
 # cloud-byoc Skill Source Map
 
-Maps each file in `skills/cloud-byoc/` to the `cloudv2` source paths and docs URLs it
-derives from, so future syncs and human maintainers know exactly where to verify claims.
+Maps each claim in `skills/cloud-byoc/SKILL.md` to the source it was verified against, so
+syncs and maintainers know where to re-check it. Everything else the skill defers to the
+published docs.
 
-All proto/OpenAPI paths are relative to the `redpanda-data/cloudv2` repository root. The
-`cloudv2` repo is private; read it via the Redpanda-Github-Read MCP connector
-(`search_code`, `get_file_contents`, `list_commits`, `get_commit`) or a local checkout,
-not by guessing. Before writing or changing any fact, re-open the cited source and confirm
-exact spelling, field numbers, enum values, and endpoint paths.
+Both source repos are private. Read them through the GitHub API or the Redpanda-Github-Read
+MCP connector; do not clone them.
 
-## Control-plane proto/OpenAPI root
+- `redpanda-data/cloudv2`: paths below are relative to the repo root.
+- `redpanda-data/streaming-enterprise`: `rpk cloud byoc` lives in
+  `src/go/rpk/pkg/cli/cloud/byoc/`.
 
-- Protos: `proto/public/cloud/redpanda/api/controlplane/v1/*.proto`
-- Generated OpenAPI: `proto/gen/openapi/openapi.controlplane.yaml`
-- Operation envelope + operation `Type` enum (numbers): `proto/public/cloud/redpanda/api/controlplane/v1/operation.proto`
+## Claim-to-source table
 
-## File-to-source table
+All claims verified 2026-10-21.
 
-| Skill file | cloudv2 source paths | Docs URLs |
-|---|---|---|
-| `skills/cloud-byoc/SKILL.md` | `controlplane/v1/cluster.proto` (ClusterService RPCs incl. `UpdateCluster` `patch:/v1/clusters/{cluster.id}` + `body:"cluster"` + top-level `update_mask`), `network.proto`, `network_peering.proto`, `shadow_link.proto`, `operation.proto`, `resource_group.proto`, `region.proto`; `openapi.controlplane.yaml` (PATCH `/v1/clusters/{cluster.id}` ~5623-5711); `apps/cloud-ui/src/utils/rpk.utils.ts` (rpk byoc per-provider flags) | https://docs.redpanda.com/redpanda-cloud/ , https://docs.redpanda.com/redpanda-cloud/reference/tiers/byoc-tiers/ , https://docs.redpanda.com/cloud-data-platform/networking/ |
-| `skills/cloud-byoc/references/byoc-model-and-auth.md` | `pkg/publicapi/controlplane.go` (`CloudClientSet`, `ControlPlaneProdURL`), `controlplane/v1/operation.proto`, `cluster.proto`, `network.proto` | https://cloud.redpanda.com , https://docs.redpanda.com/redpanda-cloud/ |
-| `skills/cloud-byoc/references/networks.md` | `controlplane/v1/network.proto` (NetworkCreate fields; `cidr_block` private-IPv4 + /16–/20 prefix-length constraint, verified 2026-10-08 against `apps/controlplane-api/internal/services/network/network_service.go` `validateCIDR` / `minVPCSize` / `maxVPCSize` / `errNetworkCIDRNotPrivate`, with the published statement in `cloud-docs` `modules/networking/pages/cidr-ranges.adoc`), `network_peering.proto` (NetworkPeeringService, AWS/GCP/Azure peering specs, states), `cluster.proto` (`AWSPrivateLinkSpec`/`GCPPrivateServiceConnectSpec`/`AzurePrivateLinkSpec` ~1045-1116), `common.proto`, `operation.proto` (peering Types 13/14); **AWS `public_subnets`** (verified 2026-09-17): `network.proto` (`Network.UpdatableCustomerManagedResources`, `CustomerManagedAWSSubnets`), `apps/public-api-go/internal/services/network/v1/network_service.go` (`isUpdatableCustomerManagedResourcesMaskPath` — the three legal mask spellings; `unsupportedCustomerManagedResourcesMaskPath` → `INVALID_ARGUMENT` "not updatable"; the per-organization enablement guard on `customer_managed_resources.aws.public_subnets`), `apps/public-api-go/internal/services/network/v1/mapper.go` (`UpdateNetworkPublicToPrivate` collapsing every legal spelling to the settable leaf) | https://docs.redpanda.com/cloud-data-platform/networking/ , https://docs.redpanda.com/redpanda-cloud/networking/cidr-ranges/ , centralized egress: https://docs.redpanda.com/cloud-data-platform/networking/byoc/aws/nat-free-egress/ (and the `gcp/`, `azure/` equivalents) — the skill describes the feature and defers configuration to these pages |
-| `skills/cloud-byoc/references/clusters-and-agent.md` | `controlplane/v1/cluster.proto` (ClusterCreate/ClusterUpdate fields incl. `redpanda_connect` (Create field 30 / Update field 22) + `Cluster.RedpandaConnect.allowed_destination_cidr_ports` and `Cluster.CidrPort` `{cidr, port_start, port_end}` max 16, `UpdateCluster` RPC ~141-152, `CustomerManagedResources` AWS/GCP/Azure, `Cluster.State` enum), `openapi.controlplane.yaml` (PATCH `/v1/clusters/{cluster.id}` body=ClusterUpdate, update_mask omitted), `shadow_link.proto` (ShadowLinkService control-plane paths, ShadowLinkCreate, states, Types 15/16/17, and the Cloud-only Schema Registry API-mode CEL rules: `sr_api_source_url_required` on Create, `sr_api_auth_options_only_basic_supported`, `sr_api_password_must_reference_secret`, `sr_api_tls_key_must_reference_secret`, `sr_api_tls_key_cert_both_or_neither`, `sr_api_tls_file_settings_not_supported`), public `redpanda` repo `proto/redpanda/core/admin/v2/shadow_link.proto` (`SchemaRegistrySyncOptions` shadowing-mode oneof, `ShadowSchemaRegistryApi` fields + defaults, `SchemaRegistrySourceFilter`, `SchemaRegistryContextDestination`, `UnsupportedSchemaFeaturePolicy`) and `proto/redpanda/core/common/v1/tls.proto` (nested `TLSSettings` / `TLSPEMSettings` / `TLSFileSettings`), private `docs` repo `modules/manage/pages/disaster-recovery/shadowing/migrate-schemas-confluent.adoc` (Confluent migration workflow, prerequisites, limitations, monitoring, Cloud configuration paths), `operation.proto` (Type enum numbers), `pkg/cli/cloud/byoc/` (rpk plugin, version pinning, `BYOCPluginService.ListArtifactsByRedpandaID`), `apps/cloud-ui/src/utils/rpk.utils.ts` (`--project-id`/`--subscription-id` per provider), `proto/public/cloud/redpanda/api/byocplugin/v1alpha1/byoc_plugin.proto` (BYOCPluginService); **shadow-link source clusters, auth arms and role sync** (verified 2026-10-01): `shadow_link.proto` (`role_sync_options` on `ShadowLinkCreate`/`ShadowLinkUpdate`/`ShadowLink`, `ShadowLinkClientOptions.authentication_configuration`), api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `AuthenticationConfiguration` arms `plain_configuration`/`scram_configuration`, `PlainConfig`/`ScramConfig` with read-only `password_set`/`password_set_at`, `RoleSyncOptions`, `NameFilter`), docs `modules/manage/pages/disaster-recovery/shadowing/setup.adoc` + `overview.adoc` (`env-cloud` variants — source-cluster scope, the Redpanda-source-only carve-outs, Amazon MSK caveats); **dual listener mode** (verified 2026-09-17): `cluster.proto` (`ConnectionSpec` `{type, auth}`, `AuthSpec.mode`, `AuthMode` `AUTH_MODE_SASL`/`AUTH_MODE_MTLS`, `ConnectionStatus` `{config, endpoint}`, `KafkaAPISpec`/`HTTPProxySpec`/`SchemaRegistrySpec` `connections` field 3 + their `<service>_spec.connections.unique_type_auth_mode` CEL rules, deprecation comments on `connection_type` and on the `seed_brokers`/`url`/`mtls` endpoint fields), `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (`validateConnections` all-three-services + same-topology + `connection_type`/`sasl` exclusivity, `validateConnectionSpecs` duplicate `(type, auth.mode)` reject, `validateConnectionsUpdate` mask-gating of in-play connections + no-clear rule, `validateConnectionsSemanticsForUpdate` kafka public-presence refusal wording, `crossesDualPublic` + the `migrate_connectivity` permission check, `validateServiceConnectionsMTLS`/`…ForUpdate` mtls block rules, `connectionsNotSupportedOnAzureErr`, and the per-organization enablement guard returning `REASON_FEATURE_NOT_ENABLED`); `cloud-docs` `modules/networking/pages/byoc/aws/dual-listener-mode.adoc` (published how-to: beta + AWS-only scope, max four connections per service, migration support matrix, BYOVPC public subnets); **self-service cluster scaling** (verified 2026-10-15): `apps/controlplane-api/internal/services/redpanda/redpanda_service.go` (`nodesCountTooLowErr` per-tier minimum, the unsupported-tier-migration-path error, `reservedTagKeyErr`), `apps/public-api-go/internal/services/cluster/v1/user_scaling_gate.go` (`CheckUserSetNodesCountAllowed` — the usage-based-billing subscription check and its PERMISSION_DENIED message), `proto/public/cloud/redpanda/api/controlplane/v1beta2/error.proto` (`Reason` enum; only `REASON_SCALING_REDPANDA_NODE_COUNT_TOO_HIGH` and `REASON_SCALING_UNSUPPORTED_THROUGHPUT_TIER_MIGRATION_PATH` are named in the skill body, because those are the values the published `scale-cluster.adoc` names), `apps/controlplane-api/internal/services/redpanda/validate_test.go` (`TestValidateCloudTagKeysOnCreate` presence check vs `TestValidateCloudTagKeysOnUpdate` delta check: an unchanged stored reserved key is accepted on update; verified 2026-10-15), api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `redpanda_node_count`, `throughput_tier`, `STATE_UPGRADING`), `cloud-docs` `modules/manage/pages/cluster-maintenance/scale-cluster.adoc` (published how-to, engineering-reviewed: the two scaling axes, Ready-state and one-operation-at-a-time rules, broker-count and machine-family constraints, preflight checks on capacity-reducing changes, the error table, and behavior during the operation); **cloud provider tags** (verified 2026-10-15): `cluster.proto` (`cloud_provider_tags` 16-pair cap on `ClusterCreate`/`ClusterUpdate`, no cap on the `Cluster` response), `cloud-docs` `modules/get-started/partials/custom-tags-gcp.adoc` (published reserved keys `redpanda-org`/`redpanda-id`/`network-id`/`redpanda-client` plus `goog-partner-solution`, the ignored `redpanda-`/`goog-gke-`/`goog-k8s-` prefixes, the GCP-only lowercase key format rule, replace-the-whole-map PATCH semantics, and the Google Cloud Marketplace consumption-tracking label's create/PATCH behavior), `custom-tags-aws.adoc` (case-sensitive mixed-case keys, `Name` and `aws:` to avoid, `redpanda-` tags not applied to EC2/EBS/ENIs) and `custom-tags-azure.adoc` (case-insensitive keys, Redpanda's value overwrites a colliding `redpanda-` key, ASG and Private Link NIC tags create-time only) (verified 2026-10-15) | https://docs.redpanda.com/redpanda-cloud/reference/tiers/byoc-tiers/ ; published page "Configure Dual Listener Mode" (Redpanda Cloud networking docs) |
-| `skills/cloud-byoc/references/enterprise-features.md` | `docs` repo: `modules/get-started/pages/licensing/overview.adoc`, per-feature pages under `modules/manage/` and `modules/develop/`, property partials under `modules/reference/partials/properties/` (incl. `topic-properties.adoc` `redpanda.schema.registry.context` and `redpanda.storage.mode.impl`; `object-storage-properties.adoc` `default_redpanda_storage_mode_tiered_impl`), `modules/manage/partials/tiered-storage.adoc` (`tiered-storage-versions` tagged region: v1/v2 comparison, create-time-only version selection, restrictions), public `redpanda` repo `src/v/model/metadata.h` (`redpanda_storage_mode_tiered_impl` enum `tiered_v1`/`tiered_v2`) + `src/v/config/configuration.{h,cc}` (property definition), `modules/manage/pages/iceberg/specify-iceberg-schema.adoc` (section-based `redpanda.iceberg.mode` `key`/`value`/`headers` syntax + shorthand equivalents, `redpanda.schema.registry.context`); `cluster.proto` (`cluster_configuration.custom_properties`); `shadow_link.proto` (rpk shadow / control-plane DR); docs `modules/manage/pages/disaster-recovery/shadowing/setup.adoc` + `overview.adoc` (`env-cloud` variants: Kafka API-compatible source clusters, Shadowing as a migration path, the Redpanda-source-only carve-outs, Amazon MSK caveats — verified 2026-10-01) | https://docs.redpanda.com/cloud-data-platform/security/cloud-encryption/ (BYOK/CMK not offered), https://docs.redpanda.com/ (licensing, Tiered Storage, Iceberg, Audit Logging, Leadership Pinning, Shadow Linking, Kafka Connect defaults) |
+| Claim in SKILL.md | Source |
+|---|---|
+| Create, update, and delete return a long-running operation; operation states `STATE_IN_PROGRESS`/`STATE_COMPLETED`/`STATE_FAILED` | cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`UpdateCluster` returns `UpdateClusterOperation`, `patch: "/v1/clusters/{cluster.id}"`, `body: "cluster"`), `operation.proto` (`Operation.State`) |
+| Multi-zone broker count must be a multiple of the zone count | cloudv2 `apps/controlplane-api/internal/services/redpanda/redpanda_service.go` (`validateUserNodesCountZones`, `nodesCountNotZoneMultipleErr`: `INVALID_ARGUMENT`, "node count %d must be a multiple of the cluster's %d zones"; a single-zone cluster takes any count). Published: https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/ |
+| Integer and number `custom_properties` values are sent as JSON strings | cloudv2 `cluster.proto`: the comment on `cluster_configuration` in `ClusterCreate`, `ClusterUpdate`, and `Cluster` ("Properties of type integer and number from redpanda config schema needs to be provided as strings to avoid precision loss"); `custom_properties` is a `google.protobuf.Struct` |
+| A tags PATCH may echo stored reserved keys unchanged; rejected only on an added or changed reserved key, with `INVALID_ARGUMENT` "cloud tags cannot contain the reserved key" | cloudv2 `apps/controlplane-api/internal/services/redpanda/redpanda_service.go` (`validateCloudTagKeysOnUpdate` delta check vs `validateCloudTagKeysOnCreate` presence check, `reservedTagKeyErr`, `reservedTagKeys`); `validate_test.go` (`TestValidateCloudTagKeysOnUpdate`) |
+| `RPK_CLOUD_SKIP_VERSION_CHECK=1` or `true` runs the installed plugin as is, only when one is already installed; rpk still loads a Cloud token first | streaming-enterprise `src/go/rpk/pkg/cli/cloud/byoc/install.go` (`ensurePluginVersion`: `pluginExists && (BYOCSkipVersionCheck == "1" \|\| == "true")`; `loginAndEnsurePluginVersion` calls `getTokenOrLogin` before it), `src/go/rpk/pkg/config/config.go` (`BYOCSkipVersionCheck` `env:"RPK_CLOUD_SKIP_VERSION_CHECK"`), `src/go/rpk/pkg/plugin/plugin.go` (`UserPaths`: managed plugin dir plus `$PATH`) |
+| `validate` needs no `--redpanda-id` and downloads the latest plugin; `apply` and `destroy` require `--redpanda-id` | streaming-enterprise `src/go/rpk/pkg/cli/cloud/byoc/byoc.go` (`isValidate` path, "required --redpanda-id flag cannot be empty" for apply/destroy), `install.go` (`fetchBYOCArtifact` `ListLatestArtifacts` when `isLatest`) |
 
-## PREVIEW / beta markers to re-verify
+## Dropped after behavioral screening
 
-These are gated by `(google.api.api_visibility).restriction = "PREVIEW"` or
-`(google.api.field_visibility).restriction = "PREVIEW"` in the protos; confirm the marker
-still exists before describing the feature as GA:
+These procedures were drafted for "How to work" and removed because a model with no skill
+already followed them in a mocked run (2026-10-21). They remain true and are covered by the
+published docs:
 
-- Centralized egress for BYOC (AWS, GCP, Azure) — beta, per organization, per the Cloud changelog and the published centralized-egress pages. The docs hide the API fields while they are PREVIEW, so the skill describes the feature and links the docs pages; do not add the API fields to the skill until the docs publish them.
-- BYOVPC on AWS — GA, March 2026 (per docs).
-- Dual listener mode (per-service `connections`) — **beta**, AWS only, announced in the Cloud
-  changelog in September 2026. `ConnectionSpec`, `AuthSpec`, `AuthMode`, and `ConnectionStatus`
-  carry message/enum-level visibility restrictions in `cluster.proto`, and none of them appear in
-  the generated `openapi.controlplane.yaml` (checked 2026-09-17) — so the skill describes the
-  request shapes from the proto and the published how-to, and must not call the feature GA. Also
-  per-organization enablement; re-verify both before changing the maturity wording.
-- `Network.customer_managed_resources.aws.public_subnets` — beta, per-organization enablement
-  (`network_service.go` guard). Required only for a dual-listener BYOVPC cluster. The field keeps
-  field-level PREVIEW in `network.proto`; the skill calls it beta.
+- Teardown order: `DELETE /v1/clusters/{id}`, wait for `STATE_DELETING_AGENT`, then
+  `rpk cloud byoc <provider> destroy`, then delete the network (cloudv2
+  `redpanda_service.go` `validTransitions`; published in the BYOC Control Plane API page).
+- Read-modify-write for `cloud_provider_tags`, because a masked update replaces the whole map
+  (cloudv2 `redpanda_service.go`, comment on `restoreRedpandaManagedTag`).
+- Do not re-send a scaling PATCH while a paused scale leaves the cluster in
+  `STATE_UPGRADING`; Redpanda Support resumes or rolls back (published scale-cluster page).
 
-## TODO / re-verify
+## TODO / unresolved (do not state in the skill until confirmed)
 
-- **Cluster PATCH without `update_mask` (open, 2026-09-18).** The published dual-listener how-to's
-  Cloud API migration example sends the `connections` body with no `update_mask`, while
-  `validateConnectionsUpdate` keys every guard off the mask paths. Whether the gateway derives a
-  body mask for `UpdateCluster` (as the networks how-to says it does for `UpdateNetwork`) is
-  unconfirmed. `clusters-and-agent.md` hedges and tells the reader to pass the mask explicitly.
-  Resolve by checking the gateway's mask handling for `UpdateCluster`, or by asking the page's
-  author whether the example is missing the parameter, then tighten the wording.
-  Evidence found 2026-09-18, short of proof: `cluster_service.go`'s `fixFieldMaskCIAINFRA1279`
-  rewrites incoming mask paths of the form `cluster_configuration.custom_properties.<key>` to
-  `cluster_configuration.custom_properties.fields.<key>`. A per-map-key path is what a
-  body-derived mask produces — a hand-written mask names the field, not each key — and the TODO
-  above that function says the proper fix belongs "at the grpc gateway level", which attributes
-  the path shape to the gateway. If the gateway does derive leaf paths from the body for this
-  verb, then a `connections` body sent with no `update_mask` derives `<service>.connections`
-  (derivation stops at a repeated field), which is exactly the leaf the guards key off — the
-  published example would then be correct, and "ignored" would apply only to a mask that names
-  other paths, which *is* confirmed in `validateConnectionsUpdate`. One live call settles it:
-  PATCH a dual cluster's `connections` with no `update_mask` and see whether the listeners
-  change. Do not tighten the skill wording on the inference alone.
-
-## Usage
-
-For each skill file being reviewed or updated, open the listed source paths in `cloudv2`
-first and confirm every claim still matches. Operation `Type` enum numbers, field numbers,
-state enum values, and exact endpoint paths are the most fragile facts — always re-check
-them against the proto rather than from memory.
+- Whether `update_mask` is required on every cluster PATCH. The published examples omit it,
+  and the gateway may derive a mask from the body. Settle with one live call.
+- Whether `rpk cloud byoc azure destroy` needs `--subscription-id`. The published delete
+  example omits it; the plugin's own flags are not in the rpk source.
+- The error code returned for a tier not offered in a region.
+- Whether `ListClusters` returns `dataplane_api.url`.

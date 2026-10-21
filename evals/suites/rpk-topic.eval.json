@@ -1,0 +1,326 @@
+{
+  "name": "rpk-topic skill vs docs",
+  "skill": "rpk-topic",
+  "description": "Measures whether the rpk-topic skill adds value over the published rpk reference for less common rpk topic behavior: Schema Registry context resolution on produce and consume, rpk topic analyze, regex targeting in alter-config, and the Cloud Topic layout of describe-storage. Popular commands (create, delete -r anchoring, tombstones, offset ranges, group plus stop-offset errors, --no-confirm, Iceberg and Leader Pinning property syntax) were screened out because the no-skill baseline already answered them correctly. Round 2 adds sampled and targeted cases picked from the full rpk-topic skill at commit b492f09, before it was converted to the thin format, without regard to the docs: Remote Read Replica property conflicts, describe-storage default sections and storage modes, Unix-second offsets, and Schema Registry context lookup edge cases. The thin skill no longer carries those claims, so a thin skill-arm result on a sampled or targeted case is not a measure of skill coverage. The behavioral case grades the outcome of a task run against a mocked rpk: records produced to the partitions parsed from a file.",
+  "test_cases": [
+    {
+      "id": "produce-schema-context-resolution",
+      "query": "Topic orders on my Redpanda cluster is bound to a non-default Schema Registry context through its topic config. When I run `rpk topic produce orders --schema-id=topic`, which Schema Registry context does rpk look the subject up in? And for one run I need it to use the default context instead. How do I do that?",
+      "why": "rpk topic produce resolves the Schema Registry context per topic from the redpanda.schema.registry.context topic config, falling back to the default context only when unset. The --schema-context flag overrides that, and an empty value or a lone dot forces the default context. This is recent behavior; the baseline said it could not confirm it and guessed at alternatives.",
+      "verified_against": [
+        "https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-produce/",
+        "https://docs.redpanda.com/current/reference/properties/topic-properties/#redpanda-schema-registry-context",
+        "product source"
+      ],
+      "required_patterns": [
+        "--schema-context"
+      ],
+      "invariants": [
+        {
+          "name": "topic_context_by_default_and_force_default",
+          "failure_condition": "FAILS if the answer says rpk uses the default context unless told otherwise, says it cannot determine which context rpk uses, or gives no concrete way to force the default context. PASSES if it says that by default rpk resolves the subject in the context bound to the topic (its redpanda.schema.registry.context config) and shows forcing the default context with --schema-context set to an empty value or to a single dot."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "consume-multi-topic-schema-contexts",
+      "query": "I consume two Redpanda topics in one command with `rpk topic consume a b --use-schema-registry=value`. Topic a's schemas are in the default Schema Registry context and topic b is configured to use a different context. Will rpk decode both topics correctly in that single command, or do I need two separate runs with different settings?",
+      "why": "rpk topic consume resolves the Schema Registry context separately for each topic (from each topic's redpanda.schema.registry.context), so one command decodes topics in different contexts. Passing --schema-context overrides resolution for every topic in the consume. The baseline wrongly said rpk uses one context for all topics and recommended two runs.",
+      "verified_against": [
+        "https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-consume/",
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "per_topic_resolution",
+          "failure_condition": "FAILS if the answer says the single command cannot decode both topics correctly, says rpk applies one context to every topic by default, or recommends two separate runs as required. PASSES if it says the single command works because rpk looks up each topic's configured Schema Registry context separately when no context override is given. Mentioning that an explicit --schema-context would apply to both topics is fine and does not fail the case."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "analyze-batch-size-last-hour",
+      "query": "Using only rpk, how can I find out the average batch size and the batches-per-second rate my producers are achieving on topic orders over the last hour?",
+      "why": "rpk topic analyze consumes a time window and reports batch rate and average bytes per batch per topic. Its default window is only the last minute, so the last hour needs --time-range/-t -1h:end. The baseline did not know the command and pointed to debug bundle metrics.",
+      "verified_against": [
+        "https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-analyze/",
+        "product source"
+      ],
+      "required_patterns": [
+        "rpk topic analyze",
+        "(-t|--time-range)[\\s=]+['\"]?@?-(1h|60m)"
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "alter-config-regex-many-topics",
+      "query": "I need to set retention.ms=86400000 on every topic whose name starts with events- (there are a couple hundred of them). Is there a single rpk command that does this, or do I have to script a loop over the output of rpk topic list?",
+      "why": "rpk topic alter-config accepts -r/--regex, which expands anchored expressions against the topic list (the same format as rpk topic list -r), so one command alters every matching topic. The baseline said alter-config has no regex flag and piped rpk topic list through xargs.",
+      "verified_against": [
+        "https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-alter-config/",
+        "product source"
+      ],
+      "required_patterns": [
+        "alter-config\\s[^\\n]*(-r|--regex)\\s"
+      ],
+      "invariants": [
+        {
+          "name": "regex_is_supported",
+          "failure_condition": "FAILS if the answer says rpk topic alter-config has no regex option, or presents a loop or xargs pipeline as the only way. PASSES if it gives a single rpk topic alter-config command using -r or --regex with an expression matching topics that start with events-. Offering a loop as a fallback for older rpk versions is fine."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "describe-storage-cloud-topic-columns",
+      "query": "On my self-managed cluster I created a Cloud Topic, and `rpk topic describe-storage` on it doesn't show the CLOUD-BYTES and CLOUD-SEGMENTS columns I see for my Tiered Storage topics. What does the size section show for a Cloud Topic instead, and how do I read how much of the data is in object storage?",
+      "why": "For the cloud-topic storage modes, describe-storage prints a different SIZE layout that splits the bytes into L0 (level zero) and L1 (level one), plus the local log size, the total, and the L1 extent count. The docs page states the L0 and L1 breakdown in prose without printing the column headers, so the patterns accept either the header spelling or the prose. The baseline said it did not know what a Cloud Topic's size section shows.",
+      "verified_against": [
+        "https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-describe-storage/",
+        "product source"
+      ],
+      "required_patterns": [
+        "\\bL0\\b",
+        "\\bL1\\b"
+      ],
+      "origin": "docs-cited",
+      "invariants": [
+        {
+          "name": "l0_l1_breakdown",
+          "failure_condition": "FAILS if the answer says it does not know what the size section shows for a Cloud Topic, or describes the section with Tiered Storage columns under other names (for example a renamed cloud-bytes or cloud-segments column) instead of an L0 and L1 breakdown. PASSES if it says the size section breaks the partition's bytes into L0 (level zero) and L1 (level one) bytes, alongside the total bytes, however the column headers are spelled."
+        }
+      ]
+    },
+    {
+      "id": "read-replica-with-remote-read",
+      "query": "I'm setting up a Remote Read Replica topic on a second Redpanda cluster that reads from the origin cluster's Tiered Storage bucket. Along with redpanda.remote.readreplica set to the bucket name, should I also set redpanda.remote.read=true on the replica topic so it can fetch data from object storage?",
+      "why": "A Remote Read Replica topic must not also set redpanda.remote.read or redpanda.remote.write: the broker rejects the combination with an invalid-config error (\"remote read and write are not supported for read replicas\"). The baseline said the extra property is ignored, not rejected.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "combination_is_rejected",
+          "failure_condition": "FAILS if the answer says to set redpanda.remote.read=true on the replica topic, or says that setting it alongside redpanda.remote.readreplica is ignored, harmless, or optional. PASSES if it says not to set it because Redpanda rejects a topic that combines redpanda.remote.readreplica with redpanda.remote.read or redpanda.remote.write (an error or invalid config), and that the readreplica property alone makes the topic read from the bucket."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "describe-storage-default-sections",
+      "query": "When I run `rpk topic describe-storage orders` with no section flags, which output sections does it print, and which sections are left out unless I ask for them?",
+      "why": "With no section flags, rpk topic describe-storage prints only the SUMMARY and SIZE sections; OFFSETS (-o/--print-offset) and SYNC (-y/--print-sync) appear only on request or with -a. The help text lists the four sections but not the default. The baseline said summary plus offsets and invented a segments section.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "summary_and_size_by_default",
+          "failure_condition": "FAILS if the answer names any default sections other than summary and size (for example offsets or a segments section), or says all sections are printed by default. PASSES if it says the default output is the summary and size sections, and that the offsets and sync sections are left out unless requested (with their flags or -a/--print-all)."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "consume-unix-seconds-timestamp",
+      "query": "I want `rpk topic consume orders` to start from a Unix timestamp I have in seconds, 1717000000, rather than in milliseconds. Does rpk accept a seconds value directly in the offset flag, and how does it tell seconds from milliseconds?",
+      "why": "rpk topic consume -o @<number> picks the unit by digit count: 13 digits are Unix milliseconds and 10 digits are Unix seconds, so -o @1717000000 works without converting. The rpk help text says \"9 digits\" for seconds, which disagrees with the parser (it matches exactly 10 digits). The baseline quoted the 9-digit help line and would not commit.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "ten_digits_is_seconds",
+          "failure_condition": "FAILS if the answer says rpk cannot take a seconds value directly, says the user must convert to milliseconds, says only 9-digit values are read as seconds, or is unsure whether a 10-digit value works. PASSES if it says the @-prefixed 10-digit value is read as Unix seconds (and a 13-digit value as milliseconds), so -o @1717000000 can be used as is."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "consume-schema-context-describe-configs-denied",
+      "query": "Running `rpk topic consume orders --use-schema-registry=value` as a service account that can read the topic fails right away with: unable to determine schema context for topic \"orders\": TOPIC_AUTHORIZATION_FAILED. A plain `rpk topic consume orders` with the same account works. Why does decoding need extra permissions, and how can I get it working without changing the account's ACLs? Our schemas are all in the default context.",
+      "why": "With --use-schema-registry and no --schema-context, rpk topic consume issues a DescribeConfigs request for each topic to read redpanda.schema.registry.context and exits if that fails, so an account without describe-configs permission can consume but not decode. Setting --schema-context explicitly (empty or a lone dot for the default context) skips the lookup. The lookup-skip is only visible in code. The baseline could not name the flag.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "--schema-context"
+      ],
+      "invariants": [
+        {
+          "name": "lookup_cause_and_bypass",
+          "failure_condition": "FAILS if the answer does not connect the error to rpk reading the topic configuration (DescribeConfigs, or the redpanda.schema.registry.context topic property) to find the context, or if it does not give a concrete --schema-context value to use for the default context. PASSES if it explains that rpk looks up the topic's configured Schema Registry context and the account lacks permission for that, and shows passing --schema-context with an empty value or a single dot so rpk uses the default context without the lookup."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "produce-schema-context-unknown-topic",
+      "query": "Our Redpanda topics are bound to Schema Registry contexts through topic config. I want to run `rpk topic produce new-topic --schema-id=topic --allow-auto-topic-creation`, where new-topic doesn't exist yet. Will rpk fail because it can't look up the topic's configuration, and if not, which Schema Registry context will it use for the subject lookup?",
+      "why": "When rpk topic produce resolves a topic's Schema Registry context, it tolerates UNKNOWN_TOPIC_OR_PARTITION (the topic may be about to be auto-created) and uses the default context; any other lookup failure aborts. This exception is only in code. The baseline said it could not answer.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "unknown_topic_tolerated",
+          "failure_condition": "FAILS if the answer says rpk fails or exits because the topic does not exist yet, or says it cannot tell what happens. PASSES if it says rpk tolerates the missing topic during the context lookup and resolves the subject in the default Schema Registry context (unless --schema-context is passed)."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "describe-storage-tiered-cloud-topic-mode",
+      "query": "I created a topic with `-c redpanda.storage.mode=tiered`, but `rpk topic describe-storage` reports its cloud-storage-mode as `tiered_cloud_topic` rather than `full`. Did it accidentally become a Cloud Topic? What does that mode mean?",
+      "why": "describe-storage reports tiered_cloud_topic for a topic in the tiered storage mode that runs on the newer (tiered_v2) implementation built on the Cloud Topics storage layer. It is still a tiered topic and keeps a real local log, unlike cloud_topic. The baseline said it did not know what the mode means.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "still_tiered_newer_backend",
+          "failure_condition": "FAILS if the answer says the topic became a pure Cloud Topic, says the mode indicates a misconfiguration, or says it does not know what tiered_cloud_topic means. PASSES if it explains that tiered_cloud_topic is still a Tiered Storage topic (local log plus object storage) running on the newer, Cloud Topics based implementation of the tiered mode, as opposed to cloud_topic where local disk is only a write buffer."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "describe-storage-last-upload-omitted",
+      "query": "I'm writing a script that parses the SUMMARY section of `rpk topic describe-storage` for every topic. For which cloud-storage modes is the LAST-UPLOAD row missing from that section, so my parser doesn't treat it as an error?",
+      "why": "The describe-storage SUMMARY section omits LAST-UPLOAD only for the cloud_topic and cloud_topic_read_replica modes and prints it for every other mode, including tiered_cloud_topic and read_replica. The help text says the summary always includes the last-upload delta. The baseline guessed disabled and read_replica.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "cloud_topic_read_replica"
+      ],
+      "invariants": [
+        {
+          "name": "exactly_two_modes",
+          "failure_condition": "FAILS if the answer lists disabled, read_replica, or tiered_cloud_topic among the modes that omit LAST-UPLOAD, or omits either cloud_topic or cloud_topic_read_replica. PASSES if it says LAST-UPLOAD is missing only for cloud_topic and cloud_topic_read_replica."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "produce-parsed-partition-file",
+      "query": "I have a file /data/orders.txt with 50,000 lines. Each line is a partition number, a space, and a JSON value, and each record has to land on exactly the partition at the start of its line. Produce the whole file to topic orders with rpk. You can run commands with the run_shell tool.",
+      "why": "rpk topic produce honors a partition parsed with %p only when a non-negative -p/--partition flag is also passed; the flag switches rpk to manual partitioning and the parsed value then overrides it. Without it, %p is parsed but records go to the default partitioner's choice, and rpk reports no error. In the recorded runs the baseline produced the file with -f '%p %v\\n' and no -p, so the records landed on the wrong partitions. Graded on the outcome: any produce that sets the partition per record passes, whether through %p with -p, or through -p per line or per partition file.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's Redpanda cluster. Commands run non-interactively.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk topic list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "produce[^|;&]*(-h\\b|--help)",
+                "output": "Produce records to a topic.\n\nUsage:\n  rpk topic produce [TOPIC] [flags]\n\nFlags:\n      --acks int                      Number of acks required for producing (-1=all, 0=none, 1=leader) (default -1)\n      --allow-auto-topic-creation     Auto-create non-existent topics; requires auto_create_topics_enabled on the broker\n  -z, --compression string            Compression to use for producing batches (none, gzip, snappy, lz4, zstd) (default \"snappy\")\n  -f, --format string                 Input record format (default \"%v\\n\")\n  -H, --header stringArray            Headers in format key:value to add to each record (repeatable)\n  -k, --key string                    A fixed key to use for each record (parsed input keys take precedence)\n  -o, --output-format string          what to write to stdout when a record is successfully produced (default \"Produced to partition %p at offset %o with timestamp %d.\\n\")\n  -p, --partition int32               Partition to directly produce to, if non-negative (also allows %p parsing to set partitions) (default -1)\n  -Z, --tombstone                     Produce empty values as tombstones"
+              },
+              {
+                "match": "produce(?=[^|;&]*%p)(?![^|;&]*(\\s-p|--partition)[\\s=]+['\\\\\"]*(\\d|\\$))",
+                "output": "Produced to partition 4 at offset 1199 with timestamp 1761040812000.\nProduced to partition 4 at offset 1200 with timestamp 1761040812001.\nProduced to partition 4 at offset 1201 with timestamp 1761040812002.\nProduced to partition 1 at offset 1204 with timestamp 1761040812003.\nProduced to partition 1 at offset 1205 with timestamp 1761040812004.\n... (49995 more lines)"
+              },
+              {
+                "match": "produce(?=[^|;&]*(\\s-p|--partition)[\\s=]+['\\\\\"]*(\\d|\\$))",
+                "output": "Produced to partition 2 at offset 1188 with timestamp 1761040812000.\nProduced to partition 0 at offset 1196 with timestamp 1761040812001.\nProduced to partition 5 at offset 1202 with timestamp 1761040812002.\nProduced to partition 2 at offset 1189 with timestamp 1761040812003.\nProduced to partition 1 at offset 1204 with timestamp 1761040812004.\n... (49995 more lines)"
+              },
+              {
+                "match": "produce",
+                "output": "Produced to partition 4 at offset 1199 with timestamp 1761040812000.\nProduced to partition 4 at offset 1200 with timestamp 1761040812001.\nProduced to partition 4 at offset 1201 with timestamp 1761040812002.\nProduced to partition 1 at offset 1204 with timestamp 1761040812003.\nProduced to partition 1 at offset 1205 with timestamp 1761040812004.\n... (49995 more lines)"
+              },
+              {
+                "match": "(?=.*(uniq|\\bc\\[))(?=.*topic (describe|info))",
+                "output": "   8341 0\n   8322 1\n   8350 2\n   8329 3\n   8317 4\n   8341 5\nPARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK\n0          1       4      [0 1 2]   0                 1196\n1          2       4      [0 1 2]   0                 1204\n2          0       4      [0 1 2]   0                 1188\n3          1       4      [0 1 2]   0                 1210\n4          2       4      [0 1 2]   0                 1199\n5          0       4      [0 1 2]   0                 1202"
+              },
+              {
+                "match": "(?=.*\\b(head|sed|cat|awk)\\b)(?=.*\\bwc\\b)(?=.*topic (describe|info))",
+                "output": "2 {\"id\":1}\n0 {\"id\":2}\n5 {\"id\":3}\n2 {\"id\":4}\n1 {\"id\":5}\n50000 /data/orders.txt\nPARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK\n0          1       4      [0 1 2]   0                 1196\n1          2       4      [0 1 2]   0                 1204\n2          0       4      [0 1 2]   0                 1188\n3          1       4      [0 1 2]   0                 1210\n4          2       4      [0 1 2]   0                 1199\n5          0       4      [0 1 2]   0                 1202"
+              },
+              {
+                "match": "(?=.*\\b(head|sed|cat)\\b)(?=.*\\bwc\\b)",
+                "output": "2 {\"id\":1}\n0 {\"id\":2}\n5 {\"id\":3}\n2 {\"id\":4}\n1 {\"id\":5}\n50000 /data/orders.txt"
+              },
+              {
+                "match": "(?=.*\\b(head|sed|cat)\\b)(?=.*topic (describe|info))",
+                "output": "2 {\"id\":1}\n0 {\"id\":2}\n5 {\"id\":3}\n2 {\"id\":4}\n1 {\"id\":5}\nPARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK\n0          1       4      [0 1 2]   0                 1196\n1          2       4      [0 1 2]   0                 1204\n2          0       4      [0 1 2]   0                 1188\n3          1       4      [0 1 2]   0                 1210\n4          2       4      [0 1 2]   0                 1199\n5          0       4      [0 1 2]   0                 1202"
+              },
+              {
+                "match": "(?=.*\\bwc\\b)(?=.*topic (describe|info))",
+                "output": "50000 /data/orders.txt\nPARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK\n0          1       4      [0 1 2]   0                 1196\n1          2       4      [0 1 2]   0                 1204\n2          0       4      [0 1 2]   0                 1188\n3          1       4      [0 1 2]   0                 1210\n4          2       4      [0 1 2]   0                 1199\n5          0       4      [0 1 2]   0                 1202"
+              },
+              {
+                "match": "topic (describe|info)[^|;&]*(\\s-p\\b|--print-partitions|\\s-a\\b|--print-all)",
+                "output": "PARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK\n0          1       4      [0 1 2]   0                 1196\n1          2       4      [0 1 2]   0                 1204\n2          0       4      [0 1 2]   0                 1188\n3          1       4      [0 1 2]   0                 1210\n4          2       4      [0 1 2]   0                 1199\n5          0       4      [0 1 2]   0                 1202"
+              },
+              {
+                "match": "topic (describe|info)\\b",
+                "output": "SUMMARY\n=======\nNAME        orders\nPARTITIONS  6\nREPLICAS    3\n\nCONFIGS\n=======\nKEY             VALUE      SOURCE\ncleanup.policy  delete     DEFAULT_CONFIG\nretention.ms    604800000  DEFAULT_CONFIG"
+              },
+              {
+                "match": "\"rpk (--)?version",
+                "output": "rpk version: v26.2.5\nGit ref:     4f1c2a9\nBuild date:  2026-10-14T09:12:44Z\nOS/Arch:     linux/amd64\nGo version:  go1.24.6\n\nRedpanda Cluster\n  node-0  v26.2.5 - 4f1c2a9\n  node-1  v26.2.5 - 4f1c2a9\n  node-2  v26.2.5 - 4f1c2a9\n"
+              },
+              {
+                "match": "(uniq|sort|\\bc\\[)",
+                "output": "   8341 0\n   8322 1\n   8350 2\n   8329 3\n   8317 4\n   8341 5"
+              },
+              {
+                "match": "\\bwc\\b",
+                "output": "50000 /data/orders.txt"
+              },
+              {
+                "match": "\\b(head|cat|sed|less|awk|cut)\\b",
+                "output": "2 {\"id\":1}\n0 {\"id\":2}\n5 {\"id\":3}\n2 {\"id\":4}\n1 {\"id\":5}"
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "-rw-r--r--  1 user  staff  1288894 Oct 21 09:02 /data/orders.txt"
+              },
+              {
+                "match": "topic (list|ls)",
+                "output": "NAME      PARTITIONS  REPLICAS\norders    6           3\npayments  6           3"
+              },
+              {
+                "match": "topic consume",
+                "output": "2 1188 {\"id\":1}\n0 1196 {\"id\":2}\n5 1202 {\"id\":3}"
+              },
+              {
+                "match": "\\b(echo|printf|test|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "produce(?=[^|;&]*(\\s-p|--partition)[\\s=]+['\\\\\"]*(\\d|\\$))"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "produce(?![^|;&]*(-h\\b|--help))(?![^|;&]*(\\s-p|--partition)[\\s=]+['\\\\\"]*(\\d|\\$))"
+          }
+        ]
+      }
+    }
+  ]
+}

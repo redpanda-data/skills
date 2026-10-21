@@ -25,6 +25,11 @@ Once installed, invoke any skill with its `/redpanda:<skill>` name (e.g.
 `/redpanda:streaming`). Each skill's `SKILL.md` frontmatter `description` tells the agent
 when to load it automatically.
 
+The plugin also installs the Redpanda Docs MCP server (`https://docs.redpanda.com/mcp`), which
+the skills use to look up config fields, flags, and procedures. Without signing in, you get a
+few lookups a day. Run `/mcp`, select `redpanda-docs`, and sign in with your Redpanda Cloud
+account to remove the limit.
+
 ## What is this?
 
 This repo is a Claude Code **plugin** named `redpanda`. When installed, every skill is

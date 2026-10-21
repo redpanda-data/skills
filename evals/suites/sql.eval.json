@@ -1,0 +1,724 @@
+{
+  "name": "sql skill vs docs",
+  "skill": "sql",
+  "description": "Measures whether the sql skill adds value over the published Redpanda Cloud SQL docs for connecting to Redpanda SQL and writing, exporting, and granting access to read-only queries over topic-backed tables.",
+  "test_cases": [
+    {
+      "id": "bearer-token-needs-auth-method-option",
+      "query": "I'm trying to connect psql to our Redpanda Cloud SQL endpoint. I ran rpk cloud login, then set PGPASSWORD=$(rpk cloud auth token) and connected with user=jane@example.com dbname=oxla sslmode=require, but authentication fails every time. What am I doing wrong?",
+      "why": "A bearer token in the password field is only accepted when the connection sets options='auth_method=bearer'; without it Redpanda SQL treats the token as a SCRAM password and the login fails. The option name and value are Redpanda SQL specific, so a model guesses at usernames or token expiry instead.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/sql/connect-to-sql/authenticate/"
+      ],
+      "required_patterns": [
+        "auth_method\\s*=\\s*bearer"
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "bigint-sum-overflow-wide-int-cast",
+      "query": "In Redpanda SQL on Redpanda Cloud, SUM(views) over a bigint column on a large topic-backed table gives a wrong, overflowed total. How do I get the correct sum in a query?",
+      "why": "Redpanda SQL has int16 and int32 types whose names give the size in bytes (128-bit and 256-bit), usable only in casts; the documented fix for an overflowing bigint sum is SUM(views::INT16). A PostgreSQL-trained model reads int16 as a 16-bit type and instead suggests NUMERIC, double precision, or splitting the sum.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-data-types/numeric-type/numeric/",
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-data-types/"
+      ],
+      "required_patterns": [
+        "int16"
+      ],
+      "invariants": [
+        {
+          "name": "casts_to_128_bit_int16",
+          "failure_condition": "Fails if the answer does not cast the column to int16 inside the sum (for example SUM(views::INT16) or SUM(CAST(views AS INT16))), or describes int16 as a 16-bit or smaller type. Passes if it casts to int16 in the aggregate and identifies int16 as a wider-than-bigint (128-bit) integer, even if it also mentions other options."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "topic-table-reference-syntax",
+      "query": "In Redpanda SQL on Redpanda Cloud, the topic device_readings is already mapped as a table in the default catalog, with columns device_id, reading, and event_time. Write me a query that returns only the most recent reading for each device.",
+      "why": "Topic-backed tables are referenced through their catalog with the => operator, as default_redpanda_catalog=>device_readings, not as a bare name or catalog.table. A model writing standard PostgreSQL SQL uses the bare table name.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/sql/get-started/sql-quickstart/",
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/select/",
+        "product source"
+      ],
+      "required_patterns": [
+        "default_redpanda_catalog\\s*(=>|⇒)\\s*\"?device_readings"
+      ],
+      "invariants": [
+        {
+          "name": "one_row_per_device",
+          "failure_condition": "Fails if the query relies on SELECT DISTINCT ON (which Redpanda SQL does not support) or would not return one latest reading per device. Passes if it uses a supported approach such as a ROW_NUMBER() filter, FOR_MAX, or a join against MAX(event_time) per device."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "wildcard-grant-cannot-be-partially-revoked",
+      "query": "In Redpanda SQL on Redpanda Cloud I gave analyst@example.com SELECT on every topic matching orders_* in the default catalog. Now I need them to keep access to all of those except orders_internal. What statements do I run?",
+      "why": "A wildcard grant cannot be partially revoked: REVOKE with a non-wildcard pattern that matches no stored grant is an error. The fix is to revoke the wildcard grant in full and re-grant narrower patterns or individual topics, using the Redpanda-specific GRANT/REVOKE ... ON EXTERNAL SOURCE catalog => 'pattern' syntax.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/revoke/",
+        "https://docs.redpanda.com/cloud-data-platform/sql/manage/manage-access/"
+      ],
+      "required_patterns": [
+        "REVOKE\\s+(SELECT|ALL)(\\s+PRIVILEGES)?\\s+ON\\s+EXTERNAL\\s+SOURCE"
+      ],
+      "invariants": [
+        {
+          "name": "replaces_wildcard_grant",
+          "failure_condition": "Fails if the answer presents revoking orders_internal alone (leaving the orders_* grant in place) as the fix, or suggests a DENY or exclusion pattern. Passes if it revokes the orders_* wildcard grant in full and re-grants the remaining topics individually or with narrower patterns that exclude orders_internal."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "copy-to-is-csv-only",
+      "query": "How do I export the results of a Redpanda SQL query in Redpanda Cloud straight to an S3 bucket as Parquet files?",
+      "why": "COPY TO supports only the CSV format, and exports to S3 take credentials through AWS_CRED(...) in the WITH clause. A model assumes a FORMAT PARQUET option exists, as in DuckDB or other engines, or does not know the credential syntax.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/copy-to/"
+      ],
+      "required_patterns": [
+        "AWS_CRED"
+      ],
+      "invariants": [
+        {
+          "name": "states_csv_only",
+          "failure_condition": "Fails if the answer presents a Redpanda SQL COPY TO with a Parquet format as working, or does not say that Redpanda SQL's COPY TO writes CSV only. Passes if it states COPY TO is CSV only and shows a CSV export to s3:// with AWS_CRED, optionally with a separate conversion step or Iceberg as the route to Parquet."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "schema-usage-needed-to-see-catalogs",
+      "query": "In Redpanda Cloud I gave a new user the SQL: Access role and ran GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog TO \"bob@example.com\". Bob can connect, but SHOW CATALOGS returns nothing for him and he can't find anything to query. What's missing?",
+      "why": "Catalogs live in a SQL schema (public by default), and a user needs USAGE on that schema to see catalogs in SHOW CATALOGS and to reference them by name, in addition to SELECT on the external source. A model guesses USAGE on the catalog or external source, which is not a valid grant.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/sql/manage/manage-access/",
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/show-catalogs/"
+      ],
+      "required_patterns": [
+        "USAGE\\s+ON\\s+SCHEMA"
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "scram-password-set-with-alter-user",
+      "origin": "sampled",
+      "query": "We have a Redpanda Cloud service account that has the SQL: Access role. Our old reporting tool connects to PostgreSQL with only a username and a password field, and has no way to pass extra connection options. What username and password should it use to connect to Redpanda SQL, and where does the password come from?",
+      "why": "A client that cannot send the options connection parameter must use SCRAM. Assigning SQL: Access provisions the SQL user with a random password that is never exposed, so a SQL: Manage user has to set a known password with ALTER USER \"<email>\" WITH PASSWORD, and the client logs in with the account's email. A model guesses the client ID and secret, or a token, as the password. Picked from the full sql skill as of commit 7a3351e, before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "ALTER\\s+(USER|ROLE)\\s+\\S+\\s+(WITH\\s+)?PASSWORD"
+      ],
+      "invariants": [
+        {
+          "name": "sql_manage_sets_password",
+          "failure_condition": "Fails if the answer tells the tool to use the service account's client secret or an access token as the password with no options parameter, or says the password can be found in the Cloud Console. Passes if it says the auto-provisioned password is not available and a SQL: Manage (superuser) user must set one with ALTER USER on the service account's SQL user, which the tool then uses with the account's email as the username."
+        }
+      ]
+    },
+    {
+      "id": "service-account-client-secret-auth-method",
+      "origin": "sampled",
+      "query": "A nightly job running on a server needs to query Redpanda SQL on Redpanda Cloud with psql. It has a Redpanda Cloud service account (client ID and client secret) with SQL access, and rpk is not installed on that server. How should the job authenticate in its psql connection string?",
+      "why": "Redpanda SQL exchanges service-account client credentials itself when the connection sets options='auth_method=client_secret', with the client ID as user and the client secret as password, so no rpk or token step is needed. A model fetches an OAuth token with curl and passes it as the password, or puts the secret in the password field with no options value, which is treated as a SCRAM password. Picked from the full sql skill as of commit 7a3351e, before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "auth_method\\s*=\\s*client_secret"
+      ]
+    },
+    {
+      "id": "geospatial-points-only",
+      "origin": "sampled",
+      "query": "Our delivery app publishes GPS pings (longitude/latitude) to a Redpanda topic, and we have delivery zones defined as polygons. In Redpanda SQL on Redpanda Cloud, can I find which zone each ping falls in, and compute the distance in meters between a ping and a depot location?",
+      "why": "Redpanda SQL geometry and geography types hold POINT values only, and the spatial functions are limited to st_astext, st_asewkt, and st_distance, so point-in-polygon is not possible in SQL; distance in meters comes from ST_DISTANCE on geography (SRID 4326). A model assumes PostGIS-style polygons and ST_Contains, or does not know a geography type exists and hand-writes haversine. Picked from the full sql skill as of commit 7a3351e, before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "geography"
+      ],
+      "invariants": [
+        {
+          "name": "points_only_with_geography_distance",
+          "failure_condition": "Fails if the answer presents polygon types, ST_Contains, ST_Within, ST_Intersects, or PostGIS as working in Redpanda SQL, or does not say that only POINT values are supported. Passes if it states that geometry and geography hold only points (so polygon containment cannot be done in SQL) and computes meters with ST_DISTANCE on geography points."
+        }
+      ]
+    },
+    {
+      "id": "gcs-export-uses-adc-without-credentials",
+      "origin": "sampled",
+      "query": "Our Redpanda Cloud cluster runs on GCP. I want to COPY a Redpanda SQL query result into a gs:// bucket, but I don't want to put any key or credential in the SQL statement itself. Is that possible, and how would the statement look?",
+      "why": "On a GCP cluster, COPY TO a gs:// destination with no GCS_CRED option authenticates with Google Application Default Credentials, so the statement needs no key. A model is unsure whether the engine falls back to ambient credentials and tells the user to confirm or to pass a key. Picked from the full sql skill as of commit 7a3351e, before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "gs://"
+      ],
+      "invariants": [
+        {
+          "name": "states_adc_fallback",
+          "failure_condition": "Fails if the answer says a key or GCS_CRED is required, or presents the credential-free form only as something that may or may not be supported and must be confirmed. Passes if it states that omitting GCS_CRED on a GCP cluster makes Redpanda SQL use Application Default Credentials and shows a COPY ... TO 'gs://...' statement with no credentials."
+        }
+      ]
+    },
+    {
+      "id": "catalog-grant-listed-in-role-table-grants",
+      "origin": "targeted",
+      "query": "In Redpanda SQL on Redpanda Cloud I ran GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog TO \"bob@example.com\" with no topic pattern. Bob can query topics fine, but when I check information_schema.role_external_relation_grants there is no row for him. Did the grant go somewhere else? Where can I see it?",
+      "why": "information_schema.role_external_relation_grants lists only per-pattern external-source grants. A catalog-level GRANT with no pattern surfaces in information_schema.role_table_grants, with table_name set to the catalog name. The view is a Redpanda SQL extension, so a model guesses at view names. Picked from the full sql skill as of commit 7a3351e, before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "role_table_grants"
+      ]
+    },
+    {
+      "id": "map-column-key-subscript",
+      "origin": "targeted",
+      "query": "A topic's Avro schema has a map<string,string> field called attributes. In Redpanda SQL on Redpanda Cloud, psql shows that column like {\"(color,red)\",\"(size,L)\"}. How do I filter rows where the color attribute is red, and count rows per color?",
+      "why": "Avro and Protobuf map fields arrive as a native map type, which psql renders as an array of (key,value) pairs. Values are read with column['key'], and grouping by the extracted value works, while grouping by the whole map or casting it to text does not. A model reads the rendering as an array of composites and reaches for unnest or ->>. Picked from the full sql skill as of commit 7a3351e, before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "\\(?\"?attributes\"?\\)?\\s*\\[\\s*'color'\\s*\\]"
+      ],
+      "invariants": [
+        {
+          "name": "uses_map_subscript",
+          "failure_condition": "Fails if the answer's main approach unnests the column, uses -> or ->> on it, or casts the map to text and pattern-matches it. Passes if it filters with attributes['color'] = 'red' and counts per color by grouping on attributes['color']."
+        }
+      ]
+    },
+    {
+      "id": "kafka-acls-do-not-gate-sql",
+      "origin": "targeted",
+      "query": "We use Kafka ACLs on our Redpanda Cloud cluster so the principal analyst@example.com can only read the topic public_events. That user also has the SQL: Access role. Do those ACLs limit which topics they can read through Redpanda SQL? If not, how do I restrict their SQL access to just that topic?",
+      "why": "SQL queries read topics through the single internal credential of default_redpanda_catalog, not through the user's Kafka principal, so Kafka ACLs do not restrict SQL reads. The boundary is GRANT SELECT ON EXTERNAL SOURCE. A model assumes the ACLs apply or cannot say, and guesses PostgreSQL table grants. Picked from the full sql skill as of commit 7a3351e, before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "GRANT\\s+SELECT\\s+ON\\s+EXTERNAL\\s+SOURCE"
+      ],
+      "invariants": [
+        {
+          "name": "acls_do_not_apply",
+          "failure_condition": "Fails if the answer says or implies that the Kafka ACLs limit what the user can read through Redpanda SQL, or leaves it as unknown. Passes if it states that SQL reads go through the catalog's own credential so Kafka ACLs do not apply, and restricts access with a GRANT SELECT ON EXTERNAL SOURCE for public_events only."
+        }
+      ]
+    },
+    {
+      "id": "grants-survive-sql-role-removal",
+      "origin": "targeted",
+      "query": "Last month we removed the SQL: Access role from analyst@example.com in Redpanda Cloud. Before that, I had run several GRANT SELECT ON EXTERNAL SOURCE statements for them in Redpanda SQL. Today we assigned SQL: Access to them again. Do I need to re-run those grants? What did removing the role actually do to their SQL user?",
+      "why": "When a user loses their SQL role in Redpanda Cloud, only CONNECT (and superuser) is revoked; the SQL user and its grants stay. Re-assigning the role restores CONNECT on the existing user, so earlier grants apply again without re-running them. A model cannot tell whether the user was dropped. Picked from the full sql skill as of commit 7a3351e, before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "grants_persist",
+          "failure_condition": "Fails if the answer says the grants were deleted, or presents deletion of the SQL user and its grants as an equally likely outcome and recommends re-running every grant. Passes if it says removing the role revoked CONNECT (login) but kept the SQL user and its grants, so the earlier grants apply again once the role is re-assigned, even if it also suggests verifying them in information_schema."
+        }
+      ]
+    },
+    {
+      "id": "query-topic-table-through-catalog",
+      "query": "Our orders topic on our Redpanda Cloud cluster is already available in Redpanda SQL. How many orders are there in each status? Run the query with the run_sql tool and give me the counts.",
+      "why": "Topic-backed tables live in a catalog and must be referenced as default_redpanda_catalog=>orders; a bare table name or a dotted catalog.table name fails, and the unqualified SHOW TABLES is disabled. The case grades the outcome, the per-status counts, which the agent can only get by finding the catalog=>table form. In the recorded runs the baseline usually found orders in SHOW REDPANDA TABLES, tried only bare and dotted names, and returned no counts; once it guessed the => form after many failed attempts.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_sql",
+            "description": "Run one SQL statement on the user's Redpanda SQL endpoint in Redpanda Cloud through psql, connected as a SQL: Manage (superuser) user, and return psql's output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "responses": [
+              {
+                "match": "SHOW\\s+(REDPANDA|KAFKA)\\s+TABLES|SHOW\\s+TABLES\\s+FROM",
+                "output": "  database_name | schema_name |   table_name    |       catalog_name\n---------------+-------------+-----------------+--------------------------\n oxla          | public      | orders          | default_redpanda_catalog\n oxla          | public      | payments        | default_redpanda_catalog\n oxla          | public      | clickstream     | default_redpanda_catalog\n(3 rows)"
+              },
+              {
+                "match": "SHOW\\s+TABLES",
+                "output": "ERROR:  SHOW TABLES is disabled. Use SHOW REDPANDA TABLES or SHOW ICEBERG TABLES instead."
+              },
+              {
+                "match": "DESCRIBE\\s+REDPANDA\\s+CATALOG",
+                "output": "   table_name    |   topic_name\n-----------------+-----------------\n orders          | orders\n payments        | payments\n clickstream     | clickstream\n(3 rows)"
+              },
+              {
+                "match": "system\\.kafka_sources",
+                "output": "      name       |   topic_name    |     connection_name\n-----------------+-----------------+--------------------------\n orders          | orders          | default_redpanda_catalog\n payments        | payments        | default_redpanda_catalog\n clickstream     | clickstream     | default_redpanda_catalog\n(3 rows)"
+              },
+              {
+                "match": "SHOW\\s+(REDPANDA\\s+|KAFKA\\s+)?CATALOGS|system\\.catalogs",
+                "output": "           name           | namespace_name |   type\n--------------------------+----------------+----------\n default_redpanda_catalog | public         | REDPANDA\n default_iceberg_catalog  | public         | ICEBERG\n(2 rows)"
+              },
+              {
+                "match": "SHOW\\s+ICEBERG\\s+(TABLES|CATALOGS)",
+                "output": " database_name | schema_name | table_name | catalog_name\n---------------+-------------+------------+--------------\n(0 rows)"
+              },
+              {
+                "match": "DESCRIBE\\s+(TABLE\\s+)?default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b",
+                "output": "      database_name       | table_name |    name    |   type    | nullable\n--------------------------+------------+------------+-----------+----------\n default_redpanda_catalog | orders     | order_id   | TEXT      | f\n default_redpanda_catalog | orders     | customer   | TEXT      | f\n default_redpanda_catalog | orders     | status     | TEXT      | f\n default_redpanda_catalog | orders     | amount     | DOUBLE    | f\n default_redpanda_catalog | orders     | created_at | TIMESTAMP | f\n(5 rows)"
+              },
+              {
+                "match": "default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b[\\s\\S]*GROUP\\s+BY",
+                "output": "  status   | count\n-----------+-------\n completed | 18342\n pending   |  2210\n shipped   |  6031\n cancelled |   487\n(4 rows)"
+              },
+              {
+                "match": "COUNT[\\s\\S]*default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b|default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b[\\s\\S]*COUNT",
+                "output": " count\n-------\n 27070\n(1 row)"
+              },
+              {
+                "match": "default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b",
+                "output": " order_id | customer | status    | amount | created_at\n----------+----------+-----------+--------+----------------------------\n o-100231 | acme     | completed | 129.50 | 2026-10-20 08:14:02.118000\n(1 row)"
+              },
+              {
+                "match": "version\\(\\)",
+                "output": "            version\n------------------------------\n Redpanda SQL 1.2.0 (abc1234)\n(1 row)"
+              },
+              {
+                "match": "current_database\\(\\)",
+                "output": " current_database\n------------------\n oxla\n(1 row)"
+              },
+              {
+                "match": "current_user|session_user",
+                "output": "   current_user\n-------------------\n admin@example.com\n(1 row)"
+              },
+              {
+                "match": "SHOW\\s+search_path",
+                "output": " search_path\n-------------\n public\n(1 row)"
+              },
+              {
+                "match": "pg_database",
+                "output": " datname\n---------\n oxla\n(1 row)"
+              },
+              {
+                "match": "pg_auth_members",
+                "output": " role | member\n------+--------\n(0 rows)"
+              },
+              {
+                "match": "pg_roles|pg_user|pg_authid",
+                "output": " rolname           | rolsuper | rolcanlogin | rolconnlimit | rolvaliduntil\n-------------------+----------+-------------+--------------+---------------\n admin@example.com | t        | t           |           -1 |\n(1 row)"
+              },
+              {
+                "match": "information_schema\\.(tables|views)[^;]*table_schema\\s*(=|I?LIKE)\\s*'information_schema'",
+                "output": "     table_schema   |          table_name\n--------------------+-------------------------------\n information_schema | character_sets\n information_schema | columns\n information_schema | key_column_usage\n information_schema | referential_constraints\n information_schema | role_external_relation_grants\n information_schema | role_table_grants\n information_schema | role_usage_grants\n information_schema | table_constraints\n information_schema | tables\n(9 rows)"
+              },
+              {
+                "match": "information_schema\\.schemata",
+                "output": "    schema_name\n--------------------\n public\n information_schema\n pg_catalog\n(3 rows)"
+              },
+              {
+                "match": "information_schema\\.(tables|columns)|pg_catalog|pg_tables|pg_class",
+                "output": " table_catalog | table_schema | table_name | table_type\n---------------+--------------+------------+------------\n(0 rows)"
+              },
+              {
+                "match": "\\bFROM\\s+(oxla\\.)?(public\\.)?\\\\?\"?orders\\b",
+                "output": "ERROR:  relation \"orders\" does not exist"
+              },
+              {
+                "match": "orders",
+                "output": "ERROR:  syntax error at or near \"orders\""
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*(SELECT|WITH)\\b",
+                "output": "(0 rows)"
+              },
+              {
+                "match": ".",
+                "output": "ERROR:  syntax error"
+              }
+            ]
+          }
+        ]
+      },
+      "required_patterns": [
+        "18,?342",
+        "2,?210",
+        "6,?031",
+        "\\b487\\b"
+      ]
+    },
+    {
+      "id": "lost-login-fixed-in-iam-not-grant-connect",
+      "query": "alice@example.com could query Redpanda SQL on our Redpanda Cloud cluster last week, but now her psql connection is rejected and she says she gets a permission error for the database. I'm a SQL superuser; you can run statements with the run_sql tool. Fix her access.",
+      "why": "In Redpanda Cloud, login to Redpanda SQL follows the user's IAM role: email-named users that hold a role with SQL: Access or SQL: Manage get CONNECT, and it is revoked from those that do not. A manual GRANT CONNECT is undone on the next sync and overrides an access removal someone made in IAM, so the fix is to assign the role in Redpanda Cloud IAM. In the recorded runs the baseline proposed or ran GRANT CONNECT, and the docs arm ran GRANT CONNECT even after reading that CONNECT follows the IAM role.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_sql",
+            "description": "Run one SQL statement on the user's Redpanda SQL endpoint in Redpanda Cloud through psql, connected as a SQL: Manage (superuser) user, and return psql's output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "responses": [
+              {
+                "match": "has_database_privilege",
+                "output": " has_database_privilege\n------------------------\n f\n(1 row)"
+              },
+              {
+                "match": "version\\(\\)",
+                "output": "            version\n------------------------------\n Redpanda SQL 1.2.0 (abc1234)\n(1 row)"
+              },
+              {
+                "match": "current_database\\(\\)",
+                "output": " current_database\n------------------\n oxla\n(1 row)"
+              },
+              {
+                "match": "current_user|session_user",
+                "output": "   current_user\n-------------------\n admin@example.com\n(1 row)"
+              },
+              {
+                "match": "SHOW\\s+search_path",
+                "output": " search_path\n-------------\n public\n(1 row)"
+              },
+              {
+                "match": "pg_database",
+                "output": " datname\n---------\n oxla\n(1 row)"
+              },
+              {
+                "match": "pg_auth_members",
+                "output": " role | member\n------+--------\n(0 rows)"
+              },
+              {
+                "match": "pg_roles|pg_user|pg_authid",
+                "output": " rolname           | rolsuper | rolcanlogin | rolconnlimit | rolvaliduntil\n-------------------+----------+-------------+--------------+---------------\n alice@example.com | f        | t           |           -1 |\n(1 row)"
+              },
+              {
+                "match": "role_external_relation_grants",
+                "output": " grantee           |       source_name        | relation_pattern | privilege_type\n-------------------+--------------------------+------------------+----------------\n alice@example.com | default_redpanda_catalog | orders           | SELECT\n alice@example.com | default_redpanda_catalog | payments         | SELECT\n(2 rows)"
+              },
+              {
+                "match": "role_usage_grants",
+                "output": "      grantee      | object_schema | object_name | object_type | privilege_type\n-------------------+---------------+-------------+-------------+----------------\n alice@example.com | oxla          | public      | SCHEMA      | USAGE\n(1 row)"
+              },
+              {
+                "match": "role_table_grants|table_privileges",
+                "output": " grantee | table_name | privilege_type\n---------+------------+----------------\n(0 rows)"
+              },
+              {
+                "match": "information_schema\\.(tables|views)[^;]*table_schema\\s*(=|I?LIKE)\\s*'information_schema'",
+                "output": "     table_schema   |          table_name\n--------------------+-------------------------------\n information_schema | character_sets\n information_schema | columns\n information_schema | key_column_usage\n information_schema | referential_constraints\n information_schema | role_external_relation_grants\n information_schema | role_table_grants\n information_schema | role_usage_grants\n information_schema | table_constraints\n information_schema | tables\n(9 rows)"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*GRANT\\s+(SELECT|ALL(\\s+PRIVILEGES)?)\\s+ON\\s+EXTERNAL\\s+SOURCE\\s+\\\\?\"?default_redpanda_catalog\\\\?\"?(\\s*(=>|⇒)\\s*'[^']*')?\\s+TO\\s",
+                "output": "GRANT"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*GRANT\\s+[\\w\\s,]+\\s+ON\\s+(SCHEMA|DATABASE)\\s",
+                "output": "GRANT"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*REVOKE\\s+[\\w\\s,]+\\s+ON\\s+(SCHEMA|DATABASE)\\s",
+                "output": "REVOKE"
+              },
+              {
+                "match": "\\bCREATE\\s+(USER|ROLE)\\b",
+                "output": "ERROR:  role \"alice@example.com\" already exists"
+              },
+              {
+                "match": "\\bDROP\\s+(USER|ROLE)\\b",
+                "output": "DROP ROLE"
+              },
+              {
+                "match": "\\bALTER\\s+(USER|ROLE)\\b",
+                "output": "ALTER ROLE"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*(GRANT|REVOKE)\\s+[^;]*\\bON\\s+(TABLE\\s+)?\\\\?\"?(\\w+)\\\\?\"?\\s+(TO|FROM)\\s",
+                "output": "ERROR:  relation does not exist"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*(GRANT|REVOKE)\\b",
+                "output": "ERROR:  syntax error"
+              },
+              {
+                "match": "SHOW\\s+(REDPANDA\\s+|KAFKA\\s+)?CATALOGS|system\\.catalogs",
+                "output": "           name           | namespace_name |   type\n--------------------------+----------------+----------\n default_redpanda_catalog | public         | REDPANDA\n default_iceberg_catalog  | public         | ICEBERG\n(2 rows)"
+              },
+              {
+                "match": "SHOW\\s+ICEBERG\\s+(TABLES|CATALOGS)",
+                "output": " database_name | schema_name | table_name | catalog_name\n---------------+-------------+------------+--------------\n(0 rows)"
+              },
+              {
+                "match": "SHOW\\s+(REDPANDA|KAFKA)\\s+TABLES|SHOW\\s+TABLES\\s+FROM",
+                "output": "  database_name | schema_name |   table_name    |       catalog_name\n---------------+-------------+-----------------+--------------------------\n oxla          | public      | orders          | default_redpanda_catalog\n oxla          | public      | payments        | default_redpanda_catalog\n oxla          | public      | clickstream     | default_redpanda_catalog\n(3 rows)"
+              },
+              {
+                "match": "SHOW\\s+TABLES",
+                "output": "ERROR:  SHOW TABLES is disabled. Use SHOW REDPANDA TABLES or SHOW ICEBERG TABLES instead."
+              },
+              {
+                "match": "DESCRIBE\\s+REDPANDA\\s+CATALOG",
+                "output": "   table_name    |   topic_name\n-----------------+-----------------\n orders          | orders\n payments        | payments\n clickstream     | clickstream\n(3 rows)"
+              },
+              {
+                "match": "system\\.kafka_sources",
+                "output": "      name       |   topic_name    |     connection_name\n-----------------+-----------------+--------------------------\n orders          | orders          | default_redpanda_catalog\n payments        | payments        | default_redpanda_catalog\n clickstream     | clickstream     | default_redpanda_catalog\n(3 rows)"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*(SELECT|WITH)\\b",
+                "output": "(0 rows)"
+              },
+              {
+                "match": ".",
+                "output": "ERROR:  syntax error"
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_sql",
+            "args": "GRANT\\s+CONNECT"
+          },
+          {
+            "tool": "run_sql",
+            "args": "\\bDROP\\s+(USER|ROLE)\\b"
+          },
+          {
+            "tool": "run_sql",
+            "args": "ALTER\\s+(USER|ROLE)\\b[^;]*\\bSUPERUSER\\b"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "assign_role_in_iam",
+          "failure_condition": "Fails if the answer says the fix is a SQL GRANT CONNECT or recreating the user, or does not tell the user to give alice@example.com a role with SQL: Access (or SQL: Manage) in Redpanda Cloud IAM. Passes if it says her login follows her Redpanda Cloud role and the fix is to assign that role in IAM."
+        }
+      ]
+    },
+    {
+      "id": "narrow-wildcard-grant-by-reading-stored-grants",
+      "query": "In Redpanda SQL on our Redpanda Cloud cluster, remove bob@example.com's read access to the orders_internal topic. Everything else he can read today should keep working. I'm a SQL superuser; run the statements with the run_sql tool.",
+      "why": "REVOKE must name a stored grant pattern exactly; a pattern that matches no stored grant is an error, so access granted through a wildcard such as 'orders_*' cannot be narrowed by revoking one topic. The only stored grants that show this are in the Redpanda-specific view information_schema.role_external_relation_grants. The case grades the outcome: bob loses orders_internal and keeps orders_eu, orders_us, and payments, either done or laid out exactly for confirmation. In the recorded runs the baseline mostly searched PostgreSQL privilege views and pg_class, tried REVOKE on orders_internal as a plain table, and stopped without finding the wildcard grant; when it did find the grant, it invented GRANT and REVOKE syntax.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_sql",
+            "description": "Run one SQL statement on the user's Redpanda SQL endpoint in Redpanda Cloud through psql, connected as a SQL: Manage (superuser) user, and return psql's output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "responses": [
+              {
+                "match": "role_external_relation_grants",
+                "output": " grantee         |       source_name        | relation_pattern | privilege_type\n-----------------+--------------------------+------------------+----------------\n bob@example.com | default_redpanda_catalog | orders_*         | SELECT\n bob@example.com | default_redpanda_catalog | payments         | SELECT\n(2 rows)"
+              },
+              {
+                "match": "role_usage_grants",
+                "output": "      grantee      | object_schema | object_name | object_type | privilege_type\n-------------------+---------------+-------------+-------------+----------------\n bob@example.com   | oxla          | public      | SCHEMA      | USAGE\n(1 row)"
+              },
+              {
+                "match": "role_table_grants|table_privileges",
+                "output": " grantee | table_name | privilege_type\n---------+------------+----------------\n(0 rows)"
+              },
+              {
+                "match": "information_schema\\.(tables|views)[^;]*table_schema\\s*(=|I?LIKE)\\s*'information_schema'",
+                "output": "     table_schema   |          table_name\n--------------------+-------------------------------\n information_schema | character_sets\n information_schema | columns\n information_schema | key_column_usage\n information_schema | referential_constraints\n information_schema | role_external_relation_grants\n information_schema | role_table_grants\n information_schema | role_usage_grants\n information_schema | table_constraints\n information_schema | tables\n(9 rows)"
+              },
+              {
+                "match": "SHOW\\s+(REDPANDA|KAFKA)\\s+TABLES|SHOW\\s+TABLES\\s+FROM",
+                "output": "  database_name | schema_name |   table_name    |       catalog_name\n---------------+-------------+-----------------+--------------------------\n oxla          | public      | orders_eu       | default_redpanda_catalog\n oxla          | public      | orders_us       | default_redpanda_catalog\n oxla          | public      | orders_internal | default_redpanda_catalog\n oxla          | public      | payments        | default_redpanda_catalog\n(4 rows)"
+              },
+              {
+                "match": "SHOW\\s+TABLES",
+                "output": "ERROR:  SHOW TABLES is disabled. Use SHOW REDPANDA TABLES or SHOW ICEBERG TABLES instead."
+              },
+              {
+                "match": "DESCRIBE\\s+REDPANDA\\s+CATALOG",
+                "output": "   table_name    |   topic_name\n-----------------+-----------------\n orders_eu       | orders_eu\n orders_us       | orders_us\n orders_internal | orders_internal\n payments        | payments\n(4 rows)"
+              },
+              {
+                "match": "system\\.kafka_sources",
+                "output": "      name       |   topic_name    |     connection_name\n-----------------+-----------------+--------------------------\n orders_eu       | orders_eu       | default_redpanda_catalog\n orders_us       | orders_us       | default_redpanda_catalog\n orders_internal | orders_internal | default_redpanda_catalog\n payments        | payments        | default_redpanda_catalog\n(4 rows)"
+              },
+              {
+                "match": "SHOW\\s+(REDPANDA\\s+|KAFKA\\s+)?CATALOGS|system\\.catalogs",
+                "output": "           name           | namespace_name |   type\n--------------------------+----------------+----------\n default_redpanda_catalog | public         | REDPANDA\n default_iceberg_catalog  | public         | ICEBERG\n(2 rows)"
+              },
+              {
+                "match": "SHOW\\s+ICEBERG\\s+(TABLES|CATALOGS)",
+                "output": " database_name | schema_name | table_name | catalog_name\n---------------+-------------+------------+--------------\n(0 rows)"
+              },
+              {
+                "match": "REVOKE[^;]*EXTERNAL\\s+SOURCE[^;]*=>\\s*'orders_\\*'",
+                "output": "REVOKE"
+              },
+              {
+                "match": "REVOKE[^;]*EXTERNAL\\s+SOURCE[^;]*=>\\s*'payments'",
+                "output": "REVOKE"
+              },
+              {
+                "match": "REVOKE[^;]*EXTERNAL\\s+SOURCE[^;]*=>\\s*'orders_internal'",
+                "output": "ERROR:  no SELECT grant on EXTERNAL SOURCE \"default_redpanda_catalog\" matches pattern 'orders_internal' for role \"bob@example.com\"; list current grants with: SELECT * FROM information_schema.role_external_relation_grants"
+              },
+              {
+                "match": "REVOKE[^;]*EXTERNAL\\s+SOURCE[^;]*=>\\s*'[^'*]*'",
+                "output": "ERROR:  no SELECT grant on EXTERNAL SOURCE \"default_redpanda_catalog\" matches the given pattern for role \"bob@example.com\"; list current grants with: SELECT * FROM information_schema.role_external_relation_grants"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*REVOKE\\s+(SELECT|ALL(\\s+PRIVILEGES)?)\\s+ON\\s+EXTERNAL\\s+SOURCE\\s+\\\\?\"?default_redpanda_catalog\\\\?\"?(\\s*(=>|⇒)\\s*'[^']*')?\\s+FROM\\s",
+                "output": "REVOKE"
+              },
+              {
+                "match": "REVOKE[^;]*(ON\\s+(TABLE\\s+)?)\\\\?\"?orders_internal",
+                "output": "ERROR:  relation \"orders_internal\" does not exist"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*GRANT\\s+(SELECT|ALL(\\s+PRIVILEGES)?)\\s+ON\\s+EXTERNAL\\s+SOURCE\\s+\\\\?\"?default_redpanda_catalog\\\\?\"?(\\s*(=>|⇒)\\s*'[^']*')?\\s+TO\\s",
+                "output": "GRANT"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*GRANT\\s+[\\w\\s,]+\\s+ON\\s+(SCHEMA|DATABASE)\\s",
+                "output": "GRANT"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*REVOKE\\s+[\\w\\s,]+\\s+ON\\s+(SCHEMA|DATABASE)\\s",
+                "output": "REVOKE"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*(GRANT|REVOKE)\\s+[^;]*\\bON\\s+(TABLE\\s+)?\\\\?\"?(\\w+)\\\\?\"?\\s+(TO|FROM)\\s",
+                "output": "ERROR:  relation does not exist"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*(GRANT|REVOKE)\\b",
+                "output": "ERROR:  syntax error"
+              },
+              {
+                "match": "has_table_privilege",
+                "output": " has_table_privilege\n---------------------\n t\n(1 row)"
+              },
+              {
+                "match": "has_database_privilege",
+                "output": " has_database_privilege\n------------------------\n t\n(1 row)"
+              },
+              {
+                "match": "version\\(\\)",
+                "output": "            version\n------------------------------\n Redpanda SQL 1.2.0 (abc1234)\n(1 row)"
+              },
+              {
+                "match": "current_database\\(\\)",
+                "output": " current_database\n------------------\n oxla\n(1 row)"
+              },
+              {
+                "match": "current_user|session_user",
+                "output": "   current_user\n-------------------\n admin@example.com\n(1 row)"
+              },
+              {
+                "match": "SHOW\\s+search_path",
+                "output": " search_path\n-------------\n public\n(1 row)"
+              },
+              {
+                "match": "pg_database",
+                "output": " datname\n---------\n oxla\n(1 row)"
+              },
+              {
+                "match": "pg_auth_members",
+                "output": " role | member\n------+--------\n(0 rows)"
+              },
+              {
+                "match": "pg_roles|pg_user|pg_authid",
+                "output": " rolname         | rolsuper | rolcanlogin | rolconnlimit | rolvaliduntil\n-----------------+----------+-------------+--------------+---------------\n bob@example.com | f        | t           |           -1 |\n(1 row)"
+              },
+              {
+                "match": "information_schema\\.(tables|columns)|pg_class|pg_tables",
+                "output": " table_catalog | table_schema | table_name | table_type\n---------------+--------------+------------+------------\n(0 rows)"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*(SELECT|WITH)\\b",
+                "output": "(0 rows)"
+              },
+              {
+                "match": ".",
+                "output": "ERROR:  syntax error"
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_sql",
+            "args": "REVOKE[^;]*=>\\s*'payments'"
+          },
+          {
+            "tool": "run_sql",
+            "args": "REVOKE[^;]*EXTERNAL\\s+SOURCE\\s+\\\\?\"?\\w+\\\\?\"?\\s+FROM\\b"
+          },
+          {
+            "tool": "run_sql",
+            "args": "REVOKE[^;]*\\bUSAGE\\b"
+          },
+          {
+            "tool": "run_sql",
+            "args": "GRANT[^;]*=>\\s*'(\\*|orders_?\\*|orders_i[^']*)'"
+          },
+          {
+            "tool": "run_sql",
+            "args": "GRANT[^;]*EXTERNAL\\s+SOURCE\\s+\\\\?\"?\\w+\\\\?\"?\\s+TO\\b"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "removes_only_orders_internal",
+          "failure_condition": "Fails if the answer does not identify the stored orders_* wildcard grant as the source of bob's access to orders_internal; or reports that it removed access by revoking orders_internal alone, by a deny or exclusion, or by revoking all of bob's grants on the catalog; or leaves bob, by what it reports doing, without SELECT on orders_eu, orders_us, or payments, for example by revoking orders_* without granting the other two topics. Passes if it reports revoking the orders_* grant and granting SELECT on orders_eu and orders_us (by name or with narrower patterns that do not match orders_internal) while leaving payments alone, in either order and even after a first attempt that errored and changed nothing. Also passes if every change it attempted errored or it attempted none, and it stops to confirm, as long as it says the orders_* wildcard must be revoked whole and gives the REVOKE and the GRANT statements for orders_eu and orders_us that it would run. Statements it reports as returning an error count as not done. Do not fail an answer for saying that a later read of the grants view did not show the change."
+        }
+      ]
+    }
+  ]
+}

@@ -136,6 +136,28 @@ errors block merge, warnings surface in the check summary. Follow the
 - Every skill ships a `SOURCES.md` (under `references/`, or at the skill root like
   `adp`); CI fails without one.
 
+## Skill format: thin skills
+
+The plugin ships the Redpanda Docs MCP server (`.mcp.json`), so a skill does not restate
+the docs. The evals in `evals/` measure what a skill adds over the docs, and a skill keeps
+only that. A skill in this format has two sections:
+
+1. **How to work.** A product-specific procedure: ordered checks, decision rules, what to
+   confirm before a destructive or irreversible step, when to stop and escalate. Leave out
+   generic good practice that a model follows unprompted. Each procedure is tested by a
+   behavioral eval case that the baseline fails.
+2. **Use the docs for everything else.** Point the agent at the Docs MCP for config fields,
+   flags, defaults, syntax, and procedures, and at the page's Markdown twin (`<page>.md`)
+   when the server is unavailable.
+
+Facts go in the docs, not the skill. When an eval shows the docs lack a fact or state it
+wrongly, the fix is a docs change. A thin `SKILL.md` is as short as its proven procedures allow,
+and `references/` holds only `SOURCES.md`. A behavioral case counts only if it grades the outcome,
+its mocks answer every legitimate command, and the baseline still fails it. If no procedure for a
+product survives that test, the skill carries none and points at the docs; whether to keep such
+a skill at all is a maintainer decision. When a sync routine finds a user-facing change, it updates "How to
+work" only if the procedure changed.
+
 ## Maturity and PREVIEW markers
 
 Do not invent maturity labels. In the Cloud/ADP protos, a feature gated by
