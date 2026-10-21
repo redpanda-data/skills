@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/reference/pages/sql/sql-statements/{index,select,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/sql/pages/manage/manage-access.adoc` (verified 2026-10-18). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/reference/pages/sql/sql-statements/{index,select,create-view,drop-view,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/pages/sql/system-catalogs/catalogs/{pg_views,pg_class}.adoc`, `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/sql/pages/manage/manage-access.adoc` (verified 2026-10-21). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Statements and Clauses
 
@@ -7,6 +7,7 @@ Redpanda SQL is read-only. The published statement set is:
 | Area | Statements | Covered in |
 |---|---|---|
 | Query | `SELECT` | this file |
+| Views | `CREATE VIEW`, `DROP VIEW` | this file |
 | Export | `COPY TO` | this file |
 | Session | `SET`, `SHOW <option>` | this file |
 | Metadata | `DESCRIBE`, `SHOW CATALOGS`, `SHOW TABLES` | this file |
@@ -15,9 +16,10 @@ Redpanda SQL is read-only. The published statement set is:
 | Catalogs and topic mappings | `CREATE`/`ALTER`/`DROP REDPANDA CATALOG`, `CREATE`/`ALTER`/`DROP ICEBERG CATALOG`, `CREATE`/`ALTER`/`DROP STORAGE`, `CREATE`/`ALTER`/`DROP TABLE` (`catalog=>table`), `REFRESH` | `/redpanda:sql-federated-queries` |
 
 `INSERT`, `UPDATE`, `DELETE`, and `COPY FROM` are not available, and `CREATE
-TABLE` only maps a topic through a catalog. Anything outside this set (for
-example views, indexes, `SELECT INTO`, `CREATE TABLE AS`, or `PREPARE`) is not
-part of the published surface; tell the user so instead of improvising.
+TABLE` only maps a topic through a catalog. `CREATE VIEW` saves a `SELECT` query
+over those tables and is read-only too. Anything outside this set (for example
+indexes, materialized views, `SELECT INTO`, `CREATE TABLE AS`, or `PREPARE`) is
+not part of the published surface; tell the user so instead of improvising.
 
 ---
 
@@ -187,6 +189,79 @@ NULL` is false. Date, time, timestamp, and interval arithmetic is listed in
 
 ---
 
+## Views
+
+A view is a named `SELECT` query that you reference like a table. Redpanda SQL
+stores the query, not its results, so every query of a view reads current data. A
+view is read-only, like the rest of the engine.
+
+```sql
+CREATE VIEW [IF NOT EXISTS] [schema_name.]view_name AS select_statement;
+DROP VIEW [IF EXISTS] [schema_name.]view_name;
+```
+
+```sql
+CREATE VIEW large_orders AS
+SELECT order_id, customer, amount
+FROM default_redpanda_catalog=>orders
+WHERE amount > 100;
+
+SELECT customer, count(*) AS order_count
+FROM large_orders
+GROUP BY customer;
+```
+
+- **A view lives in a SQL schema, not in a catalog.** It is created in the current
+  schema (`public` by default) unless you qualify it. A `catalog=>` name fails
+  with `views on external catalogs are not supported`. Query a view as
+  `large_orders` or `public.large_orders`, never with a catalog prefix.
+- The defining query can read topic-backed tables in a Redpanda catalog and other
+  views, and can use joins, `WITH`, `UNION`, `ORDER BY`, and `LIMIT`.
+- Views and tables share one namespace in a schema. `IF NOT EXISTS` makes the
+  statement do nothing when that name is taken, but the query is still validated.
+- Unqualified names in the query resolve against the search path in effect when
+  the view was created. A common table expression with a view's name hides the
+  view in that query; qualify the view with its schema to reach it.
+- **The column shape is frozen at creation.** Redpanda SQL stores the view's
+  column names and types, and every later query must produce the same ones. If a
+  table the view reads gains a column, a `SELECT *` view stops working and queries
+  fail with an error ending `drop and recreate the view`. List the columns in the
+  query instead of using `SELECT *`.
+- **Views are tracked as dependencies; catalog tables are not.** `DROP VIEW` fails
+  while another view reads it (`cannot drop view <view-name> because other objects
+  depend on it.`); drop the dependent view first. There is no `CASCADE` or
+  `RESTRICT`. A catalog table can be dropped while a view reads it, and queries of
+  the view then fail.
+- Each `DROP VIEW` removes one view and only its definition; the tables it reads
+  are untouched. Only the owner or a superuser can drop a view, otherwise
+  `permission denied: must be owner of table <view-name>`.
+- Not supported: `CREATE OR REPLACE VIEW`, `ALTER VIEW`, a column name list
+  (`CREATE VIEW v (a, b) AS ...` — use column aliases in the query instead),
+  temporary views, recursive views, `WITH CHECK OPTION`, and materialized views.
+- Views are **not** listed by `information_schema.tables` or by the `psql`
+  commands `\d` and `\dv`. List them from [`pg_views`](#pg_catalog) instead.
+
+### View permissions
+
+A view is a privilege boundary: Redpanda SQL runs the stored query with the
+privileges of the view's owner.
+
+- Creating one needs `CREATE` on the schema and `SELECT` on every table and view
+  the query reads. You become the owner.
+- Querying one needs only `SELECT` on the view itself, not on the tables behind
+  it. Grant it with `GRANT SELECT ON TABLE view_name TO role_name` — use `TABLE`
+  even for a view; there is no `ON VIEW` form.
+- **So any role you grant `SELECT` on a view can read everything that view
+  returns.** Grant it only to users who may see that data. This is how a view
+  narrows what a role sees: grant `SELECT` on a view that projects or filters a
+  table, and no grant on the table itself.
+- If the owner loses access to a table the view reads, queries of the view fail
+  for every user.
+- Transfer ownership with `ALTER TABLE view_name OWNER TO role_name` (again
+  `TABLE`, even for a view).
+
+---
+
 ## COPY TO
 
 ```sql
@@ -334,11 +409,15 @@ assignment and the full model: `/redpanda:sql-admin-api`.
 | Level | Object | Privileges | `ALL [PRIVILEGES]` means |
 |---|---|---|---|
 | External source | a Redpanda catalog or a storage definition | `SELECT` | `SELECT` only |
+| Table | a view (the only relation of this level a user can create) | `SELECT`, `INSERT`, `UPDATE`, `DELETE` | all four, of which only `SELECT` acts |
 | Schema | a SQL schema | `USAGE`, `CREATE` | both |
 | Database | `oxla` | `CONNECT` | `CONNECT` |
 
 Topic-backed tables are reached through their catalog, so for topics the
-external-source level is the one that matters. `USAGE` on a schema
+external-source level is the one that matters. At the table level only `SELECT`
+does anything on a view: `INSERT`, `UPDATE`, and `DELETE` can be granted but have
+no effect, because a view is read-only, and a write to one fails with
+`relation "<view-name>" does not exist`. `USAGE` on a schema
 is needed to see its catalogs (`SHOW CATALOGS`, `system.catalogs`) and to
 reference objects in it by name; `CREATE` on a schema lets a non-superuser run
 `CREATE REDPANDA CATALOG` or `CREATE STORAGE` there.
@@ -350,6 +429,7 @@ Only a superuser can grant. User names are emails, double-quoted.
 ```sql
 GRANT { SELECT | ALL [PRIVILEGES] } ON EXTERNAL SOURCE catalog_name TO role_name;
 GRANT { SELECT | ALL [PRIVILEGES] } ON EXTERNAL SOURCE catalog_name => 'pattern' TO role_name;
+GRANT { privilege [, ...] | ALL [PRIVILEGES] } ON TABLE view_name TO role_name;
 GRANT { privilege [, ...] | ALL [PRIVILEGES] } ON SCHEMA schema_name TO role_name;
 GRANT CONNECT ON DATABASE oxla TO role_name;
 ```
@@ -358,12 +438,15 @@ GRANT CONNECT ON DATABASE oxla TO role_name;
 GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog => 'orders'   TO "alice@example.com";
 GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog => 'orders_*' TO "alice@example.com";
 GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog               TO "alice@example.com";
+GRANT SELECT ON TABLE large_orders TO "alice@example.com";   -- a view; there is no ON VIEW
 GRANT USAGE  ON SCHEMA public TO "alice@example.com";
 ```
 
 - `pattern` is a string literal; `*` is allowed only at the end. It is stored
   verbatim.
 - The catalog-level form covers every relation reachable through the source.
+- `ON TABLE` takes a view name; see [View permissions](#view-permissions) for what
+  granting `SELECT` on a view exposes. `REVOKE` takes the same form with `FROM`.
 - `CONNECT` is managed by the Cloud operator from the *SQL: Access* / *SQL: Manage*
   role; a manual `GRANT CONNECT` may be reverted.
 
@@ -430,7 +513,7 @@ DROP   { USER | ROLE } [IF EXISTS] user_name;
 
 | View | Contents |
 |---|---|
-| `information_schema.tables`, `information_schema.columns` | tables, views, and columns visible to the current role |
+| `information_schema.tables`, `information_schema.columns` | tables and columns visible to the current role. Views are **not** listed; use `pg_views` |
 | `information_schema.role_table_grants` | grants on tables and table-like objects, including catalog-level external-source grants (`table_name` = the catalog name) |
 | `information_schema.role_usage_grants` | `USAGE` grants |
 | `information_schema.role_external_relation_grants` | per-pattern external-source grants (Redpanda SQL extension) |
@@ -461,7 +544,20 @@ Column meanings for the catalog tables are covered by
 `pg_attrdef`, `pg_attribute`, `pg_authid`, `pg_class`, `pg_constraint`,
 `pg_database`, `pg_depend`, `pg_description`, `pg_index`, `pg_language`,
 `pg_namespace`, `pg_proc`, `pg_roles`, `pg_settings`, `pg_shadow` (superuser),
-`pg_statio_user_tables`, `pg_type`, `pg_user`. They exist so PostgreSQL tools and
-drivers can introspect, and mostly hold placeholder data; they are unrelated to
-Redpanda catalogs. Prefer `information_schema`, `DESCRIBE`, `SHOW`, and `system.*`
-for real metadata.
+`pg_statio_user_tables`, `pg_type`, `pg_user`, `pg_views`. They exist so
+PostgreSQL tools and drivers can introspect, and mostly hold placeholder data;
+they are unrelated to Redpanda catalogs. Prefer `information_schema`, `DESCRIBE`,
+`SHOW`, and `system.*` for real metadata.
+
+`pg_views` is the exception that carries real data: one row per view you hold a
+privilege on, in a schema you hold a privilege on, with the columns `schemaname`,
+`viewname`, `viewowner` (always empty), and `definition` (the query text exactly
+as written at `CREATE VIEW`, line breaks included). It is the documented way to
+list views.
+
+```sql
+SELECT viewname, definition FROM pg_views WHERE schemaname = 'public';
+```
+
+In `pg_class`, `relkind` is `r` for a table, `i` for an index, and `v` for a
+view.

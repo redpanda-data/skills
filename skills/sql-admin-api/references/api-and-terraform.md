@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/sql/pages/get-started/deploy-sql-cluster.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc-aws.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc-gcp.adoc`, `modules/manage/pages/terraform-provider.adoc` (section "Enable Redpanda SQL on a BYOC cluster"). Verified 2026-10-18. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/get-started/deploy-sql-cluster.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc-aws.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc-gcp.adoc`, `modules/manage/pages/terraform-provider.adoc` (section "Enable Redpanda SQL on a BYOC cluster"). Verified 2026-10-21. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Enable, Scale, and Disable Redpanda SQL: Cloud API and Terraform
 
@@ -145,12 +145,25 @@ To scale, change `replicas` and run `terraform apply`. To disable, set `enabled 
 
 ## BYOVPC
 
-On BYOVPC, Redpanda does not create resources in your cloud account. Provision the SQL resources with the Redpanda BYOVPC Terraform module, then pass them to the cluster as customer-managed resources (CMRs).
+On BYOVPC, Redpanda does not create resources in your cloud account. Provision the SQL resources with the Redpanda BYOVPC Terraform module yourself, then supply them to the cluster as customer-managed resources (CMRs) in the same operation that enables SQL.
 
 1. In the `redpanda-data/redpanda-byovpc/aws` or `redpanda-data/redpanda-byovpc/gcp` module, set `enable_redpanda_sql = true` and run `terraform apply`.
 2. Enable SQL, passing the module outputs as the CMR fields below.
    - New cluster: use Terraform or the Cloud API.
    - Existing cluster: use Terraform, the Cloud API, or the Console (*Dataplane settings* > *Cluster* > Redpanda SQL row > *Edit*, then enter the values and set the *RPU* slider).
+
+**On a cluster where you applied the module before, upgrade the module first.**
+This is the version of the BYOVPC module, not of the Redpanda Terraform provider,
+and the two have separate minimums (the enable page for your cloud gives the
+module minimum; the Terraform guide gives the provider minimum). The module sets
+the Redpanda agent's permissions, and a module version from before Redpanda SQL
+either rejects `enable_redpanda_sql` as an unsupported argument or cannot apply
+the agent permissions. If your configuration pins a module `version`, raise it;
+either way run `terraform init -upgrade` before `terraform apply`, so that
+Terraform re-fetches the module instead of reusing the copy it already has. A
+newer module version
+can also change resources that have nothing to do with Redpanda SQL, so read
+`terraform plan` before applying it.
 
 ### AWS
 

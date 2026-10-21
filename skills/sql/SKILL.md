@@ -5,7 +5,8 @@ description: >-
   to connect to the SQL endpoint and the query language itself. Use when a user
   wants to connect to Redpanda SQL with psql, a PostgreSQL driver, or SQL Studio
   using an OIDC bearer token or a SCRAM password; write analytical queries with
-  joins, aggregates, window functions, and CTEs over topic-backed tables; export
+  joins, aggregates, window functions, and CTEs over topic-backed tables; save a
+  query as a view with CREATE VIEW or remove one with DROP VIEW; export
   results with COPY TO; grant access with GRANT and REVOKE; inspect metadata
   through information_schema or pg_catalog; or check how Redpanda SQL differs
   from PostgreSQL. For enabling SQL, the SQL Manage and SQL Access
@@ -31,7 +32,8 @@ Ground rules for an agent helping a user:
   SQL reads it through catalog mappings. Do not suggest loading data with SQL.
 - **`CREATE TABLE` maps a topic; it does not create a standalone table** with
   user-defined columns. Mapping topics, catalogs, and Iceberg belong to
-  `/redpanda:sql-federated-queries`.
+  `/redpanda:sql-federated-queries`. `CREATE VIEW` saves a query over those
+  tables; a view stores no data.
 - **Tables are referenced as `catalog=>table`.** When SQL is enabled, a catalog
   named `default_redpanda_catalog` points at the cluster, so most queries read
   `FROM default_redpanda_catalog=>orders`.
@@ -169,6 +171,41 @@ FROM default_redpanda_catalog=>events;
 `ROW_NUMBER()` filter. The `GROUPS` frame mode and frame exclusion are not
 supported.
 
+## Views
+
+A view is a named `SELECT` query that you query like a table. Redpanda SQL stores
+the query, not its results, so a view always reads current data.
+
+```sql
+CREATE VIEW large_orders AS
+SELECT order_id, customer, amount
+FROM default_redpanda_catalog=>orders
+WHERE amount > 100;
+
+SELECT customer, SUM(amount) AS total FROM large_orders GROUP BY customer;
+
+GRANT SELECT ON TABLE large_orders TO "alice@example.com";
+DROP VIEW large_orders;
+```
+
+- A view lives in a **SQL schema** (`public` by default), not in a catalog: query
+  it as `large_orders` or `public.large_orders`, never `catalog=>large_orders`.
+- A view runs its query with its **owner's** privileges, so `SELECT` on the view
+  alone lets a role read what the view returns, with no grant on the tables
+  behind it. That makes a view a way to narrow what a role sees — and a way to
+  leak data if granted too widely. Grant with `ON TABLE` and the view name; there
+  is no `ON VIEW` form.
+- List the columns in the query rather than using `SELECT *`: the column shape is
+  fixed at creation, so a `SELECT *` view stops working once a table it reads
+  gains a column.
+- `CREATE OR REPLACE VIEW`, `ALTER VIEW`, and materialized views are not
+  supported; drop the view and create it again instead.
+- Views do not show up in `information_schema.tables` or in `psql`'s `\d` and
+  `\dv`. List them with `SELECT viewname, definition FROM pg_views;`.
+
+Dependencies, permissions, and the full behavior:
+[references/statements.md](references/statements.md#views).
+
 ## Functions
 
 Full reference: [references/functions-and-analytics.md](references/functions-and-analytics.md).
@@ -284,6 +321,9 @@ superuser-only; for using them to troubleshoot, see `/redpanda:sql-debugging`.
 - Transaction syntax (`BEGIN`, `COMMIT`, `END TRANSACTION`, `ROLLBACK`) is
   accepted for tool compatibility, but statements run immediately and `ROLLBACK`
   undoes nothing.
+- Views exist but are read-only and frozen in shape: no `CREATE OR REPLACE
+  VIEW`, no `ALTER VIEW`, no materialized views, and they are absent from
+  `information_schema.tables` and `psql`'s `\d`.
 - Prepared statements give no benefit: bound parameters are turned back into
   query text. PHP PDO needs `PDO::ATTR_EMULATE_PREPARES => true`.
 - JSON `=` is key-order-sensitive. Unnamed result columns are named generically
@@ -315,7 +355,8 @@ Iceberg REST catalog.
   map, geometry and geography).
 - [statements.md](references/statements.md): the published statement set and
   clauses: `SELECT` (WHERE, GROUP BY, HAVING, ORDER BY, LIMIT/FETCH, OFFSET,
-  joins, subqueries, WITH, set operations, DISTINCT), operators, `COPY TO`,
+  joins, subqueries, WITH, set operations, DISTINCT), operators, `CREATE VIEW`
+  and `DROP VIEW` with the owner-privilege model, `COPY TO`,
   `SET`/`SHOW` options, `DESCRIBE` and `SHOW` statements, transactions, SQL
   schemas, comments, `GRANT`/`REVOKE` and `CREATE`/`ALTER`/`DROP USER` with their
   Cloud behavior, `information_schema`, system virtual tables, and `pg_catalog`.

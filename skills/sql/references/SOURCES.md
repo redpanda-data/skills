@@ -16,10 +16,15 @@ All paths are in `redpanda-data/cloud-docs`.
 
 | Skill file | Published sources |
 |---|---|
-| `SKILL.md` | `modules/reference/pages/sql/sql-statements/index.adoc` (read-only note, statement set), `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/query-data/sql-editor.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc`, `modules/reference/pages/sql/sql-statements/{copy-to,grant,revoke,create-user,alter-user,drop-user,show-tables,show-catalogs,describe,create-table}.adoc`, `modules/reference/pages/sql/sql-data-types/{index,numeric-type/numeric,numeric-type/numeric-data-type-aliases}.adoc`, `modules/reference/pages/sql/transactions.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc` |
+| `SKILL.md` | `modules/reference/pages/sql/sql-statements/index.adoc` (read-only note, statement set), `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/reference/pages/sql/sql-statements/{create-view,drop-view}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/query-data/sql-editor.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc`, `modules/reference/pages/sql/sql-statements/{copy-to,grant,revoke,create-user,alter-user,drop-user,show-tables,show-catalogs,describe,create-table}.adoc`, `modules/reference/pages/sql/sql-data-types/{index,numeric-type/numeric,numeric-type/numeric-data-type-aliases}.adoc`, `modules/reference/pages/sql/transactions.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc` |
 | `references/connect-and-types.md` | `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/connect-to-sql/language-clients/{psycopg2,java-jdbc,php-pdo,dotnet-dapper}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/reference/pages/sql/sql-data-types/**` (all type pages, incl. `time-type/time-operators.adoc`), `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc` |
-| `references/statements.md` | `modules/reference/pages/sql/sql-statements/{index,select,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/sql/pages/manage/manage-access.adoc` |
+| `references/statements.md` | `modules/reference/pages/sql/sql-statements/{index,select,create-view,drop-view,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/pages/sql/system-catalogs/catalogs/{pg_views,pg_class}.adoc`, `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/sql/pages/manage/manage-access.adoc` |
 | `references/functions-and-analytics.md` | `modules/reference/pages/sql/sql-functions/**` (every category index and function page), `modules/reference/pages/sql/sql-clauses/over-window.adoc`, `modules/reference/pages/sql/sql-data-types/{geometry,geography,uuid}.adoc`, `modules/reference/pages/sql/sql-statements/set-show.adoc` (`oxla.enable_fast_math`) |
+
+Views (`create-view`, `drop-view`, `pg_views`, and the view half of
+`modules/sql/pages/query-data/tables-and-views.adoc`) belong to this skill: a view
+lives in a SQL schema, not in a catalog. The topic-backed-table half of that page
+is owned by `sql-federated-queries`.
 
 Catalog, storage, topic-mapping, and Iceberg statements (`create-redpanda-catalog`,
 `create-storage`, `create-iceberg-catalog`, `create-table`, `alter-table`,
@@ -33,6 +38,7 @@ Catalog, storage, topic-mapping, and Iceberg statements (`create-redpanda-catalo
 - Session setting values (`SHOW <option>`), result rows, and `pg_typeof` output.
 - Which statements SQL Studio blocks: the published page states the block exists
   but not the list; do not enumerate it.
+- `pg_views.definition` text and the set of views on a cluster: query them.
 
 ## Known inconsistencies in the published docs (do not copy into the skill)
 
@@ -40,11 +46,15 @@ Catalog, storage, topic-mapping, and Iceberg statements (`create-redpanda-catalo
   `INSERT`, and the language-client pages create and insert into tables, although
   the statements index says Redpanda SQL is read-only. The skill uses
   `default_redpanda_catalog=>table` examples instead.
-- `grant.adoc` and `revoke.adoc` list a "native SQL table" privilege level
-  (`ON TABLE`, with `INSERT`/`UPDATE`/`DELETE`) and a `GRANT SELECT, INSERT ON
-  TABLE` example, although users cannot create native tables. The skill omits
-  the table level and documents only the external-source, schema, and database
-  levels.
+- `grant.adoc` now documents the table level as "a table or a view" and states
+  that `INSERT`/`UPDATE`/`DELETE` on a view are accepted but have no effect. The
+  skill documents the table level for views only, since a view is the sole
+  object of that level a user can create; `revoke.adoc` still describes it as a
+  "native SQL table".
+- The `CREATE VIEW` page states that `information_schema.tables` and `psql`'s
+  `\d` / `\dv` do not list views, while the information-schema page describes
+  `information_schema.tables` as covering tables and views. The skill follows the
+  statement page and points at `pg_views` for listing views.
 - `timestamp-with-time-zone.adoc` says values are returned "exactly as stored"
   but its example output is converted to UTC; the skill follows the example and
   `timestamp-without-time-zone.adoc` (display time zone fixed to UTC).

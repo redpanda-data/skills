@@ -114,6 +114,10 @@ Catalogs live in a schema (`public` by default; qualify as `schema.catalog_name`
 to use another). Querying an Iceberg catalog's tables on their own (outside a
 linked Redpanda catalog) is not supported.
 
+A **view** is not a catalog object: it stores a `SELECT` query in a SQL schema and
+is queried by name with no catalog prefix. A view can read the topic-backed tables
+described here; see `/redpanda:sql` for `CREATE VIEW` and `DROP VIEW`.
+
 ---
 
 ## Map a topic: `CREATE TABLE ... WITH (...)`
