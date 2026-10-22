@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). Draft pipelines and pipeline provenance fields (verified 2026-10-22): api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `Pipeline.State` value `STATE_DRAFT`, `PipelineCreate.draft` and the `config_yaml` requirement it relaxes, `PipelineUpdate.draft` as an assertion, `ListPipelinesRequest.Filter.states` and `filter.include_drafts` incl. their query-parameter spellings, and the read-only `Pipeline.create_time`, `update_time`, `created_by`). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Data Plane API for Serverless Clusters
 
@@ -290,17 +290,61 @@ curl -s -X POST "${DP_URL}/v1/redpanda-connect/pipelines" \
   }' | jq .pipeline
 ```
 
+### Save a Pipeline as a Draft
+
+Set `draft: true` on create to store a pipeline without deploying it. It lands in `STATE_DRAFT`:
+saved but never deployed, not running, and not billed. The configuration is stored **unvalidated**,
+so a draft may hold an incomplete or invalid config; `StartPipeline` is what validates it and
+deploys it.
+
+```bash
+curl -s -X POST "${DP_URL}/v1/redpanda-connect/pipelines" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipeline": {
+      "display_name": "work-in-progress",
+      "draft": true,
+      "config_yaml": "input:\n  kafka_franz:\n    topics: [\"orders\"]\n"
+    }
+  }' | jq '.pipeline | {id, state}'
+```
+
+Rules that follow from that:
+
+- `config_yaml` is required **unless** `draft` is set. Omitting it on a non-draft create fails with
+  `INVALID_ARGUMENT` and reason `REASON_CONNECT_INVALID_PIPELINE_CONFIGURATION`. On update,
+  `config_yaml` may be empty only when the stored pipeline is still a draft.
+- Drafts count against the cluster's pipeline limit, so an unfinished draft consumes a slot.
+- An update never changes whether a pipeline is a draft. `draft` on `PipelineUpdate` is an
+  assertion, not a setting: `true` means "fail with `FAILED_PRECONDITION` if this has since been
+  started" — use it to avoid overwriting a pipeline someone deployed while you were editing — and
+  `false` is rejected. Leave it unset to update whatever is stored. Promotion out of
+  `STATE_DRAFT` happens through `StartPipeline`.
+
 ### List Pipelines
 
 ```bash
 curl -s "${DP_URL}/v1/redpanda-connect/pipelines" \
   -H "Authorization: Bearer ${TOKEN}" | jq '.pipelines[] | {id, display_name, state}'
+
+# Filter by state, and include drafts (excluded by default)
+curl -s "${DP_URL}/v1/redpanda-connect/pipelines?filter.states=STATE_RUNNING&filter.states=STATE_ERROR" \
+  -H "Authorization: Bearer ${TOKEN}" | jq '.pipelines[] | {id, state}'
+
+curl -s "${DP_URL}/v1/redpanda-connect/pipelines?filter.include_drafts=true" \
+  -H "Authorization: Bearer ${TOKEN}" | jq '.pipelines[] | {id, state}'
 ```
+
+`filter.states` is repeatable and takes `Pipeline.State` values. **Drafts are left out of
+`ListPipelines` unless `filter.include_drafts` is set** — naming `STATE_DRAFT` in `filter.states`
+is not enough on its own, so a client that wants drafts must set both.
 
 ### Start/Stop a Pipeline
 
 Start and Stop use **PUT** (`PipelineService_StartPipeline` /
-`PipelineService_StopPipeline`):
+`PipelineService_StopPipeline`). Start is also what promotes a draft: it validates the stored
+configuration and deploys it, so a start is where an invalid draft config first fails.
 
 ```bash
 # Start:
@@ -318,6 +362,15 @@ curl -s -X PUT "${DP_URL}/v1/redpanda-connect/pipelines/${PIPELINE_ID}/stop" \
 curl -s "${DP_URL}/v1/redpanda-connect/pipelines/${PIPELINE_ID}" \
   -H "Authorization: Bearer ${TOKEN}" | jq .pipeline
 ```
+
+The response carries three read-only provenance fields beside the state and config:
+`create_time`, `update_time`, and `created_by` (the principal that created it — a user's email
+address or a service account's identifier). `update_time` tracks writes to the pipeline, so
+starting or stopping one does not move it. Both `update_time` and `created_by` can come back empty
+on older pipelines — `created_by` for one created before the field existed, `update_time` for one
+not written since — so handle an absent value rather than assuming one. `created_by` is attribution
+only: pipeline permissions are cluster-wide, so it does not restrict who can edit or delete the
+pipeline.
 
 ### Delete a Pipeline
 
