@@ -49,8 +49,13 @@ Catalog, storage, topic-mapping, and Iceberg statements (`create-redpanda-catalo
 - `grant.adoc` now documents the table level as "a table or a view" and states
   that `INSERT`/`UPDATE`/`DELETE` on a view are accepted but have no effect. The
   skill documents the table level for views only, since a view is the sole
-  object of that level a user can create; `revoke.adoc` still describes it as a
-  "native SQL table".
+  object of that level a user can create. `revoke.adoc` defers the levels to
+  `grant.adoc`.
+- `pg_class.adoc` lists `relkind` `r` for tables and `i` for indexes, with a
+  `CREATE TABLE` / `CREATE INDEX` example; those kinds come only from native
+  tables and indexes, which users cannot create. The kind reported for
+  topic-backed tables is not documented yet, so the skill states only `v` for a
+  view.
 - The `CREATE VIEW` page states that `information_schema.tables` and `psql`'s
   `\d` / `\dv` do not list views, while the information-schema page describes
   `information_schema.tables` as covering tables and views. The skill follows the

@@ -559,5 +559,4 @@ list views.
 SELECT viewname, definition FROM pg_views WHERE schemaname = 'public';
 ```
 
-In `pg_class`, `relkind` is `r` for a table, `i` for an index, and `v` for a
-view.
+In `pg_class`, a view has `relkind` `v`.
