@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/network.proto`, `network_peering.proto`, `common.proto` (field names and constraints); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, whose `IsPrivate()` check admits RFC 1918 only, so RFC 6598 `100.64.0.0/10` is rejected; `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 ranges and the “block size between /16 and /20” note). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/network.proto`, `network_peering.proto`, `common.proto` (field names and constraints); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, whose `IsPrivate()` check admits RFC 1918 only, so RFC 6598 `100.64.0.0/10` is rejected; `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 ranges and the “block size between /16 and /20” note). BYOVNet on Azure (verified 2026-10-22): cloud-docs `modules/get-started/pages/cluster-types/byoc/azure/vnet-azure.adoc` (published how-to: the Terraform module and provider path, the agent bootstrap replacing `rpk cloud byoc azure apply`, the limitations list, provisioning time, and the two tag scopes with the agent-apply prerequisite), `modules/get-started/pages/cluster-types/byoc/choose-byoc-or-byovpc.adoc` (BYOVPC/BYOVNet scope and the no-conversion rule) and `modules/shared/partials/feature-flag-rpcn.adoc` (BYOVPC/BYOVNet is a Premium-support add-on). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Networks
 
@@ -211,6 +211,49 @@ curl -s -X POST "${BASE}/v1/networks" \
     }
   }' | jq .
 ```
+
+### Deploying a BYOVNet cluster on Azure
+
+BYOVNet on Azure is generally available. Like BYOVPC on the other providers, it is an add-on that
+requires Premium support, so it has to be unlocked for the organization's account first.
+
+**Terraform is the documented path, end to end.** Redpanda publishes a BYOVNet Terraform module for
+Azure that creates the customer-managed resources — resource groups, user-assigned identities, IAM
+roles and assignments, the VNet with its subnets, a NAT gateway and a network security group, the
+management and Tiered Storage accounts and containers, and the key vaults — and the Redpanda
+Terraform provider then creates the Redpanda network and cluster from the module's outputs and runs
+the agent bootstrap for you. The whole deployment is one Terraform configuration: no Cloud API calls
+and **no `rpk cloud byoc azure apply`**. Prefer that path when a user asks how to stand up a BYOVNet
+cluster, and read the published
+[Create a BYOVNet Cluster on Azure](https://docs.redpanda.com/redpanda-cloud/get-started/cluster-types/byoc/azure/vnet-azure/)
+page for the module inputs and the minimum module and provider versions. The field shapes above
+still describe what that configuration sends, so use them when you drive the API directly or need to
+read a network back.
+
+Provisioning a BYOVNet cluster can take about an hour, so poll the operation rather than assuming a
+stall.
+
+**What is fixed at create time:**
+
+- An existing cluster cannot be converted to BYOVNet, and a BYOVNet cluster cannot be moved to a
+  different VNet afterwards.
+- The Azure customer-managed resources cannot be edited afterwards. The network PATCH surface
+  exposes no Azure member at all (see [Updating a Network](#updating-a-network)), and in Terraform a
+  change to any `customer_managed_resources.azure` attribute plans a replacement of the network or
+  the cluster.
+- Only the VNet's primary CIDR range is supported.
+
+**Tagging has two halves.** A BYOVNet cluster has two sets of Azure resources, tagged in different
+places: the module's own `tags` input covers the customer-managed resources it creates (VNet,
+subnets, identities, storage accounts, key vaults), while the cluster's `cloud_provider_tags` cover
+the resources the agent creates for the cluster (the AKS cluster and its node pools). Redpanda does
+not apply cluster tags to the customer-managed resources, so set both if you need one tag set across
+everything. Changing the tags of an existing BYOVNet cluster also needs the agent's permissions in
+your subscription refreshed first: run an agent apply — `rpk cloud byoc azure apply`, or the
+Terraform provider's `redpanda_byoc_agent_apply` action — and then apply the tag change. A plain
+`terraform apply` does not do it for you. The per-provider key rules and the Azure resources that
+take custom tags only at creation are in
+[Clusters and Agent](clusters-and-agent.md#with-cloud-provider-tags).
 
 ---
 
