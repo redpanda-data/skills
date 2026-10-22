@@ -154,16 +154,16 @@ On BYOVPC, Redpanda does not create resources in your cloud account. Provision t
 
 **On a cluster where you applied the module before, upgrade the module first.**
 This is the version of the BYOVPC module, not of the Redpanda Terraform provider,
-and the two have separate minimums (the enable page for your cloud gives the
-module minimum; the Terraform guide gives the provider minimum). The module sets
-the Redpanda agent's permissions, and a module version from before Redpanda SQL
-rejects `enable_redpanda_sql` as an unsupported argument (on AWS, it can instead
-fail to apply the agent permissions). If your configuration pins a module `version`, raise it;
-either way run `terraform init -upgrade` before `terraform apply`, so that
-Terraform re-fetches the module instead of reusing the copy it already has. A
-newer module version
-can also change resources that have nothing to do with Redpanda SQL, so read
-`terraform plan` before applying it.
+and the two have separate minimums. The BYOVPC enable page for your cloud gives
+both; its provider minimum applies to BYOVPC and is not the one in the
+Terraform guide's BYOC section. The module sets the Redpanda agent's
+permissions, and a module version from before Redpanda SQL rejects
+`enable_redpanda_sql` as an unsupported argument (on AWS, it can instead fail
+to apply the agent permissions). If your configuration pins a module
+`version`, raise it; either way run `terraform init -upgrade` before
+`terraform apply`, so that Terraform re-fetches the module instead of reusing the
+copy it already has. A newer module version can also change resources that have
+nothing to do with Redpanda SQL, so read `terraform plan` before applying it.
 
 ### AWS
 

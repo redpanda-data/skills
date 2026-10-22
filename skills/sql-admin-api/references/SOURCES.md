@@ -17,7 +17,7 @@ Read the docs from the private `redpanda-data/cloud-docs` repo at `origin/main` 
 ## Deferred to live surfaces (do not pin)
 
 - Prices, the RPU-to-hardware mapping, and instance types: link the billing page.
-- Minimum versions (`rpk`, `psql`, Terraform, the Terraform provider, and the BYOVPC module) and the `replicas` maximum: the skill says "see the docs". The module minimum differs per cloud and is on each BYOVPC enable page; the provider minimum is on the Terraform page.
+- Minimum versions (`rpk`, `psql`, Terraform, the Terraform provider, and the BYOVPC module) and the `replicas` maximum: the skill says "see the docs". The module minimum differs per cloud and is on each BYOVPC enable page; the BYOVPC provider minimum is on those pages too, and differs from the BYOC `rpsql` minimum on the Terraform page.
 - The cluster-creation cutoff dates for refreshing agent permissions (`rpk cloud byoc ... apply`): link the enable page.
 
 ## Open items for human review
