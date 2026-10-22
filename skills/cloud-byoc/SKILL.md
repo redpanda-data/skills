@@ -21,7 +21,7 @@ BYOC (Bring Your Own Cloud) lets you run Redpanda in your own AWS, GCP, or Azure
 
 The provisioning workflow has three phases: (1) create a **Network** resource that registers your VPC/VNet with Redpanda, (2) create a **Cluster** resource of `TYPE_BYOC` referencing that network, and (3) run `rpk cloud byoc apply --redpanda-id <id>` to execute the Terraform that installs the agent in your cloud account.
 
-**BYOVNet on Azure is the exception.** For a customer-managed VNet on Azure — generally available, and an add-on requiring Premium support — the documented path is a single Terraform configuration: the Redpanda BYOVNet module creates the Azure resources and the Redpanda Terraform provider creates the network and cluster and runs the agent bootstrap, so there are no Cloud API calls and no `rpk cloud byoc azure apply`. See [Networks](references/networks.md#deploying-a-byovnet-cluster-on-azure).
+**BYOVNet on Azure is the exception.** For a customer-managed VNet on Azure — generally available, and an add-on requiring Premium support — the documented path is a single Terraform configuration: the Redpanda BYOVNet module creates the Azure resources and the Redpanda Terraform provider creates the network and cluster and runs the agent bootstrap, so creating the cluster takes no Cloud API calls and no `rpk cloud byoc azure apply` (changing its tags later still needs an agent apply). See [Networks](references/networks.md#deploying-a-byovnet-cluster-on-azure).
 
 Both the Network and Cluster create calls return an `Operation` object — poll `GET /v1/operations/{id}` until `state` is `STATE_COMPLETED` before proceeding.
 

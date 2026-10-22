@@ -337,8 +337,9 @@ curl -s "${DP_URL}/v1/redpanda-connect/pipelines?filter.include_drafts=true" \
 ```
 
 `filter.states` is repeatable and takes `Pipeline.State` values. **Drafts are left out of
-`ListPipelines` unless `filter.include_drafts` is set** — naming `STATE_DRAFT` in `filter.states`
-is not enough on its own, so a client that wants drafts must set both.
+`ListPipelines` unless `filter.include_drafts` is set** — `filter.include_drafts=true` alone is
+what admits them. Add `filter.states=STATE_DRAFT` to list only drafts; naming `STATE_DRAFT` in
+`filter.states` without `include_drafts` returns none.
 
 ### Start/Stop a Pipeline
 
