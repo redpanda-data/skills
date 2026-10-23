@@ -103,3 +103,27 @@ new fact.
   `references/enterprise-features.md` and the illustrative lint/connection-test
   output in `references/lint-and-validate.md` named `kafka_franz`; both now name
   `redpanda` so no example teaches a deprecated component.
+
+### Connect v4.115.0 / benthos v4.84.0 (2026-10-23 sync)
+
+- **Credentials in URLs are redacted from logs, errors, spans and request
+  dumps.** Benthos `CHANGELOG.md` at tag `v4.83.0` (the engine version pinned at
+  connect `v4.114.0`; `connect/go.mod` at `v4.115.0` pins `v4.84.0`) records the
+  new `public/utils/redact` package and the behavior it backs: a URL's
+  credentials no longer appear in errors, logs, spans or request dumps, and
+  credential headers such as `Authorization` are hidden too, across the HTTP
+  components, `websocket`, the `parse_url` method, URL config fields and the
+  `studio` CLI. Added as a short Logger subsection in
+  `references/logging-metrics-tracing.md`, because a reader debugging a
+  connection failure needs to know a credential-free URL in an error is
+  redaction rather than a truncated message. Grounded in the changelog at the
+  tag; not line-verified against each call site, so the component list is the
+  changelog's.
+- **Not documented:** the `--rpc-plugins` flag being accepted by `dry-run` and
+  merging root- and subcommand-level values (connect
+  `internal/cli/flags_common.go`) — `references/lint-and-validate.md` documents
+  `dry-run`'s `--verbose`, `--env-file` and `--redpanda-license` flags but no
+  RPC-plugin surface, and nothing it claims is contradicted; the HTTP retry
+  backoff fix; and the `v4.84.0` Go API docs-rendering additions. The new
+  `list --docs-format` flag is a discovery surface and was applied in the
+  `connect` skill's `references/connector-catalog.md` instead.

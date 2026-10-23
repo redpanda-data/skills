@@ -110,6 +110,17 @@ redpanda:
   pipeline_id: my-pipeline
 ```
 
+### Credentials in URLs are redacted
+
+A URL carrying credentials (`https://user:pass@host/…`) is redacted before it
+reaches a log line, an error message, a trace span, or an HTTP request dump,
+and credential headers such as `Authorization` are hidden the same way. This
+covers the HTTP components, `websocket`, the `parse_url` Bloblang method, and
+URL config fields. So a connection error that names a host without its
+credentials is the engine redacting them, not a truncated message — look up the
+real value in your secret store or `--env-file`, and do not expect to confirm a
+password from the logs.
+
 ---
 
 ## Metrics
