@@ -19,14 +19,14 @@ https://docs.redpanda.com/connect/components/catalog/):
 | `community` | Community-maintained, best-effort |
 
 > **Tier vs. runtime gate caveat:** the tier label and the runtime license
-> check don't always agree. One discrepancy remains at v4.113.1:
+> check don't always agree. One discrepancy remains at v4.115.0:
 > `aws_dynamodb_cdc` is tiered `enterprise` but has no runtime gate in source.
 > (The `jira` input and processor were the other one — both were re-tiered
 > `enterprise` at v4.113.0 to match the enterprise check their source has
 > always called.) When licensing matters for a decision, verify the specific
 > component (its docs page, or a dry run without a license).
 
-## Enterprise components (complete at Connect v4.113.1, deprecated components excluded)
+## Enterprise components (complete at Connect v4.115.0, deprecated components excluded)
 
 Every non-deprecated enterprise-tier component, grouped by family. Which components carry the
 tier changes between releases, so treat this as a point-in-time list and read
@@ -43,8 +43,23 @@ input, `tigerbeetle_cdc`, is **certified** (no license) and CGO-only; see
 
 ### Snowflake
 
-- `snowflake_streaming` (output) — ingest via Snowpipe Streaming; the
+- `snowflake_streaming` (output) — ingest via Snowpipe Streaming, opening
+  channels on the target **table** (which it will create for you); the
   preferred Snowflake path (better performance and cost than `snowflake_put`).
+- `snowflake_streaming_pipe` (output, **beta**) — Snowpipe Streaming through a
+  Snowflake **pipe** instead of a table, so whatever the pipe's `COPY INTO`
+  defines (enrichment joins, `WHERE` filtering) runs before rows land. Pick it
+  only for those transformations — otherwise `snowflake_streaming` is the
+  simpler choice. The pipe and its table must already exist: this output never
+  issues `CREATE PIPE` or `CREATE TABLE`, and a missing pipe is reported when
+  the output connects, before any message is written. Moving an existing
+  `snowflake_streaming` config across is not a rename — fields are removed and
+  `commit_timeout` changes meaning. Before scaling it out, note that each
+  channel must be written by a single ordered source with at most one batch in
+  flight: by default every message shares one channel named
+  `<database>.<schema>.<pipe>`, so split it with `channel_name` (commonly one
+  channel per source partition) and read the `offset_token` deduplication rules
+  on the component's reference page first.
 - `snowflake_put` (output) — legacy stage-file loading; the docs recommend
   `snowflake_streaming` instead.
 
@@ -167,6 +182,12 @@ reads the same global `redpanda` block.
 rpk connect list                        # every component in your build
 rpk connect list --format json          # machine-readable, includes status
 rpk connect create <component>          # scaffold full config for a component
+
+# Full schema with every doc string, rendered as Markdown instead of the
+# AsciiDoc the specs hold (links resolved to documentation URLs). The default
+# for --docs-format is asciidoc; it applies to the json-full and cue formats
+# and to jsonschema for Bloblang functions and methods.
+rpk connect list --format json-full --docs-format markdown
 ```
 
 Catalog with tier filters:
