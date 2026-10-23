@@ -351,10 +351,10 @@ redpanda:
     connect_timeout: 0s
     keep_alive: {idle: 15s, interval: 15s, count: 9}
     tcp_user_timeout: 0s
-  partitioner: ""                   # murmur2_hash | round_robin | least_backup | manual
+  # partitioner: murmur2_hash       # optional, unset by default; murmur2_hash | round_robin | least_backup | manual
   idempotent_write: true
   acks: all                         # all | leader | none (must be all when idempotent_write)
-  compression: ""                   # lz4 | snappy | gzip | zstd | none
+  compression: snappy               # lz4 | snappy | gzip | zstd | none
   allow_auto_topic_creation: true
   timeout: 10s
   max_message_bytes: 1MiB

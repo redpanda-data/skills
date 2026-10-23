@@ -127,3 +127,14 @@ new fact.
   backoff fix; and the `v4.84.0` Go API docs-rendering additions. The new
   `list --docs-format` flag is a discovery surface and was applied in the
   `connect` skill's `references/connector-catalog.md` instead.
+- **Two invalid literals fixed in the `redpanda:` block example**
+  (`references/enterprise-features.md`). Both fields come from connect
+  `internal/impl/kafka/franz_writer.go` `FranzProducerFields()` at `v4.115.0`:
+  `compression` is an enum (`lz4`/`snappy`/`gzip`/`none`/`zstd`) with
+  `Default("snappy")`, so the example's `compression: ""` was a wrong default
+  left behind when the `v4.113.1` sync deferred that default change;
+  `partitioner` is an `Optional()` enum with no default, so it is now shown
+  commented out instead of as `""`. Confirmed by running `redpanda-connect lint`
+  (v4.115.0 release binary) on the block: as written it failed with `value  is
+  not a valid option for this field` on exactly those two lines, and with the
+  fix it lints clean.
