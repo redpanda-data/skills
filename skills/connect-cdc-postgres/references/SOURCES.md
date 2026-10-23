@@ -110,3 +110,34 @@ not this connector.
   the first heartbeat when idle — internal resource management behind the
   `incremental_snapshot` surface already documented at `v4.112.0`; no field,
   signal type, or metadata key changes.
+
+### Connect v4.115.0 (2026-10-23 sync)
+
+- **New `batch_transactions` field (default `false`, `Version("4.115.0")`).**
+  Verified at tag `v4.115.0` in `internal/impl/postgresql/input_pg_stream.go`:
+  the field's own `Spec()` description (one batch per replication transaction,
+  never mixing two transactions, large transactions split at the smallest of
+  1000 rows / 4 MiB of WAL / half of `checkpoint_limit`, and snapshot pages
+  unaffected — each `snapshot_batch_size` page is always one batch);
+  `resolveBatchingPolicy`, which rejects the combination with a `batching`
+  policy and returns exactly the error string the skill quotes, and which forces
+  `Count = 1` when no policy is configured (that is what delivers streaming rows
+  one message at a time by default, and why an explicit `count: 1` is
+  distinguishable from an unset policy, the field defaulting to 0); and
+  `passesThrough`, where a configured policy always wins, a snapshot page always
+  passes through whole, and a streaming batch passes through only with
+  `batch_transactions` set. The failure-unit consequence (an output rejecting a
+  batch over one bad row takes the good rows with it, so `fallback` and
+  dead-letter routing see the whole batch) is the spec's own wording.
+  `streamBatchMaxRowsFor` confirms the half-of-`checkpoint_limit` cap.
+  Documented in `references/config-reference.md` as a field entry beside
+  `batching` (whose entry now records that a policy covers snapshot and stream
+  alike, cannot be combined with `batch_transactions`, and publishes rows with
+  their error set when its processors fail) and summarised as one Operational
+  Notes bullet in `SKILL.md`. The rest of the reader rework behind it — the
+  per-transaction buffered channel that replaced one channel send per row — is
+  internal throughput work with no surface.
+- **Not documented:** nothing else in `v4.114.0`/`v4.115.0` touches this
+  connector. Benthos moved v4.82.0 → v4.84.0 in the window; its credential
+  redaction and the new `list --docs-format` flag are engine-wide and were
+  applied in the `connect` and `connect-debugging` skills, not here.

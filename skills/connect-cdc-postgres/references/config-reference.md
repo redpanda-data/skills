@@ -319,7 +319,7 @@ aws:
 
 **Type**: `object` | **Optional**
 
-Output-side batch policy. By default, `batching.count` is set to `1` (each message is individually flushed). Increase `count` or set `period` for higher throughput.
+Output-side batch policy. By default, `batching.count` is set to `1` (each message is individually flushed). Increase `count` or set `period` for higher throughput. A policy applies to both the snapshot and the stream, and cannot be combined with `batch_transactions`.
 
 ```yaml
 batching:
@@ -327,6 +327,27 @@ batching:
   period: 1s        # or after 1 second, whichever comes first
   byte_size: 0      # or after N bytes (0 = disabled)
   check: ""         # or when this Bloblang expression returns true
+```
+
+If the policy's `processors` fail on a batch, its rows are published as the batcher held them with their error set — not dropped or retried — so error-handling components can route them.
+
+### `batch_transactions`
+
+**Type**: `bool` | **Default**: `false`
+
+Introduced in 4.115.0. Emit the rows of each replication transaction as one batch, instead of one message per row. A batch never mixes rows from two transactions, and a large transaction is split across several batches (the connector caps a batch at 1000 rows, 4 MiB of WAL, or half of `checkpoint_limit`, whichever is smallest).
+
+Use it so a batch-aware output — a multi-row `sql_insert`, a Kafka/Redpanda producer — writes a transaction's rows in one operation, and to cut per-message overhead.
+
+Two rules to design around:
+
+- **It cannot be combined with a `batching` policy.** Setting both is rejected at startup (`batch_transactions cannot be combined with a batching policy: it bypasses the policy, including its processors`) rather than silently resolved — the pass-through never reaches the batcher, so the policy's processors would never run.
+- **It moves the unit of failure and retry from one row to one transaction.** If an output rejects a batch over a single bad row, components such as `fallback` handle the whole batch, good rows included. Leave it off if you route individual bad rows to a dead-letter queue.
+
+Snapshot pages are unaffected: each page of `snapshot_batch_size` rows is always emitted as one batch.
+
+```yaml
+batch_transactions: true   # one batch per replication transaction; omit `batching`
 ```
 
 ## Auto-Replay
