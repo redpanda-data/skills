@@ -1,0 +1,237 @@
+{
+  "name": "sql skill vs docs",
+  "skill": "sql",
+  "description": "Measures whether the sql skill adds value over the published Redpanda Cloud SQL docs for connecting to Redpanda SQL and writing, exporting, and granting access to read-only queries over topic-backed tables.",
+  "test_cases": [
+    {
+      "id": "bearer-token-needs-auth-method-option",
+      "query": "I'm trying to connect psql to our Redpanda Cloud SQL endpoint. I ran rpk cloud login, then set PGPASSWORD=$(rpk cloud auth token) and connected with user=jane@example.com dbname=oxla sslmode=require, but authentication fails every time. What am I doing wrong?",
+      "why": "A bearer token in the password field is only accepted when the connection sets options='auth_method=bearer'; without it Redpanda SQL treats the token as a SCRAM password and the login fails. The option name and value are Redpanda SQL specific, so a model guesses at usernames or token expiry instead.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/sql/connect-to-sql/authenticate/"
+      ],
+      "required_patterns": [
+        "auth_method\\s*=\\s*bearer"
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "bigint-sum-overflow-wide-int-cast",
+      "query": "In Redpanda SQL on Redpanda Cloud, SUM(views) over a bigint column on a large topic-backed table gives a wrong, overflowed total. How do I get the correct sum in a query?",
+      "why": "Redpanda SQL has int16 and int32 types whose names give the size in bytes (128-bit and 256-bit), usable only in casts; the documented fix for an overflowing bigint sum is SUM(views::INT16). A PostgreSQL-trained model reads int16 as a 16-bit type and instead suggests NUMERIC, double precision, or splitting the sum.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-data-types/numeric-type/numeric/",
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-data-types/"
+      ],
+      "required_patterns": [
+        "int16"
+      ],
+      "invariants": [
+        {
+          "name": "casts_to_128_bit_int16",
+          "failure_condition": "Fails if the answer does not cast the column to int16 inside the sum (for example SUM(views::INT16) or SUM(CAST(views AS INT16))), or describes int16 as a 16-bit or smaller type. Passes if it casts to int16 in the aggregate and identifies int16 as a wider-than-bigint (128-bit) integer, even if it also mentions other options."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "topic-table-reference-syntax",
+      "query": "In Redpanda SQL on Redpanda Cloud, the topic device_readings is already mapped as a table in the default catalog, with columns device_id, reading, and event_time. Write me a query that returns only the most recent reading for each device.",
+      "why": "Topic-backed tables are referenced through their catalog with the => operator, as default_redpanda_catalog=>device_readings, not as a bare name or catalog.table. A model writing standard PostgreSQL SQL uses the bare table name.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/sql/get-started/sql-quickstart/",
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/select/",
+        "product source"
+      ],
+      "required_patterns": [
+        "default_redpanda_catalog\\s*=>\\s*\"?device_readings"
+      ],
+      "invariants": [
+        {
+          "name": "one_row_per_device",
+          "failure_condition": "Fails if the query relies on SELECT DISTINCT ON (which Redpanda SQL does not support) or would not return one latest reading per device. Passes if it uses a supported approach such as a ROW_NUMBER() filter, FOR_MAX, or a join against MAX(event_time) per device."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "wildcard-grant-cannot-be-partially-revoked",
+      "query": "In Redpanda SQL on Redpanda Cloud I gave analyst@example.com SELECT on every topic matching orders_* in the default catalog. Now I need them to keep access to all of those except orders_internal. What statements do I run?",
+      "why": "A wildcard grant cannot be partially revoked: REVOKE with a non-wildcard pattern that matches no stored grant is an error. The fix is to revoke the wildcard grant in full and re-grant narrower patterns or individual topics, using the Redpanda-specific GRANT/REVOKE ... ON EXTERNAL SOURCE catalog => 'pattern' syntax.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/revoke/",
+        "https://docs.redpanda.com/cloud-data-platform/sql/manage/manage-access/"
+      ],
+      "required_patterns": [
+        "REVOKE\\s+SELECT\\s+ON\\s+EXTERNAL\\s+SOURCE"
+      ],
+      "invariants": [
+        {
+          "name": "replaces_wildcard_grant",
+          "failure_condition": "Fails if the answer presents revoking orders_internal alone (leaving the orders_* grant in place) as the fix, or suggests a DENY or exclusion pattern. Passes if it revokes the orders_* wildcard grant in full and re-grants the remaining topics individually or with narrower patterns that exclude orders_internal."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "copy-to-is-csv-only",
+      "query": "How do I export the results of a Redpanda SQL query in Redpanda Cloud straight to an S3 bucket as Parquet files?",
+      "why": "COPY TO supports only the CSV format, and exports to S3 take credentials through AWS_CRED(...) in the WITH clause. A model assumes a FORMAT PARQUET option exists, as in DuckDB or other engines, or does not know the credential syntax.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/copy-to/"
+      ],
+      "required_patterns": [
+        "AWS_CRED"
+      ],
+      "invariants": [
+        {
+          "name": "states_csv_only",
+          "failure_condition": "Fails if the answer presents a Redpanda SQL COPY TO with a Parquet format as working, or does not say that Redpanda SQL's COPY TO writes CSV only. Passes if it states COPY TO is CSV only and shows a CSV export to s3:// with AWS_CRED, optionally with a separate conversion step or Iceberg as the route to Parquet."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "schema-usage-needed-to-see-catalogs",
+      "query": "In Redpanda Cloud I gave a new user the SQL: Access role and ran GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog TO \"bob@example.com\". Bob can connect, but SHOW CATALOGS returns nothing for him and he can't find anything to query. What's missing?",
+      "why": "Catalogs live in a SQL schema (public by default), and a user needs USAGE on that schema to see catalogs in SHOW CATALOGS and to reference them by name, in addition to SELECT on the external source. A model guesses USAGE on the catalog or external source, which is not a valid grant.",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/sql/manage/manage-access/",
+        "https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/show-catalogs/"
+      ],
+      "required_patterns": [
+        "USAGE\\s+ON\\s+SCHEMA"
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "scram-password-set-with-alter-user",
+      "origin": "sampled",
+      "query": "We have a Redpanda Cloud service account that has the SQL: Access role. Our old reporting tool connects to PostgreSQL with only a username and a password field, and has no way to pass extra connection options. What username and password should it use to connect to Redpanda SQL, and where does the password come from?",
+      "why": "A client that cannot send the options connection parameter must use SCRAM. Assigning SQL: Access provisions the SQL user with a random password that is never exposed, so a SQL: Manage user has to set a known password with ALTER USER \"<email>\" WITH PASSWORD, and the client logs in with the account's email. A model guesses the client ID and secret, or a token, as the password.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "ALTER\\s+(USER|ROLE)\\s+\\S+\\s+(WITH\\s+)?PASSWORD"
+      ],
+      "invariants": [
+        {
+          "name": "sql_manage_sets_password",
+          "failure_condition": "Fails if the answer tells the tool to use the service account's client secret or an access token as the password with no options parameter, or says the password can be found in the Cloud Console. Passes if it says the auto-provisioned password is not available and a SQL: Manage (superuser) user must set one with ALTER USER on the service account's SQL user, which the tool then uses with the account's email as the username."
+        }
+      ]
+    },
+    {
+      "id": "service-account-client-secret-auth-method",
+      "origin": "sampled",
+      "query": "A nightly job running on a server needs to query Redpanda SQL on Redpanda Cloud with psql. It has a Redpanda Cloud service account (client ID and client secret) with SQL access, and rpk is not installed on that server. How should the job authenticate in its psql connection string?",
+      "why": "Redpanda SQL exchanges service-account client credentials itself when the connection sets options='auth_method=client_secret', with the client ID as user and the client secret as password, so no rpk or token step is needed. A model fetches an OAuth token with curl and passes it as the password, or puts the secret in the password field with no options value, which is treated as a SCRAM password.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "auth_method\\s*=\\s*client_secret"
+      ]
+    },
+    {
+      "id": "geospatial-points-only",
+      "origin": "sampled",
+      "query": "Our delivery app publishes GPS pings (longitude/latitude) to a Redpanda topic, and we have delivery zones defined as polygons. In Redpanda SQL on Redpanda Cloud, can I find which zone each ping falls in, and compute the distance in meters between a ping and a depot location?",
+      "why": "Redpanda SQL geometry and geography types hold POINT values only, and the spatial functions are limited to st_astext, st_asewkt, and st_distance, so point-in-polygon is not possible in SQL; distance in meters comes from ST_DISTANCE on geography (SRID 4326). A model assumes PostGIS-style polygons and ST_Contains, or does not know a geography type exists and hand-writes haversine.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "geography"
+      ],
+      "invariants": [
+        {
+          "name": "points_only_with_geography_distance",
+          "failure_condition": "Fails if the answer presents polygon types, ST_Contains, ST_Within, ST_Intersects, or PostGIS as working in Redpanda SQL, or does not say that only POINT values are supported. Passes if it states that geometry and geography hold only points (so polygon containment cannot be done in SQL) and computes meters with ST_DISTANCE on geography points."
+        }
+      ]
+    },
+    {
+      "id": "gcs-export-uses-adc-without-credentials",
+      "origin": "sampled",
+      "query": "Our Redpanda Cloud cluster runs on GCP. I want to COPY a Redpanda SQL query result into a gs:// bucket, but I don't want to put any key or credential in the SQL statement itself. Is that possible, and how would the statement look?",
+      "why": "On a GCP cluster, COPY TO a gs:// destination with no GCS_CRED option authenticates with Google Application Default Credentials, so the statement needs no key. A model is unsure whether the engine falls back to ambient credentials and tells the user to confirm or to pass a key.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "gs://"
+      ],
+      "invariants": [
+        {
+          "name": "states_adc_fallback",
+          "failure_condition": "Fails if the answer says a key or GCS_CRED is required, or presents the credential-free form only as something that may or may not be supported and must be confirmed. Passes if it states that omitting GCS_CRED on a GCP cluster makes Redpanda SQL use Application Default Credentials and shows a COPY ... TO 'gs://...' statement with no credentials."
+        }
+      ]
+    },
+    {
+      "id": "catalog-grant-listed-in-role-table-grants",
+      "origin": "targeted",
+      "query": "In Redpanda SQL on Redpanda Cloud I ran GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog TO \"bob@example.com\" with no topic pattern. Bob can query topics fine, but when I check information_schema.role_external_relation_grants there is no row for him. Did the grant go somewhere else? Where can I see it?",
+      "why": "information_schema.role_external_relation_grants lists only per-pattern external-source grants. A catalog-level GRANT with no pattern surfaces in information_schema.role_table_grants, with table_name set to the catalog name. This lives in the engine's view code; a model guesses at view names.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "role_table_grants"
+      ]
+    },
+    {
+      "id": "map-column-key-subscript",
+      "origin": "targeted",
+      "query": "A topic's Avro schema has a map<string,string> field called attributes. In Redpanda SQL on Redpanda Cloud, psql shows that column like {\"(color,red)\",\"(size,L)\"}. How do I filter rows where the color attribute is red, and count rows per color?",
+      "why": "Avro and Protobuf map fields arrive as a native map type, which psql renders as an array of (key,value) pairs. Values are read with column['key'], and grouping by the extracted value works, while grouping by the whole map or casting it to text does not. A model reads the rendering as an array of composites and reaches for unnest or ->>.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "attributes\\s*\\[\\s*'color'\\s*\\]"
+      ],
+      "invariants": [
+        {
+          "name": "uses_map_subscript",
+          "failure_condition": "Fails if the answer's main approach unnests the column, uses -> or ->> on it, or casts the map to text and pattern-matches it. Passes if it filters with attributes['color'] = 'red' and counts per color by grouping on attributes['color']."
+        }
+      ]
+    },
+    {
+      "id": "kafka-acls-do-not-gate-sql",
+      "origin": "targeted",
+      "query": "We use Kafka ACLs on our Redpanda Cloud cluster so the principal analyst@example.com can only read the topic public_events. That user also has the SQL: Access role. Do those ACLs limit which topics they can read through Redpanda SQL? If not, how do I restrict their SQL access to just that topic?",
+      "why": "SQL queries read topics through the single internal credential of default_redpanda_catalog, which the Cloud operator configures, not through the user's Kafka principal, so Kafka ACLs do not restrict SQL reads. The boundary is GRANT SELECT ON EXTERNAL SOURCE. A model assumes the ACLs apply or cannot say, and guesses PostgreSQL table grants.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "GRANT\\s+SELECT\\s+ON\\s+EXTERNAL\\s+SOURCE"
+      ],
+      "invariants": [
+        {
+          "name": "acls_do_not_apply",
+          "failure_condition": "Fails if the answer says or implies that the Kafka ACLs limit what the user can read through Redpanda SQL, or leaves it as unknown. Passes if it states that SQL reads go through the catalog's own credential so Kafka ACLs do not apply, and restricts access with a GRANT SELECT ON EXTERNAL SOURCE for public_events only."
+        }
+      ]
+    },
+    {
+      "id": "grants-survive-sql-role-removal",
+      "origin": "targeted",
+      "query": "Last month we removed the SQL: Access role from analyst@example.com in Redpanda Cloud. Before that, I had run several GRANT SELECT ON EXTERNAL SOURCE statements for them in Redpanda SQL. Today we assigned SQL: Access to them again. Do I need to re-run those grants? What did removing the role actually do to their SQL user?",
+      "why": "When a user loses their SQL role in Redpanda Cloud, the user sync only revokes CONNECT (and superuser); the SQL user and its grants stay. Re-assigning the role restores CONNECT on the existing user, so earlier grants apply again without re-running them. This is visible only in the Cloud user-sync code; a model cannot tell whether the user was dropped.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "grants_persist",
+          "failure_condition": "Fails if the answer says the grants were deleted, or presents deletion of the SQL user and its grants as an equally likely outcome and recommends re-running every grant. Passes if it says removing the role revoked CONNECT (login) but kept the SQL user and its grants, so the earlier grants apply again once the role is re-assigned, even if it also suggests verifying them in information_schema."
+        }
+      ]
+    }
+  ]
+}

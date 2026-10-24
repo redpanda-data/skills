@@ -1,0 +1,266 @@
+{
+  "name": "connect-cdc-postgres skill vs docs",
+  "skill": "connect-cdc-postgres",
+  "description": "Measures whether the connect-cdc-postgres skill adds value over general knowledge and the published Redpanda Connect docs for the postgres_cdc input: table selection, incremental backfills driven by signals, partitioned tables, backfill pacing, and change metadata.",
+  "test_cases": [
+    {
+      "id": "empty-tables-list-scope",
+      "query": "I set up a Redpanda Connect postgres_cdc input with schema: billing, tables: [] (empty, because I want every table in billing) and stream_snapshot: true so existing rows get backfilled first. What will this config actually capture?",
+      "why": "An empty tables list is accepted: the connector creates its publication FOR ALL TABLES, which replicates every table in every schema and ignores schema, and the initial snapshot is skipped because it is only planned for listed tables. Models guess that the list is required or that schema scopes it.",
+      "verified_against": [
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#tables",
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#stream_snapshot",
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/pglogrepl.go"
+      ],
+      "invariants": [
+        {
+          "name": "empty_tables_means_all_tables_no_snapshot",
+          "failure_condition": "Fails if the answer says the empty list captures only the tables in the billing schema, says the connector rejects an empty tables list at startup (or presents that as a likely outcome in some versions), or says stream_snapshot will backfill existing rows. Passes if it says the publication covers every table in every schema of the database (schema does not limit it) and that no initial snapshot of existing rows is taken; mild hedging is fine."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "partitioned-table-backfill-rejected",
+      "query": "I'm using on-demand incremental backfill with the Redpanda Connect postgres_cdc input. When I signal a backfill of my partitioned events table, the connector logs that the request was rejected and the table is left to replication alone. Other tables backfill fine. What do I need to change so the events table can be backfilled?",
+      "why": "Incremental snapshots reject partitioned tables unless the connector's publication sets publish_via_partition_root = true, because otherwise changes stream under partition names and cannot be deduplicated against the backfill of the parent. Without the docs, models lead with a missing primary key.",
+      "verified_against": [
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#signal_table_name",
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/incremental_snapshot.go"
+      ],
+      "required_patterns": [
+        "publish_via_partition_root"
+      ],
+      "invariants": [
+        {
+          "name": "partition_root_is_the_cause",
+          "failure_condition": "Fails if the answer names a different primary cause (for example a missing primary key on the parent table) as the most likely reason and mentions publish_via_partition_root only as a secondary thing to check. Passes if it identifies the publication lacking publish_via_partition_root = true as the reason the partitioned table is rejected and says to enable it on the publication the connector uses."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "backfill-added-table-without-resnapshot",
+      "query": "I added a new table to the tables list of a running Redpanda Connect postgres_cdc pipeline (stream_snapshot: true) and restarted it. New changes to that table come through, but its existing rows never showed up. How can I backfill just that table without dropping the replication slot and re-snapshotting everything?",
+      "why": "The incremental snapshot backfills one table on request while streaming continues: it needs a signal table (signal_table_name), a snapshot-execute row naming the table, a checkpoint cache, and stream_snapshot turned off because the two are mutually exclusive. Models suggest external one-off copies instead.",
+      "verified_against": [
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#signal_table_name",
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#incremental_snapshot-enabled",
+        "github.com/redpanda-data/connect internal/impl/postgresql/config.go"
+      ],
+      "required_patterns": [
+        "snapshot-execute",
+        "signal_table_name"
+      ],
+      "invariants": [
+        {
+          "name": "stream_snapshot_off_with_incremental",
+          "failure_condition": "Fails if the answer keeps stream_snapshot: true while enabling incremental_snapshot, or presents both enabled together as valid. Passes if it sets stream_snapshot to false (or removes it) when enabling incremental_snapshot, or does not combine them."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "rerun-completed-backfill",
+      "query": "With the Redpanda Connect postgres_cdc input I already backfilled the orders table once by inserting a snapshot-execute row into my signal table. After a data repair I need to backfill orders again, but inserting another snapshot-execute row just logs that the table is skipped. How do I get it to read the table again?",
+      "why": "Backfill progress is stored in the checkpoint cache under incremental_snapshot.checkpoint_cache_key; a table already covered is skipped, and pointing the key at a fresh value (or clearing it) makes the table eligible again. There is no force option in the signal payload.",
+      "verified_against": [
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#incremental_snapshot-checkpoint_cache_key",
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#signal_table_name"
+      ],
+      "required_patterns": [
+        "checkpoint_cache"
+      ],
+      "invariants": [
+        {
+          "name": "reset_checkpoint_key",
+          "failure_condition": "Fails if the answer relies on a force flag or new id in the signal payload, or offers only workarounds outside the incremental snapshot (a separate sql_select pipeline, a new slot, no-op updates). Passes if it says to point incremental_snapshot.checkpoint_cache_key at a fresh key, or to clear the stored progress entry in the checkpoint cache, and then signal the table again."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "idle-db-backfill-pacing",
+      "query": "I enabled incremental snapshots on the Redpanda Connect postgres_cdc input to backfill a large table in a database that is almost idle. The backfill is crawling: rows seem to arrive in bursts with long gaps in between. What controls the pace and what should I tune?",
+      "why": "Each buffered chunk is released on a streamed commit, so on a quiet database the heartbeat paces the backfill; the effective heartbeat is the more frequent of heartbeat_interval and incremental_snapshot.heartbeat_interval, and incremental_snapshot.chunk_size sets rows per release. Models reach for snapshot_batch_size, which only applies to stream_snapshot.",
+      "verified_against": [
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#incremental_snapshot-enabled",
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#incremental_snapshot-heartbeat_interval",
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#incremental_snapshot-chunk_size"
+      ],
+      "required_patterns": [
+        "\\bchunk_size\\b"
+      ],
+      "invariants": [
+        {
+          "name": "heartbeat_paces_backfill",
+          "failure_condition": "Fails if the answer attributes the pace mainly to the output, checkpoint_limit, or snapshot_batch_size, or does not connect the bursts to heartbeats. Passes if it explains that the backfill advances only on streamed commits, so on an idle database each heartbeat releases a chunk, and recommends a shorter incremental_snapshot heartbeat interval (or a more frequent effective heartbeat) and/or a larger chunk size."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "commit-timestamp-metadata",
+      "query": "Downstream of a Redpanda Connect postgres_cdc input, I need the time each change was committed in Postgres, not the time Connect processed it. How do I get that in a Bloblang mapping, and will it also be there for the rows read during the initial snapshot?",
+      "why": "postgres_cdc sets a commit_ts_ms metadata field (Unix milliseconds) on streamed changes, and it is not set for snapshot reads. The key name is not guessable.",
+      "verified_against": [
+        "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#metadata",
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go"
+      ],
+      "required_patterns": [
+        "commit_ts_ms"
+      ],
+      "invariants": [
+        {
+          "name": "absent_on_snapshot_rows",
+          "failure_condition": "Fails if the answer says the commit timestamp metadata is present on rows read during the initial snapshot. Passes if it says commit_ts_ms is not set for snapshot (operation read) rows."
+        }
+      ],
+      "origin": "docs-cited"
+    },
+    {
+      "id": "backfill-signal-payload",
+      "query": "I have a Redpanda Connect postgres_cdc input on schema sales with incremental snapshots and a signal table configured. I want to trigger a backfill of sales.orders and sales.customers. Write the exact INSERT for the signal table, including what goes in each column.",
+      "why": "A snapshot-execute signal's data column is a JSON object with a tables key listing bare table names; names are resolved against the input's configured schema, so a schema-qualified name resolves to a different (unreplicated) table and is rejected. Models without the skill reach for Debezium's execute-snapshot and data-collections with fully qualified names.",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/incremental_snapshot.go",
+        "github.com/redpanda-data/connect internal/replication/signalling.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go"
+      ],
+      "required_patterns": [
+        "\"tables\"\\s*:"
+      ],
+      "invariants": [
+        {
+          "name": "unqualified_table_names",
+          "failure_condition": "Fails if the payload lists schema-qualified names such as sales.orders, or uses Debezium keys such as data-collections. Passes if the data column holds a JSON object whose tables array lists orders and customers without the sales. prefix, resolved against the configured schema."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "rds-iam-auth-config",
+      "query": "I want my Redpanda Connect postgres_cdc input to authenticate to an RDS PostgreSQL instance with IAM database authentication instead of a static password. Show the input config I need and what goes in the DSN.",
+      "why": "postgres_cdc IAM auth is an aws block with enabled: true and an endpoint field naming the RDS hostname the token is signed for; the DSN carries the user but no password. Models guess the aws block but omit endpoint.",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/aws/aws.go"
+      ],
+      "required_patterns": [
+        "\\bendpoint\\s*:"
+      ],
+      "invariants": [
+        {
+          "name": "dsn_without_password",
+          "failure_condition": "Fails if the answer puts a password or a pre-generated token in the DSN as the recommended setup. Passes if the DSN has the user, host, port and database but no password, with the connector generating the IAM token."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "foreign-logical-messages",
+      "query": "Another logical decoding consumer on our Postgres database keeps receiving logical decoding messages (the kind written with pg_logical_emit_message) that I suspect come from our Redpanda Connect postgres_cdc pipeline. What are they, what prefix and payload do they carry so I can filter them in the other consumer, and how do I reduce or stop them?",
+      "why": "postgres_cdc heartbeats are pg_logical_emit_message records with prefix redpanda_connect_<slot_name> and payload {\"type\":\"heartbeat\"}, controlled by heartbeat_interval. The prefix is not guessable; baseline guesses 'heartbeat'.",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/logical_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/heartbeat.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go"
+      ],
+      "required_patterns": [
+        "redpanda_connect_",
+        "heartbeat_interval"
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "signal-table-jsonb-data",
+      "query": "I'm creating the signal table for a Redpanda Connect postgres_cdc input. I'd like to make the data column jsonb instead of text so Postgres validates the JSON when someone inserts a signal. Will that work, and will the connector tell me at startup if the column types are wrong?",
+      "why": "Startup validation of the signal table checks only that columns named id, type and data exist; the data value must decode as a string (TEXT), and a wrong type such as jsonb only fails at runtime when the first signal row is read.",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/logical_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/signaller.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/incremental_snapshot.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go"
+      ],
+      "invariants": [
+        {
+          "name": "names_only_runtime_failure",
+          "failure_condition": "Fails if the answer says startup validates the column types, says jsonb is fine for data, or says it does not know whether types are checked without committing to an answer. Passes if it says startup checks only the column names, that data should be TEXT, and that a wrong type surfaces at runtime on the first signal row."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "signal-rows-downstream",
+      "query": "With the Redpanda Connect postgres_cdc input I've set signal_table_name: rpcn_signal. For auditing, I want every row inserted into rpcn_signal to also be written to my Kafka output like any other change. Do I need to add rpcn_signal to the tables list for that, and what will those messages look like?",
+      "why": "The signal table is implicitly added to the publication and its inserted rows are forwarded downstream as ordinary insert messages with table set to the signal table; listing it in tables as well is rejected at startup. Models borrow Debezium's rule and say to add it to the captured tables.",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/signaller.go"
+      ],
+      "invariants": [
+        {
+          "name": "no_tables_entry_rows_forwarded",
+          "failure_condition": "Fails if the answer says to add rpcn_signal to tables, presents that as harmless or required, or says signal rows are not emitted downstream. Passes if it says not to list it in tables (the config is rejected at startup because the signal table is added to the publication automatically) and that each signal row already arrives downstream as an insert message with table metadata rpcn_signal."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "incremental-snapshot-zero-heartbeat",
+      "query": "Our DBA does not want Redpanda Connect writing anything into the Postgres WAL, so our postgres_cdc input has heartbeat_interval: 0s. Now I want to turn on incremental_snapshot to backfill a table. Will that work with this setting, and if not, why?",
+      "why": "With incremental_snapshot.enabled, a top-level heartbeat_interval of 0s is rejected at startup, because the backfill only advances on a streamed commit and on a quiet table the heartbeat supplies it; without one the backfill would read one chunk and stall silently.",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/config.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go"
+      ],
+      "invariants": [
+        {
+          "name": "rejected_because_commits_pace_backfill",
+          "failure_condition": "Fails if the answer says it will work, hedges between startup rejection and other outcomes without committing, or gives a different reason (for example that watermarks are written to the WAL) as the cause. Passes if it says the config is rejected at startup and explains that the backfill advances only on streamed commits, which heartbeats provide on a quiet table."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "toast-placeholder-after-backfill",
+      "query": "I backfilled a table with a large jsonb column using incremental snapshots in the Redpanda Connect postgres_cdc input. For some rows that were updated during the backfill, the destination ended up with null (or my unchanged_toast_value placeholder) in that column instead of the real value. Why did that happen and how do I avoid it next time?",
+      "why": "During an incremental backfill a buffered row superseded by a live update to the same key is dropped; under the default replica identity that update carries only the unchanged-TOAST placeholder, so the real value never reaches the destination. REPLICA IDENTITY FULL lets the connector read the real value from the old row, and can be reverted after the backfill.",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/incremental_snapshot.go"
+      ],
+      "required_patterns": [
+        "REPLICA\\s+IDENTITY\\s+FULL"
+      ],
+      "invariants": [
+        {
+          "name": "replica_identity_full_primary_fix",
+          "failure_condition": "Fails if the answer does not make REPLICA IDENTITY FULL on the table during the backfill the main preventive fix, or doubts whether the connector uses the old row to recover the value. Passes if it explains the buffered backfill row was dropped in favour of a live update that lacked the TOAST value, and recommends setting REPLICA IDENTITY FULL before backfilling (optionally reverting after)."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "backfill-lock-replication-latency",
+      "query": "While an incremental snapshot backfill of one big table was running in the Redpanda Connect postgres_cdc input, we ran a long ALTER TABLE migration on that table. Replication latency jumped for every table in the pipeline, not just that one, and kept spiking periodically until the migration ended. Why does a lock on one table affect all of them, and what can I tune?",
+      "why": "The incremental snapshot's chunk read shares the goroutine that reads the replication stream, so a chunk blocked on a lock delays replication for every table; incremental_snapshot.retry_cooldown sets how long the backfill waits before retrying after such a transient failure.",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/incremental_snapshot.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/config.go"
+      ],
+      "required_patterns": [
+        "retry_cooldown"
+      ],
+      "invariants": [
+        {
+          "name": "shared_reader_explains_all_tables",
+          "failure_condition": "Fails if the answer attributes the all-table impact mainly to WAL volume, slot ordering or checkpointing, without saying the backfill's chunk read runs on the same reader that consumes the replication stream. Passes if it says the chunk read shares the replication reader, so a blocked read stalls every table, and recommends raising incremental_snapshot.retry_cooldown during the migration."
+        }
+      ],
+      "origin": "targeted"
+    }
+  ]
+}

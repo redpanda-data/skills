@@ -4,3 +4,6 @@ node_modules/
 
 # Subagent-driven-development scratch (local progress ledger)
 .superpowers/
+
+# Eval run output
+evals/results/
