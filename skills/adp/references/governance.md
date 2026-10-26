@@ -1,4 +1,4 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client`, `oauth-provider`, `connection`, `secret`, `--guardrail`, `--data-policies`), `cloudv2 apps/adp-api/internal/seed/` and the `api_key` and `secret_service` protos, `adp-docs modules/control/pages/` (`budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc`, `secrets.adoc`, `tags.adoc`), `modules/connect/pages/` (`data-policies.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`), `modules/gateway/pages/connect-agent.adoc`. Full per-claim mapping and the dated verification log: the `references/governance.md` rows of `SOURCES.md`.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client`, `oauth-provider`, `connection`, `secret`, `--guardrail`, `--data-policies`), `cloudv2 apps/adp-api/internal/seed/` and the `api_key` and `secret_service` protos, `adp-docs modules/control/pages/` (`budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc`, `secrets.adoc`, `tags.adoc`, `kill-switch/`), `modules/connect/pages/` (`data-policies.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`), `modules/gateway/pages/connect-agent.adoc`. Full per-claim mapping and the dated verification log: the `references/governance.md` rows of `SOURCES.md`.
 
 # Agentic Data Plane Governance Reference
 
@@ -24,17 +24,18 @@ Which surface each governance feature uses:
 | Guardrails (create, configure, enable) | none; attach/detach only, via `rpk ai llm-provider update --guardrail` / `--clear guardrail` | **Guardrails** in the sidebar |
 | Access policies (Cedar) | `rpk ai policy` | **Access** in the sidebar (only when access policies are enabled for your organization) |
 | Data policies | `rpk ai mcp-server create/update --data-policies` | MCP server → **Data Policies** tab |
+| Kill switch policies | `rpk ai kill-switch-policy` | Agent → **Govern** tab |
 | Secrets that other resources reference | `rpk ai secret` | **Secrets store** in the sidebar |
 | OAuth clients (inbound), DCR | `rpk ai oauth-client`, `rpk ai oauth-client dcr` | **Integrations setup** → **Inbound clients** |
 | CIMD settings | none | **Integrations setup** → **Inbound clients** → **Self-registration** |
 | OAuth providers (outbound) | `rpk ai oauth-provider` | **Integrations setup** → **Outbound providers** |
 | Your OAuth connections | `rpk ai connection` | **Connections** |
 
-There is no `rpk ai budget`, `rpk ai spending`, or `rpk ai guardrail` command. Do not invent one; direct the user to the UI.
+"None" means none as of this snapshot. Newer releases add command groups, budgets and spending among them, so run `rpk ai --help` before you send a user to the UI, and never invent a group or flag the live help does not show.
 
 ## Budgets
 
-UI only: open **Budgets** in the sidebar.
+In the UI, open **Budgets** in the sidebar.
 
 A budget caps LLM spend per agent over a recurring period. Concepts:
 
@@ -58,7 +59,7 @@ The UI takes and shows budget amounts in **dollars**, and cost reporting and CSV
 
 ## Cost and usage
 
-UI only: open **Cost and usage** in the sidebar. Every LLM call routed through the gateway is recorded and priced automatically (input, output, and cached tokens; cost; request count; provider, model, user, agent context). Prices come from the built-in per-model catalog or per-provider overrides (`rpk ai llm-provider create/update --pricing`, see [gateway-and-providers.md](gateway-and-providers.md)). Pricing is resolved per provider and model, so a call is priced with the rates of the provider that served it, and the same model offered by two providers is priced separately for each. Cost reporting works with no pricing setup at all.
+In the UI, open **Cost and usage** in the sidebar. Every LLM call routed through the gateway is recorded and priced automatically (input, output, and cached tokens; cost; request count; provider, model, user, agent context). Prices come from the built-in per-model catalog or per-provider overrides (`rpk ai llm-provider create/update --pricing`, see [gateway-and-providers.md](gateway-and-providers.md)). Pricing is resolved per provider and model, so a call is priced with the rates of the provider that served it, and the same model offered by two providers is priced separately for each. Cost reporting works with no pricing setup at all.
 
 The **Cost & usage** tab offers a UTC time window (written to the URL, every figure compared with the equal-length previous period), headline spend, request, cost-per-1k and token figures, per-resource spend charts, a CSV export of the table as shown or of every row, and a **Spend breakdown** grouped by **Agents**, **Models**, **Providers**, **Users** or **Tags**.
 
@@ -80,13 +81,7 @@ A guardrail is a bundle of safety policies backed by **Amazon Bedrock Guardrails
 
 ### Create and enable (UI)
 
-1. **Guardrails** → **Create guardrail**. Enter a `Name` (derived ID: lowercase letters, numbers, hyphens, 1-63 chars, immutable).
-2. **Template:** *Start blank*, *Content safety*, *PII protection*, or *Prompt attack defense*. Templates seed editable policies and never remove existing rules.
-3. **Rollout:** *Monitor first* (created disabled; recommended) or *Enforce now* (requires a template).
-4. **Provider:** the Bedrock provider whose credentials and region it inherits. Click **Create guardrail**.
-5. **Policies** tab: switch on each policy, configure it, then **Save and apply** (the save reaches every provider that uses the guardrail). Switching a policy off keeps its configuration.
-6. **Settings** tab: `Message for blocked prompts` and `Message for blocked responses` (each required, 1-500 characters; both default to a generic message; one checkbox reuses the prompt message).
-7. Click **Enable guardrail**. It stays unavailable until at least one saved policy is configured. Enable/disable and edits take effect within about 30 seconds.
+**Guardrails** → **Create guardrail** asks for a name (its derived ID is lowercase letters, numbers and hyphens, 1-63 characters, immutable), an optional template that seeds editable policies, a rollout (*Monitor first*, created disabled and recommended, or *Enforce now*, which needs a template), and the Bedrock provider whose credentials and region it inherits. Then configure policies on the **Policies** tab and **Save and apply** (the save reaches every provider using the guardrail), set the blocked-prompt and blocked-response messages (1-500 characters each) on **Settings**, and click **Enable guardrail**, which stays unavailable until at least one saved policy is configured. Enabling, disabling and edits take effect within about 30 seconds.
 
 ### Attach to an LLM provider
 
@@ -122,6 +117,18 @@ Only these six content-filter categories exist; don't use other category taxonom
 - Streaming output on non-Bedrock providers is evaluated in text batches; if a batch is blocked, the caller gets the blocked message in its place and the stream ends (earlier batches are already delivered).
 - Guardrail activity appears on the request's trace in transcripts; when the gateway evaluated the guardrail itself (non-Bedrock path), the audit log also records the block or mask and names the guardrail. See [observability.md](observability.md).
 - AWS bills Bedrock guardrail evaluation to the AWS account whose credentials the guardrail uses; it is not in ADP cost reporting.
+
+## Kill switch
+
+A **kill switch policy** watches one agent's safety signal and, in Enforce mode, **contains** the agent when that signal spikes. Containment acts at the AI Gateway: it denies the agent's calls to LLM providers, MCP servers and other agents and every A2A call to it, and cancels calls in progress, streams included. The agent's runtime keeps running, the agent cannot release itself, and containment never expires on its own. Manage policies on the agent's **Govern** tab or with `rpk ai kill-switch-policy` (see [rpk-ai.md](rpk-ai.md#kill-switch-policy-subcommands)).
+
+- **Signals.** *Guardrail block rate*, *Data policy deny rate*, or *Evaluation error rate*. A policy can fire only if something on the agent produces its signal (a guardrail on its LLM provider, or an MCP server with data policies), and the UI refuses to save one that has no source.
+- **Detection.** Each signal is evaluated in 5-minute windows, and a window with fewer than 10 calls is skipped. *Burst* fires when one window clearly exceeds the threshold; *Drift* fires on a sustained shift and ignores isolated spikes. In the UI, the Low, Medium (default) and High sensitivity presets set the values, and a backtest replays the agent's last 7 days before you save.
+- **Observe, then Enforce.** New policies start in **Observe**, which only records firings. **Enforce** contains the agent on each firing. *Evaluation error rate* policies are Observe only. A Burst policy in Enforce fires on a single spike, which a prompt injection can cause deliberately, so prefer Drift for Enforce. Promote a policy once its firings match real incidents.
+- **What a caller sees.** HTTP 403 with code `agent_contained`, with a message naming the agent and the reason (for a policy, the policy, its detection method and the rate). MCP clients get JSON-RPC error `-32003`. There is no retry hint.
+- **Release.** The published docs state that a contained agent can't be released from the UI or `rpk ai`, so promote a policy to Enforce only if the agent can stay cut off. Deleting a policy does not release an agent it contained. <!-- TODO(human): the published kill-switch pages say no release path exists in the UI or rpk ai, but the latest CLI help adds an `agent-kill-switch` group described as enabling or releasing containment. Confirm the supported release path before this file describes one. -->
+- **Where it shows.** The Govern tab lists each policy's firings in the last 7 days, and its Recorded firings table marks each one *Recorded only* (Observe) or *Contained* (Enforce). A contained agent's Govern tab carries a red dot, and the Settings tab summarizes coverage as No policy, Observing or Enforcing.
+- **Permissions.** Every built-in template, *Read only* up, can read containment state, policies and firings. Only *Full access* and the Admin role can create, change or delete policies or contain and release an agent; *Standard* leaves them out on purpose, so permission to edit an agent doesn't include permission to release it.
 
 ## Access control (Cedar access policies)
 
@@ -267,7 +274,7 @@ A credential that an LLM provider, MCP server, OAuth provider, OAuth client, tri
 
 Tags are key/value labels that let a policy or a report act on a whole team or environment instead of a list of resource names. Agents, MCP servers, LLM providers, guardrails, budgets and secrets all carry them, and a policy can also read the tags on OAuth clients, OAuth providers and policies.
 
-All six are settable in the UI — an agent under **Advanced** → **Tags** on the create canvas and on its Settings tab, an MCP server, LLM provider, guardrail, budget or secret in the **Tags** section of its create form and its edit form or Settings tab. With `rpk ai`: `--tag` on `agent create` / `update`, `--tags` on `mcp-server` and `llm-provider` `create` / `update`, and `--tag` plus `--remove-tag` on `secret create` / `update`. Guardrails and budgets have no flag, so script those through the UI.
+All six are settable in the UI — an agent under **Advanced** → **Tags** on the create canvas and on its Settings tab, an MCP server, LLM provider, guardrail, budget or secret in the **Tags** section of its create form and its edit form or Settings tab. With `rpk ai`: `--tag` on `agent create` / `update`, `--tags` on `mcp-server` and `llm-provider` `create` / `update`, `--tag` on `secret create` / `update`, and `--remove-tag` on `secret update`. For guardrail and budget tags, use the UI unless `rpk ai --help` shows a group for them.
 
 - **Limits.** At most 50 pairs per resource, values up to 256 characters, both halves required. An entry whose key already exists replaces that key's value.
 - **A write replaces the whole map.** `--tags` on a provider or server update, and a save in the UI, send the full set, so keep the pairs you want. `rpk ai secret update` is the exception: it merges `--tag` onto the stored tags and drops only what `--remove-tag` names.
@@ -277,7 +284,7 @@ All six are settable in the UI — an agent under **Advanced** → **Tags** on t
 
 ## API keys
 
-An **API key** is a long-lived credential that authenticates requests to ADP as **the user who created it**, for cases where a browser sign-in and a short-lived token are awkward: a desktop AI client that reads a key from its configuration, a long-running script, a workstation tool. Every `rpk ai run` session uses one (see [rpk-ai.md](rpk-ai.md#the-session-credential-is-an-adp-api-key)). For a caller that should be a service account rather than a person — an application, a CI job — use OIDC client credentials instead. Keys are managed in the UI only, under **API keys** in the sidebar; there is no `rpk ai` command group for them.
+An **API key** is a long-lived credential that authenticates requests to ADP as **the user who created it**, for cases where a browser sign-in and a short-lived token are awkward: a desktop AI client that reads a key from its configuration, a long-running script, a workstation tool. Every `rpk ai run` session uses one (see [rpk-ai.md](rpk-ai.md#the-session-credential-is-an-adp-api-key)). For a caller that should be a service account rather than a person — an application, a CI job — use OIDC client credentials instead. Keys are managed in the UI, under **API keys** in the sidebar; check `rpk ai --help` before assuming no CLI group covers them.
 
 - **Lifecycle.** A key takes a name (name it after the client *and* the machine holding it, so you can tell which to delete later) and an expiration: 1 day, 7 days, 30 days, 90 days, a date you pick, or Never — the default is 30 days. The value is shown **once**; ADP stores only a hash, so a lost key is replaced, not recovered. The expiration is **fixed at creation**: to change it, create a new key and delete the old. Renaming is API-only.
 - **Review and revoke.** The list shows each key's prefix and last four characters, its expiry, last use, and creator; an expired key stays listed, marked Expired, until deleted. Deleting is permanent and takes effect within a minute. You see your own keys by default; filtering by creator needs the administrative permissions below.
@@ -301,9 +308,9 @@ Transforms:
 - **Argument limits** (request): numeric min/max, string length, RE2 pattern, format, allowed values, array item count. Violations are rejected with an error naming the argument, and the limits are merged into the tool's advertised input schema.
 - **Row filters** (response): name the array path (`$.body`, `$.result`, or `$`) and a predicate such as `@.priority >= 8` or `@ != "restricted"`. Elements the predicate can't evaluate never survive; predicates on the same array conjoin.
 
-**Preview in the UI:** the **Configuration** tab shows the composed effect for the selected tool across all of the server's policies (including unsaved edits); the **Preview** tab runs sample request and response data through the live shaping code, side by side, and shows masked/dropped/added/filtered counts or a "would be denied" banner.
+In the UI, the **Configuration** tab shows the composed effect for one tool across all of the server's policies, and the **Preview** tab runs sample data through the live shaping code before you save.
 
-**A mask hides values, not which records hold them.** On a server that also exposes its data as read-only SQL tables, a caller who can run `execute_query` can filter on a masked column that the table declares filterable, and whether any rows come back tells them whether the value they filtered for exists. Treat a mask as value-hiding only. To stop a caller learning which records exist, withhold `execute_query` from them rather than relying on the mask. The remedy is an access policy that denies `McpServerTool.call` on that one tool, and the single-tool Cedar form is published: see [Deny one tool on one MCP server](#deny-one-tool-on-one-mcp-server). Remember the `when` clause that pins the server, or the deny covers every server with a tool of that name. See [mcp-servers.md](mcp-servers.md#sql-table-exposure-on-a-managed-connector).
+**A mask hides values, not which records hold them.** On a server that also exposes its data as read-only SQL tables, a caller who can run `execute_query` can filter on a masked column the table declares filterable, and whether rows come back tells them whether that value exists. To stop that, deny `McpServerTool.call` on `execute_query` for those callers with [the single-tool Cedar form](#deny-one-tool-on-one-mcp-server), keeping the `when` clause that pins the server, or the deny covers every server with a tool of that name. See [mcp-servers.md](mcp-servers.md#sql-table-exposure-on-a-managed-connector).
 
 Other limits: on legacy SSE self-managed servers, calls matching a policy with response rules are denied. A *Not enforced here* badge means rules save but don't apply on that gateway. The audit log records each matching data policy as Blocked, Masked, or Passed.
 

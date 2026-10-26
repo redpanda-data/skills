@@ -225,7 +225,7 @@ rpk ai llm-provider update openai \
 | `cache_write_5m` | Cache write (5-minute TTL) | 5-minute cache writes |
 | `cache_write_1h` | Cache write (1-hour TTL) | 1-hour cache writes |
 
-Omitted rates keep the catalog default; set at least one rate per model. `--pricing` merges into `--provider-models` by model name, and **on `update` it replaces the whole model list**, so include every model the provider should keep. Cache writes with an unknown TTL always bill at the catalog rate.
+Omitted rates keep the catalog default and an explicit `0` sets a free rate; set at least one rate per model, and name each model only once (a repeat is rejected). `--pricing` merges into `--provider-models` by model name (appending a model that is absent), and **on `update` it replaces the whole model list**, so include every model the provider should keep. Cache writes with an unknown TTL always bill at the catalog rate.
 
 **In manifests and `get -o yaml`**, overrides appear as `provider_models[].custom_pricing` with fields `input_per_million`, `output_per_million`, `cached_input_per_million`, `cache_creation_5m_per_million`, `cache_creation_1h_per_million`, stored in **microcents** per million tokens (not dollars). Prefer `--pricing`, which converts for you; if you hand-write `custom_pricing`, use microcents. See [rpk-ai.md](rpk-ai.md).
 
