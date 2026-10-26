@@ -61,11 +61,9 @@ The UI takes and shows budget amounts in **dollars**, and cost reporting and CSV
 
 In the UI, open **Cost and usage** in the sidebar. Every LLM call routed through the gateway is recorded and priced automatically (input, output, and cached tokens; cost; request count; provider, model, user, agent context). Prices come from the built-in per-model catalog or per-provider overrides (`rpk ai llm-provider create/update --pricing`, see [gateway-and-providers.md](gateway-and-providers.md)). Pricing is resolved per provider and model, so a call is priced with the rates of the provider that served it, and the same model offered by two providers is priced separately for each. Cost reporting works with no pricing setup at all.
 
-The **Cost & usage** tab offers a UTC time window (written to the URL, every figure compared with the equal-length previous period), headline spend, request, cost-per-1k and token figures, per-resource spend charts, a CSV export of the table as shown or of every row, and a **Spend breakdown** grouped by **Agents**, **Models**, **Providers**, **Users** or **Tags**.
+The **Cost & usage** tab shows spend, requests and tokens for a UTC time window, compared with the previous period of the same length, and a **Spend breakdown** by **Agents**, **Models**, **Providers**, **Users** or **Tags**, with CSV export.
 
 On the **Models** tab a row is **one model as served by one provider**, not the model on its own: it names the model and the service that served it, with the provider the call went through and the exact recorded model identifier underneath. A model you reach through two providers gets a row for each, so duplicate-looking model rows are per-route costs rather than a bug, and a call whose provider details were not recorded keeps its row and says the provider configuration is unknown. Filtering spend by a model covers every dated version of it, not only the newest; a name that differs by more than a trailing date stays separate (`gpt-4o-mini` is its own model, as is each regional version of a model served through Amazon Bedrock), and because the breakdown lists each exact recorded identifier, a charted model's spend can exceed the row you charted it from. Synthetic rows: *Direct usage* (calls not made through an agent), *Unattributed* (no user recorded), *Untagged* (no value for the chosen tag key), and *Deleted provider* rows that keep history complete.
-
-The **Activity** tab shows the agents active right now.
 
 ### Cost-allocation tags
 
@@ -223,7 +221,7 @@ ADP enforces fine-grained permissions: every operation checks exactly one permis
 | Writer, Reader | Nothing in ADP. They keep their control-plane and Kafka permissions, so a Writer can manage clusters and topics and still gets permission denied from every agent, MCP server, and LLM provider operation |
 | The Kafka and Schema Registry roles | Nothing in ADP |
 
-There are no built-in invoker or transcript-reader roles for ADP. Grant runtime-only or read-only access with an access policy. A **custom role** holding ADP permissions still works, for when you need a permission bundle bound at a control-plane scope. Until access policies are enabled for an organization, Admin or a custom role is the only way to reach ADP.
+There are no built-in invoker or transcript-reader roles for ADP. Grant runtime-only or read-only access with an access policy. Older organizations may still carry legacy invoker and transcript-reader roles; don't build new grants on them. A **custom role** holding ADP permissions still works, for when you need a permission bundle bound at a control-plane scope. Until access policies are enabled for an organization, Admin or a custom role is the only way to reach ADP.
 
 **Permission families.** The full list with the operation each one gates is in the ADP roles and permissions reference.
 
@@ -312,7 +310,7 @@ In the UI, the **Configuration** tab shows the composed effect for one tool acro
 
 **A mask hides values, not which records hold them.** On a server that also exposes its data as read-only SQL tables, a caller who can run `execute_query` can filter on a masked column the table declares filterable, and whether rows come back tells them whether that value exists. To stop that, deny `McpServerTool.call` on `execute_query` for those callers with [the single-tool Cedar form](#deny-one-tool-on-one-mcp-server), keeping the `when` clause that pins the server, or the deny covers every server with a tool of that name. See [mcp-servers.md](mcp-servers.md#sql-table-exposure-on-a-managed-connector).
 
-Other limits: a *Not enforced here* badge means rules save but don't apply on that gateway. The audit log records each matching data policy as Blocked, Masked, or Passed.
+Other limits: on legacy SSE self-managed servers, calls that match a policy with response rules are denied. A *Not enforced here* badge means rules save but don't apply on that gateway. The audit log records each matching data policy as Blocked, Masked, or Passed.
 
 ## OAuth and identity
 
@@ -349,7 +347,7 @@ Admission modes: `open` (anonymous registration, still rate-limited and capped) 
 
 **Client ID Metadata Documents (CIMD)** — **UI only** (no CLI command): **Integrations setup** → **Inbound clients** → **Self-registration** → *Accept client metadata documents (CIMD)*. The client's `client_id` is an HTTPS URL hosting a JSON metadata document; nothing is persisted and the client does not appear in the client list.
 
-Its settings are *Trusted document domains* (*Any domain*, or *Only these domains*, which also covers subdomains) and *Allowed resources* (the MCP URLs CIMD clients may request tokens for). CIMD works only when the switch is on, *Allowed resources* isn't empty, and the gateway can fetch metadata documents; *Not active on this gateway* means the last condition fails, which only the gateway operator can fix. Resource matching is exact: copy each URL from the server's **Connection** tab, drop trailing slashes, and list a code-mode URL separately. Because CIMD admits clients no admin sees, prefer *Only these domains* and keep *Allowed resources* narrow.
+Its settings are *Trusted document domains* (*Any domain*, or *Only these domains*, which also covers subdomains) and *Allowed resources* (the MCP URLs CIMD clients may request tokens for, or any MCP server on the gateway). **Turning CIMD on sets *Allowed resources* to any server**, so narrow it right away. CIMD works only when the switch is on, *Allowed resources* isn't empty, and the gateway can fetch metadata documents; *Not active on this gateway* means the last condition fails, which only the gateway operator can fix. Resource matching is exact: copy each URL from the server's **Connection** tab, drop trailing slashes, and list a code-mode URL separately. Because CIMD admits clients no admin sees, prefer *Only these domains* and keep *Allowed resources* narrow.
 
 ### OAuth providers (outbound)
 
@@ -366,7 +364,7 @@ User-configured settings: name (positional, immutable), display name, authorizat
 3. **DCR (RFC 7591)**, where the upstream offers a registration endpoint.
 4. **Manual setup**: you register with the upstream yourself.
 
-So a CIMD-only upstream still connects through discovery. A CIMD `client_id` is a public URL, not a secret, and it's the value to give the upstream vendor for an allowlist. Where the deployment doesn't know its own external HTTPS address, discovery falls back to DCR. `get -o yaml` marks such a provider `cimd_client: true` (system-set). This outbound flow is independent of the [inbound](#inbound-client-registration-dcr-and-cimd) setting.
+So a CIMD-only upstream still connects through discovery. A CIMD `client_id` is a public URL, not a secret, and it's the value to give the upstream vendor for an allowlist. Where the deployment doesn't know its own external HTTPS address, discovery falls back to DCR. `rpk ai oauth-provider get <name> -o yaml` marks such a provider `cimd_client: true` (system-set). This outbound flow is independent of the [inbound](#inbound-client-registration-dcr-and-cimd) setting.
 
 #### Slack: whose identity the connection acts as (`slack_token_type`)
 

@@ -159,7 +159,7 @@ Subcommands: `create`, `get`, `list`, `update`, `delete`, `check` (connectivity 
 
 `create` takes the provider name as a **positional argument** and has no `--type` or `--name` flag. The provider type is selected by which provider-config flag group you set — `openai-config`, `anthropic-config`, `google-config`, `bedrock-config`, `openai-compatible-config` or `vertex-config` — and setting flags from two groups is an error. Provider-config flags carry the group as a dotted prefix (`--<group>.<field>`); there are no bare `--api-key-ref` or `--base-url` flags (an unknown flag error suggests the dotted spelling). For each group's credential flags and rules, see [Provider types and credentials](gateway-and-providers.md#provider-types-and-credentials), and read the full flag schema with `rpk ai llm-provider create --help -o json`. Flags that commonly trip writers:
 
-- `--provider-models` (repeatable; empty allows all models), `--tags` and `--pricing` each **replace the whole list or map on `update`**.
+- On `update`, `--provider-models` (repeatable; empty allows all models) and `--pricing` each **replace the provider's whole model list**, and `--tags` replaces the whole tag map.
 - `--enabled` and the `--transcripts.record-*-messages` flags are booleans: true when set, `=false` to turn off. Transcript capture defaults to on.
 - The CLI help says `--openai-config.api-key-ref` can be empty for no-auth endpoints, but that's true only of `openai-compatible-config`: an OpenAI provider needs a key or authorization passthrough.
 - `-f` creates from a manifest (flags override file values), and `--dry-run` prints the request instead of sending it.
