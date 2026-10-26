@@ -216,7 +216,7 @@ Keep the `when` clause: Cedar identifies a tool by name alone, so without it the
 
 On a managed connector that supports user-delegated OAuth, the per-user connection decides **which** stored credential is used, not necessarily **whose identity** the upstream call carries. Slack is the case where these differ, because one Slack authorization can issue both a bot token and a user token. The acting identity is fixed by the OAuth provider's **Slack OAuth token type** (`slack_token_type`), not by who owns the connection:
 
-- **`Bot User OAuth Token`** (the default, and what providers created before the setting existed keep): tools post, read, and react **as the app's bot user**, even on a user-OAuth server.
+- **`Bot User OAuth Token`** (the default): tools post, read, and react **as the app's bot user**, even on a user-OAuth server.
 - **`User OAuth Token`**: tools act **as the person who authorized**. Offered only when the provider uses Slack's standard OAuth v2 authorize and token endpoints, so not on a provider set up by discovery.
 - The setting is chosen at provider creation and is immutable, so serving both identities means two providers (they can share one Slack app). See [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
 

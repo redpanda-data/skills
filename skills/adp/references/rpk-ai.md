@@ -115,8 +115,6 @@ Running as an rpk plugin, some long flags are renamed to avoid colliding with rp
 | `trigger` | `triggers`, `agent-trigger` | Manage an agent's triggers (top-level, not under `agent`) |
 | `version` | (none) | Print version and commit |
 
-The canonical group names are `llm-provider` and `mcp-server`; `llm` and `mcp` remain aliases, so `rpk ai llm create …` and `rpk ai mcp tools list …` still work.
-
 Newer releases keep adding groups, including ones for budgets, spending, traces and the agent network. Before you tell a user a task is UI-only, check `rpk ai --help`, and read that group's own `--help` instead of guessing its flags.
 
 ## `rpk ai version`
@@ -159,31 +157,12 @@ Aliases: `llm-providers`, `llm`, `provider`, `lp`.
 
 Subcommands: `create`, `get`, `list`, `update`, `delete`, `check` (connectivity check), `apply`, `diff`.
 
-`create` takes the provider name as a **positional argument** and has no `--type` or `--name` flag. The provider type is selected by which provider-config flag group you set — `openai-config`, `anthropic-config`, `google-config`, `bedrock-config`, `openai-compatible-config` or `vertex-config` — and setting flags from two groups is an error. Provider-config flags carry the group as a dotted prefix (`--<group>.<field>`); there are no bare `--api-key-ref` or `--base-url` flags (an unknown flag error suggests the dotted spelling). Key flags:
+`create` takes the provider name as a **positional argument** and has no `--type` or `--name` flag. The provider type is selected by which provider-config flag group you set — `openai-config`, `anthropic-config`, `google-config`, `bedrock-config`, `openai-compatible-config` or `vertex-config` — and setting flags from two groups is an error. Provider-config flags carry the group as a dotted prefix (`--<group>.<field>`); there are no bare `--api-key-ref` or `--base-url` flags (an unknown flag error suggests the dotted spelling). For each group's credential flags and rules, see [Provider types and credentials](gateway-and-providers.md#provider-types-and-credentials), and read the full flag schema with `rpk ai llm-provider create --help -o json`. Flags that commonly trip writers:
 
-| Flag | Description |
-|------|-------------|
-| `NAME` (positional) | LLM provider name |
-| `--provider-models stringArray` | Model identifiers; repeatable, bare names (comma-split) or a JSON object. Empty allows all models. Replaces the full list on `update` |
-| `--enabled` | True when set; `--enabled=false` to disable |
-| `--<group>.api-key-ref string` (`openai-config`, `anthropic-config`, `google-config`, `openai-compatible-config`) | Secret-store reference for the API key; setting one selects that provider type. OpenAI and Anthropic need either a key or authorization passthrough; only `openai-compatible-config` may leave it empty for a no-auth endpoint |
-| `--<group>.base-url string` (all six groups) | Override the default endpoint |
-| `--<group>.authorization-passthrough` (`openai-config`, `anthropic-config`, `openai-compatible-config`) | Forward the caller's `Authorization` header upstream instead of a stored key (on Anthropic, enterprise/Max plan OAuth; on the OpenAI family, also the caller's `ChatGPT-Account-ID`); `=false` to disable. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough) |
-| `--bedrock-config.region string` (alias `--region`) | AWS region; required within the Bedrock group |
-| `--bedrock-config.static-credentials.access-key-id-ref` (alias `--access-key-id-ref`), `--bedrock-config.static-credentials.secret-access-key-ref` (alias `--secret-access-key-ref`) | Static AWS credentials; both required within their sub-group |
-| `--bedrock-config.assume-role.role-arn` (alias `--role-arn`), `.external-id`, `.session-name` | STS assume-role credentials; `role-arn` required within its sub-group |
-| `--bedrock-config.api-key.api-key-ref` | Secret-store reference for a Bedrock API key (no `Bearer` prefix); required within its sub-group, and exclusive with the other Bedrock credential modes |
-| `--vertex-config.project`, `--vertex-config.location` | Google Cloud project and the single Vertex AI location the provider serves from (`global`, `us`/`eu`, or a region); both required within the Vertex group |
-| `--vertex-config.credentials-json.credentials-json-ref` | Secret-store reference for the Google service-account key JSON; required within its sub-group |
-| `--transcripts.record-input-messages`, `--transcripts.record-output-messages` | Transcript content capture; `=false` to disable |
-| `--guardrail string` | Guardrail to attach |
-| `--tags stringArray` | `key=value`, repeatable; replaces the full map on `update` |
-| `-f, --filename string` | Manifest to create from (YAML or JSON; `-` for stdin). Flags override file values; `--dry-run` prints the request instead of sending it |
-| `--pricing stringArray` | Per-model pricing override in USD per million tokens; repeatable. Also on `update` |
-
-The CLI help for `--openai-config.api-key-ref` says it can be left empty for no-auth endpoints. That applies only to `openai-compatible-config`: an OpenAI provider needs an API key or authorization passthrough, and create is rejected otherwise.
-
-Authorization passthrough is a flag on the `openai-config`, `anthropic-config` and `openai-compatible-config` groups; Google Gemini API, Vertex AI and Bedrock always use stored credentials. A new provider type or field shows up as a new flag group or dotted flag, not as a new value of a `--type` flag.
+- `--provider-models` (repeatable; empty allows all models), `--tags` and `--pricing` each **replace the whole list or map on `update`**.
+- `--enabled` and the `--transcripts.record-*-messages` flags are booleans: true when set, `=false` to turn off. Transcript capture defaults to on.
+- The CLI help says `--openai-config.api-key-ref` can be empty for no-auth endpoints, but that's true only of `openai-compatible-config`: an OpenAI provider needs a key or authorization passthrough.
+- `-f` creates from a manifest (flags override file values), and `--dry-run` prints the request instead of sending it.
 
 `update` adds `--clear <field-path>` (add a field to the update mask with it unset) and `--update-mask` (override the inferred mask); `update` with no changed flags is an error.
 

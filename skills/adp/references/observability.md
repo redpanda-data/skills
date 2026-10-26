@@ -46,9 +46,9 @@ In the UI: **Traces** under **Observability** in the sidebar (check `rpk ai --he
 | Running | The root span is still open, or the trace has no root span and spans arrived in the last 15 minutes |
 | Incomplete | No root span and no span in the last 15 minutes, so the record is partial |
 
-A trace that only the gateway saw is never Running or Incomplete, because the gateway records each call after it serves it; its Agent cell stays empty unless an agent made the call. **Cost** covers the run's model calls in US dollars, as the gateway priced each; a tool call carries no cost of its own. Under $0.0001 it reads `<$0.0001`, an **asterisk** means only some of the run's calls could be priced, and a run whose calls could not be priced at all shows no cost.
+A gateway-only trace is never Running or Incomplete. **Cost** covers the run's model calls only, in US dollars; an **asterisk** means only some calls could be priced, and no cost means none could.
 
-**Span kinds** (the waterfall badges) are `AGENT` (one run or turn), `SUBAGENT` (a run handed off), `LLM` (one model call), `TOOL` (one tool call), `GATEWAY` (what the gateway saw of a call it served, nested under the agent's own call), `COMPACTION` (a [context-compaction](#context-compaction) pass) and `SPAN` (anything else). A span's tabs follow its kind — a model call carries tokens, cost, messages and offered tools; a tool call or hand-off its input and output; a gateway span the caller, route, HTTP status and timings — and every readable span also carries its OpenTelemetry attributes and the raw stored span. A failed span reports its error code and message on the tab that holds its content — **Messages** for a model call, **Input & output** for a tool call or a subagent hand-off, **Gateway** for a gateway span — so an agent-run span's **Overview** is not where to look for it; a call the gateway refused shows what it rejected, such as a budget block or a model policy does not allow. Spans that arrive before the span opening the run sit under a stand-in labeled **Run in progress**, or **Run incomplete** once the run stopped sending spans.
+**Span kinds** are `AGENT`, `SUBAGENT`, `LLM`, `TOOL`, `GATEWAY` (nested under the agent's own call), `COMPACTION` (a [context-compaction](#context-compaction) pass) and `SPAN`, and each kind has its own tabs. A failed span shows its error on the tab holding its content (**Messages** for a model call, **Input & output** for a tool call or hand-off, **Gateway** for a gateway span), not on an agent-run span's **Overview**.
 
 Traps worth knowing:
 
@@ -98,13 +98,12 @@ Filter flags (all optional, ANDed):
 
 **Agents > <agent> > Transcripts** tab. Transcripts are per agent; there is no cross-agent transcripts view.
 
-- List columns include Conversation, Started, Duration, Turns, Status (`Completed` / `Error` / `Running`), and Tokens. Click Started, Duration, Turns, or Tokens to sort the whole list (not just the page). The sort is kept in the URL, so a sorted view is shareable.
-- Filters: a search box (conversation ID or title, case-insensitive, whole list) and a status dropdown. The list is paged, newest first, with a refresh control.
-- Open a row for the detail view: a summary header (status, start, duration, turn count, total tokens) and a **Chat** / **Detailed** toggle. **Detailed** shows one card per turn with its tool calls, latency, LLM and tool call counts, and input/output tokens. Click a tool call to open it in a dialog with the **Arguments** the agent sent, the **Result** it got back, and the error when the call failed. The dialog opens for **every** tool call and names whichever of those the transcript did not record, so "nothing here" means not recorded, not nothing happened. A delegation row is the exception: it opens the delegated turn instead (see below).
+- The list sorts and filters the whole list (search matches conversation ID or title only). A row opens a **Chat** / **Detailed** view; **Detailed** shows one card per turn with its tool calls, latency and tokens.
+- A tool call's dialog shows the **Arguments**, **Result** and any error, and names whatever the transcript didn't record, so an empty field means not recorded, not that nothing happened.
 - A failure shows on the failing turn (a _Turn failed_ notice with the error message, and the error code when one was recorded) or tool call (error status), and the conversation-level status reads `Error`. A conversation also carries a notice above it collecting every error it recorded — see [Errors recorded in a conversation](#errors-recorded-in-a-conversation).
 - A transcript stays `Running` while any turn is unfinished. That includes a process killed mid-run whose spans never finished arriving.
 - MCP tool calls are labeled with the name the model called, which includes the server (for example, `servicenow__lookup_user`).
-- A delegation to a subagent is **not** shown as an ordinary tool call: it gets its own row carrying the subagent's name (not a tool name) with a *Delegated* badge, the delegation's duration, and the delegated turn's input and output tokens. Click it to open the delegated turn: its model, latency, call counts and tokens, the message it received, the response it returned (with its own failure notice when it failed), and its own tool calls. The delegating call's **Arguments** and **Result** sit collapsed under the turn, only when the transcript recorded them. A delegated turn that has not reached the transcript yet says so in place of the turn. Delegation is recognized from the subagent's own execution, not the tool's name, and conversations recorded before transcripts kept that link show delegations as ordinary tool calls.
+- A delegation to a subagent gets its own row with the subagent's name and a *Delegated* badge, not an ordinary tool-call row. Open it to see the delegated turn: the message it received, its response, its own tool calls and tokens.
 
 **Finding the slow step:** the Detailed view gives a turn's total latency and each tool call's duration, but not each model call's duration. Subtract tool time from turn latency. What remains is model time.
 
@@ -150,7 +149,7 @@ Access: needs audit log read permission (`dataplane_adp_auditlog_list`). The Adm
 
 ### Read the audit log from the CLI
 
-`rpk ai auditlog` (aliases `audit-log`, `audit`) has two read-only subcommands: `list` searches the log, `get` reads one entry in full. Both need `dataplane_adp_auditlog_list`, the same permission as the UI page, and both exit **3** when you are not authenticated or lack it. If `rpk ai auditlog` is not recognized, the installed plugin predates the group — run `rpk ai upgrade`.
+`rpk ai auditlog` (aliases `audit-log`, `audit`) has two read-only subcommands: `list` searches the log, `get` reads one entry in full. Both need `dataplane_adp_auditlog_list`, the same permission as the UI page, and both exit **3** when you are not authenticated or lack it.
 
 ```bash
 # Everything wholly or partly denied in the last hour
@@ -193,7 +192,7 @@ The filter flags mirror the UI's columns and field keys (`--actor`, `--agent`, `
 
 ### Reading the table (UI)
 
-Default view: last 24 hours, newest first, loads more as you scroll. Default columns are Time (RFC 3339, UTC), Actor, Subsystem (such as MCP Gateway, LLM proxy, A2A proxy, Agents, Access control, Spending, or `Management API (legacy)` for services that declare none), Action (for example `tools/call`, or an LLM request path), Resource name, and Outcome. The **Fields** panel adds more columns (the delegation, resource, policy, status and source fields among them). Column choice is stored per browser, not in the URL.
+Default view: last 24 hours, newest first. The default columns are Time (UTC), Actor, Subsystem, Action, Resource name and Outcome, and the **Fields** panel adds more.
 
 **Outcome** (as shown, and the values the `outcome` filter takes):
 
@@ -204,16 +203,14 @@ Default view: last 24 hours, newest first, loads more as you scroll. Default col
 | Partial | A call that decided on several resources allowed some and denied others |
 | Denied | Refused, either by access policy or by a guardrail or data policy that ran after access was granted |
 
-"Denied" is not the same as "no permission." When the caller has access but the call reads Denied, open the event: an Access row of Permit plus a Guardrail or Data policy row of Blocked means the later check stopped it. To find all refusals, filter on both `outcome=denied` and `outcome=partial`. Sorting by Outcome orders Allowed, Masked, Partial, Denied, so a descending sort puts denials on top. The timeline's denied percentage counts Partial as denied.
+"Denied" is not the same as "no permission." When the caller has access but the call reads Denied, open the event: an Access row of Permit plus a Guardrail or Data policy row of Blocked means the later check stopped it. To find all refusals, filter on both `outcome=denied` and `outcome=partial`. The timeline's denied percentage counts Partial as denied.
 
 Use **Status** for whether the operation succeeded overall. **Activity** is Create / Read / Update / Delete / Other (a tool call reads Other). **Event class** is API Activity (an authorization decision) or Entity Management (a configuration change, with before/after versions in the detail pane).
 
 ### Filtering (UI)
 
-- Search bar: a bare phrase matches the event message (case-insensitive, one phrase at a time). `field=value` includes, `field!=value` excludes, and `sort=<field>` or `sort=<field> desc` reorders. Field keys can differ from column labels (`operation` for Action, `deciding_policy` for Policy, `operation_status` for Status). Chips on different fields AND together; chips on the same field OR together.
-- Fields panel: expand a field to see its most common values with call counts and denied counts. Click to filter, or use the exclude icon to hide. Activity, Event class, Status, All policies, and Groups take a typed value only.
-- Time range: presets from Last 15 minutes to Last 14 days, or a custom range (UTC by default, switchable to local time). Click or drag on the timeline to zoom.
-- Every filter, sort, and the open event are in the URL, so views are shareable. Every field sorts except All policies and Groups.
+- Search bar: a bare phrase matches the event message; `field=value` includes, `field!=value` excludes, and `sort=<field> desc` reorders. Field keys can differ from column labels (`operation` for Action, `deciding_policy` for Policy, `operation_status` for Status). Chips on different fields AND together; chips on the same field OR together.
+- Filters, sort and the open event are all in the URL, so a view is shareable.
 
 Example: MCP authorization failures in the last hour: `outcome=denied`, `subsystem=mcp-gateway`, range Last hour.
 
@@ -221,16 +218,7 @@ Example: MCP authorization failures in the last hour: `outcome=denied`, `subsyst
 
 One row is one call. A call that decided on several resources (a list filtered by a policy, for example) shows Resource name as `Multiple resources (N)`, and an Outcome of Partial when some were denied. Such a call records **one decision per resource**, and those decisions open in the table, not in the detail pane: open the event, then click **View individual decisions**.
 
-The table then lists only that call's decisions, denied first, under a bar that names the call and carries **Clear call filter**. While that filter is on:
-
-- The table covers the call's whole recorded history rather than the selected window; the range control reads All time and the timeline is hidden.
-- Sorting is off, because the decisions already come denied first. The search bar refuses a `sort=` filter and says so.
-- The Fields panel counts values by call, not by decision, so narrow the decisions by typing `field=value` in the search bar.
-- `outcome=partial` describes a call rather than one decision; filter by `allowed`, `denied`, or `masked` instead.
-
-Click a decision to read it in the pane, which heads it *Individual decision*. **Clear call filter** returns to the events you came from, with the same window, rows, and open event.
-
-Outcome tooltips: on a call that decided on a single resource, hover over the outcome to see the policy that decided it. A Partial call's tooltip reports how many of its resources were allowed, and the policy behind each one sits on that resource's individual decision.
+The table then lists only that call's decisions, denied first, across the call's whole history (not the selected window), until you click **Clear call filter**. In that view, don't filter on `outcome=partial`, which describes a call rather than one decision; filter by `allowed`, `denied` or `masked`, and narrow by typing `field=value` (the Fields panel counts by call, not by decision).
 
 ### Delegation (on-behalf-of)
 
@@ -238,7 +226,7 @@ When an agent makes the call, the Actor cell shows the agent's name and the acco
 
 ### Inspecting an event (UI)
 
-Expand a row, then **Open event details**. The pane shows the actor, groups, outcome, invoker, agent, subsystem, service, operation, resource, correlation ID, source IP, status detail, and a **Policies** section in evaluation order: **Access** (Permit/Deny), **Guardrail** (Blocked/Masked), and **Data policy** (Blocked/Masked/Passed), each linking to the policy. Depending on the action, the pane also shows Configuration change (before/after), Request, and Response sections. On a call that decided on more than one resource the pane carries the event summary and the **View individual decisions** link only: the Policies, Configuration change, Request, and Response sections belong to each individual decision (see [Grouped calls](#grouped-calls)). If part of an event fails to load, the affected rows read Unavailable and the pane offers a single **Retry**.
+Expand a row, then **Open event details**. Its **Policies** section lists the checks in evaluation order: **Access** (Permit/Deny), **Guardrail** (Blocked/Masked) and **Data policy** (Blocked/Masked/Passed). Depending on the action, the pane also has Configuration change (before/after), Request and Response sections. For a grouped call, those sections belong to each individual decision (see [Grouped calls](#grouped-calls)).
 
 - A guardrail appears only when the AI Gateway evaluated it itself. A guardrail Bedrock enforces inside the model call is not attributed here.
 - Captured values may be `[REDACTED]`, truncated (bodies are cut at 16 KB), or absent. An empty field does not mean no activity. Treat outcome and policy as the authoritative record.

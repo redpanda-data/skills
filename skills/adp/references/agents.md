@@ -77,7 +77,6 @@ Manifest fields under `managed.spec` (also the shape `--spec-file` accepts). The
 | `subagents` | no | Map keyed by subagent name, up to 16 entries (see [Subagents](#subagents)) |
 | `agent_card` | no | A2A discovery metadata (see [A2A](#a2a-endpoint-and-agent-card)) |
 | `reasoning.effort` | no | Provider-owned string; omit for the provider default (see [Reasoning effort](#reasoning-effort)) |
-| `reasoning_effort` | no | **Deprecated**; use `reasoning.effort` |
 
 There is no `tools` field on an agent: agents reach tools only through `mcp_servers`.
 
@@ -117,14 +116,14 @@ A retired model disappears from the provider's catalog, but an agent already usi
 
 **Validation.** When an effort is set, every effective model pairing must accept it:
 
-- A model that does not list the value fails with `model "…" does not support reasoning effort <value>`; several offending models are reported together. The error addresses whichever field you wrote (`agent.managed.spec.reasoning.effort` or the deprecated `agent.managed.spec.reasoning_effort`).
+- A model that does not list the value fails with `model "…" does not support reasoning effort <value>`; several offending models are reported together.
 - On an **OpenAI-compatible** provider any explicit effort is rejected; leave it unset.
 - A model the gateway cannot resolve is an invalid-argument error; a lookup that cannot complete fails as unavailable (retry).
 - Updates check only the pairings they change. Leaving the effort unset is always accepted.
 
 **Changing the agent's model from the UI clears an effort the new model will not take.** On the **Settings** tab, picking a new model for the agent itself keeps the stored effort only if that model's catalog capabilities list it; otherwise the effort falls back to the provider default and the save goes through, so a model change is never blocked by a level the new model does not offer. Switching the agent to an OpenAI-compatible provider always clears it. This is the one path that drops an effort silently — re-apply the manifest if you want a specific level on the new model, and re-read the agent rather than assuming the level survived. A **subagent's** model override is not adjusted this way: pick a subagent model that does not accept the agent's effort and the save is still rejected with the validation error above.
 
-**Deprecated `reasoning_effort`.** Older manifests may set the closed `reasoning_effort` enum. It is still accepted and kept in step with `reasoning.effort` (`reasoning.effort` wins on read; a provider value the enum cannot represent leaves the enum unspecified). Setting the two to different values fails with `reasoning effort fields must not conflict`. Use `reasoning.effort` for new work.
+An older manifest's deprecated `reasoning_effort` is still accepted. Write `reasoning.effort`, and never set both to different values.
 
 ## Subagents
 
