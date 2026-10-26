@@ -1,4 +1,4 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model` groups), `cloudv2 apps/rpai/internal/cmd/llm/` (`check`), `cloudv2 apps/rpai/internal/cmd/model/` (`list`, `get`), `adp-docs modules/gateway/pages/configure-provider.adoc`, `adp-docs modules/gateway/pages/overview.adoc`. Also `cloudv2 pkg/apikey/apikey.go`, `cloudv2 pkg/apikey/apikeyauth/apikeyauth.go`, the passthrough handlers in `cloudv2 apps/aigw/internal/llm/provider/{openai,anthropic}/`, and `adp-docs modules/gateway/pages/connect-agent.adoc`. Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model` groups), `cloudv2 apps/rpai/internal/cmd/llm/` (`check`), `cloudv2 apps/rpai/internal/cmd/model/` (`list`, `get`), `adp-docs modules/gateway/pages/configure-provider.adoc`, `adp-docs modules/gateway/pages/overview.adoc`. Also `cloudv2 pkg/apikey/apikey.go`, `cloudv2 pkg/apikey/apikeyauth/apikeyauth.go`, the passthrough handlers in `cloudv2 apps/aigw/internal/llm/provider/{openai,anthropic}/`, `adp-docs modules/gateway/pages/connect-agent.adoc`, `adp-docs modules/gateway/pages/vertex-setup.adoc` (the Gemini Enterprise Agent Platform setup guide), and `adp-docs modules/control/pages/secrets.adoc` and `tags.adoc`. Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
 
 # AI Gateway, LLM Providers, and Models Reference
 
@@ -35,13 +35,13 @@ In the UI, providers live under **LLM providers** in the sidebar (the **AI Gatew
 - `NAME` is the resource ID: starts with a lowercase letter, lowercase letters/digits/hyphens, ends alphanumeric, at most 63 characters, **immutable**. It is the `<provider-name>` in the proxy URL. The UI derives it from the display name without showing it on the create form.
 - The provider **type is immutable** after creation. In the CLI, the type is selected by which flag group you set (`--openai-config.*`, `--anthropic-config.*`, `--google-config.*`, `--bedrock-config.*`, `--openai-compatible-config.*`, `--vertex-config.*`); setting flags from two groups is an error.
 - `update` with no field flags fails: `Error: no fields to update; pass at least one field flag or -f`.
-- `--provider-models` and `--tags` **replace** the full list/map on update.
+- `--provider-models` and `--tags` **replace** the full list/map on update. Tags are editable in the UI too, in the **Tags** section of the create form and of the provider's **Settings** tab; see [governance.md](governance.md#tags-on-adp-resources).
 - A missing provider returns `Error: LLM provider not found (use 'rpai llm-provider list' to see what's available)` with `Code: not_found`.
 - A disabled provider rejects all requests to its proxy URL; its configuration is kept.
 
 ## Provider types and credentials
 
-Every credential field is a **secret-store reference** (an `UPPER_SNAKE_CASE` key name such as `OPENAI_API_KEY`), never the secret value. The UI create form can also store a new key inline (**Bring a new API key reference** → Key name + API key → **Save key**).
+Every credential field is a **secret-store reference** (an `UPPER_SNAKE_CASE` key name such as `OPENAI_API_KEY`), never the secret value. The UI create form can also store a new key inline (**Bring a new API key reference** → Key name + API key → **Save key**). Manage the stored values themselves with `rpk ai secret` or under **Secrets store**; a rotated key reaches an OpenAI, Anthropic or Google provider within about five minutes and a Bedrock provider on its next request, with no edit to the provider. See [governance.md](governance.md#secrets).
 
 | Type (UI label) | CLI flag group | Credential |
 |---|---|---|
@@ -58,9 +58,14 @@ Short aliases exist for some Bedrock flags (`--region`, `--access-key-id-ref`, `
 
 **Vertex AI serves catalogued models from one location.** A Vertex provider accepts catalogued models only, and a create is rejected when the chosen `location` does not serve a requested model; the error names the locations that do (for example `model "<model>" is not served at location "europe-west4" (served at: global, us, eu)`). Because `location` is a property of the provider rather than of a model, models served in disjoint locations need separate providers. Read the per-model locations live rather than hardcoding them.
 
-<!-- TODO(human): the Vertex type's UI label is settled and published (the docs state that the UI lists the Vertex AI type as Gemini Enterprise Agent Platform), but the published provider-type page's own table still lists only OpenAI, Anthropic, Google Gemini API, AWS Bedrock and OpenAI-compatible, and no UI walkthrough is written for this type. The CLI surface above is from the CLI's own help. Confirm the intended maturity with the product team, then either write the UI side or mark the type CLI-only. -->
+**The Gemini Enterprise Agent Platform type is a full UI type too**, with its own tile, credential section and setup guide, and a managed agent can run on one. What that path needs beyond the flags above:
 
-**Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google Gemini API rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both; Vertex AI requires its project, location and credentials reference.
+- The service account whose key you store needs the `roles/aiplatform.user` role on the project. Claude models additionally need enabling in the GCP project and organization before they answer at all, so a Claude model can be selected here and still fail upstream until that is done.
+- **The model picker follows the location, so choose the location first.** It offers only the models served there, preselects that location's Gemini models and leaves Claude models unselected; changing the location resets the selection to the new location's Gemini models. Select only the Claude models you actually enabled.
+- Upstream `404 NOT_FOUND`, `403 PERMISSION_DENIED`, `400 FAILED_PRECONDITION` and `429` from this type come from the GCP project's own setup — the service-account role, Model Garden enablement, an organization policy, or the location — not from ADP's configuration.
+- In the provider **Playground**, this type serves Google and Anthropic models only, told apart by the publisher the model catalog records. A model from another publisher, or one the catalog does not know, is refused with the reason shown and no cURL command offered.
+
+**Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google Gemini API rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both; Vertex AI requires its project, location and credentials reference, and rejects a create — or an update that changes the models or the location — naming a model that location does not serve. Create and rotate the referenced secrets with `rpk ai secret` or under **Secrets store** in the UI; see [governance.md](governance.md#secrets).
 
 **Bedrock API key mode.** Instead of signing requests with SigV4, the gateway sends a stored Amazon Bedrock API key as a bearer token. Choose it when you want one credential and no IAM access key pair.
 

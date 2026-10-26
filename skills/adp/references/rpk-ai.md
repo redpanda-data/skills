@@ -1,4 +1,4 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help output, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (auth, env, connection, trigger, run, llm pricing), `cloudv2 apps/rpai/internal/gitops/`, `cloudv2 apps/rpai/.goreleaser.yaml` and publish manifest (platforms, no FIPS build), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/` (install path, lifecycle errors), `adp-docs modules/cli/`. Also `cloudv2 apps/rpai/internal/cmd/run/` (`cmd.go`, `apikey.go`, `claude.go`, `codex.go`, `agy.go`) and `adp-docs modules/connect/pages/coding-agents.adoc`. Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help output, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (auth, env, connection, trigger, run, llm pricing), `cloudv2 apps/rpai/internal/gitops/`, `cloudv2 apps/rpai/.goreleaser.yaml` and publish manifest (platforms, no FIPS build), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/` (install path, lifecycle errors), `adp-docs modules/cli/`. Also `cloudv2 apps/rpai/internal/cmd/run/` (`cmd.go`, `apikey.go`, `claude.go`, `codex.go`, `agy.go`) and `adp-docs modules/connect/pages/coding-agents.adoc`; `cloudv2 apps/rpai/internal/cmd/secret/`, `apps/rpai/internal/cmd/docs/` and `apps/rpai/internal/updatecheck/` with `adp-docs modules/cli/pages/index.adoc` and `modules/control/pages/secrets.adoc` (the `secret` and `docs` groups and the update notice). Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
 
 # rpk ai CLI Reference
 
@@ -37,6 +37,8 @@ Always prefer live `--help` output over this document when they disagree.
 Install path: `~/.local/bin/.rpk.managed-rpai`.
 
 Platforms: `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`, `windows-amd64`, `windows-arm64`. There is no FIPS build, so a FIPS-only environment cannot install a FIPS-validated `rpk ai`.
+
+**The CLI announces its own updates.** While a command runs, the plugin checks in the background — at most once a day — whether a newer version is published, and prints a notice on **stderr** naming that version and the command that upgrades it. The notice also follows a command that failed or printed help, because an outdated CLI often explains those results. It never delays a command: a check still running when the command ends is canceled and retried an hour later. It appears only when **both** stdout and stderr are terminals, so a script, a pipe, an `-o json` capture, and an agent never see it, and it is skipped in continuous integration. Set `RPAI_NO_UPDATE_CHECK=1` to turn it off.
 
 ## Authentication
 
@@ -103,6 +105,7 @@ Running as an rpk plugin, some long flags are renamed to avoid colliding with rp
 | `auth` | (none) | `login`, `logout`, `token`, `status` |
 | `completion` | (none) | Generate a shell autocompletion script |
 | `connection` | `connections`, `conn` | Manage your own OAuth connections: `list`, `revoke <provider-name>` |
+| `docs` | (none) | Read the published ADP documentation from the terminal; needs no sign-in (see [`docs`](#docs-read-the-product-documentation)) |
 | `env` | `environment` | Manage environments: `add`, `list`, `use`, `show`, `rename`, `delete` |
 | `llm-provider` | `llm-providers`, `llm`, `provider`, `lp` | Manage LLM providers |
 | `mcp-server` | `mcp-servers`, `mcp` | Manage MCP servers |
@@ -111,6 +114,7 @@ Running as an rpk plugin, some long flags are renamed to avoid colliding with rp
 | `oauth-provider` | `oauth-providers`, `oauth`, `op` | Manage OAuth providers |
 | `policy` | `policies`, `pol` | Manage Cedar authorization policies |
 | `run` | (none) | Launch Claude Code, Codex or Antigravity CLI routed through the AI Gateway |
+| `secret` | `secrets`, `sec` | Manage the secrets other resources reference by ID (see [`secret`](#secret-subcommands)) |
 | `trigger` | `triggers`, `agent-trigger` | Manage an agent's triggers (top-level, not under `agent`) |
 | `version` | (none) | Print version and commit |
 
@@ -228,6 +232,40 @@ Aliases: `oauth-providers`, `oauth`, `op`. Subcommands: `create`, `get`, `list`,
 Aliases: `policies`, `pol`. Subcommands: `create`, `get`, `list`, `update` (Cedar body or metadata), `delete`, `apply`, `diff`. See [governance.md](governance.md).
 
 `create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in a single command. That is how you give a newly created agent its first policy, because none is written for it at create time. See [governance.md](governance.md#give-a-new-agent-access).
+
+## `secret` subcommands
+
+Aliases: `secrets`, `sec`. Subcommands: `create <id>`, `get <id>`, `list` (alias `ls`), `update <id>`, `delete <id>` (alias `rm`). Every verb takes the bare ID (`OPENAI_API_KEY`) or the `secrets/<id>` resource name. Secret values are **write-only**: no command prints one, and `get` and `list` return IDs, tags and audit fields only. For what a secret is, who may manage one, and when a rotated value takes effect, see [governance.md](governance.md#secrets).
+
+```bash
+printf %s "$OPENAI_API_KEY" | rpk ai secret create OPENAI_API_KEY --value-file=-   # stdin
+rpk ai secret create GITHUB_TOKEN --value-file ./token.txt --tag team=ai
+rpk ai secret update OPENAI_API_KEY --tag env=prod --remove-tag stale              # value kept
+rpk ai secret list --tag team=ai
+rpk ai secret delete OPENAI_API_KEY --etag <etag>
+```
+
+- **Write `--value-file=-`, with the equals sign, to read from stdin.** Under `rpk ai`, a bare `-` passed as a separate argument is dropped before it reaches the plugin, so `--value-file -` fails with an argument error instead of reading the pipe. The same applies to `--cedar-file=-` on `rpk ai policy`.
+- `--value` takes the value inline, which leaves it in your shell history and the process list; prefer `--value-file`. The two are mutually exclusive, and one trailing newline is stripped from a file or stdin.
+- `update` changes only what you pass: omit the value to keep the stored one, `--tag KEY=VALUE` adds or overwrites a tag, `--remove-tag KEY` drops one. A tag change reads the secret first and writes the merged set fenced by the etag it read, so a concurrent edit fails the update rather than being overwritten. `delete` takes an optional `--etag`.
+- `list` ANDs `--filter` (AIP-160 over `name`, `created_by`, `updated_by`, `created_at`, `updated_at`, `tags.KEY`, `tags:KEY`) with `--tag`, then `--name-contains` narrows to IDs holding that substring, case-insensitively.
+- **Delete does not check references.** An LLM provider, MCP server, OAuth client, trigger or agent that still names the secret keeps its reference and fails at its next call. Repoint those first.
+
+## `docs`: read the product documentation
+
+`rpk ai docs [path]` reads the published ADP documentation in the terminal, and `rpk ai docs search <query...>` searches it. Both work with **no sign-in and no selected environment**, so they are safe to reach for before `rpk ai auth login`.
+
+```bash
+rpk ai docs                     # searchable picker in a terminal; an index when piped
+rpk ai docs cli                 # a page by its documentation path
+rpk ai docs search "oauth"      # --limit 1-100 (default 20)
+rpk ai docs cli --url           # print the URL instead (needs no network)
+```
+
+- Flags: `--web` (open in a browser), `--url` (print the URL), `--no-pager`, `--non-interactive` (plain Markdown, no picker or pager — the one to use in scripts), `--refresh` (require a fresh fetch).
+- `search` matches page **titles, paths and descriptions, not page bodies**, so a phrase that appears only inside a page does not find it.
+- Responses are cached for an hour. After a temporary failure the command prints the cached copy with a warning, marked `stale=true` under `-o json` / `-o yaml`; `--refresh` refuses the fallback instead.
+- The documentation tracks the published site, not the installed CLI, so confirm flags with `--help` rather than from a page.
 
 ## `trigger` subcommands
 

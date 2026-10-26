@@ -1,4 +1,4 @@
-Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc` (roles and permissions); adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against `cloudv2` source (2026-09-21). Also `cloudv2 proto/public/cloud/redpanda/api/adp/v1alpha1/api_key.proto`, `cloudv2 pkg/apikey/apikey.go`, `cloudv2 apps/adp-api/internal/seed/`, and `adp-docs modules/gateway/pages/connect-agent.adoc` (API keys). Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
+Source: cloudv2 `apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-client` incl. `revoke-tokens`, `oauth-provider`, `connection`, `llm-provider --guardrail`, `mcp-server --data-policies`); adp-docs `modules/control/pages/budgets.adoc`, `cost-usage.adoc`, `cost-allocation-tags.adoc`, `guardrails/overview.adoc`, `guardrails/create-guardrail.adoc`, `guardrails/types-reference.adoc`, `access-policies.adoc`, `permissions-overview.adoc`, `permissions-reference.adoc` (roles and permissions); adp-docs `modules/connect/pages/data-policies.adoc`, `remote-mcp-clients.adoc` (DCR CLI, CIMD UI, revoke tokens), `oauth-providers.adoc` (Slack OAuth token type, `--slack-token-type`); Slack token-type behavior previously verified against `cloudv2` source (2026-09-21). Also `cloudv2 proto/public/cloud/redpanda/api/adp/v1alpha1/api_key.proto`, `cloudv2 pkg/apikey/apikey.go`, `cloudv2 apps/adp-api/internal/seed/`, and `adp-docs modules/gateway/pages/connect-agent.adoc` (API keys); `cloudv2 proto/public/cloud/redpanda/api/adp/v1alpha1/secret_service.proto`, `cloudv2 apps/rpai/internal/cmd/secret/` and `adp-docs modules/control/pages/secrets.adoc` (the secret store); `adp-docs modules/control/pages/tags.adoc` and `modules/reference/pages/limits.adoc` (tags on resources). Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
 
 # Agentic Data Plane Governance Reference
 
@@ -16,6 +16,7 @@ rpk ai policy list
 rpk ai oauth-client --help      # inbound OAuth clients, DCR settings, revoke-tokens
 rpk ai oauth-provider --help    # outbound OAuth providers
 rpk ai connection --help        # your own OAuth connections (list, revoke)
+rpk ai secret --help            # the secret store (create/get/list/update/delete)
 ```
 
 Which surface each governance feature uses:
@@ -27,6 +28,7 @@ Which surface each governance feature uses:
 | Guardrails (create, configure, enable) | none; attach/detach only, via `rpk ai llm-provider update --guardrail` / `--clear guardrail` | **Guardrails** in the sidebar |
 | Access policies (Cedar) | `rpk ai policy` | **Access** in the sidebar (only when access policies are enabled for your organization) |
 | Data policies | `rpk ai mcp-server create/update --data-policies` | MCP server → **Data Policies** tab |
+| Secrets that other resources reference | `rpk ai secret` | **Secrets store** in the sidebar |
 | OAuth clients (inbound), DCR | `rpk ai oauth-client`, `rpk ai oauth-client dcr` | **Integrations setup** → **Inbound clients** |
 | CIMD settings | none | **Integrations setup** → **Inbound clients** → **Self-registration** |
 | OAuth providers (outbound) | `rpk ai oauth-provider` | **Integrations setup** → **Outbound providers** |
@@ -154,6 +156,8 @@ rpk ai policy diff -f policies/                  # exits non-zero when drift is 
 
 <!-- TODO(human): the CLI notice says a new agent "has no access until a policy names it"; the published docs stop at "has no policy of its own" plus the Permissions tab's warning, and do not state that a policy-less agent's runtime calls are refused. Keep this section at the docs' level until a human confirms which to state. -->
 
+**Its creator can nevertheless invoke it.** The built-in *Owner lifecycle* policy grants `Agent.invoke` on an agent **you** created — which covers that agent's whole A2A surface — and `LLMProvider.invoke` on a provider you created, so whoever created both can run the agent without authoring a policy first. Ownership is read from the stored resource, so a resource that records no creator (one imported, or created by the system) is owned by nobody and grants invocation to no one. This does not change what the *agent* may reach when it runs: that is the agent's own grants, which still come from a policy naming it as principal.
+
 Two `create` paths bind a policy to one agent:
 
 ```bash
@@ -174,6 +178,7 @@ The UI offers the same binding from the agent's **Permissions** tab.
 
 ### Evaluation rules
 
+- **A run a person starts is authorized as that person.** When someone runs an agent — in the Playground, for example — ADP checks *their* permissions for the model and tool calls the run makes, not the agent's. A run no person started, such as a scheduled trigger, uses the agent's own grants. So granting a team its agents is not enough: grant the LLM providers and the tools those agents use as well, and don't read a successful test run by the agent's author as proof of the agent's own access.
 - Default deny: a request is denied unless a `permit` matches.
 - A matching `forbid` always wins, over any permit and over anything a role grants.
 - Fail-closed: a `forbid` that errors during evaluation denies.
@@ -236,6 +241,7 @@ There are no built-in invoker or transcript-reader roles for ADP. Grant runtime-
 | `dataplane_adp_auditlog_list` | Reading the audit log |
 | `dataplane_adp_trace_*` | The Traces view: `_list` for the list and its timeline, `_get` for one trace's spans, `_content_read` for span content nobody owns |
 | `dataplane_adp_apikey_*` | API keys: `_create` to mint your own; `_get`, `_list`, `_update`, `_delete` for *other people's* keys |
+| `dataplane_adp_secret_*` | The secret store. No permission returns a value: `_get` and `_list` disclose IDs and tags only |
 | `dataplane_adp_agentnetwork_get` | The Agent network view |
 | `dataplane_adp_spending_get`, `dataplane_adp_budget_*`, `dataplane_adp_guardrail_*` | Cost reporting, budgets, guardrails |
 | `dataplane_adp_policy_*`, `dataplane_adp_policytemplate_*` | Authoring access policies and templates; granting these is equivalent to granting everything a policy can grant |
@@ -254,8 +260,37 @@ Points worth knowing:
 
 - Redpanda compiles role bindings into permits automatically, so they take part in the same evaluation as your policies. The **Roles** and **System policies** tabs show them read-only.
 - **Templates** (**Access** → **Templates**) fix an action set and effect; a policy links a template and supplies the principal and scope. Built-in templates: *Read only*, *Sandboxed*, *Standard*, *Full access* (each a superset of the previous; all grant transcript and session reads). Built-ins can't be edited; a template is a live link, so editing one changes every linked policy.
-- Built-in, read-only managed policies: *Owner lifecycle* (users can get/update/delete what they created), *Self-service OAuth connections* (users manage their own connections), and *Agent capability ceiling* (agents can never mint credentials or control OAuth clients, providers, DCR settings, or the token vault).
+- Built-in, read-only managed policies: *Owner lifecycle*, *Self-service OAuth connections* (users manage their own connections), and *Agent capability ceiling* (agents can never mint credentials or control OAuth clients, providers, DCR settings, or the token vault). *Owner lifecycle* lets a user get, update and delete the agents, MCP servers, LLM providers, guardrails, budgets and secrets **they** created, update the triggers they created, list and manage their own API keys, and **invoke** an agent or an LLM provider they created. It stops short of creates — a create authorizes a payload that records no creator yet — and of agent credentials and sessions, which record no creator at all.
 - **No policy is created for a new agent.** An agent created before Agentic Data Plane began asking for this decision carries an editable `Agent grant: <agent-name>` policy covering MCP session access, LLM invocation and agent-to-agent calls. It is a starting point, not a managed policy, so you can edit or delete it, and a deleted grant is not recreated. An agent created now gets no such policy and needs one bound to it — see [Give a new agent access](#give-a-new-agent-access).
+
+## Secrets
+
+A credential that an LLM provider, MCP server, OAuth provider, OAuth client, trigger or agent names is held in the ADP **secret store** and referenced by ID, so the credential lives in one place and a rotation is one edit rather than one per resource. (A user's own OAuth tokens are not secrets in this sense: those live in the token vault behind **Connections**.) Manage secrets with `rpk ai secret` (see [rpk-ai.md](rpk-ai.md#secret-subcommands)) or under **Secrets store** in the UI sidebar.
+
+- **Shape.** An ID starts with a letter and holds uppercase letters, digits and underscores, up to 255 characters, and is immutable — `OPENAI_API_KEY`, not `openai-api-key`. The value is the credential itself, up to 64 KiB, and is **write-only**: nothing reads it back, in the UI or the CLI, so a lost value is replaced rather than recovered. Tags are key/value pairs for organizing and for policy conditions (see [Tags on ADP resources](#tags-on-adp-resources)).
+- **The UI takes a multi-line value.** Pick *Single line* for an API key or token (no leading or trailing whitespace), or *Multiline* for a PEM key or a JSON document, where the form drops one final line break. The credential fields on provider, server and OAuth-provider forms can also store a new value in place, which lands in the same store.
+- **What the pickers show.** A credential picker lists only the secrets in the ADP secret store — the ones the AI Gateway can read. A secret Redpanda Cloud holds for another product (a Redpanda Connect pipeline, for example) does not appear, and a new secret cannot reuse its name.
+- **A rotation does not require touching the resources.** They keep referencing the ID, and how soon each picks up the new value differs: **within about five minutes** for OpenAI, Anthropic and Google providers, **on the next request** for Amazon Bedrock providers, **on the next call** for self-managed MCP servers authenticating with a static key or service-account OAuth, and **within about ten minutes** for a managed MCP server that uses a secret.
+- **Deleting is unchecked and permanent.** Nothing verifies whether a resource still references the secret; those resources keep the reference and fail at their next call. Find and repoint them first.
+- **Who can manage them.** Policies name `Secret.create`, `Secret.get`, `Secret.list`, `Secret.update` and `Secret.delete`; the permissions are `dataplane_adp_secret_*`. Admin and the *Standard* and *Full access* templates carry all five; *Read only* and *Sandboxed* carry `get` and `list`. The built-in *Owner lifecycle* policy adds get, update and delete on the secrets **you** created, so no per-person grant is needed for your own. `Secret.get` and `Secret.list` disclose a secret's ID and tags, never its value; to limit someone to a subset, condition the policy on the secret's tags.
+
+## Tags on ADP resources
+
+Tags are key/value labels that let a policy or a report act on a whole team or environment instead of a list of resource names. Agents, MCP servers, LLM providers, guardrails, budgets and secrets all carry them, and a policy can also read the tags on OAuth clients, OAuth providers and policies.
+
+| Resource | Set in the UI | Set with `rpk ai` |
+|---|---|---|
+| Agents | yes (create canvas **Advanced** → **Tags**, Settings tab) | `--tag` on `agent create` / `update` |
+| MCP servers | yes (**Tags**, last section of the create form; edit form) | `--tags` on `mcp-server create` / `update` |
+| LLM providers | yes (**Tags** on the create form; **Settings** tab) | `--tags` on `llm-provider create` / `update` |
+| Guardrails, budgets | yes (create form and Settings) | no flag |
+| Secrets | yes (**Tags** on the secret form) | `--tag`, and `--remove-tag` on `secret update` |
+
+- **Limits.** At most 50 pairs per resource, values up to 256 characters, both halves required. An entry whose key already exists replaces that key's value.
+- **A write replaces the whole map.** `--tags` on a provider or server update, and a save in the UI, send the full set, so keep the pairs you want. `rpk ai secret update` is the exception: it merges `--tag` onto the stored tags and drops only what `--remove-tag` names.
+- **Three consumers, one set of tags.** Policies condition on them, cost reporting groups by them, and lists filter on them. Only the **calling agent's** tags are stamped on an LLM call, never the provider's or the server's, and a call made outside an agent carries none. A budget's own tags do not decide which agents it covers — its target agent does.
+- **Lists.** The agents, MCP servers, LLM providers, guardrails and secrets lists show a Tags column (the first to drop on a narrow window); the agents and secrets lists also carry a `Tag` filter matching one `key=value` pair.
+- Keep keys consistent across resource types (one `team` key on agents, servers and providers) so one policy and one spend report cover a team's whole footprint, keep values lowercase (a condition compares exactly), and tag at creation — an untagged resource falls outside every policy and report that relies on the tag. Never put secrets or PII in tag values.
 
 ## API keys
 

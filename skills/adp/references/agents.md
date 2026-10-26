@@ -48,7 +48,7 @@ Both types share one registry, the same governance views, and the same cost attr
 | `transcript list\|get` | Conversation transcripts (see [observability.md](observability.md)) |
 | `a2a card\|send\|task` | Talk to a running agent over A2A (see [A2A](#a2a-endpoint-and-agent-card)) |
 
-**A new agent starts with no policy of its own.** `rpk ai agent create` writes no policy for the agent. It prints a notice on **stderr** saying the agent has no access until a policy names it, with the two commands that bind one, and leaves stdout as the created object so `-o json` stays parseable. In the UI, a managed agent's **Permissions** tab warns until you author its first policy; registering a self-managed agent in the UI is the exception, because its required **Access** section writes that policy for you. Bind a built-in template with `rpk ai policy create --agent <name> --template sandboxed`, or supply Cedar whose principal is that agent. See [governance.md](governance.md#give-a-new-agent-access).
+**A new agent starts with no policy of its own.** `rpk ai agent create` writes no policy for the agent. It prints a notice on **stderr** saying the agent has no access until a policy names it, with the two commands that bind one, and leaves stdout as the created object so `-o json` stays parseable. In the UI, a managed agent's **Permissions** tab warns until you author its first policy; registering a self-managed agent in the UI is the exception, because its required **Access** section writes that policy for you. Bind a built-in template with `rpk ai policy create --agent <name> --template sandboxed`, or supply Cedar whose principal is that agent. Its **creator** can invoke it meanwhile, through the built-in *Owner lifecycle* policy, which is enough to test the agent but grants nothing to anyone else and is not the agent's own access. See [governance.md](governance.md#give-a-new-agent-access).
 
 Scalar flags on `create` / `update`: `--display-name`, `--description`, `--model`, `--llm-provider`, `--system-prompt`, `--max-iterations`, `--mcp-server` (repeatable), `--tag key=value` (repeatable; on `update` it replaces the whole tag map). `create` also takes `--self-managed` and `--spec-file <json|yaml>`, which loads a complete managed spec and is the only create-time way to set subagents or an agent card; `--spec-file` is mutually exclusive with `--self-managed` and the scalar spec flags. For anything the flags cannot express on an existing agent (subagents, agent card, reasoning effort), edit the manifest and `rpk ai agent apply -f`.
 
@@ -63,13 +63,13 @@ Every agent carries, independent of type:
 | `name` | Immutable ID, a lowercase slug up to 63 characters. The UI derives it from the display name (adding a suffix on collision); check it on the Settings tab after create |
 | `display_name` | Up to 128 characters |
 | `description` | Up to 1,024 characters; an internal note, not the system prompt |
-| `tags` | Key/value map, up to 50 pairs, each value up to 256 characters |
+| `tags` | Key/value map, up to 50 pairs, each value up to 256 characters. Set with `--tag` on `create` / `update`, or in the UI under **Advanced** → **Tags** on the create canvas and on the Settings tab |
 
 `tags` does three jobs at once, so adding or removing a key affects all three:
 
 - **Access policies** — Cedar policies can condition on an agent's tags (`resource.getTag("team")`, `resource.hasTag("team")`); see [governance.md](governance.md).
 - **Organization** — filter agents in the registry by tag.
-- **Cost grouping** — the gateway stamps the agent's tags on each LLM call it makes, so spend can be grouped and filtered by tag (see [governance.md](governance.md)). Attribution is point-in-time: spend already recorded keeps the tags it had.
+- **Cost grouping** — the gateway stamps the agent's tags on each LLM call it makes, so spend can be grouped and filtered by tag (see [governance.md](governance.md#tags-on-adp-resources)). Only the calling agent's tags are recorded, never those of the provider or server it used. Attribution is point-in-time: spend already recorded keeps the tags it had.
 
 Do not put secrets or PII in tag values; they surface in cost reports.
 
@@ -110,7 +110,7 @@ Create and update validate a managed spec's references before saving, so a bad r
 
 Scoping rules:
 
-- **OpenAI-compatible providers are not model-checked** at write time; any identifier saves, and the gateway enforces the model per request.
+- **OpenAI-compatible and Gemini Enterprise Agent Platform providers are not model-checked** at write time; any identifier saves, and the gateway enforces the model per request, refusing one the provider does not allow. A managed agent can run on a Gemini Enterprise Agent Platform provider, so expect a model mistake there to surface at the first call rather than at save time.
 - **Non-Bedrock catalog providers get only the catalog check.** Their allowlist is enforced by the gateway at request time (`403 model_not_allowed`).
 - **Updates validate only the pairings they change**, so an agent that already stores an out-of-catalog model stays editable. A partial update that changes only a model is still checked against the provider it inherits.
 - Rarely, an update fails with a `changed while the update was in flight; retry` message; retry the update.
