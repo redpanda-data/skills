@@ -1,12 +1,8 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent`, `agent a2a`, `agent a2a send`, `agent a2a task watch`, `trigger` sections), `cloudv2 apps/rpai/internal/cmd/agent/` (positional arguments), `docs modules/reference/partials/rpk-ai/` (`rpk-ai-agent-create`, `-update`, `-credential-create`, `-transcript-list` flag tables), `adp-docs modules/connect/pages/create-agent.adoc`, `self-managed-agents.adoc`, `concepts.adoc`, `triggers/overview.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc` (session history), `adp-docs modules/cli/pages/gitops.adoc` — verified 2026-09-23. Write-time validation, subagent, tag and agent-card behavior carried forward from the earlier source-verified revision and cross-checked against `create-agent.adoc` on 2026-09-23. Maturity re-verified 2026-09-28 against `adp-docs modules/reference/pages/rpk/rpk-ai/` and `modules/cli/pages/index.adoc` (no Preview attribute on the `rpk ai` pages). Sync 2026-10-05: the no-access-at-create behavior, its stderr notice and the stdout/`-o json` split verified against `cloudv2 apps/rpai/internal/cmd/agent/create.go` and `agent/cmd_test.go`; the A2A exit codes re-verified against `cloudv2 apps/rpai/internal/cmd/root.go` (`exitCode`), `apps/rpai/internal/cmd/exit_test.go` and `adp-docs modules/cli/pages/index.adoc`. Reasoning-effort retention on a UI model change verified 2026-10-05 against `adp-docs modules/connect/pages/create-agent.adoc` (the Settings-tab paragraph: kept only where the new model's catalog capabilities list it, cleared to the provider default otherwise, always cleared on an OpenAI-compatible provider, and a subagent model override still rejected at save). The no-policy-at-create wording re-checked 2026-10-05 against `adp-docs modules/connect/pages/create-agent.adoc` (Create the agent) and `modules/control/pages/access-policies.adoc` (Grant an agent its own permissions): both state that a new agent has no policy of its own, neither states that its runtime calls are refused, and the self-managed UI exception comes from the latter. `--ttl 0` re-verified at adp/v0.2.86 (2026-10-15): cloudv2 `apps/rpai/internal/cmd/agent/credential.go` sends `expires_at` only when ttl > 0, and `apps/aigw/config/config.go` `SecretDefaultTTL` (must be > 0, enforced in `apps/aigw/internal/server/server.go`) applies when it is omitted.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent`, `a2a`, `trigger`), `cloudv2 apps/rpai/internal/cmd/agent/`, `docs modules/reference/partials/rpk-ai/`, `adp-docs modules/connect/pages/` (`create-agent.adoc`, `self-managed-agents.adoc`, `concepts.adoc`, `triggers/`), `modules/monitor/pages/monitor-agents.adoc`, `modules/cli/pages/gitops.adoc`. Full per-claim mapping and the dated verification log: the `references/agents.md` rows of `SOURCES.md`.
 
 # Agentic Data Plane Agents Reference
 
 **Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm flags with `--help` before relying on them.
-
-Audience: an AI agent operating Agentic Data Plane agents through `rpk ai` and the ADP UI (ai.redpanda.com). Optimize for correct programmatic use.
-
-Related references: [SKILL.md](../SKILL.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
 ## Discover the live surface
 
@@ -65,13 +61,7 @@ Every agent carries, independent of type:
 | `description` | Up to 1,024 characters; an internal note, not the system prompt |
 | `tags` | Key/value map, up to 50 pairs, each value up to 256 characters. Set with `--tag` on `create` / `update`, or in the UI under **Advanced** → **Tags** on the create canvas and on the Settings tab |
 
-`tags` does three jobs at once, so adding or removing a key affects all three:
-
-- **Access policies** — Cedar policies can condition on an agent's tags (`resource.getTag("team")`, `resource.hasTag("team")`); see [governance.md](governance.md).
-- **Organization** — filter agents in the registry by tag.
-- **Cost grouping** — the gateway stamps the agent's tags on each LLM call it makes, so spend can be grouped and filtered by tag (see [governance.md](governance.md#tags-on-adp-resources)). Only the calling agent's tags are recorded, never those of the provider or server it used. Attribution is point-in-time: spend already recorded keeps the tags it had.
-
-Do not put secrets or PII in tag values; they surface in cost reports.
+`tags` does three jobs at once, so adding or removing a key affects all three: Cedar policies can condition on them (`resource.getTag("team")`, `resource.hasTag("team")`), the registry filters on them, and the gateway stamps them on each LLM call the agent makes, so spend groups by them. Only the **calling agent's** tags are recorded on a call, never the provider's or server's, and attribution is point-in-time: spend already recorded keeps the tags it had. Do not put secrets or PII in tag values; they surface in cost reports. See [governance.md](governance.md#tags-on-adp-resources).
 
 ## Managed agent spec
 

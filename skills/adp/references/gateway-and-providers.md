@@ -1,12 +1,8 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model` groups), `cloudv2 apps/rpai/internal/cmd/llm/` (`check`), `cloudv2 apps/rpai/internal/cmd/model/` (`list`, `get`), `adp-docs modules/gateway/pages/configure-provider.adoc`, `adp-docs modules/gateway/pages/overview.adoc`. Also `cloudv2 pkg/apikey/apikey.go`, `cloudv2 pkg/apikey/apikeyauth/apikeyauth.go`, the passthrough handlers in `cloudv2 apps/aigw/internal/llm/provider/{openai,anthropic}/`, `adp-docs modules/gateway/pages/connect-agent.adoc`, `adp-docs modules/gateway/pages/vertex-setup.adoc` (the Gemini Enterprise Agent Platform setup guide), and `adp-docs modules/control/pages/secrets.adoc` and `tags.adoc`. Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model`), `cloudv2 apps/rpai/internal/cmd/{llm,model}/`, `cloudv2 pkg/apikey/` and the `apps/aigw` passthrough handlers, `adp-docs modules/gateway/pages/` (`configure-provider.adoc`, `overview.adoc`, `connect-agent.adoc`, `vertex-setup.adoc`), `modules/control/pages/` (`secrets.adoc`, `tags.adoc`). Full per-claim mapping and the dated verification log: the `references/gateway-and-providers.md` rows of `SOURCES.md`.
 
 # AI Gateway, LLM Providers, and Models Reference
 
 **Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm flags live with `--help` before relying on them.
-
-Audience: an AI agent operating the Agentic Data Plane AI Gateway through `rpk ai llm-provider` / `rpk ai model` and the ADP UI (ai.redpanda.com), or calling the gateway from an application.
-
-Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
 
 ## Discover the live surface
 
@@ -63,7 +59,7 @@ Short aliases exist for some Bedrock flags (`--region`, `--access-key-id-ref`, `
 - The service account whose key you store needs the `roles/aiplatform.user` role on the project. Claude models additionally need enabling in the GCP project and organization before they answer at all, so a Claude model can be selected here and still fail upstream until that is done.
 - **The model picker follows the location, so choose the location first.** It offers only the models served there, preselects that location's Gemini models and leaves Claude models unselected; changing the location resets the selection to the new location's Gemini models. Select only the Claude models you actually enabled.
 - Upstream `404 NOT_FOUND`, `403 PERMISSION_DENIED`, `400 FAILED_PRECONDITION` and `429` from this type come from the GCP project's own setup — the service-account role, Model Garden enablement, an organization policy, or the location — not from ADP's configuration.
-- In the provider **Playground**, this type serves Google and Anthropic models only, told apart by the publisher the model catalog records. A model from another publisher, or one the catalog does not know, is refused with the reason shown and no cURL command offered.
+- In the provider **Playground**, this type serves Google and Anthropic models only, by the publisher the model catalog records; anything else is refused with the reason shown.
 
 **Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google Gemini API rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both; Vertex AI requires its project, location and credentials reference, and rejects a create — or an update that changes the models or the location — naming a model that location does not serve. Create and rotate the referenced secrets with `rpk ai secret` or under **Secrets store** in the UI; see [governance.md](governance.md#secrets).
 

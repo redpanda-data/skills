@@ -1,12 +1,8 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help output, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (auth, env, connection, trigger, run, llm pricing), `cloudv2 apps/rpai/internal/gitops/`, `cloudv2 apps/rpai/.goreleaser.yaml` and publish manifest (platforms, no FIPS build), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/` (install path, lifecycle errors), `adp-docs modules/cli/`. Also `cloudv2 apps/rpai/internal/cmd/run/` (`cmd.go`, `apikey.go`, `claude.go`, `codex.go`, `agy.go`) and `adp-docs modules/connect/pages/coding-agents.adoc`; `cloudv2 apps/rpai/internal/cmd/secret/`, `apps/rpai/internal/cmd/docs/` and `apps/rpai/internal/updatecheck/` with `adp-docs modules/cli/pages/index.adoc` and `modules/control/pages/secrets.adoc` (the `secret` and `docs` groups and the update notice). Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (incl. `run/`, `secret/`, `docs/`), `apps/rpai/internal/{gitops,updatecheck,client}/`, `apps/rpai/.goreleaser.yaml` (platforms), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/`, `adp-docs modules/cli/pages/index.adoc`, `modules/connect/pages/coding-agents.adoc`, `modules/control/pages/secrets.adoc`. Full per-claim mapping and the dated verification log: the `references/rpk-ai.md` rows of `SOURCES.md`.
 
 # rpk ai CLI Reference
 
 **Maturity:** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm them with `--help` before relying on them.
-
-Audience: an AI agent using `rpk ai` to operate the Redpanda Agentic Data Plane. Optimize for correct command usage.
-
-Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [observability.md](observability.md).
 
 ## Discover the live surface
 
@@ -38,7 +34,7 @@ Install path: `~/.local/bin/.rpk.managed-rpai`.
 
 Platforms: `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`, `windows-amd64`, `windows-arm64`. There is no FIPS build, so a FIPS-only environment cannot install a FIPS-validated `rpk ai`.
 
-**The CLI announces its own updates.** While a command runs, the plugin checks in the background — at most once a day — whether a newer version is published, and prints a notice on **stderr** naming that version and the command that upgrades it. The notice also follows a command that failed or printed help, because an outdated CLI often explains those results. It never delays a command: a check still running when the command ends is canceled and retried an hour later. It appears only when **both** stdout and stderr are terminals, so a script, a pipe, an `-o json` capture, and an agent never see it, and it is skipped in continuous integration. Set `RPAI_NO_UPDATE_CHECK=1` to turn it off.
+**The CLI announces its own updates.** A background check, at most once a day, prints a notice on **stderr** naming a newer version and the command that upgrades it, including after a command that failed or printed help. It never delays a command, and it appears only when **both** stdout and stderr are terminals — so a script, a pipe, an `-o json` capture and an agent never see it — and never in continuous integration. `RPAI_NO_UPDATE_CHECK=1` turns it off.
 
 ## Authentication
 
@@ -253,7 +249,7 @@ rpk ai secret delete OPENAI_API_KEY --etag <etag>
 
 ## `docs`: read the product documentation
 
-`rpk ai docs [path]` reads the published ADP documentation in the terminal, and `rpk ai docs search <query...>` searches it. Both work with **no sign-in and no selected environment**, so they are safe to reach for before `rpk ai auth login`.
+`rpk ai docs [path]` reads the published ADP documentation in the terminal and `rpk ai docs search <query...>` searches it, both with **no sign-in and no selected environment** — safe to reach for before `rpk ai auth login`.
 
 ```bash
 rpk ai docs                     # searchable picker in a terminal; an index when piped
@@ -262,11 +258,9 @@ rpk ai docs search "oauth"      # --limit 1-100 (default 20)
 rpk ai docs cli --url           # print the URL instead (needs no network)
 ```
 
-- Flags: `--web` (open in a browser), `--url` (print the URL), `--no-pager`, `--non-interactive` (plain Markdown, no picker or pager — the one to use in scripts), `--refresh` (require a fresh fetch).
+- Flags: `--web` (open in a browser), `--url`, `--no-pager`, `--non-interactive` (plain Markdown, no picker or pager — the one for scripts), `--refresh` (require a fresh fetch).
 - `search` matches page **titles, paths and descriptions, not page bodies**, so a phrase that appears only inside a page does not find it.
-- Responses are cached for an hour. After a temporary failure the command prints the cached copy with a warning, marked `stale=true` under `-o json` / `-o yaml`; `--refresh` refuses the fallback instead.
-- The documentation tracks the published site, not the installed CLI, so confirm flags with `--help` rather than from a page.
-
+- Responses are cached for an hour; after a temporary failure the cached copy is printed with a warning, marked `stale=true` under `-o json` / `-o yaml`, unless `--refresh` refuses the fallback. The documentation tracks the published site, not the installed CLI, so confirm flags with `--help` rather than from a page.
 ## `trigger` subcommands
 
 Aliases: `triggers`, `agent-trigger`.

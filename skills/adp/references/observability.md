@@ -1,12 +1,8 @@
-Source: `cloudv2 apps/rpai/internal/cmd/agent/transcript.go` (transcript list/get flags, columns, output) and `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent` command tree, `trigger runs`, global flags); `adp-docs modules/monitor/pages/transcripts.adoc`, `adp-docs modules/monitor/pages/audit-log.adoc`, `adp-docs modules/monitor/pages/agent-network.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc`, `adp-docs modules/get-started/pages/adp-quickstart.adoc` (Home page); `cloudv2 adp/RELEASE_NOTES.md` (shipped-feature checks). Also `cloudv2 proto/public/cloud/redpanda/api/adp/v1alpha2/trace.proto`, `cloudv2 apps/adp-ui/src/components/traces/`, `adp-docs modules/monitor/pages/traces.adoc`, and `adp-docs modules/control/pages/permissions-reference.adoc` (Trace permissions). Verification log (evidence dates, corrections and regression guards from this and earlier passes): see `SOURCES.md`.
+Source: `cloudv2 apps/rpai/internal/cmd/{agent/transcript.go,auditlog/}` and `apps/rpai/testdata/commands-snapshot.md`, `cloudv2 proto/public/cloud/redpanda/api/adp/v1alpha2/trace.proto`, `adp-docs modules/monitor/pages/` (`traces.adoc`, `transcripts.adoc`, `audit-log.adoc`, `agent-network.adoc`, `monitor-agents.adoc`, `troubleshoot-ai-agents.adoc`), `modules/cli/pages/index.adoc`, `modules/control/pages/permissions-reference.adoc`. Full per-claim mapping and the dated verification log: the `references/observability.md` rows of `SOURCES.md`.
 
 # Agentic Data Plane Observability Reference
 
 **Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. The docs carry no Preview or Experimental marker on traces, transcripts, the audit log, the Agent network view, or the Home dashboard. Traces dropped its Preview badge and its documented Preview marker with the release that moved it under **Observability**.
-
-Audience: an AI agent answering "what did my agent do?" and "who was allowed to do what?" through `rpk ai` and the ADP UI (ai.redpanda.com).
-
-Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md).
 
 ## Discover the live surface
 
@@ -258,17 +254,17 @@ So a session that opens, lists tools, and stays alive leaves no entries until it
 
 ## Accountability: traces vs. transcripts vs. the audit log
 
-- **Traces:** one row per run across every agent and the AI Gateway, with timing, token use, cost, and the span tree. Start here to find *where* a run spent its time or *which* call failed.
-- **Transcripts:** execution-level observability of one agent conversation: turns, tool calls and their payloads, models, latency, tokens, errors. Grouped by conversation ID. Start here to read what the agent and the person said to each other.
-- **Audit log:** authorization-level accountability across the platform: who (user, service account, or agent) attempted what against which resource, whether it was allowed, denied, or masked, which policy decided, and what configuration changed. Start here for an access question.
+- **Traces:** one row per run across every agent and the AI Gateway, with timing, token use, cost and the span tree — *where* a run spent its time and *which* call failed.
+- **Transcripts:** one agent conversation in full, turn by turn, with tool payloads, models, latency, tokens and errors — what the agent and the person said to each other.
+- **Audit log:** authorization decisions across the platform — who attempted what against which resource, whether it was allowed, denied or masked, which policy decided, and what configuration changed.
 
-A trace and a transcript cover the same run from different angles, and **Open transcript** crosses from the selected span to the matching turn. An investigation often needs more than one surface: the decision in the audit log, the slow or failed call in traces, the execution detail in the transcript.
+A trace and a transcript cover the same run from different angles, and **Open transcript** crosses from the selected span to the matching turn. An investigation often needs more than one: the decision in the audit log, the slow or failed call in traces, the execution detail in the transcript.
 
 ## Other monitoring views (UI)
 
 - **Home**: the landing page after sign-in. It shows items needing attention, an overall health status, recent AI Gateway traffic (tokens and spend over time), month-to-date spend and token totals, budget status, top spenders, and quick actions. No CLI equivalent.
 - **Observability > Agent network**: a live graph of agents, their subagents, the LLM providers they call, and the MCP servers and tools they use, with usage, cost, tokens, and health for a chosen window (last hour to last year, or custom). Select a node for its detail panel; for an agent or an MCP server the panel also carries a **View traces** link that opens Traces filtered to that resource over the same window (a provider or tool panel carries none). Health (agent: Active / Degraded / Error / Pending; MCP server: Connected / Degraded / Error) derives from error rate in the window, and servers with credential or tool-call failures are flagged. Budget-blocked and provider-failed requests count as errors. View state is in the URL.
-  - **Scope the graph** with *Search resources* (name or ID across agents, subagents, providers, servers and tool names — a matched tool keeps its server and a matched subagent keeps its parent, so the match stays reachable), *Filters* → *Related only* (the selected node and what it connects to directly; unavailable until something is selected), and *Resources* (hide whole kinds: agents, subagents, LLM providers, MCP servers, MCP tools, with *Show all* to restore them). The header's conversation, tool-call, cost and token figures always cover the **whole** network, not the filtered view — only the agent and MCP server counts read as `3 of 8`.
+  - **Scope the graph** with *Search resources* (name or ID across agents, subagents, providers, servers and tool names; a matched tool keeps its server and a matched subagent its parent, so the match stays reachable), *Filters* → *Related only* (the selection and what it connects to directly; needs a selection), and *Resources* (hide whole kinds, *Show all* to restore). The header's conversation, tool-call, cost and token figures always cover the **whole** network; only the agent and MCP server counts read as `3 of 8`.
 - **Agent Playground**: see [agents.md](agents.md) for live testing, session history, and the token/context estimate.
 
 ## Permissions
