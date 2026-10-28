@@ -54,9 +54,9 @@ All paths are in `redpanda-data/cloud-docs` unless noted.
   `query-iceberg-topics.adoc`. The skill avoids hardcoding either name.
 - `alter-redpanda-catalog.adoc` dropped its "Relink to a different Iceberg catalog"
   example on 2026-10-23 but kept `USING CATALOG <name>` in the syntax, described as
-  linking to an existing Iceberg catalog. The skill still says a relink is done by
-  running `USING CATALOG <other>` again; re-check whether the removal was meant to
-  withdraw that.
+  linking to an existing Iceberg catalog. The skill no longer describes relinking a
+  linked catalog to a different Iceberg catalog; re-check whether the removal was
+  meant to withdraw that operation, and restore the guidance if it was not.
 - `copy-to.adoc` examples write to server-side paths (`'/path/to/...'`); on the managed engine
   the useful targets are `STDOUT` and cloud storage. The skill keeps the documented syntax and
   examples only for `STDOUT`, S3, and GCS.

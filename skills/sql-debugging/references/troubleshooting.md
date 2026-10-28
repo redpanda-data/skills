@@ -78,8 +78,7 @@ memory slow everyone down.
 
 ### Step 3: Separate planning time from execution time
 
-If `accepted` is set but `executed` stays `NULL`, or a query is slow before any
-rows come back, time the planner:
+If a query is slow before any rows come back, time the planner:
 
 ```sql
 EXPLAIN TIMING SELECT ...;   -- plans the query without running it
@@ -92,10 +91,9 @@ LIMIT 5;
 ```
 
 `measurement` is the planning stage and `attribution` says whether the time went
-into planner work, a call to an external service (Schema Registry or the Iceberg
-REST catalog), or waiting. A stage that waits on an external service points at
-that service, not the query. `EXPLAIN CONFIG` lists the planner options in effect
-for the session. Both forms are diagnostics, not a PostgreSQL query plan, and
+into planner work, a call to an external service, or waiting. A stage that waits
+on an external service points at that service, not the query. `EXPLAIN CONFIG`
+lists the planner options in effect for the session. Both forms are diagnostics, not a PostgreSQL query plan, and
 their output can change between releases. Syntax: `/redpanda:sql`.
 
 ### Step 4: Reduce the work the query does

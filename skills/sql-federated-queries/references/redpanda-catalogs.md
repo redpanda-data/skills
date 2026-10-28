@@ -83,8 +83,7 @@ USING CATALOG NULL                       -- detach the Iceberg link
 [WITH (option = 'value' [, ...])];
 ```
 
-On the `ALTER` forms, `WITH` comes **after** `USING CATALOG`. Relink to a
-different Iceberg catalog by running `USING CATALOG <other>` again.
+On the `ALTER` forms, `WITH` comes **after** `USING CATALOG`.
 
 ### RESET
 
