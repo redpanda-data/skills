@@ -1,19 +1,19 @@
 ---
 name: sql
 description: >-
-  Writes and runs read-only Redpanda SQL queries on Redpanda Cloud, covering how
-  to connect to the SQL endpoint and the query language itself. Use when a user
-  wants to connect to Redpanda SQL with psql, a PostgreSQL driver, or SQL Studio
-  using an OIDC bearer token or a SCRAM password; write analytical queries with
-  joins, aggregates, window functions, and CTEs over topic-backed tables; save a
-  query as a view with CREATE VIEW or remove one with DROP VIEW; export
-  results with COPY TO; grant access with GRANT and REVOKE; inspect metadata
-  through information_schema or pg_catalog; or check how Redpanda SQL differs
-  from PostgreSQL. For enabling SQL, the SQL Manage and SQL Access
-  roles, and the access model, see `/redpanda:sql-admin-api`. For catalogs,
-  mapping topics with CREATE TABLE, and Iceberg-enabled topics, see
-  `/redpanda:sql-federated-queries`. For errors, slow queries, and degraded
-  nodes, see `/redpanda:sql-debugging`.
+  Writes and runs read-only Redpanda SQL queries on Redpanda Cloud: connecting to
+  the SQL endpoint, and the query language itself. Use when a user wants to connect
+  with psql, a PostgreSQL driver, or SQL Studio using an OIDC bearer token or a
+  SCRAM password; write analytical queries with joins, aggregates, window
+  functions, and CTEs over topic-backed tables; save a query as a view with CREATE
+  VIEW or DROP VIEW; organize views with CREATE SCHEMA or DROP SCHEMA and transfer
+  one with ALTER ... OWNER TO; export results with COPY TO; grant access with GRANT
+  and REVOKE; inspect metadata through information_schema or pg_catalog; see
+  planner options or planning time with EXPLAIN; or check how Redpanda SQL differs
+  from PostgreSQL. For enabling SQL and the SQL Manage and SQL Access roles, see
+  `/redpanda:sql-admin-api`. For catalogs, mapping topics with CREATE TABLE, and
+  Iceberg-enabled topics, see `/redpanda:sql-federated-queries`. For errors, slow
+  queries, and degraded nodes, see `/redpanda:sql-debugging`.
 ---
 
 # Redpanda SQL
@@ -190,6 +190,11 @@ DROP VIEW large_orders;
 
 - A view lives in a **SQL schema** (`public` by default), not in a catalog: query
   it as `large_orders` or `public.large_orders`, never `catalog=>large_orders`.
+  Only a superuser creates a schema (`CREATE SCHEMA analytics;`); to let others
+  add views to it, grant them `USAGE, CREATE ON SCHEMA`. Hand a view or a schema
+  to another role with `ALTER TABLE large_orders OWNER TO "bob@example.com";` or
+  `ALTER SCHEMA analytics OWNER TO ...`; the view then reads with its new owner's
+  privileges.
 - A view runs its query with its **owner's** privileges, so `SELECT` on the view
   alone lets a role read what the view returns, with no grant on the tables
   behind it. That makes a view a way to narrow what a role sees — and a way to
@@ -309,6 +314,11 @@ SELECT * FROM information_schema.columns WHERE table_name = 'orders';
 SELECT current_user, current_database(), current_schema(), version();
 SHOW timezone;
 SET timezone TO 'UTC';
+SHOW search_path;                                -- schemas searched for unqualified names
+
+-- Planner diagnostics (not a PostgreSQL query plan; no ANALYZE)
+EXPLAIN CONFIG;                                  -- planner options for this session
+EXPLAIN TIMING SELECT count(*) FROM default_redpanda_catalog=>orders;
 ```
 
 `SHOW NODES`, `SHOW QUERIES`, `SHOW EXECS` and their `system.*` tables are
@@ -356,7 +366,8 @@ Iceberg REST catalog.
 - [statements.md](references/statements.md): the published statement set and
   clauses: `SELECT` (WHERE, GROUP BY, HAVING, ORDER BY, LIMIT/FETCH, OFFSET,
   joins, subqueries, WITH, set operations, DISTINCT), operators, `CREATE VIEW`
-  and `DROP VIEW` with the owner-privilege model, `COPY TO`,
+  and `DROP VIEW` with the owner-privilege model, `CREATE`/`DROP SCHEMA` and
+  `ALTER ... OWNER TO`, `EXPLAIN` and the `explain()` table function, `COPY TO`,
   `SET`/`SHOW` options, `DESCRIBE` and `SHOW` statements, transactions, SQL
   schemas, comments, `GRANT`/`REVOKE` and `CREATE`/`ALTER`/`DROP USER` with their
   Cloud behavior, `information_schema`, system virtual tables, and `pg_catalog`.

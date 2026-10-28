@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/reference/pages/sql/sql-statements/{index,select,create-view,drop-view,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/pages/sql/system-catalogs/catalogs/{pg_views,pg_class}.adoc`, `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/sql/pages/manage/manage-access.adoc` (verified 2026-10-21). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/reference/pages/sql/sql-statements/{index,select,create-view,drop-view,alter-owner,create-schema,drop-schema,explain,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/pages/sql/system-catalogs/catalogs/{pg_views,pg_class}.adoc`, `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/sql/pages/manage/manage-access.adoc` (verified 2026-10-27). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Statements and Clauses
 
@@ -8,9 +8,12 @@ Redpanda SQL is read-only. The published statement set is:
 |---|---|---|
 | Query | `SELECT` | this file |
 | Views | `CREATE VIEW`, `DROP VIEW` | this file |
+| Schemas | `CREATE SCHEMA`, `DROP SCHEMA` | this file |
+| Ownership | `ALTER ... OWNER TO` (a view or a schema) | this file |
 | Export | `COPY TO` | this file |
 | Session | `SET`, `SHOW <option>` | this file |
 | Metadata | `DESCRIBE`, `SHOW CATALOGS`, `SHOW TABLES` | this file |
+| Planner diagnostics | `EXPLAIN` | this file; using it on a slow query in `/redpanda:sql-debugging` |
 | Cluster runtime (superuser) | `SHOW NODES`, `SHOW QUERIES`, `SHOW EXECS` | this file; troubleshooting in `/redpanda:sql-debugging` |
 | Access | `GRANT`, `REVOKE`, `CREATE`/`ALTER`/`DROP USER` | this file; access model in `/redpanda:sql-admin-api` |
 | Catalogs and topic mappings | `CREATE`/`ALTER`/`DROP REDPANDA CATALOG`, `CREATE`/`ALTER`/`DROP ICEBERG CATALOG`, `CREATE`/`ALTER`/`DROP STORAGE`, `CREATE`/`ALTER`/`DROP TABLE` (`catalog=>table`), `REFRESH` | `/redpanda:sql-federated-queries` |
@@ -380,18 +383,117 @@ other statement.
 
 ## SQL schemas
 
-A SQL schema is a PostgreSQL-style namespace, not a Schema Registry schema.
-Catalogs and storage definitions live in a schema (`public` by default); topic
-tables are scoped to catalogs. Built-in schemas: `public`, `pg_catalog` (on the
-search path implicitly), and `information_schema`.
+A SQL schema is a PostgreSQL-style namespace, not a Schema Registry schema and
+not an Iceberg namespace. A schema holds **catalog connections, storage
+definitions, and views**. Tables are not in a schema: a table belongs to a
+catalog and is named through it (`default_redpanda_catalog=>orders`).
+
+Built-in schemas:
+
+| Schema | Holds |
+|---|---|
+| `public` | the default schema, including the default catalog connections; objects created without a schema name go here unless the search path says otherwise. Cannot be dropped |
+| `pg_catalog` | the [PostgreSQL system catalogs](#pg_catalog) |
+| `information_schema` | the [information-schema views](#information_schema) |
+| `system` | the [system virtual tables](#system-virtual-tables) |
+
+Objects in `pg_catalog`, `information_schema`, and `system` can be queried
+without naming the schema. Those three cannot be dropped and cannot hold objects
+you create; `public` takes new objects but cannot be dropped either.
 
 ```sql
 CREATE SCHEMA [IF NOT EXISTS] schema_name;
-DROP SCHEMA [IF EXISTS] schema_name;   -- must be empty
-DROP SCHEMA schema_name CASCADE;       -- drops the schema and its objects
+DROP SCHEMA [IF EXISTS] schema_name [CASCADE | RESTRICT];
 ```
 
-Schemas are mainly used to organize user-defined types and to scope catalogs.
+- **Only a superuser can create a schema.** `CREATE SCHEMA` needs `CREATE` on the
+  database, which cannot be granted to another role. On Redpanda Cloud that means
+  *SQL: Manage*. The creating role becomes the owner.
+- To let a non-superuser create views in a schema, grant them `USAGE` and
+  `CREATE` on it: `GRANT USAGE, CREATE ON SCHEMA analytics TO "alice@example.com";`.
+- Without `IF NOT EXISTS`, re-creating a schema fails with
+  `Schema: <schema_name> already exists`.
+- `RESTRICT` (the default) drops the schema only if it is empty; otherwise the
+  statement fails with `cannot drop schema: <schema_name> because other objects
+  depend on it.`
+- **`CASCADE` drops everything in the schema** — views, catalog connections, and
+  storage definitions — and dropping a catalog connection also removes the tables
+  mapped through it. Check what the schema holds first.
+- `CASCADE` does **not** drop views in *other* schemas that read objects in the
+  dropped one. Those views survive but every query of them fails. Find them first
+  with `SELECT schemaname, viewname, definition FROM pg_views;` and drop them.
+- Dropping `public` fails with `permission denied: deletion of default schema
+  public is not allowed`. Only the schema's owner or a superuser can drop a
+  schema.
+- Unqualified names resolve against the search path: `SHOW search_path;` and
+  `SET search_path TO ...` (see [SET and SHOW](#set-and-show)).
+
+## ALTER ... OWNER TO
+
+Transfers ownership of a view or a schema. There is no `ALTER VIEW`, so a view's
+owner is changed with `ALTER TABLE`.
+
+```sql
+ALTER TABLE  [schema_name.]view_name OWNER TO { role_name | CURRENT_USER | CURRENT_ROLE };
+ALTER SCHEMA schema_name            OWNER TO { role_name | CURRENT_USER | CURRENT_ROLE };
+```
+
+- The new role must already exist. Only the current owner or a superuser can
+  transfer ownership; anyone else gets `must be owner to alter owner`.
+- Only the owner changes; the object's grants to other roles stay as they are, and
+  re-running the statement for the current owner does nothing.
+- A view runs its query as its owner, so after a transfer the view reads with the
+  **new** owner's privileges. If the new owner cannot read every table the view
+  reads, queries of the view fail for every user.
+- The `catalog=>` form is not accepted: the owner of a table in a Redpanda or
+  Iceberg catalog cannot be changed this way. Naming a catalog connection fails
+  with `relation "<catalog-name>" does not exist`.
+- A role that owns objects cannot be dropped: `DROP USER` fails with `role
+  "<role_name>" cannot be dropped because some objects depend on it` and lists
+  them. Transfer or drop its views and schemas, drop the catalog connections and
+  storage definitions it owns, and revoke its grants first. On Redpanda Cloud, a
+  user who loses SQL access keeps their role and everything it owns.
+
+## EXPLAIN
+
+`EXPLAIN` reports what the query planner is configured to do and how long it
+spends planning a query. It is a diagnostic aid whose output can change between
+releases, **not** PostgreSQL's `EXPLAIN`: no form shows a query plan, and
+PostgreSQL options such as `ANALYZE` are not accepted.
+
+```sql
+EXPLAIN;                            -- list the forms of EXPLAIN
+EXPLAIN CONFIG;                     -- planner options for this session, with values
+EXPLAIN TIMING select_statement;    -- plan the query, report time per planning stage
+```
+
+| Form | Columns |
+|---|---|
+| `EXPLAIN` | `query`, `description` |
+| `EXPLAIN CONFIG` | `option`, `value`, `description` |
+| `EXPLAIN TIMING` | `measurement`, `attribution`, `invocations`, `elapsed` |
+
+- `EXPLAIN TIMING` plans the query but does not run it. `measurement` is the
+  planning stage, `attribution` says where the time went (planner work, a call to
+  an external service, or waiting), and `elapsed` is in seconds.
+- Anything the statement does not recognize falls back to the list of forms, so
+  `EXPLAIN SELECT ...` describes `EXPLAIN` itself rather than the query. `CONFIG`
+  takes no query and `TIMING` requires one.
+- The same two forms are available as the `explain()` table function, so the
+  output can be filtered, sorted, and joined like any other relation:
+
+```sql
+SELECT * FROM explain('config');
+
+SELECT measurement, elapsed
+FROM explain('SELECT count(*) FROM default_redpanda_catalog=>orders', 'timing')
+ORDER BY elapsed DESC
+LIMIT 3;
+```
+
+- Pass the query as a string literal and double any single quote inside it
+  (`'SELECT * FROM t WHERE c = ''alice'''`).
+- Running `EXPLAIN TIMING` on a query requires the privileges to run that query.
 
 ---
 
@@ -497,7 +599,10 @@ DROP   { USER | ROLE } [IF EXISTS] user_name;
 - `CREATE USER` needs a non-empty password and superuser rights. `ALTER USER`
   accepts `CURRENT_USER` / `CURRENT_ROLE`; a non-superuser may change their own
   password but not their superuser status. `DROP USER` fails while the user owns
-  objects or holds grants; revoke and reassign first. A user cannot drop themselves,
+  objects or holds grants (`role "<role_name>" cannot be dropped because some
+  objects depend on it`, which lists them); transfer ownership with
+  [`ALTER ... OWNER TO`](#alter--owner-to), drop what is left, and revoke its
+  grants first. A user cannot drop themselves,
   and the protected system superuser cannot be dropped or demoted.
 - **On Redpanda Cloud, users come from Cloud IAM.** Assigning *SQL: Access* or
   *SQL: Manage* provisions the user. The operator revokes `CONNECT` for users not in

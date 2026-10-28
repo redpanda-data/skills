@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/reference/pages/sql/sql-statements/{create,alter,drop}-redpanda-catalog.adoc`, `{create,alter,drop}-table.adoc`, `modules/sql/pages/query-data/{redpanda-catalogs,query-streaming-topics,query-nested-fields}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-data-types/{row,map,uuid,bytea,numeric-type/numeric}.adoc`; verified 2026-10-18. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/reference/pages/sql/sql-statements/{create,alter,drop}-redpanda-catalog.adoc`, `{create,alter,drop}-table.adoc`, `modules/sql/pages/query-data/{redpanda-catalogs,query-streaming-topics,query-nested-fields}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-data-types/{row,map,uuid,bytea,numeric-type/numeric}.adoc`, `refresh.adoc`; verified 2026-10-27. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Redpanda Catalogs and Topic Tables
 
@@ -68,7 +68,11 @@ CREATE REDPANDA CATALOG redpanda_with_iceberg
 
 ```sql
 ALTER REDPANDA CATALOG [IF EXISTS] catalog_name
-WITH (option = 'value' [, ...]);
+WITH (option = 'value' [, ...])
+[RESET (option [, ...])];
+
+ALTER REDPANDA CATALOG [IF EXISTS] catalog_name
+RESET (option [, ...]);                  -- clear options, back to their defaults
 
 ALTER REDPANDA CATALOG [IF EXISTS] catalog_name
 USING CATALOG [schema.]iceberg_catalog_name
@@ -82,8 +86,42 @@ USING CATALOG NULL                       -- detach the Iceberg link
 On the `ALTER` forms, `WITH` comes **after** `USING CATALOG`. Relink to a
 different Iceberg catalog by running `USING CATALOG <other>` again.
 
+### RESET
+
+`RESET` removes the values of connection options so the catalog falls back to the
+default for each one. Resetting a credential option clears the others it is set
+with:
+
+| Option | What a reset clears |
+|--------|---------------------|
+| `sasl_mechanism`, `sasl_user`, `sasl_password` | all three, whichever one you name |
+| `key_store_key`, `key_store_cert` | both, whichever one you name |
+| `truststore` | that option only |
+| `pandaproxy_url` | that option only |
+
+```sql
+-- Remove the SASL credentials
+ALTER REDPANDA CATALOG production_redpanda
+RESET (sasl_mechanism, sasl_user, sasl_password);
+
+-- Replace the credentials and drop the HTTP Proxy URL in one statement
+ALTER REDPANDA CATALOG production_redpanda
+WITH (sasl_mechanism = 'SCRAM-SHA-256', sasl_user = 'admin', sasl_password = 'secret')
+RESET (pandaproxy_url);
+```
+
+- `initial_brokers` and `schema_registry_url` are required and cannot be reset:
+  `cannot RESET required option <option>`.
+- The same option cannot be set and reset in one statement: `option <option>
+  cannot be both set and reset in the same statement`.
+- `RESET` cannot be combined with `USING CATALOG`. Detach an Iceberg link with
+  `USING CATALOG NULL` instead.
+
 On Redpanda Cloud, `default_redpanda_catalog` and its Iceberg link are managed
-for you: do not alter, relink, detach, or drop them.
+for you: do not alter, reset, relink, detach, or drop them. On a cluster with
+Iceberg enabled, Redpanda Cloud writes these options again whenever the Iceberg
+configuration changes, such as when a secret rotates, so a change of your own is
+overwritten and can break queries until then.
 
 ## DROP REDPANDA CATALOG
 
@@ -174,11 +212,43 @@ WITH (error_handling_policy = 'FILL_NULL');
 
 ## REFRESH
 
-After a shape change to a topic's schema (or its Iceberg table), run
-`REFRESH catalog_name=>table_name;` to update the schema view used for query
-planning. It does not move data, and you don't run it between writes.
-`REFRESH` rejects a schema whose declared type names start with `__redpanda_`,
-and, for JSON schemas, a top-level property named `__json_root`.
+`REFRESH` updates the schema (the columns and their types) that Redpanda SQL
+stores for a table in a catalog, so later queries plan against the current shape.
+
+```sql
+REFRESH [schema_name.]catalog_name=>table_name;             -- Redpanda catalog
+REFRESH [schema_name.]catalog_name=>namespace.table_name;   -- Iceberg catalog
+```
+
+Run it:
+
+- After a new schema version is registered for the topic's subject. For a table
+  in a Redpanda catalog, `REFRESH` reads the latest schema for that subject and
+  updates the table's columns.
+- After the schema of a table in an Iceberg catalog changes, for example because
+  another engine added a column.
+- When a query fails with `Schema not found for Iceberg table '<table_name>'`.
+
+Behavior:
+
+- Only the stored schema changes. The topic, the Schema Registry subject, and the
+  Iceberg table are untouched, and you don't run it between writes.
+- For a table in a Redpanda catalog that is linked to an Iceberg catalog, the
+  stored schema of the topic's Iceberg table is refreshed as well.
+- The statement contacts Schema Registry or the Iceberg REST catalog, and fails
+  with an error naming the service when it cannot be reached.
+- A table that is not in the catalog fails with `source "<table_name>" does not
+  exist in catalog "<catalog_name>"`.
+- For an Iceberg catalog, the namespace must be within the catalog's
+  `allowed_namespaces`, otherwise `namespace "<namespace>" is outside the
+  allowed_namespaces scope of iceberg catalog "<catalog_name>"`.
+- `REFRESH` rejects a schema whose declared type names start with `__redpanda_`,
+  and, for JSON schemas, a top-level property named `__json_root`.
+- **Permissions:** only the catalog's owner or a superuser. Redpanda Cloud creates
+  the default catalogs, so refreshing a table in one needs *SQL: Manage*.
+- On Redpanda Cloud you cannot query a table in an Iceberg catalog directly;
+  refresh and query the topic's table in the Redpanda catalog instead (see
+  [iceberg.md](iceberg.md)).
 
 ---
 

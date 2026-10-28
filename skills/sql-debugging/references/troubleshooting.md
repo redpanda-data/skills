@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/sql/pages/troubleshoot/{degraded-state-handling,query-out-of-memory}.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/get-started/{sql-quickstart,deploy-sql-cluster}.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/query-data/query-streaming-topics.adoc`, `modules/reference/pages/sql/sql-statements/{create-table,set-show,show-tables,grant,revoke}.adoc`, `modules/reference/pages/sql/system-virtual-tables.adoc`; docs `modules/reference/partials/rpk-sql/rpk-sql-debug-bundle.adoc` (verified 2026-10-18). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/troubleshoot/{degraded-state-handling,query-out-of-memory}.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/get-started/{sql-quickstart,deploy-sql-cluster}.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/query-data/query-streaming-topics.adoc`, `modules/reference/pages/sql/sql-statements/{create-table,set-show,show-tables,grant,revoke}.adoc`, `modules/reference/pages/sql/system-virtual-tables.adoc`, `modules/reference/pages/sql/sql-statements/explain.adoc`; docs `modules/reference/partials/rpk-sql/rpk-sql-debug-bundle.adoc` (verified 2026-10-27). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Redpanda SQL Troubleshooting Playbooks
 
@@ -76,13 +76,35 @@ A query with memory climbing toward the node's capacity is a candidate for an
 out-of-memory cancellation (Playbook 3). Many concurrent queries each holding
 memory slow everyone down.
 
-### Step 3: Reduce the work the query does
+### Step 3: Separate planning time from execution time
+
+If `accepted` is set but `executed` stays `NULL`, or a query is slow before any
+rows come back, time the planner:
+
+```sql
+EXPLAIN TIMING SELECT ...;   -- plans the query without running it
+
+-- or, to rank the stages
+SELECT measurement, elapsed
+FROM explain('SELECT ...', 'timing')
+ORDER BY elapsed DESC
+LIMIT 5;
+```
+
+`measurement` is the planning stage and `attribution` says whether the time went
+into planner work, a call to an external service (Schema Registry or the Iceberg
+REST catalog), or waiting. A stage that waits on an external service points at
+that service, not the query. `EXPLAIN CONFIG` lists the planner options in effect
+for the session. Both forms are diagnostics, not a PostgreSQL query plan, and
+their output can change between releases. Syntax: `/redpanda:sql`.
+
+### Step 4: Reduce the work the query does
 
 - Narrow the scan with tighter `WHERE` filters.
 - Reduce the number of joins, or pre-filter each side before joining.
 - Break a large aggregation into smaller ones.
 
-### Step 4: Session settings
+### Step 5: Session settings
 
 Only the options on the published
 [SET and SHOW](https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/set-show/)
@@ -101,7 +123,7 @@ SHOW client_min_messages;
 `client_min_messages` accepts `DEBUG5`, `DEBUG4`, `DEBUG3`, `DEBUG2`, `DEBUG1`,
 `LOG`, `NOTICE`, `WARNING`, and `ERROR`.
 
-### Step 5: Scale or escalate
+### Step 6: Scale or escalate
 
 If the workload legitimately needs more capacity, scale the SQL engine
 (`/redpanda:sql-admin-api`). If a single query stays stuck with no progress, note its

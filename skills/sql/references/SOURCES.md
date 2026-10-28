@@ -16,10 +16,13 @@ All paths are in `redpanda-data/cloud-docs`.
 
 | Skill file | Published sources |
 |---|---|
-| `SKILL.md` | `modules/reference/pages/sql/sql-statements/index.adoc` (read-only note, statement set), `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/reference/pages/sql/sql-statements/{create-view,drop-view}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/query-data/sql-editor.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc`, `modules/reference/pages/sql/sql-statements/{copy-to,grant,revoke,create-user,alter-user,drop-user,show-tables,show-catalogs,describe,create-table}.adoc`, `modules/reference/pages/sql/sql-data-types/{index,numeric-type/numeric,numeric-type/numeric-data-type-aliases}.adoc`, `modules/reference/pages/sql/transactions.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc` |
+| `SKILL.md` | `modules/reference/pages/sql/sql-statements/index.adoc` (read-only note, statement set), `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/reference/pages/sql/sql-statements/{create-view,drop-view}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/query-data/sql-editor.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc`, `modules/reference/pages/sql/sql-statements/{copy-to,grant,revoke,create-user,alter-user,drop-user,show-tables,show-catalogs,describe,create-table,create-schema,drop-schema,alter-owner,explain}.adoc`, `modules/reference/pages/sql/schema.adoc`, `modules/reference/pages/sql/sql-data-types/{index,numeric-type/numeric,numeric-type/numeric-data-type-aliases}.adoc`, `modules/reference/pages/sql/transactions.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc` |
 | `references/connect-and-types.md` | `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/connect-to-sql/language-clients/{psycopg2,java-jdbc,php-pdo,dotnet-dapper}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/reference/pages/sql/sql-data-types/**` (all type pages, incl. `time-type/time-operators.adoc`), `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc` |
-| `references/statements.md` | `modules/reference/pages/sql/sql-statements/{index,select,create-view,drop-view,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/pages/sql/system-catalogs/catalogs/{pg_views,pg_class}.adoc`, `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/sql/pages/manage/manage-access.adoc` |
+| `references/statements.md` | `modules/reference/pages/sql/sql-statements/{index,select,create-view,drop-view,create-schema,drop-schema,alter-owner,explain,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/pages/sql/system-catalogs/catalogs/{pg_views,pg_class}.adoc`, `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/sql/pages/manage/manage-access.adoc` |
 | `references/functions-and-analytics.md` | `modules/reference/pages/sql/sql-functions/**` (every category index and function page), `modules/reference/pages/sql/sql-clauses/over-window.adoc`, `modules/reference/pages/sql/sql-data-types/{geometry,geography,uuid}.adoc`, `modules/reference/pages/sql/sql-statements/set-show.adoc` (`oxla.enable_fast_math`) |
+
+Schemas (`schema.adoc`, `create-schema`, `drop-schema`) and ownership
+(`alter-owner`, which covers a view and a schema only) belong to this skill too.
 
 Views (`create-view`, `drop-view`, `pg_views`, and the view half of
 `modules/sql/pages/query-data/tables-and-views.adoc`) belong to this skill: a view
@@ -39,6 +42,11 @@ Catalog, storage, topic-mapping, and Iceberg statements (`create-redpanda-catalo
 - Which statements SQL Studio blocks: the published page states the block exists
   but not the list; do not enumerate it.
 - `pg_views.definition` text and the set of views on a cluster: query them.
+- The planner options that `EXPLAIN CONFIG` lists, their values, and their
+  descriptions: read them from `EXPLAIN CONFIG`. The published page documents the
+  three output columns, not the option set, and the engine's option list changes
+  between releases.
+- `EXPLAIN TIMING` stage names and elapsed values: runtime output.
 
 ## Known inconsistencies in the published docs (do not copy into the skill)
 
@@ -68,6 +76,9 @@ Catalog, storage, topic-mapping, and Iceberg statements (`create-redpanda-catalo
   `RANGE`. The skill follows the clause page.
 - `has-database-privilege.adoc` examples use a database named `redpanda`, while
   `grant.adoc` says the single database is `oxla`.
+- `schema.adoc` says objects in `pg_catalog`, `information_schema`, and `system`
+  cannot be created or those schemas dropped, while `drop-schema.adoc` spells out
+  a protection error only for `public`. The skill states both as written.
 
 ## Usage
 

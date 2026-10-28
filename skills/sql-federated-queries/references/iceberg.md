@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/sql/pages/query-data/{query-iceberg-topics,redpanda-catalogs}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{create,alter,drop}-iceberg-catalog.adoc`, `{create,alter,drop}-storage.adoc`, `{create,alter}-redpanda-catalog.adoc`, `create-table.adoc`, `describe.adoc`, `modules/reference/pages/sql/sql-data-types/{map,uuid,numeric-type/numeric}.adoc`; verified 2026-10-18. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/query-data/{query-iceberg-topics,redpanda-catalogs}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{create,alter,drop}-iceberg-catalog.adoc`, `{create,alter,drop}-storage.adoc`, `{create,alter}-redpanda-catalog.adoc`, `create-table.adoc`, `describe.adoc`, `modules/reference/pages/sql/sql-data-types/{map,uuid,numeric-type/numeric}.adoc`, `refresh.adoc`; verified 2026-10-27. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Query Iceberg-enabled Topics
 
@@ -56,7 +56,10 @@ USING CATALOG <iceberg_catalog> WITH (pandaproxy_url = '<pandaproxy-url>');
 ```
 
 You don't run these yourself, and you should not alter or drop the managed
-storage connection, Iceberg catalog, or link. Inspect them instead:
+storage connection, Iceberg catalog, or link. Redpanda Cloud sets the options of
+the managed Iceberg catalog again whenever the Iceberg configuration changes,
+such as when a secret rotates, so a change of your own is both overwritten and
+able to break queries until then. Inspect them instead:
 
 ```sql
 DESCRIBE REDPANDA CATALOG default_redpanda_catalog;
@@ -98,7 +101,11 @@ REFRESH default_redpanda_catalog=>orders;
 
 Without it, the next query fails at planning time with
 `Schema not found for Iceberg table '<table>'`. `REFRESH` updates only the
-schema view used for planning, not data; you don't run it between writes.
+stored schema used for planning, not data; you don't run it between writes.
+Refreshing a table in a linked Redpanda catalog also refreshes the stored schema
+of the topic's Iceberg table. Only the catalog's owner or a superuser can run it,
+so on a managed catalog that means *SQL: Manage*. Full syntax and errors:
+[redpanda-catalogs.md](redpanda-catalogs.md#refresh).
 
 ---
 
@@ -178,7 +185,7 @@ CREATE ICEBERG CATALOG [IF NOT EXISTS] catalog_name STORAGE storage_name
   WITH (option = 'value' [, ...]);
 
 ALTER ICEBERG CATALOG [IF EXISTS] catalog_name STORAGE storage_name  -- STORAGE is required
-  WITH (option = 'value' [, ...]);
+  WITH (option = 'value' [, ...]);   -- never on the managed Iceberg catalog
 
 DROP ICEBERG CATALOG [IF EXISTS] catalog_name;   -- fails while a Redpanda catalog is linked to it
 ```

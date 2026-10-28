@@ -106,13 +106,15 @@ history with no overlap. Redpanda SQL plans the union; you don't write
 | Object | What it is | Statements |
 |--------|------------|------------|
 | Storage connection | Named object-storage credentials (`TYPE = S3 \| GCS`) that back an Iceberg catalog | `CREATE` / `ALTER` / `DROP STORAGE`, `DESCRIBE STORAGE` |
-| Redpanda catalog | Connection to a Redpanda cluster (brokers + Schema Registry, optional HTTP Proxy) | `CREATE` / `ALTER` / `DROP REDPANDA CATALOG`, `DESCRIBE REDPANDA CATALOG` |
+| Redpanda catalog | Connection to a Redpanda cluster (brokers + Schema Registry, optional HTTP Proxy) | `CREATE` / `ALTER` (including `RESET` of connection options) / `DROP REDPANDA CATALOG`, `DESCRIBE REDPANDA CATALOG` |
 | Iceberg catalog | Connection to an Iceberg REST catalog; used only when linked to a Redpanda catalog | `CREATE` / `ALTER` / `DROP ICEBERG CATALOG`, `DESCRIBE ICEBERG CATALOG` |
 | Table | A topic mapped as `catalog_name=>table_name` | `CREATE` / `ALTER` / `DROP TABLE`, `DESCRIBE TABLE`, `REFRESH` |
 
 Catalogs live in a schema (`public` by default; qualify as `schema.catalog_name`
-to use another). Querying an Iceberg catalog's tables on their own (outside a
-linked Redpanda catalog) is not supported.
+to use another), so `DROP SCHEMA ... CASCADE` takes its catalog connections and
+storage definitions with it, and with them the tables mapped through those
+catalogs. Querying an Iceberg catalog's tables on their own (outside a linked
+Redpanda catalog) is not supported.
 
 A **view** is not a catalog object: it stores a `SELECT` query in a SQL schema and
 is queried by name with no catalog prefix. A view can read the topic-backed tables
@@ -168,11 +170,13 @@ recreate the table instead.
 
 ### After a schema change: `REFRESH`
 
-After any shape change to a topic's schema or its Iceberg table, run
-`REFRESH default_redpanda_catalog=>orders;` to update the schema view used for
-planning. Without it, a linked query fails with
-`Schema not found for Iceberg table '<table>'`. `REFRESH` updates only the
-schema view, not data.
+After a new schema version is registered for a topic's subject, or any shape
+change to its Iceberg table, run `REFRESH default_redpanda_catalog=>orders;` to
+update the schema Redpanda SQL stores for the table and plans against. Without
+it, a linked query fails with `Schema not found for Iceberg table '<table>'`.
+`REFRESH` updates only the stored schema, not data, and only the catalog's owner
+or a superuser can run it — on the Cloud-created default catalogs, *SQL: Manage*.
+See [redpanda-catalogs.md](references/redpanda-catalogs.md#refresh).
 
 ---
 

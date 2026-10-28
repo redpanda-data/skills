@@ -69,7 +69,7 @@ ORDER BY memory_bytes DESC;
 | Every query returns a degradation error | `SHOW NODES` and read `degradation_error`. See [Degraded nodes](#degraded-nodes). |
 | `ERROR: Query Out of Memory!` | Retry, then reduce concurrency or simplify the query. See [Query out of memory](#query-out-of-memory). |
 | `cancelled due to OOM prevention` | Contact Redpanda Support with the time of the error. |
-| Query slow or appears stuck | `system.queries` (which phase it is in), then `system.execs` (memory per task). See [troubleshooting.md](references/troubleshooting.md) Playbook 2. |
+| Query slow or appears stuck | `system.queries` (which phase it is in), then `system.execs` (memory per task), then `EXPLAIN TIMING <query>` to see where planning time goes. See [troubleshooting.md](references/troubleshooting.md) Playbook 2. |
 | Mapped topic returns decode errors or missing rows | Check the table's `error_handling_policy`, schema subject, and Protobuf message name. See [troubleshooting.md](references/troubleshooting.md) Playbook 5. |
 | Access error, or a catalog or table is invisible | Grants: `SELECT` on the external source plus `USAGE` on the schema. See [troubleshooting.md](references/troubleshooting.md) Playbook 6. |
 | `Schema not found for Iceberg table '<table>'` | Run `REFRESH <catalog>=><table>`. |
@@ -158,5 +158,5 @@ any `qid` values, and the `SHOW NODES` output if you have *SQL: Manage*.
 ## Reference Directory
 
 - [system-tables.md](references/system-tables.md): Columns and example queries for `system.nodes`, `system.queries`, and `system.execs` and their `SHOW` equivalents, with the superuser visibility rule.
-- [troubleshooting.md](references/troubleshooting.md): Playbooks for connection and authentication failures, slow or stuck queries, query out-of-memory errors, degraded nodes, topic mapping and deserialization errors, and access and grant problems.
+- [troubleshooting.md](references/troubleshooting.md): Playbooks for connection and authentication failures, slow or stuck queries (including `EXPLAIN TIMING` for planning time), query out-of-memory errors, degraded nodes, topic mapping and deserialization errors, and access and grant problems.
 - [redpanda-iceberg-source.md](references/redpanda-iceberg-source.md): Debugging queries over Iceberg-enabled topics on BYOC: the REST catalog requirement, `REFRESH`, schema-superset and key-mode errors, the Cloud-settable `iceberg_*` cluster and `redpanda.iceberg.*` topic properties, the DLQ table, and the Redpanda Iceberg metrics in the Cloud metrics export.

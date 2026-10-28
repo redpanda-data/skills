@@ -22,7 +22,7 @@ https://docs.redpanda.com/cloud-data-platform/.
 |---|---|
 | `SKILL.md` | cloud-docs `modules/reference/pages/sql/system-virtual-tables.adoc`; `modules/reference/pages/sql/sql-statements/{show-nodes,show-queries,show-execs}.adoc`; `modules/sql/pages/manage/manage-access.adoc` (*SQL: Manage* = superuser); `modules/sql/pages/troubleshoot/{degraded-state-handling,query-out-of-memory}.adoc`; `modules/sql/pages/get-started/{sql-quickstart,deploy-sql-cluster}.adoc` (connection string, *Redpanda SQL* card); `modules/sql/pages/connect-to-sql/authenticate.adoc`; docs `modules/reference/partials/rpk-sql/rpk-sql-debug-bundle.adoc` (Support-run bundle) |
 | `references/system-tables.md` | cloud-docs `modules/reference/pages/sql/system-virtual-tables.adoc` (column names, types, visibility); `modules/reference/pages/sql/sql-statements/{show-nodes,show-queries,show-execs,show-tables,show-catalogs,describe}.adoc`; `modules/sql/pages/troubleshoot/degraded-state-handling.adoc` (`SHOW NODES` readiness requirement); `modules/reference/pages/sql/sql-data-types/time-type/time-operators.adoc` (`TIMESTAMP - TIMESTAMP`) |
-| `references/troubleshooting.md` | cloud-docs `modules/sql/pages/troubleshoot/{degraded-state-handling,query-out-of-memory}.adoc`; `modules/sql/pages/connect-to-sql/authenticate.adoc`; `modules/sql/pages/get-started/{sql-quickstart,deploy-sql-cluster}.adoc`; `modules/sql/pages/manage/manage-access.adoc`; `modules/sql/pages/query-data/query-streaming-topics.adoc`; `modules/reference/pages/sql/sql-statements/{create-table,set-show,grant,revoke,show-tables,describe}.adoc`; `modules/reference/pages/sql/system-virtual-tables.adoc` (`system.kafka_sources`); docs `modules/reference/partials/rpk-sql/rpk-sql-debug-bundle.adoc` |
+| `references/troubleshooting.md` | cloud-docs `modules/sql/pages/troubleshoot/{degraded-state-handling,query-out-of-memory}.adoc`; `modules/reference/pages/sql/sql-statements/explain.adoc` (planning-time step in Playbook 2); `modules/sql/pages/connect-to-sql/authenticate.adoc`; `modules/sql/pages/get-started/{sql-quickstart,deploy-sql-cluster}.adoc`; `modules/sql/pages/manage/manage-access.adoc`; `modules/sql/pages/query-data/query-streaming-topics.adoc`; `modules/reference/pages/sql/sql-statements/{create-table,set-show,grant,revoke,show-tables,describe}.adoc`; `modules/reference/pages/sql/system-virtual-tables.adoc` (`system.kafka_sources`); docs `modules/reference/partials/rpk-sql/rpk-sql-debug-bundle.adoc` |
 | `references/redpanda-iceberg-source.md` | cloud-docs `modules/sql/pages/query-data/query-iceberg-topics.adoc`; `modules/manage/pages/iceberg/{about-iceberg-topics,iceberg-troubleshooting}.adoc` (single-sourced from docs `modules/manage/pages/iceberg/`, Cloud rendering); `modules/reference/pages/properties/{cluster-properties,topic-properties}.adoc` (only properties in the `redpanda-cloud` tag of docs `modules/reference/partials/properties/cluster-properties.adoc` and the `category-iceberg-integration` tag of `topic-properties.adoc`); `modules/manage/pages/monitor-cloud.adoc` (broker metrics endpoint); `modules/reference/pages/sql/system-virtual-tables.adoc` (`system.kafka_connections`) |
 
 ## Deferred to live introspection (not drift)
@@ -35,7 +35,9 @@ https://docs.redpanda.com/cloud-data-platform/.
 ## Re-verify on each sync
 
 - The published statement list (`modules/reference/pages/sql/sql-statements/`). `EXPLAIN`
-  is not in it and is intentionally absent from the skill.
+  joined it on 2026-10-23; the statement itself is documented by `/redpanda:sql`, and
+  this skill only uses `EXPLAIN TIMING`/`EXPLAIN CONFIG` as a triage step. The
+  planner options `EXPLAIN CONFIG` lists are runtime output: never enumerate them.
 - The `SET`/`SHOW` option list in `set-show.adoc`; only listed options are used.
 - Connection strings follow `authenticate.adoc` (`host=<sql-host> port=<sql-port>`),
   matching the sibling SQL skills; the quickstart and enable pages use
