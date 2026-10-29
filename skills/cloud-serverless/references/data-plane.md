@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). Draft pipelines and pipeline provenance fields (verified 2026-10-22): api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `Pipeline.State` value `STATE_DRAFT`, `PipelineCreate.draft` and the `config_yaml` requirement it relaxes, `PipelineUpdate.draft` as an assertion, `ListPipelinesRequest.Filter.states` and `filter.include_drafts` incl. their query-parameter spellings, and the read-only `Pipeline.create_time`, `update_time`, `created_by`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). Draft pipelines and pipeline provenance fields (verified 2026-10-22): api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `Pipeline.State` value `STATE_DRAFT`, `PipelineCreate.draft` and the `config_yaml` requirement it relaxes, `PipelineUpdate.draft` as an assertion, `ListPipelinesRequest.Filter.states` and `filter.include_drafts` incl. their query-parameter spellings, and the read-only `Pipeline.create_time`, `update_time`, `created_by`). Topic and partition ceilings (verified 2026-10-29): cloud-docs `modules/get-started/pages/cluster-types/serverless.adoc` (published per-cluster topic and partition maximums, the `POLICY_VIOLATION` failure on reaching either, and the Support path for a higher topic limit); api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `PATCH /v1/topics/{topic_name}/partitions`, `TopicService_AddTopicPartitions`, with `AddTopicPartitionsBody.partition_count` as the number of partitions to add and `validate_only`). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Data Plane API for Serverless Clusters
 
@@ -106,6 +106,39 @@ curl -s -X PUT "${DP_URL}/v1/topics/orders/configurations" \
 curl -s -X DELETE "${DP_URL}/v1/topics/orders" \
   -H "Authorization: Bearer ${TOKEN}"
 # Returns 204 No Content
+```
+
+### Topic and partition ceilings
+
+A Serverless cluster has a maximum number of topics and a maximum number of
+partitions, both per cluster. Read the current values from the published
+[Serverless usage limits](https://docs.redpanda.com/redpanda-cloud/get-started/cluster-types/serverless/#serverless-usage-limits)
+rather than assuming them: the partition figure counts logical partitions before
+replication, and Redpanda Support can raise a cluster's topic limit on request.
+
+Once a cluster reaches its topic or partition ceiling, requests to create topics
+or add partitions fail with a `POLICY_VIOLATION` error. That is a quota refusal
+rather than a transient failure, so retrying or backing off will not clear it —
+delete topics the workload no longer needs, or ask Redpanda Support for a higher
+topic limit. Treat it as a distinct branch when you script bulk topic creation:
+it means the cluster is full, not that the request was malformed.
+
+Partitions are added with `PATCH /v1/topics/{topic_name}/partitions`, where
+`partition_count` is the number of partitions to **add**, not the new total. Set
+`validate_only` to have the API check a request without applying it:
+
+```bash
+# Dry-run first: validate the request without adding any partitions
+curl -s -X PATCH "${DP_URL}/v1/topics/orders/partitions" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"partition_count": 3, "validate_only": true}' | jq .
+
+# Then apply
+curl -s -X PATCH "${DP_URL}/v1/topics/orders/partitions" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"partition_count": 3}' | jq .
 ```
 
 ---
