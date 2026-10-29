@@ -251,10 +251,10 @@ Available services:
 **Topic and partition ceilings.** A Serverless cluster has a maximum number of
 topics and a maximum number of partitions. Once it reaches either, requests to
 create topics or add partitions fail with `POLICY_VIOLATION` until topics are
-deleted or Redpanda Support raises the limit.
+deleted or Redpanda Support raises the topic limit.
 
-See [Data Plane Reference](references/data-plane.md) for examples, the current
-ceilings, and availability notes on Serverless clusters.
+See [Data Plane Reference](references/data-plane.md) for examples, where to read
+the current ceilings, and availability notes on Serverless clusters.
 
 ## Enterprise Features on Serverless
 
@@ -293,5 +293,5 @@ key tables, accepted values, defaults, mode semantics, and self-managed mappings
 
 - [Authentication](references/auth.md): OAuth2 client-credentials flow, token endpoint, audience, Authorization header, service-account creation, and token refresh.
 - [Control Plane: Serverless](references/control-plane-serverless.md): ResourceGroup, ServerlessRegion, and ServerlessCluster field-level reference, the async Operation pattern, state machine, and list filtering.
-- [Data Plane](references/data-plane.md): Using the per-cluster Data Plane API URL, Topic/ACL/User/Secret/Pipeline endpoints with curl examples, and the per-cluster topic and partition ceilings.
+- [Data Plane](references/data-plane.md): Using the per-cluster Data Plane API URL, Topic/ACL/User/Secret/Pipeline endpoints with curl examples, and where to read the per-cluster topic and partition ceilings.
 - [Enterprise Features](references/enterprise-features.md): Enterprise differentiators configurable on Serverless — Iceberg Topics, Server-Side Schema ID Validation, Leadership Pinning, and RBAC — with every topic config key, accepted values, defaults, Iceberg mode semantics, license-requirement notes, and which cluster-level features are managed by Redpanda (not tenant-configurable).

@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). Draft pipelines and pipeline provenance fields (verified 2026-10-22): api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `Pipeline.State` value `STATE_DRAFT`, `PipelineCreate.draft` and the `config_yaml` requirement it relaxes, `PipelineUpdate.draft` as an assertion, `ListPipelinesRequest.Filter.states` and `filter.include_drafts` incl. their query-parameter spellings, and the read-only `Pipeline.create_time`, `update_time`, `created_by`). Topic and partition ceilings (verified 2026-10-29): cloud-docs `modules/get-started/pages/cluster-types/serverless.adoc` (published per-cluster topic and partition maximums, the `POLICY_VIOLATION` failure on reaching either, and the Support path for a higher topic limit); api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `PATCH /v1/topics/{topic_name}/partitions`, `TopicService_AddTopicPartitions`, with `AddTopicPartitionsBody.partition_count` as the number of partitions to add and `validate_only`). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). Draft pipelines and pipeline provenance fields (verified 2026-10-22): api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `Pipeline.State` value `STATE_DRAFT`, `PipelineCreate.draft` and the `config_yaml` requirement it relaxes, `PipelineUpdate.draft` as an assertion, `ListPipelinesRequest.Filter.states` and `filter.include_drafts` incl. their query-parameter spellings, and the read-only `Pipeline.create_time`, `update_time`, `created_by`). Topic and partition ceilings (verified 2026-10-29): cloud-docs `modules/get-started/pages/cluster-types/serverless.adoc` (published per-cluster topic and partition maximums, the `POLICY_VIOLATION` failure on reaching either, and the Support path for a higher topic limit); api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `PATCH /v1/topics/{topic_name}/partitions`, `TopicService_AddTopicPartitions`, with `AddTopicPartitionsBody.partition_count` as the number of partitions to add and `validate_only`); console `backend/pkg/api/connect/errors/kafka.go` (Kafka `POLICY_VIOLATION` mapped to `INVALID_ARGUMENT` with an `ErrorInfo` detail carrying the Kafka error name, code, and `retriable`, verified 2026-10-29). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Data Plane API for Serverless Clusters
 
@@ -112,7 +112,7 @@ curl -s -X DELETE "${DP_URL}/v1/topics/orders" \
 
 A Serverless cluster has a maximum number of topics and a maximum number of
 partitions, both per cluster. Read the current values from the published
-[Serverless usage limits](https://docs.redpanda.com/redpanda-cloud/get-started/cluster-types/serverless/#serverless-usage-limits)
+[Serverless usage limits](https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/serverless/#serverless-usage-limits)
 rather than assuming them: the partition figure counts logical partitions before
 replication, and Redpanda Support can raise a cluster's topic limit on request.
 
@@ -121,11 +121,17 @@ or add partitions fail with a `POLICY_VIOLATION` error. That is a quota refusal
 rather than a transient failure, so retrying or backing off will not clear it —
 delete topics the workload no longer needs, or ask Redpanda Support for a higher
 topic limit. Treat it as a distinct branch when you script bulk topic creation:
-it means the cluster is full, not that the request was malformed.
+it means the cluster is full, not that the request was malformed. The HTTP
+response does not make that distinction for you: the refusal comes back as
+`400` / `INVALID_ARGUMENT`, the same status as a malformed request, with
+`POLICY_VIOLATION` carried in the error details (Kafka error code `44`, marked
+not retriable). Match on the error details, not on the status code.
 
 Partitions are added with `PATCH /v1/topics/{topic_name}/partitions`, where
 `partition_count` is the number of partitions to **add**, not the new total. Set
-`validate_only` to have the API check a request without applying it:
+`validate_only` to have the API validate a request without applying it. A dry
+run checks the request itself; it is not a promise that the cluster has room
+under its partition ceiling:
 
 ```bash
 # Dry-run first: validate the request without adding any partitions
