@@ -1,88 +1,44 @@
 # Redpanda SQL (`sql`) Skill Source Map
 
-Scope gate: the published Redpanda Cloud docs; the engine source is used only to
-confirm behavior of documented surfaces, never to add undocumented ones.
+Scope gate: what a Redpanda Cloud user can do with the Redpanda SQL engine that Cloud runs.
+The skill is thin: it keeps only the "How to work" procedures below, each backed by a
+behavioral eval case in `evals/suites/sql.eval.json`, and sends the agent to the docs for
+everything else. This file maps only the claims the skill still makes.
 
-The published docs live in the private `redpanda-data/cloud-docs` repo and are
-served at https://docs.redpanda.com/cloud-data-platform/. Read them with
-`git -C <cloud-docs clone> show origin/main:<path>` or the Redpanda-Github-Read
-connector. The published statement set is exactly the files under
-`modules/reference/pages/sql/sql-statements/`; list it with
-`git ls-tree -r --name-only origin/main modules/reference/pages/sql/`.
+Engine claims are checked against `redpanda-data/oxla` at the release tag that the Cloud
+install pack pins (`vars.redpanda_oxla_version` in `redpanda-data/cloudv2`
+`install-pack/<version>.yml`; read the pin, do not copy it here). User-sync claims are checked
+against `redpanda-data/cloudv2` at the `redpanda_oxla_api_version` the same install pack pins.
+Read both private repos with the GitHub API; do not clone them.
 
-## File-to-source table
+## How to work: line, source, eval case
 
-All paths are in `redpanda-data/cloud-docs`.
+| How to work line | Source | Eval case |
+|---|---|---|
+| Find the table in its catalog: `catalog=>table`, `SHOW REDPANDA TABLES`, `DESCRIBE TABLE`, unqualified `SHOW TABLES` is an error; an unlisted topic is not mapped yet | cloud-docs `modules/reference/pages/sql/sql-statements/{show-tables,describe}.adoc` | `query-topic-table-through-catalog` |
+| Fix login access in Redpanda Cloud IAM, not with SQL: the `has_database_privilege(<user>, current_database(), 'CONNECT')` check, **Organization IAM > Roles**, and the user sync owning `CONNECT` and superuser for email-named users | cloud-docs `modules/sql/pages/manage/manage-access.adoc`; cloudv2 `apps/redpanda-oxla-api/internal/controller/user_sync_db.go` (`queryCurrentUsersSQL`, `queryCurrentOxlaUsersDB`, `buildUserOpSQL`), `reconcile_users.go` (`computeUserDiff`) | `lost-login-fixed-in-iam-not-grant-connect` |
+| Read the stored grants before any `REVOKE`: a pattern that matches no stored grant is an error; the two `information_schema` grant views; a catalog-wide grant appears only in `role_table_grants`; revoking it removes the per-topic grants | oxla `src/access_control/grant_revoke.cpp`, `src/metastore/information_schema_role_table_grants.cpp`, `src/metastore/information_schema_role_external_relation_grants.cpp`, `tests/blackbox/pit/kafka/test_redpanda_source_grants.py` (`test_revoke_metadata_grant_cascades_to_external_relation_grants`); cloud-docs `manage-access.adoc` | `narrow-wildcard-grant-by-reading-stored-grants` |
+| Before granting `SELECT` on a view, check what it exposes: a view runs with its owner's privileges; its definition is in `pg_views` (verified 2026-10-30) | cloud-docs `modules/reference/pages/sql/sql-statements/{create-view,grant}.adoc`, `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/reference/pages/sql/system-catalogs/catalogs/pg_views.adoc` | `grant-on-view-exposes-what-it-returns` |
 
-| Skill file | Published sources |
+## Other claims in SKILL.md
+
+| Claim | Source |
 |---|---|
-| `SKILL.md` | `modules/reference/pages/sql/sql-statements/index.adoc` (read-only note, statement set), `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/reference/pages/sql/sql-statements/{create-view,drop-view}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/query-data/sql-editor.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc`, `modules/reference/pages/sql/sql-statements/{copy-to,grant,revoke,create-user,alter-user,drop-user,show-tables,show-catalogs,describe,create-table,create-schema,drop-schema,alter-owner,explain}.adoc`, `modules/reference/pages/sql/schema.adoc`, `modules/reference/pages/sql/sql-data-types/{index,numeric-type/numeric,numeric-type/numeric-data-type-aliases}.adoc`, `modules/reference/pages/sql/transactions.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc` |
-| `references/connect-and-types.md` | `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/connect-to-sql/language-clients/{psycopg2,java-jdbc,php-pdo,dotnet-dapper}.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/reference/pages/sql/sql-data-types/**` (all type pages, incl. `time-type/time-operators.adoc`), `modules/sql/pages/get-started/redpanda-sql-vs-postgresql.adoc` |
-| `references/statements.md` | `modules/reference/pages/sql/sql-statements/{index,select,create-view,drop-view,create-schema,drop-schema,alter-owner,explain,copy-to,set-show,describe,show-catalogs,show-tables,show-nodes,show-queries,show-execs,grant,revoke,create-user,alter-user,drop-user}.adoc`, `modules/reference/pages/sql/sql-clauses/**`, `modules/reference/pages/sql/sql-operators/index.adoc`, `modules/reference/pages/sql/{transactions,schema,comment-support,information-schema,system-virtual-tables}.adoc`, `modules/reference/pages/sql/system-catalogs/index.adoc`, `modules/reference/pages/sql/system-catalogs/catalogs/{pg_views,pg_class}.adoc`, `modules/sql/pages/query-data/tables-and-views.adoc`, `modules/sql/pages/manage/manage-access.adoc` |
-| `references/functions-and-analytics.md` | `modules/reference/pages/sql/sql-functions/**` (every category index and function page), `modules/reference/pages/sql/sql-clauses/over-window.adoc`, `modules/reference/pages/sql/sql-data-types/{geometry,geography,uuid}.adoc`, `modules/reference/pages/sql/sql-statements/set-show.adoc` (`oxla.enable_fast_math`) |
+| Read-only engine; topics mapped through catalogs; no `INSERT` or `COPY FROM` | cloud-docs `modules/reference/pages/sql/sql-statements/index.adoc` |
+| Connection details come from the **SQL** tab of **How to connect** | cloud-docs `modules/sql/pages/get-started/sql-quickstart.adoc`, `modules/sql/pages/connect-to-sql/authenticate.adoc` |
+| Docs URLs | served at https://docs.redpanda.com/cloud-data-platform/ from cloud-docs |
 
-Schemas (`schema.adoc`, `create-schema`, `drop-schema`) and ownership
-(`alter-owner`, which covers a view and a schema only) belong to this skill too.
+## Docs gaps reported (not skill claims; do not re-verify here)
 
-Views (`create-view`, `drop-view`, `pg_views`, and the view half of
-`modules/sql/pages/query-data/tables-and-views.adoc`) belong to this skill: a view
-lives in a SQL schema, not in a catalog. The topic-backed-table half of that page
-is owned by `sql-federated-queries`.
+Found by the evals and handed to the docs team. They live in the docs once fixed, never in
+the skill.
 
-Catalog, storage, topic-mapping, and Iceberg statements (`create-redpanda-catalog`,
-`create-storage`, `create-iceberg-catalog`, `create-table`, `alter-table`,
-`drop-table`, and `modules/sql/pages/query-data/**`) are owned by
-`sql-federated-queries`; this skill only points to it.
-
-## Deferred to live introspection (not drift)
-
-- Host, port, and connection string: read from the Cloud Console **How to connect**
-  panel, never pinned beyond what the quickstart shows.
-- Session setting values (`SHOW <option>`), result rows, and `pg_typeof` output.
-- Which statements SQL Studio blocks: the published page states the block exists
-  but not the list; do not enumerate it.
-- `pg_views.definition` text and the set of views on a cluster: query them.
-- The planner options that `EXPLAIN CONFIG` lists, their values, and their
-  descriptions: read them from `EXPLAIN CONFIG`. The published page documents the
-  three output columns, not the option set, and the engine's option list changes
-  between releases.
-- `EXPLAIN TIMING` stage names and elapsed values: runtime output.
-
-## Known inconsistencies in the published docs (do not copy into the skill)
-
-- Many type, clause, and function pages illustrate with `CREATE TABLE (...)` plus
-  `INSERT`, and the language-client pages create and insert into tables, although
-  the statements index says Redpanda SQL is read-only. The skill uses
-  `default_redpanda_catalog=>table` examples instead.
-- `grant.adoc` now documents the table level as "a table or a view" and states
-  that `INSERT`/`UPDATE`/`DELETE` on a view are accepted but have no effect. The
-  skill documents the table level for views only, since a view is the sole
-  object of that level a user can create. `revoke.adoc` defers the levels to
-  `grant.adoc`.
-- `pg_class.adoc` lists `relkind` `r` for tables and `i` for indexes, with a
-  `CREATE TABLE` / `CREATE INDEX` example; those kinds come only from native
-  tables and indexes, which users cannot create. The kind reported for
-  topic-backed tables is not documented yet, so the skill states only `v` for a
-  view.
-- The `CREATE VIEW` page states that `information_schema.tables` and `psql`'s
-  `\d` / `\dv` do not list views, while the information-schema page describes
-  `information_schema.tables` as covering tables and views. The skill follows the
-  statement page and points at `pg_views` for listing views.
-- `timestamp-with-time-zone.adoc` says values are returned "exactly as stored"
-  but its example output is converted to UTC; the skill follows the example and
-  `timestamp-without-time-zone.adoc` (display time zone fixed to UTC).
-- The window-functions index says frames are restricted to `ROWS`; the
-  `over-window.adoc` clause page and the function pages document `ROWS` and
-  `RANGE`. The skill follows the clause page.
-- `has-database-privilege.adoc` examples use a database named `redpanda`, while
-  `grant.adoc` says the single database is `oxla`.
-- `schema.adoc` says objects in `pg_catalog`, `information_schema`, and `system`
-  cannot be created or those schemas dropped, while `drop-schema.adoc` spells out
-  a protection error only for `public`. The skill states both as written.
-
-## Usage
-
-Before changing a claim, re-read the cited page at `origin/main`. Add a statement,
-function, type, or option only when a published page documents it; if a needed
-behavior is only in engine source, leave it out or flag it as a TODO for human
-review.
+- Grants survive when a user's SQL role is removed and reassigned (cloudv2 `user_sync_db.go`
+  `opRevoke`, `repairExistingUser`).
+- The GRANT page says `SELECT` on a view needs no grant on the tables it reads, but does not
+  repeat the CREATE VIEW page's warning that the grantee reads everything the view returns.
+  (The fact is published on CREATE VIEW; the skill keeps only the behavior of checking before
+  granting.)
+- `sql-data-types/{timestamp-with-time-zone,bytea,uuid,array}.adoc` understate the engine's
+  behavior (session time zone rendering, `bytea` comparisons, `uuid` compared with a string
+  literal, the `GROUP BY` error on arrays).

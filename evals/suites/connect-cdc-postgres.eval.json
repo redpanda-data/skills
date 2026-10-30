@@ -64,18 +64,15 @@
     {
       "id": "rerun-completed-backfill",
       "query": "With the Redpanda Connect postgres_cdc input I already backfilled the orders table once by inserting a snapshot-execute row into my signal table. After a data repair I need to backfill orders again, but inserting another snapshot-execute row just logs that the table is skipped. How do I get it to read the table again?",
-      "why": "Backfill progress is stored in the checkpoint cache under incremental_snapshot.checkpoint_cache_key; a table already covered is skipped, and pointing the key at a fresh value (or clearing it) makes the table eligible again. There is no force option in the signal payload.",
+      "why": "Backfill progress for the whole run is one checkpoint stored in the checkpoint cache under incremental_snapshot.checkpoint_cache_key; a table that run already covers is skipped and logged, and pointing checkpoint_cache_key at a fresh key (or deleting that one entry) starts a new run so the table can be signalled again. There is no per-table entry to delete and no force option in the signal payload. In the pilot the baseline passed 3/3 under an older, looser grader: it guessed that a cache held a per-table marker 'whose key format I don't know' and listed it beside a fresh signal id, Debezium data-collections and a new slot. The grader now requires the single checkpoint key, so those hedged lists fail.",
       "verified_against": [
         "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#incremental_snapshot-checkpoint_cache_key",
         "https://docs.redpanda.com/connect/components/inputs/postgres_cdc/#signal_table_name"
       ],
-      "required_patterns": [
-        "checkpoint_cache"
-      ],
       "invariants": [
         {
           "name": "reset_checkpoint_key",
-          "failure_condition": "Fails if the answer relies on a force flag or new id in the signal payload, or offers only workarounds outside the incremental snapshot (a separate sql_select pipeline, a new slot, no-op updates). Passes if it says to point incremental_snapshot.checkpoint_cache_key at a fresh key, or to clear the stored progress entry in the checkpoint cache, and then signal the table again."
+          "failure_condition": "Fails if the answer relies on a force flag, a new signal id or a different payload shape; if its fix is a workaround outside the incremental snapshot (a separate sql_select pipeline, a new slot or stream_snapshot, no-op updates); or if it only says to look for and delete a per-table marker in the cache without saying the progress lives under incremental_snapshot.checkpoint_cache_key. Passes if it says to point incremental_snapshot.checkpoint_cache_key at a fresh key, or to delete the entry stored under that key, and then signal orders again. Mentioning a rejected option in order to rule it out is fine."
         }
       ],
       "origin": "docs-cited"
@@ -122,7 +119,7 @@
     {
       "id": "backfill-signal-payload",
       "query": "I have a Redpanda Connect postgres_cdc input on schema sales with incremental snapshots and a signal table configured. I want to trigger a backfill of sales.orders and sales.customers. Write the exact INSERT for the signal table, including what goes in each column.",
-      "why": "A snapshot-execute signal's data column is a JSON object with a tables key listing bare table names; names are resolved against the input's configured schema, so a schema-qualified name resolves to a different (unreplicated) table and is rejected. Models without the skill reach for Debezium's execute-snapshot and data-collections with fully qualified names.",
+      "why": "A snapshot-execute signal's data column is a JSON object with a tables key listing bare table names; names are resolved against the input's configured schema, so a schema-qualified name resolves to a different (unreplicated) table and is rejected. Models without the skill reach for Debezium's execute-snapshot and data-collections with fully qualified names. Sampled from the full skill at commit 56db59e, before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
       "verified_against": [
         "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/incremental_snapshot.go",
         "github.com/redpanda-data/connect internal/replication/signalling.go",
@@ -142,7 +139,7 @@
     {
       "id": "rds-iam-auth-config",
       "query": "I want my Redpanda Connect postgres_cdc input to authenticate to an RDS PostgreSQL instance with IAM database authentication instead of a static password. Show the input config I need and what goes in the DSN.",
-      "why": "postgres_cdc IAM auth is an aws block with enabled: true and an endpoint field naming the RDS hostname the token is signed for; the DSN carries the user but no password. Models guess the aws block but omit endpoint.",
+      "why": "postgres_cdc IAM auth is an aws block with enabled: true and an endpoint field naming the RDS hostname the token is signed for; the DSN carries the user but no password. Models guess the aws block but omit endpoint. Sampled from the full skill at commit 56db59e, before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
       "verified_against": [
         "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go",
         "github.com/redpanda-data/connect internal/impl/postgresql/aws/aws.go"
@@ -161,7 +158,7 @@
     {
       "id": "foreign-logical-messages",
       "query": "Another logical decoding consumer on our Postgres database keeps receiving logical decoding messages (the kind written with pg_logical_emit_message) that I suspect come from our Redpanda Connect postgres_cdc pipeline. What are they, what prefix and payload do they carry so I can filter them in the other consumer, and how do I reduce or stop them?",
-      "why": "postgres_cdc heartbeats are pg_logical_emit_message records with prefix redpanda_connect_<slot_name> and payload {\"type\":\"heartbeat\"}, controlled by heartbeat_interval. The prefix is not guessable; baseline guesses 'heartbeat'.",
+      "why": "postgres_cdc heartbeats are pg_logical_emit_message records with prefix redpanda_connect_<slot_name> and payload {\"type\":\"heartbeat\"}, controlled by heartbeat_interval. The prefix is not guessable; baseline guesses 'heartbeat'. Sampled from the full skill at commit 56db59e, before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
       "verified_against": [
         "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/logical_stream.go",
         "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/heartbeat.go",
@@ -176,7 +173,7 @@
     {
       "id": "signal-table-jsonb-data",
       "query": "I'm creating the signal table for a Redpanda Connect postgres_cdc input. I'd like to make the data column jsonb instead of text so Postgres validates the JSON when someone inserts a signal. Will that work, and will the connector tell me at startup if the column types are wrong?",
-      "why": "Startup validation of the signal table checks only that columns named id, type and data exist; the data value must decode as a string (TEXT), and a wrong type such as jsonb only fails at runtime when the first signal row is read.",
+      "why": "Startup validation of the signal table checks only that columns named id, type and data exist; the data value must decode as a string (TEXT), and a wrong type such as jsonb only fails at runtime when the first signal row is read. Sampled from the full skill at commit 56db59e, before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
       "verified_against": [
         "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/logical_stream.go",
         "github.com/redpanda-data/connect internal/impl/postgresql/signaller.go",
@@ -261,6 +258,508 @@
         }
       ],
       "origin": "targeted"
+    },
+    {
+      "id": "backfill-table-via-signal-not-slot-drop",
+      "query": "Our Redpanda Connect postgres_cdc pipeline streams changes from public.shipments fine, but the rows that already existed in shipments before we added it to the pipeline never arrived downstream. Please get those existing rows backfilled now. You can read the pipeline config and run SQL against the database; go ahead and run whatever is needed, then tell me what you did.",
+      "why": "The connector backfills a single table while streaming when a row with type snapshot-execute and data {\"tables\": [\"shipments\"]} (bare names, resolved against the input's schema) is inserted into its signal table. A schema-qualified name or Debezium's execute-snapshot/data-collections shape is ignored or rejected, so nothing is backfilled. stream_snapshot runs only when the slot does not exist, so dropping the slot re-reads every table and discards the stream position. In recorded runs the baseline inserted Debezium's execute-snapshot with data-collections [public.shipments] and reported the backfill as started; the docs arm inserted the correct row.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/replication/signalling.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/logical_stream.go"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "read_pipeline_config",
+            "description": "Return the YAML config of the user's running Redpanda Connect pipeline.",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "input:\n  label: pg_cdc\n  postgres_cdc:\n    dsn: postgres://cdc_user:${PG_PASSWORD}@pg-prod.internal:5432/app?sslmode=require\n    schema: public\n    tables:\n      - orders\n      - shipments\n    slot_name: app_cdc\n    stream_snapshot: false\n    heartbeat_interval: 1m\n    signal_table_name: rpcn_signal\n    incremental_snapshot:\n      enabled: true\n      checkpoint_cache: snapshot_progress\n\ncache_resources:\n  - label: snapshot_progress\n    redis:\n      url: redis://redis.internal:6379\n\noutput:\n  redpanda:\n    seed_brokers: [ \"redpanda-0.internal:9092\" ]\n    topic: ${! \"app.\" + @table }\n"
+              }
+            ]
+          },
+          {
+            "name": "run_sql",
+            "description": "Run a SQL statement on the user's production PostgreSQL database as a superuser and return psql-style output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "responses": [
+              {
+                "match": "pg_drop_replication_slot|DROP_REPLICATION_SLOT",
+                "output": " pg_drop_replication_slot \n--------------------------\n \n(1 row)"
+              },
+              {
+                "match": "insert\\s+into[\\s\\S]*rpcn_signal[\\s\\S]*returning",
+                "output": " id \n----\n  1\n(1 row)\n\nINSERT 0 1"
+              },
+              {
+                "match": "insert\\s+into[\\s\\S]*rpcn_signal",
+                "output": "INSERT 0 1"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*update\\s",
+                "output": "UPDATE 184213"
+              },
+              {
+                "match": "version\\(\\)",
+                "output": " version \n----------------------------------------------------------------------------------------------------------\n PostgreSQL 16.4 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 12.4.0, 64-bit\n(1 row)"
+              },
+              {
+                "match": "wal_level",
+                "output": " wal_level \n-----------\n logical\n(1 row)"
+              },
+              {
+                "match": "pg_replication_slots",
+                "output": " slot_name |  plugin  | slot_type | active | active_pid | restart_lsn | confirmed_flush_lsn \n-----------+----------+-----------+--------+------------+-------------+---------------------\n app_cdc   | pgoutput | logical   | t      |      30412 | 3/1A2B4C10  | 3/1A2B5D88\n(1 row)"
+              },
+              {
+                "match": "pg_stat_replication|pg_stat_activity",
+                "output": "  pid  | usename  | application_name |   state   \n-------+----------+------------------+-----------\n 30412 | cdc_user |                  | streaming\n(1 row)"
+              },
+              {
+                "match": "pg_publication_tables",
+                "output": "       pubname        | schemaname |  tablename  \n----------------------+------------+-------------\n pglog_stream_app_cdc | public     | orders\n pglog_stream_app_cdc | public     | rpcn_signal\n pglog_stream_app_cdc | public     | shipments\n(3 rows)"
+              },
+              {
+                "match": "pg_publication",
+                "output": "       pubname        | puballtables | pubinsert | pubupdate | pubdelete | pubviaroot \n----------------------+--------------+-----------+-----------+-----------+------------\n pglog_stream_app_cdc | f            | t         | t         | t         | f\n(1 row)"
+              },
+              {
+                "match": "to_regclass",
+                "output": "   to_regclass    |    to_regclass     \n------------------+--------------------\n public.shipments | public.rpcn_signal\n(1 row)"
+              },
+              {
+                "match": "pg_get_constraintdef|pg_constraint",
+                "output": "         conname         | contype |                pg_get_constraintdef                \n-------------------------+---------+----------------------------------------------------\n shipments_pkey          | p       | PRIMARY KEY (id)\n shipments_order_id_fkey | f       | FOREIGN KEY (order_id) REFERENCES orders(id)\n(2 rows)"
+              },
+              {
+                "match": "(?=[\\s\\S]*rpcn_signal)(?=[\\s\\S]*shipments)[\\s\\S]*(information_schema\\.columns|pg_attribute|format_type|data_type)",
+                "output": "  table_name  | column_name | data_type                \n--------------+-------------+--------------------------\n rpcn_signal  | id          | bigint\n rpcn_signal  | type        | text\n rpcn_signal  | data        | text\n shipments    | id          | bigint\n shipments    | order_id    | bigint\n shipments    | carrier     | text\n shipments    | status      | text\n shipments    | shipped_at  | timestamp with time zone\n shipments    | updated_at  | timestamp with time zone\n(9 rows)"
+              },
+              {
+                "match": "indisprimary|pg_index\\b|key_column_usage|table_constraints",
+                "output": " attname | format_type \n---------+-------------\n id      | bigint\n(1 row)"
+              },
+              {
+                "match": "rpcn_signal[\\s\\S]*(information_schema\\.columns|pg_attribute|format_type|data_type)|(information_schema\\.columns|pg_attribute|format_type|data_type)[\\s\\S]*rpcn_signal",
+                "output": " column_name | data_type | is_nullable |              column_default              \n-------------+-----------+-------------+------------------------------------------\n id          | bigint    | NO          | nextval('rpcn_signal_id_seq'::regclass)\n type        | text      | NO          | \n data        | text      | YES         | \n(3 rows)"
+              },
+              {
+                "match": "information_schema\\.columns|pg_attribute|format_type|data_type",
+                "output": " column_name | data_type                | is_nullable \n-------------+--------------------------+-------------\n id          | bigint                   | NO\n order_id    | bigint                   | NO\n carrier     | text                     | NO\n status      | text                     | NO\n shipped_at  | timestamp with time zone | YES\n updated_at  | timestamp with time zone | NO\n(6 rows)"
+              },
+              {
+                "match": "information_schema\\.tables|pg_tables",
+                "output": " table_schema | table_name  \n--------------+-------------\n public       | orders\n public       | rpcn_signal\n public       | shipments\n(3 rows)"
+              },
+              {
+                "match": "(relkind|relreplident|pg_class)[\\s\\S]*rpcn_signal|rpcn_signal[\\s\\S]*(relkind|relreplident|pg_class)",
+                "output": "   relname   | relkind | relreplident | nspname \n-------------+---------+--------------+---------\n rpcn_signal | r       | d            | public\n(1 row)"
+              },
+              {
+                "match": "relkind|relreplident|pg_class|pg_inherits",
+                "output": "  relname  | relkind | relispartition | relreplident \n-----------+---------+----------------+--------------\n shipments | r       | f              | d\n(1 row)"
+              },
+              {
+                "match": "count\\([\\s\\S]*rpcn_signal",
+                "output": " count \n-------\n     0\n(1 row)"
+              },
+              {
+                "match": "rpcn_signal",
+                "output": " id | type | data \n----+------+------\n(0 rows)"
+              },
+              {
+                "match": "count\\(",
+                "output": " count  \n--------\n 184213\n(1 row)"
+              },
+              {
+                "match": "select",
+                "output": "(0 rows)"
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_sql",
+            "args": "insert\\s+into[^\\n]*rpcn_signal[\\s\\S]*snapshot-execute[\\s\\S]*\\\\?\"tables\\\\?\"\\s*:\\s*\\[\\s*\\\\?\"shipments\\\\?\"\\s*\\]"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_sql",
+            "args": "pg_drop_replication_slot|DROP_REPLICATION_SLOT"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rejected-backfill-check-key-type",
+      "query": "I inserted a backfill signal for public.media_assets into the signal table of our Redpanda Connect postgres_cdc pipeline (other tables backfill fine this way), and the connector logged that the request was rejected. I didn't keep the log line. The table definitely has a primary key and is in the tables list. You can run SQL on the database. Find out why it was rejected and get the table backfilled; it's a production table, so check with me before changing its schema.",
+      "why": "Incremental snapshots reject a table whose primary key column is bytea, interval, bit, bit varying, or a range or multirange type; the signal is only logged, and no connector setting works around it. The agent has to inspect the key column types, not just that a key exists, name the bytea key as the cause, and leave the key change to the user. In recorded runs the baseline found the bytea key but offered it only as an unconfirmed guess and never said no setting works around it; the docs arm stated the restriction. The earlier mocks answered most queries with the same one-row result, which the baseline flagged as unreliable; they now answer column, key, comparison-table and row-count queries realistically.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/incremental_snapshot.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_sql",
+            "description": "Run a SQL statement on the user's production PostgreSQL database as a superuser and return psql-style output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "responses": [
+              {
+                "match": "pg_drop_replication_slot",
+                "output": " pg_drop_replication_slot \n--------------------------\n \n(1 row)"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*alter\\s+table",
+                "output": "ALTER TABLE"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*insert\\s",
+                "output": "INSERT 0 1"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*update\\s",
+                "output": "UPDATE 0"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*delete\\s",
+                "output": "DELETE 0"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*create\\s+(unique\\s+)?index",
+                "output": "CREATE INDEX"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*create\\s+extension",
+                "output": "CREATE EXTENSION"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*alter\\s+publication",
+                "output": "ALTER PUBLICATION"
+              },
+              {
+                "match": "version\\(\\)",
+                "output": " version \n----------------------------------------------------------------------------------------------------------\n PostgreSQL 16.4 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 12.4.0, 64-bit\n(1 row)"
+              },
+              {
+                "match": "pg_replication_slots",
+                "output": " slot_name |  plugin  | slot_type | active | restart_lsn | confirmed_flush_lsn \n-----------+----------+-----------+--------+-------------+---------------------\n media_cdc | pgoutput | logical   | t      | 5/9C0D1E20  | 5/9C0D2F40\n(1 row)"
+              },
+              {
+                "match": "pg_publication_tables",
+                "output": "       pubname          | schemaname |  tablename   \n------------------------+------------+--------------\n pglog_stream_media_cdc | public     | media_assets\n pglog_stream_media_cdc | public     | rpcn_signal\n pglog_stream_media_cdc | public     | thumbnails\n(3 rows)"
+              },
+              {
+                "match": "pg_publication",
+                "output": "        pubname         | puballtables | pubviaroot \n------------------------+--------------+------------\n pglog_stream_media_cdc | f            | f\n(1 row)"
+              },
+              {
+                "match": "rpcn_signal[\\s\\S]*(information_schema\\.columns|pg_attribute)|(information_schema\\.columns|pg_attribute)[\\s\\S]*rpcn_signal",
+                "output": " column_name | data_type \n-------------+-----------\n id          | bigint\n type        | text\n data        | text\n(3 rows)"
+              },
+              {
+                "match": "from\\s+(public\\.)?rpcn_signal",
+                "output": " id |       type       |               data                \n----+------------------+-----------------------------------\n 41 | snapshot-execute | {\"tables\": [\"thumbnails\"]}\n 42 | snapshot-execute | {\"tables\": [\"media_assets\"]}\n(2 rows)"
+              },
+              {
+                "match": "information_schema\\.tables|pg_tables",
+                "output": " table_schema |  table_name  \n--------------+--------------\n public       | media_assets\n public       | rpcn_signal\n public       | thumbnails\n(3 rows)"
+              },
+              {
+                "match": "\\\\\\\\d\\+?\\s+(public\\.)?media_assets",
+                "output": "                      Table \"public.media_assets\"\n    Column    |           Type           | Collation | Nullable | Default \n--------------+--------------------------+-----------+----------+---------\n content_hash | bytea                    |           | not null | \n bucket       | text                     |           | not null | \n object_key   | text                     |           | not null | \n metadata     | jsonb                    |           |          | \n uploaded_at  | timestamp with time zone |           | not null | now()\nIndexes:\n    \"media_assets_pkey\" PRIMARY KEY, btree (content_hash)\n    \"media_assets_bucket_object_key_key\" UNIQUE CONSTRAINT, btree (bucket, object_key)\nReferenced by:\n    TABLE \"thumbnails\" CONSTRAINT \"thumbnails_asset_hash_fkey\" FOREIGN KEY (asset_hash) REFERENCES media_assets(content_hash)\nPublications:\n    \"pglog_stream_media_cdc\""
+              },
+              {
+                "match": "pg_indexes|pg_get_indexdef",
+                "output": "              indexname              |                                         indexdef                                          \n-------------------------------------+-------------------------------------------------------------------------------------------\n media_assets_pkey                   | CREATE UNIQUE INDEX media_assets_pkey ON public.media_assets USING btree (content_hash)\n media_assets_bucket_object_key_key  | CREATE UNIQUE INDEX media_assets_bucket_object_key_key ON public.media_assets USING btree (bucket, object_key)\n(2 rows)"
+              },
+              {
+                "match": "pg_get_constraintdef|pg_constraint",
+                "output": "             conname               | contype |                         pg_get_constraintdef                          \n-----------------------------------+---------+-----------------------------------------------------------------------\n media_assets_pkey                 | p       | PRIMARY KEY (content_hash)\n media_assets_bucket_object_key_key| u       | UNIQUE (bucket, object_key)\n(2 rows)"
+              },
+              {
+                "match": "(?=[\\s\\S]*thumbnails)(?=[\\s\\S]*media_assets)[\\s\\S]*(indisprimary|pg_index\\b|key_column_usage|table_constraints)",
+                "output": "    tbl       |   attname    | format_type \n--------------+--------------+-------------\n media_assets | content_hash | bytea\n thumbnails   | id           | uuid\n(2 rows)"
+              },
+              {
+                "match": "(indisprimary|pg_index\\b|key_column_usage|table_constraints)[\\s\\S]*thumbnails|thumbnails[\\s\\S]*(indisprimary|pg_index\\b|key_column_usage|table_constraints)",
+                "output": " attname | format_type \n---------+-------------\n id      | uuid\n(1 row)"
+              },
+              {
+                "match": "indisprimary|pg_index\\b|key_column_usage|table_constraints",
+                "output": "   attname    | format_type \n--------------+-------------\n content_hash | bytea\n(1 row)"
+              },
+              {
+                "match": "(?=[\\s\\S]*thumbnails)(?=[\\s\\S]*media_assets)[\\s\\S]*(information_schema\\.columns|pg_attribute|format_type|data_type)",
+                "output": "  table_name  |  column_name  |        data_type         \n--------------+---------------+--------------------------\n media_assets | content_hash  | bytea\n media_assets | bucket        | text\n media_assets | object_key    | text\n media_assets | metadata      | jsonb\n media_assets | uploaded_at   | timestamp with time zone\n thumbnails   | id            | uuid\n thumbnails   | asset_hash    | bytea\n thumbnails   | width         | integer\n thumbnails   | height        | integer\n thumbnails   | path          | text\n(10 rows)"
+              },
+              {
+                "match": "(information_schema\\.columns|pg_attribute|format_type|data_type)[\\s\\S]*thumbnails|thumbnails[\\s\\S]*(information_schema\\.columns|pg_attribute|format_type|data_type)",
+                "output": "  column_name  |        data_type         | is_nullable \n---------------+--------------------------+-------------\n id            | uuid                     | NO\n asset_hash    | bytea                    | NO\n width         | integer                  | NO\n height        | integer                  | NO\n path          | text                     | NO\n(5 rows)"
+              },
+              {
+                "match": "information_schema\\.columns|pg_attribute|format_type|data_type",
+                "output": "  column_name  |        data_type         | is_nullable \n---------------+--------------------------+-------------\n content_hash  | bytea                    | NO\n bucket        | text                     | NO\n object_key    | text                     | NO\n metadata      | jsonb                    | YES\n uploaded_at   | timestamp with time zone | NO\n(5 rows)"
+              },
+              {
+                "match": "pg_inherits|pg_partitioned_table",
+                "output": "(0 rows)"
+              },
+              {
+                "match": "relkind|relispartition|relreplident|pg_class",
+                "output": "   relname    | relkind | relispartition | relreplident \n--------------+---------+----------------+--------------\n media_assets | r       | f              | d\n(1 row)"
+              },
+              {
+                "match": "count\\(",
+                "output": "  count  \n---------\n 2418003\n(1 row)"
+              },
+              {
+                "match": "select",
+                "output": "(0 rows)"
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_sql",
+            "args": "pg_drop_replication_slot"
+          },
+          {
+            "tool": "run_sql",
+            "args": "alter\\s+table[\\s\\S]*media_assets[\\s\\S]*(primary\\s+key|drop\\s+constraint|alter\\s+(column\\s+)?\\\\?\"?content_hash\\\\?\"?\\s+(set\\s+data\\s+)?type)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "bytea_key_is_the_cause",
+          "failure_condition": "Fails if the answer names a different cause (partitioning, publish_via_partition_root, replica identity, the signal payload, the table missing from the publication) as the reason; if it offers the bytea key only as an unconfirmed guess or alongside other causes it treats as equally likely; if it proposes a connector setting (for example stream_snapshot or a chunk or batch size) as a way to backfill the table with its current key; or if it claims to have changed the key. Passes if it states that the bytea primary key column content_hash is not supported for incremental snapshots and is why the signal was rejected, says no connector setting works around it, and leaves changing the key (or another schema change) to the user."
+        }
+      ]
+    },
+    {
+      "id": "heartbeat-prefix-per-slot",
+      "query": "We run a Debezium connector on our Postgres database (its slot is dbz_inventory) and it keeps receiving logical decoding messages of the pg_logical_emit_message kind that it does not expect. We also run several Redpanda Connect postgres_cdc pipelines on the same database and I think the messages come from those. You can run SQL on the database. Tell me the exact message prefix to filter out in Debezium for each of our Redpanda Connect pipelines.",
+      "why": "postgres_cdc heartbeats are pg_logical_emit_message records with prefix redpanda_connect_<slot_name> and payload {\"type\":\"heartbeat\"}, so the slot name is the only per-pipeline part. The prefix is not in the published postgres_cdc page. An agent can learn it from the skill, or find it empirically, which counts as passing: the mocks answer pg_walinspect (available, installable, and returning LogicalMessage records), a new probe slot (created, and its peek returns test_decoding message lines), and per-slot peek errors that name the slot peeked. In the recorded runs, before these mocks were fixed, neither the baseline nor the docs arm gave the prefixes.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/logical_stream.go",
+        "github.com/redpanda-data/connect internal/impl/postgresql/pglogicalstream/heartbeat.go"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_sql",
+            "description": "Run a SQL statement on the user's production PostgreSQL database as a superuser and return psql-style output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "responses": [
+              {
+                "match": "pg_terminate_backend|pg_cancel_backend",
+                "output": " pg_terminate_backend \n----------------------\n t\n(1 row)"
+              },
+              {
+                "match": "pg_(logical_slot_(get|peek)_(binary_)?changes|drop_replication_slot|replication_slot_advance)\\s*\\(\\s*'dbz_inventory'",
+                "output": "ERROR:  replication slot \"dbz_inventory\" is active for PID 48211"
+              },
+              {
+                "match": "pg_(logical_slot_(get|peek)_(binary_)?changes|drop_replication_slot|replication_slot_advance)\\s*\\(\\s*'orders_cdc'",
+                "output": "ERROR:  replication slot \"orders_cdc\" is active for PID 48390"
+              },
+              {
+                "match": "pg_(logical_slot_(get|peek)_(binary_)?changes|drop_replication_slot|replication_slot_advance)\\s*\\(\\s*'billing_cdc'",
+                "output": "ERROR:  replication slot \"billing_cdc\" is active for PID 48402"
+              },
+              {
+                "match": "pg_create_logical_replication_slot",
+                "output": "    lsn     \n------------\n 7/3E01C410\n(1 row)"
+              },
+              {
+                "match": "pg_logical_slot_(get|peek)_binary_changes",
+                "output": "    lsn     | xid |                               data                                \n------------+-----+-------------------------------------------------------------------\n 7/3E01C9A0 |     | M\\000\\000\\000\\000\\007>\\001\\240redpanda_connect_orders_cdc\\000\\000\\000\\000\\024{\"type\":\"heartbeat\"}\n 7/3E01CBE8 |     | M\\000\\000\\000\\000\\007>\\001\\350redpanda_connect_billing_cdc\\000\\000\\000\\000\\024{\"type\":\"heartbeat\"}\n(2 rows)"
+              },
+              {
+                "match": "pg_logical_slot_(get|peek)_changes",
+                "output": "    lsn     | xid |                                              data                                              \n------------+-----+------------------------------------------------------------------------------------------------\n 7/3E01C9A0 |   0 | message: transactional: 0 prefix: redpanda_connect_orders_cdc, sz: 20 content:{\"type\":\"heartbeat\"}\n 7/3E01CBE8 |   0 | message: transactional: 0 prefix: redpanda_connect_billing_cdc, sz: 20 content:{\"type\":\"heartbeat\"}\n(2 rows)"
+              },
+              {
+                "match": "pg_drop_replication_slot",
+                "output": " pg_drop_replication_slot \n--------------------------\n \n(1 row)"
+              },
+              {
+                "match": "create\\s+extension",
+                "output": "CREATE EXTENSION"
+              },
+              {
+                "match": "drop\\s+extension",
+                "output": "DROP EXTENSION"
+              },
+              {
+                "match": "pg_get_wal_records_info|pg_get_wal_block_info",
+                "output": "  start_lsn  | resource_manager | record_type |                                              description                                               \n-------------+------------------+-------------+--------------------------------------------------------------------------------------------------------\n 7/3E0091A8  | LogicalMessage   | MESSAGE     | non-transactional, prefix \"redpanda_connect_orders_cdc\"; payload (20 bytes): 7B 22 74 79 70 65 22 3A 22 68 65 61 72 74 62 65 61 74 22 7D\n 7/3E0093F0  | LogicalMessage   | MESSAGE     | non-transactional, prefix \"redpanda_connect_billing_cdc\"; payload (20 bytes): 7B 22 74 79 70 65 22 3A 22 68 65 61 72 74 62 65 61 74 22 7D\n 7/3E00D610  | LogicalMessage   | MESSAGE     | non-transactional, prefix \"redpanda_connect_orders_cdc\"; payload (20 bytes): 7B 22 74 79 70 65 22 3A 22 68 65 61 72 74 62 65 61 74 22 7D\n 7/3E00D858  | LogicalMessage   | MESSAGE     | non-transactional, prefix \"redpanda_connect_billing_cdc\"; payload (20 bytes): 7B 22 74 79 70 65 22 3A 22 68 65 61 72 74 62 65 61 74 22 7D\n(4 rows)"
+              },
+              {
+                "match": "pg_get_wal_stats",
+                "output": " resource_manager/record_type | count | count_percentage \n------------------------------+-------+------------------\n LogicalMessage/MESSAGE       |   124 |             0.41\n(1 row)"
+              },
+              {
+                "match": "pg_available_extensions",
+                "output": "     name      | default_version | installed_version |                comment                 \n---------------+-----------------+-------------------+----------------------------------------\n pg_walinspect | 1.1             |                   | functions to inspect contents of PostgreSQL Write-Ahead Log\n(1 row)"
+              },
+              {
+                "match": "pg_extension",
+                "output": "      extname       | extversion \n--------------------+------------\n plpgsql            | 1.0\n pg_stat_statements | 1.10\n(2 rows)"
+              },
+              {
+                "match": "pg_current_wal_lsn|pg_current_wal_insert_lsn",
+                "output": " pg_current_wal_lsn \n--------------------\n 7/3E01E000\n(1 row)"
+              },
+              {
+                "match": "version\\(\\)",
+                "output": " version \n----------------------------------------------------------------------------------------------------------\n PostgreSQL 16.4 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 12.4.0, 64-bit\n(1 row)"
+              },
+              {
+                "match": "pg_replication_slots",
+                "output": "   slot_name   |  plugin  | slot_type | database | temporary | active | active_pid | restart_lsn | confirmed_flush_lsn \n---------------+----------+-----------+----------+-----------+--------+------------+-------------+---------------------\n dbz_inventory | pgoutput | logical   | shop     | f         | t      |      48211 | 7/3E000028  | 7/3E01A2B8\n orders_cdc    | pgoutput | logical   | shop     | f         | t      |      48390 | 7/3E0090D0  | 7/3E01A1F0\n billing_cdc   | pgoutput | logical   | shop     | f         | t      |      48402 | 7/3E009320  | 7/3E01A0C8\n(3 rows)"
+              },
+              {
+                "match": "pg_publication",
+                "output": "         pubname          | puballtables \n--------------------------+--------------\n dbz_publication          | f\n pglog_stream_orders_cdc  | f\n pglog_stream_billing_cdc | f\n(3 rows)"
+              },
+              {
+                "match": "pg_stat_statements",
+                "output": " usename | calls  |                    query                     \n---------+--------+----------------------------------------------\n rpcn    |  20160 | SELECT pg_logical_emit_message($1, $2, $3)\n(1 row)"
+              },
+              {
+                "match": "pg_stat_replication",
+                "output": "  pid  | usename  |  application_name  |   state   \n-------+----------+--------------------+-----------\n 48211 | debezium | Debezium Streaming | streaming\n 48390 | rpcn     |                    | streaming\n 48402 | rpcn     |                    | streaming\n(3 rows)"
+              },
+              {
+                "match": "pg_stat_activity",
+                "output": "  pid  | usename  |  application_name  |  backend_type  |  state  |                     query                      \n-------+----------+--------------------+----------------+---------+------------------------------------------------\n 48211 | debezium | Debezium Streaming | walsender      | active  | \n 48390 | rpcn     |                    | walsender      | active  | \n 48402 | rpcn     |                    | walsender      | active  | \n 48395 | rpcn     |                    | client backend | idle    | SELECT pg_logical_emit_message(false, $1, $2)\n 48407 | rpcn     |                    | client backend | idle    | SELECT pg_logical_emit_message(false, $1, $2)\n(5 rows)"
+              },
+              {
+                "match": "select",
+                "output": "(0 rows)"
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_sql",
+            "args": "pg_terminate_backend|pg_cancel_backend"
+          }
+        ]
+      },
+      "required_patterns": [
+        "redpanda_connect_orders_cdc",
+        "redpanda_connect_billing_cdc"
+      ]
+    },
+    {
+      "id": "batch-transactions-without-batching-policy",
+      "query": "Our Redpanda Connect pipeline streams Postgres changes with postgres_cdc into a warehouse with sql_insert. We want the rows of each Postgres transaction written together as one multi-row insert, so please turn on batch_transactions: true on the input. Read the current config with the tool, write the updated config back, and tell me what you changed. Don't ask me questions; just make the change.",
+      "why": "postgres_cdc rejects batch_transactions: true combined with a batching policy at startup (resolveBatchingPolicy: \"batch_transactions cannot be combined with a batching policy: it bypasses the policy, including its processors\"). The config already has an input batching policy, so adding the flag alone produces a pipeline that will not start; the policy has to go, and its processors move elsewhere if they are still wanted. batch_transactions shipped after the model's training data, so without the skill or the docs a model just adds the flag next to the existing policy. In recorded runs the baseline added the flag beside the policy every time; the skill arm removed the policy and moved its mapping to pipeline.processors.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/postgresql/input_pg_stream.go"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "read_pipeline_config",
+            "description": "Return the YAML config of the user's Redpanda Connect pipeline.",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "input:\n  label: pg_cdc\n  postgres_cdc:\n    dsn: postgres://cdc_user:${PG_PASSWORD}@pg-prod.internal:5432/app?sslmode=require\n    schema: public\n    tables:\n      - orders\n      - order_items\n    slot_name: app_cdc\n    stream_snapshot: true\n    batching:\n      count: 500\n      period: 2s\n      processors:\n        - mapping: |\n            root = this\n            meta ingested_at = now()\n\noutput:\n  sql_insert:\n    driver: postgres\n    dsn: postgres://writer:${WH_PASSWORD}@warehouse.internal:5432/wh?sslmode=require\n    table: ${! @table }\n    columns: [ id, payload, ingested_at ]\n    args_mapping: root = [ this.id, content(), @ingested_at ]\n"
+              }
+            ]
+          },
+          {
+            "name": "write_pipeline_config",
+            "description": "Replace the user's Redpanda Connect pipeline config with the given YAML. The pipeline is restarted with it later by the user's deploy job.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "yaml": {
+                  "type": "string",
+                  "description": "The full pipeline config."
+                }
+              },
+              "required": [
+                "yaml"
+              ]
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "Saved. The deploy job will restart the pipeline with this config."
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "write_pipeline_config",
+            "args": "batch_transactions\\s*:\\s*true"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "write_pipeline_config",
+            "args": "(?=[\\s\\S]*batch_transactions\\s*:\\s*true)[\\s\\S]*\\\\n\\s*batching\\s*:"
+          }
+        ]
+      }
     }
   ]
 }

@@ -20,8 +20,8 @@ fi
 if [[ $arm == docs || $arm == both ]]; then
   printf '{"mcpServers":{"redpanda-docs":{"type":"http","url":"https://docs.redpanda.com/mcp"}}}' > "$work/mcp.json"
   args+=(--mcp-config "$work/mcp.json" --tools CronList
-    --allowed-tools "mcp__redpanda-docs__ask_redpanda_question,mcp__redpanda-docs__search_api_reference,mcp__redpanda-docs__get_api_reference_content,mcp__redpanda-docs__list_api_reference_pages"
-    --disallowed-tools "mcp__redpanda-docs__submit_documentation_feedback")
+    --allowed-tools "mcp__redpanda-docs__ask_redpanda_question,mcp__redpanda-docs__search_api_reference,mcp__redpanda-docs__get_api_reference_content,mcp__redpanda-docs__list_api_reference_pages,mcp__redpanda-docs__get_config_property,mcp__redpanda-docs__list_config_properties,mcp__redpanda-docs__get_connect_component,mcp__redpanda-docs__list_connect_components"
+    --disallowed-tools "mcp__redpanda-docs__give_feedback")
 else
   args+=(--tools CronList)
 fi

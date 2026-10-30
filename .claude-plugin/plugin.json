@@ -21,5 +21,6 @@
     "adp",
     "ai-gateway",
     "agentic"
-  ]
+  ],
+  "privacyPolicyUrl": "https://www.redpanda.com/legal/privacy-policy"
 }

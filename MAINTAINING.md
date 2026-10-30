@@ -1,8 +1,13 @@
 # Maintaining This Skills Repo
 
-This repo has no CI enforcement. Skill accuracy is kept up over time by a **human + automation
-process**: a fleet of scheduled agents ("routines") watch each product's source, open PRs when a
-user-facing change needs documenting, and a human reviews and merges. This document is the
+CI checks only skill frontmatter and size (`.github/workflows/validate-skills.yml`); nothing runs
+the evals automatically. Skill accuracy is kept up over time by a **human + automation
+process**: a fleet of scheduled agents ("routines") watch each product's source and open a PR
+when a user-facing change affects a skill, and a human reviews and merges. What counts as
+affecting a skill depends on its format: a **thin** skill (its `references/` holds only
+`SOURCES.md`) changes only when what an agent should *do* changes, while a skill that is **not
+yet thin** also changes when a fact it documents changes. A new or changed fact for a thin skill
+is a docs gap, reported for the docs, not a skill PR. This document is the
 **plain-language overview** of that process (read this first); the exact routine definitions,
 prompts, trigger IDs, and schedules live in the docs team's private standards repository (see
 [`skills-sync-routine.md`](./skills-sync-routine.md) for the pointer), and the guardrails every
@@ -15,8 +20,12 @@ Anthropic's cloud — not on anyone's laptop) maintain this repo. They form a **
 human loop**:
 
 1. **Generators** (one per product) run weekly. Each watches its product's source, detects
-   *user-facing* changes since the last run, grounds them in source, and opens a PR against `main`.
-   If nothing user-facing changed, the run does nothing (a no-op is a success, not a failure).
+   *user-facing* changes since the last run, and grounds them in source. For a skill that is not
+   yet thin, a changed fact it documents gets a PR against `main`. For a thin skill, only a
+   changed procedure gets a PR, and a new "How to work" line comes with a draft behavioral eval
+   case (see "Thin skills and the evals"); a changed fact is listed under "Docs gaps" in the
+   provenance report instead. Any skill may get a PR that corrects or removes a drifted fact. If
+   nothing affects a skill, the run does nothing (a no-op is a success, not a failure).
 2. **The critic** (read-only, every 6h) reviews each generator PR: it re-verifies every claim
    against the product source and posts its review to a private standing issue in the docs team's
    standards repo (nothing is posted on the public PR). **It cannot approve, merge, or edit.**
@@ -43,9 +52,11 @@ longer than the weekly cadence so one skipped run self-heals.
 
 ## The durability principle (why this differs from prose-docs automation)
 
-**Stable concepts live in the skill; volatile specifics do NOT.** A skill documents the *shape and
-semantics* of an API surface (CLI flags, service names, config-key names, endpoint paths, enum
-values) — those are stable. It must **never hardcode** values that rotate frequently (model lists,
+**No skill hardcodes volatile specifics.** A thin skill carries no API surface at all: CLI flags,
+service names, config-key names, endpoint paths, and enum values are facts, and they live in the
+docs. A skill that is not yet thin documents the *shape and semantics* of an API surface (CLI
+flags, service names, config-key names, endpoint paths, enum values), because those are stable,
+until it is converted. Neither may **hardcode** values that rotate frequently (model lists,
 category counts, pricing, region lists, version numbers, metric names, per-release property
 *defaults*, and — for Connect — the auto-generated per-field connector config). Those are deferred
 to **live introspection** (`rpk ai model list`, `rpk cloud region list`, `rpk <cmd> --help`, the
@@ -63,7 +74,10 @@ Applied on **every** change, by generators, the critic, and human maintainers al
    golden CLI snapshots). Write from source, not memory.
 2. **Adversarial review at maximum effort.** Cross-check every command, flag, config key, endpoint,
    enum, and code example against the actual source. Assume the draft is wrong until source confirms.
-3. **Enterprise-feature coverage pass.** Verify key differentiators and their nested settings.
+3. **Coverage pass.** For a skill that is not yet thin, verify key enterprise differentiators and
+   their nested settings are present. For a thin skill, verify the skill restates no facts beyond
+   what its "How to work" lines need, and that each line still maps to a source and an eval case
+   in `SOURCES.md`; feature coverage is the docs' job.
 4. **Final verification.** Read as a user would: examples copy-pasteable, decision rules clear;
    re-confirm against the live surface where one exists.
 
@@ -91,6 +105,40 @@ when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 
 
 When adding a new source-grounded skill, add a `SOURCES.md` beside it and register it in the
 drift-audit scope.
+
+A thin skill's `SOURCES.md` maps only the claims the skill still makes: each "How to work" line
+with its source and its eval case id, plus the few other claims in `SKILL.md`. When a skill is
+converted, its `SOURCES.md` is trimmed in the same PR, so the drift audit stops re-checking
+claims the skill no longer makes. Docs gaps the evals found may be listed in a separate section,
+as items for the docs, not claims to re-verify.
+
+## Thin skills and the evals
+
+The evals in `evals/` (see `evals/README.md`) decide what a thin skill keeps. The routines cannot
+run them, so a maintainer does.
+
+- **New "How to work" line.** A routine or person may propose one only together with a draft
+  behavioral eval case in `evals/suites/<skill>.eval.json`, and the line, its source, and the
+  case id in `SOURCES.md`. The PR stays unmerged until a maintainer runs the case
+  (`node evals/run-evals.mjs --case <id> --arms baseline,skill,installed`) and the baseline
+  fails it while the skill arms pass. The maintainer records the pass rates in the PR. If the
+  baseline passes, the line comes out.
+- **Scheduled re-run.** "The baseline fails it" stops being true as models improve. Each month,
+  when the drift audit runs, a maintainer re-runs the behavioral cases of every thin skill
+  (`--arms baseline,installed`). A line whose case the baseline now passes is flagged for
+  removal in a PR; a line whose case the installed arm fails is a skill or docs problem to fix.
+- **Converting a skill.** Convert one skill at a time, after its own evals show which of its
+  facts the docs already cover. Every fact the skill drops that the docs lack is a docs gap,
+  and the conversion waits until the docs cover it.
+
+## Docs gaps: from report to fix
+
+A thin skill cannot work around a missing or wrong fact in the docs, so the gap stays visible to
+users until the docs change. The handoff point is the **"Docs gaps" section of each routine's
+provenance report** (and of each eval run's summary): every item names the fact, the published
+page that lacks it, and the source that confirms it. The docs team reads that section, turns each
+item into a docs ticket, and tracks it to closure. A later provenance report repeats a gap only
+while the published docs still lack the fact. A skill PR never waits on, or substitutes for, that ticket.
 
 ## Operating the routines
 

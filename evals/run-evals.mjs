@@ -44,15 +44,19 @@ const RESULTS_DIR = path.join(EVAL_DIR, "results");
 const ARMS = ["baseline", "skill", "docs", "both", "installed"];
 const DOCS_MCP_URL = process.env.EVAL_DOCS_MCP_URL ?? "https://docs.redpanda.com/mcp";
 const DOCS_SERVER = "redpanda-docs";
-// The read tools only. submit_documentation_feedback writes to a real service,
-// so it is denied as well as left off the allow-list.
+// The read tools only. give_feedback writes to a real service, so it is denied
+// as well as left off the allow-list.
 const DOCS_TOOLS = [
   "ask_redpanda_question",
   "search_api_reference",
   "get_api_reference_content",
   "list_api_reference_pages",
+  "get_config_property",
+  "list_config_properties",
+  "get_connect_component",
+  "list_connect_components",
 ].map((t) => `mcp__${DOCS_SERVER}__${t}`);
-const DOCS_DENIED = [`mcp__${DOCS_SERVER}__submit_documentation_feedback`];
+const DOCS_DENIED = [`mcp__${DOCS_SERVER}__give_feedback`];
 // Anonymous callers get a handful of tool calls a day per network address, which
 // one suite exhausts. A trusted client key is not metered, and attributes the
 // traffic to a named service rather than to a person.

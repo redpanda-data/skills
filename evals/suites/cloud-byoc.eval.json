@@ -6,7 +6,7 @@
     {
       "id": "scale-broker-count-zone-multiple",
       "query": "My Redpanda Cloud BYOC cluster on AWS runs 3 brokers spread across 3 availability zones. Traffic is up a bit, so I want to add just one more broker through the Control Plane API by setting the broker count to 4. What request do I send, and will that work?",
-      "why": "Self-service BYOC scaling sets redpanda_node_count through a cluster PATCH, and on a multi-AZ cluster the count must be a multiple of the zone count, so 4 is rejected and the next step is 6. Models without the docs tend to claim the broker count cannot be set directly and that only the throughput tier changes size.",
+      "why": "Self-service BYOC scaling sets redpanda_node_count through a cluster PATCH, and on a multi-AZ cluster the count must be a multiple of the zone count, so 4 is rejected and the next step is 6. In the recorded baseline runs the model guessed the multiple-of-zones rule but did not know the redpanda_node_count field, and said cluster size is tied to the throughput tier.",
       "verified_against": [
         "https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/"
       ],
@@ -80,31 +80,16 @@
       "origin": "docs-cited"
     },
     {
-      "id": "scale-paused-stockout",
-      "query": "I scaled out my Redpanda BYOC cluster on AWS through the Cloud API. Hours later the cluster still shows Upgrading, the long-running operation ended without the cluster going back to Ready, and every new scaling request I send is now rejected. What happened and how do I get out of this state?",
-      "why": "When the cloud provider cannot supply the requested machines (a stockout or quota limit), scaling pauses with the brokers provisioned so far, the cluster stays Upgrading, the operation times out, and further scaling requests are rejected until Redpanda Support resumes or rolls back the change. Without the docs, a model expects the agent to retry and recover on its own once capacity exists.",
-      "verified_against": [
-        "https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/"
-      ],
-      "invariants": [
-        {
-          "name": "support_resumes_or_rolls_back",
-          "failure_condition": "Fails if the response says the cluster will usually recover or return to Ready on its own once capacity or quota is available, or that retrying the scaling request will clear the state, or treats Redpanda Support only as a last resort after waiting. Passes if it identifies a cloud provider capacity shortage or quota limit as the cause, says scaling is paused and further scaling requests are rejected, and says Redpanda Support must resume or roll back the change. Advising a quota increase before contacting Support is fine."
-        }
-      ],
-      "origin": "docs-cited"
-    },
-    {
       "id": "custom-properties-integers-as-strings",
       "query": "I'm creating a Redpanda Cloud BYOC cluster through the Control Plane API and want to set a few Redpanda cluster properties at create time under cluster_configuration.custom_properties, including some integer-valued ones like log_segment_size and a retention byte limit. How should I write those values in the JSON body?",
-      "why": "cluster_configuration.custom_properties is a protobuf Struct, and the API contract says integer and number properties must be sent as JSON strings to avoid precision loss. Without the skill, a model reasons from Struct semantics and tells the user to send plain JSON numbers and to avoid quoting them.",
+      "why": "cluster_configuration.custom_properties is a protobuf Struct, and the API contract in product source says integer and number properties are to be provided as JSON strings to avoid precision loss; the server parses those strings into the property's type. Product source also converts a bare JSON number, so a small value sent unquoted still lands, and the published examples show bare numbers, but only the string form is exact past 2^53, and nothing published says strings are accepted. In the recorded baseline runs the model reasoned from Struct semantics, told the user to send plain JSON numbers, and said quoted values might be rejected or should be avoided. Sampled from the full skill's references at commit b492f09; the thin skill no longer carries this claim, so the skill arm is expected to miss it.",
       "verified_against": [
         "product source"
       ],
       "invariants": [
         {
           "name": "integers_sent_as_strings",
-          "failure_condition": "Fails if the response tells the user to send integer-valued properties as unquoted JSON numbers, or says quoting them is wrong or optional. Passes if it says integer (and number) values in custom_properties must be sent as JSON strings, for example \"134217728\", and shows them quoted."
+          "failure_condition": "Fails if the response says quoted strings are wrong, rejected, or should be avoided for integer-valued properties, or offers them only as an untested fallback, or never says that the API takes integer and number values as JSON strings. Passes if it says the API contract has integer (and number) values in custom_properties sent as JSON strings, for example \"134217728\", which the server parses into the property's type, and shows them quoted. Also saying that plain numbers are accepted for values that fit exactly in a double is fine."
         }
       ],
       "origin": "sampled"
@@ -112,7 +97,7 @@
     {
       "id": "byovpc-dual-listener-public-subnets",
       "query": "We run a Redpanda BYOC cluster on a customer-managed VPC in AWS (BYOVPC), registered as a Network in Redpanda Cloud. We now want the cluster to serve an internet-facing Kafka listener alongside the private one. What has to change on the Network resource first, and can we adjust that setting again later?",
-      "why": "On an AWS BYOVPC network, a cluster that serves a public listener alongside the private one needs customer_managed_resources.aws.public_subnets on the Network, one public subnet per availability zone that has a broker subnet, and the field is write-once: it can be set on a network that has none but not changed or cleared afterwards. Without the skill, a model talks about a network connection_type, which does not exist, and says the cluster must be rebuilt.",
+      "why": "On an AWS BYOVPC network, a cluster that serves a public listener alongside the private one needs customer_managed_resources.aws.public_subnets on the Network, one public subnet per availability zone that has a broker subnet, and the field is write-once: it can be set on a network that has none but not changed or cleared afterwards. In the recorded baseline runs the model treated public exposure as a cluster connection-type setting, did not name the public_subnets field, and could not say whether the setting can change later. Sampled from the full skill's references at commit b492f09; the thin skill no longer carries this claim, so the skill arm is expected to miss it.",
       "verified_against": [
         "product source"
       ],
@@ -130,7 +115,7 @@
     {
       "id": "connect-pipeline-egress-allowlist",
       "query": "Our Redpanda Connect pipelines running on a Redpanda BYOC cluster need to reach a Postgres database at 10.5.0.0/16 on port 5432 and an internal API in 10.6.0.0/16 on ports 8000 through 8100, both in a peered VPC. How do I allow that outbound traffic for the pipelines through the Redpanda Cloud Control Plane API?",
-      "why": "Outbound destinations for Redpanda Connect pipelines are allowlisted on the cluster with redpanda_connect.allowed_destination_cidr_ports, settable on create and through a cluster PATCH. Each entry is a cidr with port_start and an optional port_end, where a port_end of 0 or omitted means a single port. Without the skill, a model admits it does not know the field and invents a placeholder shape.",
+      "why": "Outbound destinations for Redpanda Connect pipelines are allowlisted on the cluster with redpanda_connect.allowed_destination_cidr_ports, settable on create and through a cluster PATCH. Each entry is a cidr with port_start and an optional port_end, where a port_end of 0 or omitted means a single port. In the recorded baseline runs the model said it knew no API field for this, argued none is needed on BYOC, and sent the user to route tables and security group egress rules instead. Sampled from the full skill's references at commit b492f09; the thin skill no longer carries this claim, so the skill arm is expected to miss it.",
       "verified_against": [
         "product source"
       ],
@@ -149,7 +134,7 @@
     {
       "id": "shadow-sr-exact-context-mapping-scope",
       "query": "I'm setting up a Redpanda shadow link that replicates schemas from a Confluent Schema Registry over its HTTP API, and I want the source contexts .prod and .staging to land under different context names on the Redpanda side. Are there any gotchas with that explicit context mapping?",
-      "why": "In Schema Registry API-mode shadowing, an exact context mapping requires every source context in the effective source scope to have exactly one mapping, so source_filter.contexts must be scoped to the mapped contexts. Leaving the filter empty puts the whole registry, including the default context, in scope. Without the skill, a model doubts that shadow links can read a Confluent registry at all and gives generic schema migration advice.",
+      "why": "In Schema Registry API-mode shadowing, an exact context mapping requires every source context in the effective source scope to have exactly one mapping, so source_filter.contexts must be scoped to the mapped contexts. Leaving the filter empty puts the whole registry, including the default context, in scope. In the recorded baseline runs the model declined to name the config fields and listed generic things to test, treating what happens to unmapped contexts as an open question. Sampled from the full skill's references at commit b492f09; the thin skill no longer carries this claim, so the skill arm is expected to miss it.",
       "verified_against": [
         "https://github.com/redpanda-data/redpanda/blob/dev/proto/redpanda/core/admin/v2/shadow_link.proto"
       ],
@@ -164,7 +149,7 @@
     {
       "id": "tags-patch-echo-reserved-keys",
       "query": "My automation does read-modify-write on a Redpanda BYOC cluster's cloud_provider_tags through the Cloud API: it GETs the cluster, edits the tag map, and PATCHes it back. The map it reads includes keys Redpanda put there, like redpanda-id and redpanda-org. Do I need to strip those keys before sending the PATCH, or will it be rejected?",
-      "why": "A cloud_provider_tags PATCH is checked against the tags the cluster already stores: it is rejected only when it introduces a reserved key or changes a stored reserved key's value, so echoing redpanda-id or redpanda-org back unchanged is accepted, as is leaving them out. Without the skill, a model tells the user to strip every redpanda-prefixed key to avoid a rejection.",
+      "why": "A cloud_provider_tags PATCH is checked against the tags the cluster already stores: product source rejects it only when it introduces a reserved key or changes a stored reserved key's value, so echoing redpanda-id or redpanda-org back unchanged is accepted, as is leaving them out. In the recorded baseline runs the model said acceptance and rejection were equally plausible and suggested testing on a non-production cluster. The published Reserved tag keys section says Redpanda rejects these keys when you update tags with the Control Plane API, without the stored-value exception, so the docs conflict with product source here; a docs-arm failure on this case reflects that conflict, not a skill win.",
       "verified_against": [
         "product source"
       ],
@@ -179,7 +164,7 @@
     {
       "id": "byoc-plugin-skip-version-check",
       "query": "Our CI runners cannot download binaries from the internet, so we bake the Redpanda BYOC plugin into the runner image ahead of time. How do I stop rpk cloud byoc aws apply from trying to download or re-verify a plugin version for the cluster, and is there any catch?",
-      "why": "rpk pins the BYOC plugin to the version the control plane names for the cluster and downloads it when the checksum does not match. Setting RPK_CLOUD_SKIP_VERSION_CHECK to 1 or true makes rpk run the installed plugin as is, but only when a plugin is already installed; with no plugin present, rpk still fetches one. Without the skill, a model invents a --no-validate flag.",
+      "why": "rpk pins the BYOC plugin to the version the control plane names for the cluster and downloads it when the checksum does not match. Setting RPK_CLOUD_SKIP_VERSION_CHECK to 1 or true makes rpk run the installed plugin as is, but only when a plugin is already installed; with no plugin present, rpk still fetches one. In the recorded baseline runs the model said it could not name the setting and told the user to look for a flag in --help.",
       "verified_against": [
         "product source"
       ],
@@ -197,7 +182,7 @@
     {
       "id": "byoc-validate-without-cluster-id",
       "query": "Before we create any cluster in Redpanda Cloud, can I check whether our AWS account meets the BYOC prerequisites using rpk? We don't have a cluster ID yet.",
-      "why": "rpk cloud byoc aws validate is the one BYOC subcommand that needs no --redpanda-id; with no cluster to pin to, rpk downloads the latest BYOC plugin to run it. Without the skill, a model says every rpk BYOC command needs a cluster ID and suggests creating a placeholder cluster.",
+      "why": "rpk cloud byoc aws validate is the one BYOC subcommand that needs no --redpanda-id; with no cluster to pin to, rpk downloads the latest BYOC plugin to run it. In the recorded baseline runs the model said the BYOC commands are tied to a cluster ID, knew of no cluster-agnostic preflight, and offered manual AWS checks instead.",
       "verified_against": [
         "product source"
       ],
@@ -215,7 +200,7 @@
     {
       "id": "dual-listener-no-way-back",
       "query": "A while ago we switched our AWS BYOC cluster to the per-service connections lists (a public and a private listener on the Kafka API, HTTP Proxy, and Schema Registry) through the Redpanda Cloud API. Now we want to undo that and put the cluster back on the plain cluster-level connection_type setting it had before. What API call do I send?",
-      "why": "Once a cluster uses per-service connections, there is no path back to connection_type: connection_type is not an updatable field, a connections list cannot be cleared, and each service must keep at least one connection. The closest equivalent is to keep connections with only the topology you want. Without the skill, a model cannot say whether a revert is possible and asks for the API spec.",
+      "why": "Once a cluster uses per-service connections, there is no path back to connection_type: connection_type is not an updatable field, a connections list cannot be cleared, and each service must keep at least one connection. The closest equivalent is to keep connections with only the topology you want. In the recorded baseline runs the model floated a PATCH that sets connection_type and clears the connections lists as the likely revert, or only guessed that a revert might not be supported.",
       "verified_against": [
         "product source"
       ],
@@ -226,6 +211,140 @@
         }
       ],
       "origin": "targeted"
+    },
+    {
+      "id": "byovnet-azure-terraform-only",
+      "query": "We just created a Redpanda Cloud BYOC cluster on Azure in our own VNet (BYOVNet). Our Terraform configuration uses the Redpanda BYOVNet module and the Redpanda Terraform provider, and `terraform apply` finished without errors a few minutes ago. Finish whatever setup is still needed so the cluster is fully up, using the shell. rpk, az, terraform, and curl are installed and signed in, and REDPANDA_CLIENT_ID and REDPANDA_CLIENT_SECRET are set. Then tell me what you ran. Don't ask me questions.",
+      "why": "When a BYOVNet cluster on Azure is created with the Redpanda BYOVNet module and the Redpanda Terraform provider, the provider runs the Redpanda agent bootstrap itself while it creates the cluster, so nothing is left to run: no rpk cloud byoc azure apply and no Cloud API calls. Models know the general BYOC flow, where creating the cluster is followed by rpk cloud byoc <provider> apply --redpanda-id, and run it here. In recorded runs the baseline either ran rpk cloud byoc azure apply --redpanda-id or told the user it was still needed; the skill arm checked the cluster state and ran nothing.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/terraform-provider-redpanda redpanda/utils/byoc.go",
+        "github.com/redpanda-data/terraform-provider-redpanda examples/byovpc/azure/main.tf",
+        "https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/byoc/azure/vnet-azure/"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's machine, in the directory that holds their Terraform configuration, and return its combined output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "rpk\\s+cloud\\s+byoc\\s+azure\\s+apply[^;&|]*(--help|-h\\b)",
+                "output": "Apply the Redpanda agent infrastructure for a BYOC cluster in Azure.\n\nUsage:\n  rpk cloud byoc azure apply [flags]\n\nFlags:\n      --redpanda-id string       The redpanda ID of the cluster you are creating\n      --subscription-id string   Azure subscription ID\n  -h, --help                     Help for apply"
+              },
+              {
+                "match": "terraform\\s+state\\s+list",
+                "output": "module.redpanda_byovnet.azurerm_resource_group.redpanda[0]\nmodule.redpanda_byovnet.azurerm_virtual_network.redpanda[0]\nmodule.redpanda_byovnet.azurerm_subnet.private[\"rp-0-pods\"]\nmodule.redpanda_byovnet.azurerm_storage_account.management\nmodule.redpanda_byovnet.azurerm_key_vault.vault\nmodule.redpanda_byovnet.azurerm_user_assigned_identity.redpanda_agent\nredpanda_resource_group.this\nredpanda_network.this\nredpanda_cluster.this"
+              },
+              {
+                "match": "\\bcat\\b[^;&|]*\\.tf\\b",
+                "output": "module \"redpanda_byovnet\" {\n  source  = \"redpanda-data/redpanda-byovnet/azure\"\n  version = \"~> 2.0\"\n  region  = var.region\n  azure_subscription_id = var.azure_subscription_id\n  tags    = local.tags\n}\n\nresource \"redpanda_resource_group\" \"this\" {\n  name = \"prod\"\n}\n\nresource \"redpanda_network\" \"this\" {\n  name              = \"prod-byovnet\"\n  resource_group_id = redpanda_resource_group.this.id\n  cloud_provider    = \"azure\"\n  region            = var.region\n  cluster_type      = \"byoc\"\n  customer_managed_resources {\n    azure {\n      # ... wired from module.redpanda_byovnet outputs\n    }\n  }\n}\n\nresource \"redpanda_cluster\" \"this\" {\n  name              = \"prod-byovnet\"\n  resource_group_id = redpanda_resource_group.this.id\n  network_id        = redpanda_network.this.id\n  cloud_provider    = \"azure\"\n  region            = var.region\n  cluster_type      = \"byoc\"\n  connection_type   = \"private\"\n  throughput_tier   = var.throughput_tier\n  zones             = var.zones\n  tags              = local.tags\n  customer_managed_resources {\n    azure {\n      # ... wired from module.redpanda_byovnet outputs\n    }\n  }\n}\n\noutput \"cluster_id\" { value = redpanda_cluster.this.id }\noutput \"network_id\" { value = redpanda_network.this.id }\noutput \"byovnet\"    { value = module.redpanda_byovnet }\n"
+              },
+              {
+                "match": "rpk\\s+cloud\\s+byoc\\s+azure\\s+apply",
+                "output": "Reconciling agent infrastructure...\nRunning apply\nApply completed."
+              },
+              {
+                "match": "terraform\\s+(apply|destroy)",
+                "output": "No changes. Your infrastructure matches the configuration."
+              },
+              {
+                "match": "terraform\\s+plan",
+                "output": "No changes. Your infrastructure matches the configuration."
+              },
+              {
+                "match": "terraform\\s+output",
+                "output": "byovnet = {\n  \"redpanda_resource_group_name\" = \"rp-byovnet-redpanda\"\n  \"vnet_name\" = \"rp-byovnet-vnet\"\n  ...\n}\ncluster_id = \"d3k7q2m1sapbk0e3h8r50\"\nnetwork_id = \"d3k7p9h1sapbk0e3h8r3g\""
+              },
+              {
+                "match": "terraform\\s+(state|show)",
+                "output": "# redpanda_cluster.this:\nresource \"redpanda_cluster\" \"this\" {\n    cloud_provider = \"azure\"\n    cluster_type   = \"byoc\"\n    connection_type = \"private\"\n    id             = \"d3k7q2m1sapbk0e3h8r50\"\n    name           = \"prod-byovnet\"\n    region         = \"eastus\"\n    state          = \"ready\"\n    ...\n}"
+              },
+              {
+                "match": "terraform\\s+init",
+                "output": "Terraform has been successfully initialized!"
+              },
+              {
+                "match": "curl[\\s\\S]*oauth/token",
+                "output": "{\"access_token\":\"eyJhbGciOi...\",\"expires_in\":86400,\"token_type\":\"Bearer\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/clusters",
+                "output": "{\"cluster\":{\"id\":\"d3k7q2m1sapbk0e3h8r50\",\"name\":\"prod-byovnet\",\"type\":\"TYPE_BYOC\",\"cloud_provider\":\"CLOUD_PROVIDER_AZURE\",\"region\":\"eastus\",\"state\":\"STATE_READY\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/networks",
+                "output": "{\"network\":{\"id\":\"d3k7p9h1sapbk0e3h8r3g\",\"state\":\"STATE_READY\"}}"
+              },
+              {
+                "match": "curl",
+                "output": "curl: (6) Could not resolve host: the machine's proxy blocks this domain"
+              },
+              {
+                "match": "rpk\\s+cloud\\s+cluster",
+                "output": "ID                     NAME          TYPE  CLOUD  REGION  STATE\nd3k7q2m1sapbk0e3h8r50  prod-byovnet  BYOC  azure  eastus  ready"
+              },
+              {
+                "match": "rpk\\s+cloud\\s+login",
+                "output": "Successfully logged into cloud organization \"acme\"."
+              },
+              {
+                "match": "rpk\\s+cloud\\s+byoc",
+                "output": "The command completed."
+              },
+              {
+                "match": "rpk\\s+(cluster|topic)",
+                "output": "unable to connect: no profile selected; create one with rpk profile create --from-cloud"
+              },
+              {
+                "match": "az\\s+aks",
+                "output": "[\n  {\n    \"name\": \"aks-rp-d3k7q2m1sapbk0e3h8r50\",\n    \"provisioningState\": \"Succeeded\",\n    \"powerState\": {\"code\": \"Running\"}\n  }\n]"
+              },
+              {
+                "match": "az\\s",
+                "output": "[]"
+              },
+              {
+                "match": ".",
+                "output": "/home/ops/infra/redpanda-byovnet\nmain.tf  versions.tf  terraform.tfvars  terraform.tfstate  .terraform.lock.hcl\nTerraform v1.14.2 on linux_amd64\nrpk version: v26.1.4 (rev 3c1f2a9)\nazure-cli 2.75.0"
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "rpk\\s+cloud\\s+cluster|/v1/clusters|terraform\\s+(output|show|state)|az\\s+aks"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "rpk\\s+cloud\\s+byoc\\s+azure\\s+apply(?![^;&|]*(--help|-h\\b))"
+          },
+          {
+            "tool": "run_shell",
+            "args": "-X\\s*(POST|PATCH)[^;&|]*/v1/(networks|clusters)|/v1/(networks|clusters)[^;&|]*(-X\\s*(POST|PATCH)|--data|\\s-d\\s)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "no_agent_apply_needed",
+          "failure_condition": "Fails if the answer says rpk cloud byoc azure apply (an agent apply or agent bootstrap) still has to be run to finish creating the cluster, or tells the user to run it. Passes if it treats the cluster as created and its agent as already installed by the Terraform provider, for example by only checking the cluster's state."
+        }
+      ]
     }
   ]
 }
