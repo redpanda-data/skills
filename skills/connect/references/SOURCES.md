@@ -328,3 +328,67 @@ items below are grounded in source at the tag rather than in the changelog.
   edit: `references/connector-catalog.md` records support **tier**, not
   per-connector cloud availability, which is a volatile availability matrix
   deferred to the catalog UI and `rpk connect list`.
+
+### Connect v4.115.1 / benthos v4.84.0 (2026-10-30)
+
+Release checked: `v4.115.1` (changelog section dated 2026-10-23, the current
+stable tag — no newer tag exists as of this sync). The benthos dependency is
+unchanged at `v4.84.0` in `go.mod` at the tag, so no engine, CLI or Bloblang
+surface was re-opened for the release itself.
+
+- **Nothing in the `v4.115.1` changelog is a Connect skill surface.** The two
+  `kafka` entries are fixes inside the franz writer (a data race between the
+  produce-error and record-decoration slices, and the dispatch signal now firing
+  when a record is handed to the producer, restoring the hand-off the ordered
+  per-partition input relies on). Neither changes a flag, field, component name
+  or documented behaviour; no skill asserted the broken behaviour. The
+  `oracledb_cdc` timestamp-unit entry belongs to `connect-cdc-oracle` and is
+  recorded there.
+- **Migrator drift, found via the changed reference page and fixed in
+  `references/migration.md`.** All four items were verified in source at the
+  tag:
+  - **The lag metric is `redpanda_lag`, not `input_redpanda_migrator_lag`.**
+    `internal/impl/kafka/lag.go` defines `lagMetricNameRedpanda = "redpanda_lag"`
+    as "the consumer lag gauge emitted by the Redpanda branded inputs
+    (`redpanda`, `redpanda_common` and the migrator)", and both migrator specs
+    in `internal/impl/redpanda/migrator/migrator.go` (plus that package's
+    `README.md`) document `redpanda_lag` with `topic` and `partition` labels.
+    The old name appears nowhere in the repo. The specs also state the gauge is
+    emitted only when the input has a `consumer_group`, which the workflow step
+    now says.
+  - **A single pair needs no labels.** `newMigratorFrom` in `migrator.go` keys
+    the shared `Migrator` by `migratorKey{label, stream}` with the label
+    defaulting to `"default"` when unset, so one input/output pair coordinates
+    without any `label`. The labels were dropped from the workflow YAML to match.
+  - **A label mismatch is not silent.** The input spec says a mismatched pair
+    "fail[s] to connect", and `validateInitialized` returns
+    `input not initialized` / `output not initialized` — the skill previously
+    claimed the pair silently fails to coordinate.
+  - **Label syntax comes from the engine**: benthos `v4.84.0`
+    `internal/docs/config.go` (`labelExpression = ^[a-z0-9_\-]+$` and
+    `ValidateLabel`, which also rejects a leading `_` or `-`). The previous
+    "3–128 chars, `A-Za-z0-9-_`" claim was wrong on both the case range and the
+    length bound and is gone.
+- **Exact consumer-group offset translation documented** (the skill previously
+  presented translation as timestamp-based and approximate, full stop).
+  `rmoFieldOffsetHeader` in `migrator.go` (default `redpanda-migrator-offset`,
+  `Version("4.71.0")`) stamps each migrated record with its source offset, and
+  `migrator_groups.go` refines the timestamp result with it in
+  `tryFindExactOffset` — applied only when `g.State == "Empty" && m.offsetHeader
+  != ""`, which is why the field's own description limits exact translation to
+  groups with no active members. The per-field detail (bounds, attempt limit,
+  encoding) stays in the generated reference.
+- **Partition top-up recorded**: the output spec's guarantees state that an
+  existing destination topic with fewer partitions than its source has
+  partitions added to match, which the skill's "never overwritten" bullet
+  overstated.
+- **TODO — duplicate-label lint vs documented pairing.** benthos `v4.84.0`
+  registers every component label in one per-run `LintContext`
+  (`labelsToLine`), returning `LintDuplicateLabel` ("label '%v' collides with a
+  previously defined label at line %v") for a label used twice in a config. That
+  appears to collide with the migrator's documented multi-pair scheme, where an
+  input and its output deliberately share a label. `migration.md` now warns to
+  lint before relying on a multi-pair layout rather than asserting either way;
+  the Connect team should confirm whether a matched pair lints clean.
+- **Out of scope for this routine:** nothing this window belongs to another
+  product's skill.

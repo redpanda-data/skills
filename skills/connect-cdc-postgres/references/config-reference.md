@@ -69,6 +69,8 @@ slot_name: my_cdc_slot
 
 When `true`, the connector first reads all existing rows from each table (snapshot phase, `operation: read`) before switching to live WAL replication. Tables being snapshot must have a primary key — the connector uses the primary key to paginate and parallelize the scan.
 
+The phase reads through long-lived `REPEATABLE READ` transactions pinned to an exported snapshot, which holds the whole database's `xmin` horizon until the phase ends and so defers cleanup of row versions that died after it started. For tables whose scan runs for hours, use `incremental_snapshot` instead.
+
 ```yaml
 stream_snapshot: true
 ```

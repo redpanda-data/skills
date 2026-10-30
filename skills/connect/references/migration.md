@@ -17,7 +17,7 @@ The **unified** `redpanda_migrator` input/output pair was introduced in **Redpan
 | | Legacy (removed in 4.85.0) | Unified (4.67.5+) |
 |---|---|---|
 | Shape | `redpanda_migrator_bundle` wrapper managing three subcomponents (data, `schema_registry`, offsets) | One `redpanda_migrator` input + one `redpanda_migrator` output |
-| Pairing | `input_bundle_label` / internal routing | Matching `label` on input and output |
+| Pairing | `input_bundle_label` / internal routing | Implicit for a single pair; matching `label` on input and output when one config carries several |
 | Where logic lives | Split across subcomponents | All migration logic in the **output** (topic creation, schema sync, ACLs, consumer group offsets) |
 | Topic renaming | `topic_prefix` | `topic` with interpolation, e.g. `'migrated_${! @kafka_topic }'` |
 | Offset sync | `redpanda_migrator_offsets` pair | `consumer_groups` block on the output |
@@ -43,16 +43,15 @@ If you encounter a config using the bundle components, the full field-by-field m
 A typical Kafka → Redpanda migration:
 
 1. **Grant ACLs** to the migrator's principals (see below) if the clusters enforce authorization.
-2. **Write the pipeline**: source cluster + source Schema Registry on the input; destination cluster, destination Schema Registry, and migration behavior on the output. Pair them with matching `label` values.
+2. **Write the pipeline**: source cluster + source Schema Registry on the input; destination cluster, destination Schema Registry, and migration behavior on the output. A single pair needs no labels; see below if one config carries several pairs.
 3. **Lint and run**: `rpk connect lint migrator.yaml`, then `rpk connect run migrator.yaml`, and leave it running. Test with non-production topics first.
-4. **Monitor**: watch the `input_redpanda_migrator_lag` metric (labels: `topic`, `partition`) until lag reaches ~0; the output also emits `redpanda_migrator_*` counters/timers for topic, schema, and consumer-group sync (e.g. `redpanda_migrator_topics_created_total`, `redpanda_migrator_sr_schemas_created_total`, `redpanda_migrator_cg_offsets_translated_total`).
+4. **Monitor**: watch the `redpanda_lag` gauge (labels: `topic`, `partition`), which the input emits only when it has a `consumer_group` set, until lag reaches ~0; the output also emits `redpanda_migrator_*` counters/timers for topic, schema, and consumer-group sync (e.g. `redpanda_migrator_topics_created_total`, `redpanda_migrator_sr_schemas_created_total`, `redpanda_migrator_cg_offsets_translated_total`).
 5. **Verify**: `rpk topic list` and `rpk security acl list` against the destination; compare schemas.
 6. **Cut over**: stop source consumers, give the migrator time to sync the final translated offsets, then start consumers against the destination with the *same consumer group* — they resume from the translated offsets. Repoint producers.
 
 ```yaml
 # migrator.yaml — workflow shape (full field list: rpk connect create redpanda_migrator)
 input:
-  label: "migration_pipeline"          # input/output paired by matching label
   redpanda_migrator:
     seed_brokers: [ "source-kafka:9092" ]
     topics: [ '^[^_]' ]                # regex; skips internal topics starting with _
@@ -62,7 +61,6 @@ input:
       url: http://source-registry:8081
 
 output:
-  label: "migration_pipeline"          # must match the input label exactly
   redpanda_migrator:
     seed_brokers: [ "destination-redpanda:9092" ]
     schema_registry:                   # DESTINATION Schema Registry + schema options
@@ -76,7 +74,7 @@ metrics:
   prometheus: {}
 ```
 
-Labels are required only with multiple migrator pairs in one config, but always recommended. Label constraints: 3–128 chars, `A-Za-z0-9-_`. Mismatched labels are the top failure mode — the pair silently fails to coordinate.
+A single migrator pair needs no labels — the input and the output find each other on their own. Labels matter only when one config carries **several** pairs: each input is then paired with the output carrying the same `label`, and a pair whose labels differ fails to connect, reporting that the input or the output was not initialized. Label syntax is the engine's: lowercase `[a-z0-9_-]`, not starting with `_` or `-`. One caveat before relying on a multi-pair layout — the engine's linter reports a label used twice in one config as a collision, so lint the config (`rpk connect lint`) and confirm the behaviour on your installed version.
 
 When migrating to **Redpanda Serverless**, set `serverless: true` on the output to restrict configuration to Serverless-supported features (the docs say to omit it when migrating to a BYOC cluster).
 
@@ -91,8 +89,9 @@ Each concern syncs on its own schedule (all tunable on the output):
 ### Semantics and guarantees
 
 - Same delivery guarantees and ordering as the `redpanda` input; the input only commits its own source offsets after the output acknowledges writes.
-- Destination topics are created with the source's partition count; existing destination topics are **never overwritten**.
-- **Offset translation is timestamp-based and approximate** (best-effort; duplicates possible, not exactly-once). Translated offsets only ever move forward — never rewound.
+- Destination topics are created with the source's partition count; existing destination topics are **never re-created**, though an existing one with fewer partitions than its source has partitions added to match.
+- **Offset translation is timestamp-based and approximate** (best-effort; duplicates possible, not exactly-once) for every group that still has members. Translated offsets only ever move forward — never rewound.
+- **Groups in the `Empty` state (no active members) are translated exactly**, as long as the output's offset header is in use: each migrated record carries its source offset in that header, and the output uses it to refine the timestamp result to the exact destination record. Timestamps have millisecond resolution, so records that share one can otherwise translate to a neighbour — which is why consumers should be stopped before the final offset sync. Setting `offset_header` to an empty string drops the header and the exact path with it.
 - Consumer group migration requires **identical partition counts** at source and destination.
 - ACL replication (when `sync_topic_acls` is enabled) never grants write access at the destination: `ALLOW WRITE` entries are not migrated, `ALLOW ALL` is downgraded to `ALLOW READ`, group ACLs are not migrated.
 - The destination Schema Registry must be in `READWRITE` or `IMPORT` mode; the migrator checks the destination's global mode at sync time and fails otherwise. With `serverless: true`, and only when the destination is not already globally in `IMPORT` mode, it additionally flips each destination *subject* to `IMPORT` before writing its first version and restores the previous subject mode once the sync completes.

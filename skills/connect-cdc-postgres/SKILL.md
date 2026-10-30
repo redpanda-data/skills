@@ -17,6 +17,8 @@ The `postgres_cdc` input in Redpanda Connect streams change data capture (CDC) f
 
 This is an **Enterprise feature** — a Redpanda Enterprise license is required. The connector creates and manages a logical replication slot and a publication automatically, but both can be pre-created manually.
 
+Point `dsn` at the **primary** instance. `postgres_cdc` does not support connecting to a read replica or a physical standby — an Amazon RDS for PostgreSQL read replica, for example.
+
 ## Quickstart
 
 ### 1. Prepare PostgreSQL (4 commands)
@@ -129,6 +131,8 @@ When `stream_snapshot: true` the connector:
 5. Drops the temporary slot and begins streaming WAL changes from the LSN at snapshot time
 
 Tables being snapshot **must have a primary key** — the connector uses the primary key to parallelize and paginate the scan.
+
+The reader transactions in step 2 are long-lived `REPEATABLE READ` transactions pinned to the exported snapshot, so the snapshot phase holds the database's `xmin` horizon for as long as it runs — for every table, not only the one being scanned. While the horizon is held, PostgreSQL cannot clean up row versions that died after the snapshot started, so a scan that takes hours or days defers that cleanup for its whole duration. To load large tables without holding the horizon that long, use an incremental snapshot instead (see Incremental Snapshot below).
 
 ## Operational Notes
 

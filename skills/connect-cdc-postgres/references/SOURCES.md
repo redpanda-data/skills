@@ -141,3 +141,35 @@ not this connector.
   connector. Benthos moved v4.82.0 → v4.84.0 in the window; its credential
   redaction and the new `list --docs-format` flag are engine-wide and were
   applied in the `connect` and `connect-debugging` skills, not here.
+
+### Connect v4.115.1 (2026-10-30 sync)
+
+Release checked: `v4.115.1` (the current stable tag). No `postgres_cdc` source
+changed between `v4.115.0` and the tag, so the release itself required nothing;
+the two facts below came from the reference page and cookbook for the connector
+being extended with constraints the skill had never carried, and were then
+grounded in source at the tag.
+
+- **`postgres_cdc` requires the primary instance.** A read replica or physical
+  standby — an Amazon RDS for PostgreSQL read replica, for example — is not
+  supported. Stated in the connector's prerequisites and in its cookbook
+  (`rp-connect-docs` `modules/components/pages/inputs/postgres_cdc.adoc`,
+  `modules/cookbooks/pages/postgres_cdc.adoc`); recorded in `SKILL.md` beside
+  the `dsn` guidance. The skill body states the requirement without citing that
+  repo.
+- **The snapshot phase holds the `xmin` horizon for the whole database.**
+  Grounded in `internal/impl/postgresql/pglogicalstream/logical_stream.go`
+  (the temporary slot is created with
+  `CreateReplicationSlotOptions{Temporary: true, SnapshotAction: "EXPORT_SNAPSHOT"}`)
+  and `pglogicalstream/snapshotter.go`: `openTxn` begins each reader
+  transaction with `sql.TxOptions{ReadOnly: true, Isolation:
+  sql.LevelRepeatableRead}` on a background context "because we explicitly want
+  the Tx to be long lived", then runs `SET TRANSACTION SNAPSHOT`; the
+  transactions are rolled back only in `releaseSnapshot`, at the end of the
+  phase. A repeatable-read transaction open for hours therefore defers cleanup
+  of row versions that died after the snapshot started, for every table rather
+  than the one being scanned — which is why the published guidance points large
+  tables at `incremental_snapshot`. Added to `SKILL.md` (Snapshot Behavior) and
+  to the `stream_snapshot` entry in `references/config-reference.md`.
+- **Not documented:** nothing per-field changed for this connector in the
+  window.
