@@ -178,3 +178,29 @@ validate only what the connector enforces.
 - The cache-resource docs link in `references/config-reference.md` used the
   wrong host (`www.docs.redpanda.com`) and the retired `/redpanda-connect/`
   path; both corrected — see the Connect skill's sync log for the docs move.
+
+### Connect v4.115.1 (2026-10-30 sync)
+
+Release checked: `v4.115.1` (the current stable tag, changelog dated
+2026-10-23).
+
+- **TIMESTAMP columns declare microseconds in the emitted schema.** The
+  release's own changelog entry ("TIMESTAMP columns now use the
+  `timestamp-micros` logical type in both the snapshot and streaming schemas,
+  instead of `timestamp-millis` when streaming") is confirmed at the tag in
+  `internal/impl/oracledb/schema.go`: `columnToCommon` now sets `c.Logical` for
+  a `Timestamp` column from `oracleTimestampLogical`, which returns
+  `TimestampParams{Unit: TimeUnitMicros, AdjustToUTC: true}` for every
+  `TIMESTAMP` variant and `nil` — the millis default — for `DATE`, with the
+  comment recording that `TIMESTAMP(6)` is no longer truncated to millis while
+  precision above 6 still is. `internal/impl/oracledb/TYPES.md` at the tag
+  carries the same split in its logical-type column. Recorded in
+  `references/pipeline-and-output.md` beside the type-mapping table, as a
+  property of the `schema` metadata field that `schema_registry_encode`
+  consumes; the JSON wire format of a timestamp is unchanged, so the type table
+  itself still reads ISO-8601.
+- **Not documented:** the `oracledb_cdc` and `microsoft_sql_server_cdc` batchers
+  were refactored onto a shared flush-ticket package and their
+  rebuild-publisher warning gained a second variant naming a sealed flush queue.
+  Both are internal: the skills quote neither log line, and no field, metadata
+  key or guarantee changed.

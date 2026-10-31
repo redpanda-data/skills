@@ -57,6 +57,8 @@ DELETE events include the row values from the redo log (the pre-image of the del
 | `BLOB`, `RAW`, `LONG RAW` | base64-encoded JSON string (when `lob_enabled: true`) |
 | `JSON` column | JSON string (streaming) or native JSON (snapshot) |
 
+The `schema` metadata field (the serialised schema `schema_registry_encode` consumes) also carries each timestamp column's unit: `DATE` declares **milliseconds**, while `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE` and `TIMESTAMP WITH LOCAL TIME ZONE` declare **microseconds**, so a `TIMESTAMP(6)` value is not truncated (precision above 6 still is). Snapshot and streaming messages declare the same unit; streaming declared milliseconds before 4.115.1, so a consumer holding the older schema sees that unit change.
+
 See `TYPES.md` in the source for the complete type-coercion specification.
 
 ---
