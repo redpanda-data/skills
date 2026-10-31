@@ -134,7 +134,7 @@ The SQL endpoint requires TLS (`sslmode=require`). `dbname=oxla` is the database
 - A *SQL: Access* user owns nothing by default. A *SQL: Manage* user grants `SELECT` on specific topics, catalogs, or schemas.
 - Every query reaches the topics through one internal SASL credential, so **Kafka ACLs do not gate query-time access. `GRANT` / `REVOKE` inside Redpanda SQL do.**
 
-Details: [access-and-authentication.md](references/access-and-authentication.md). GRANT/REVOKE syntax: `/redpanda:sql`.
+Details: [access-and-authentication.md](references/access-and-authentication.md). GRANT/REVOKE syntax: https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/grant/ and https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/revoke/.
 
 ## Getting help
 

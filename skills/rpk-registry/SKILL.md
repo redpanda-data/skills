@@ -224,7 +224,7 @@ EOF
 rpk topic consume sensor --use-schema-registry -f "%v\n"
 ```
 
-For full produce/consume flag details, see the `rpk-topic` skill.
+For full produce/consume flag details, see https://docs.redpanda.com/streaming/current/reference/rpk/rpk-topic/rpk-topic-produce/ and https://docs.redpanda.com/streaming/current/reference/rpk/rpk-topic/rpk-topic-consume/.
 
 ## Enterprise Security Features
 
