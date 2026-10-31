@@ -16,6 +16,9 @@ Redpanda-Github-Read MCP connector; do not clone them.
 | How to work line | Source | Eval case |
 |---|---|---|
 | Create a BYOVNet cluster on Azure with Terraform alone: the BYOVNet module plus the Redpanda provider, which runs the agent bootstrap, with no Cloud API calls or `rpk cloud byoc azure apply` (verified 2026-10-27) | `redpanda-data/terraform-provider-redpanda` `redpanda/utils/byoc.go` (`RunByoc`, Azure preflight in `CheckCloudConfig`), `examples/byovpc/azure/main.tf`. Published: https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/byoc/azure/vnet-azure/ | `byovnet-azure-terraform-only` |
+| Send a change in network exposure (private-only to or from publicly reachable, and BYOVPC migrations to or from dual listener mode) to Redpanda Support; don't build a public path in the customer's account (verified 2026-10-31) | cloudv2 Control Plane API cluster update validation for connectivity changes | `private-to-public-goes-through-support` |
+| Never pass `--cloud-api-token`; keep `RPK_CLOUD_SKIP_VERSION_CHECK` to developer testing, because it runs the installed plugin instead of the pinned version (verified 2026-10-31) | streaming-enterprise `src/go/rpk/pkg/cli/cloud/byoc/byoc.go`, `install.go` | `byoc-apply-script-no-dev-overrides` (grades the skip-check part; the rpk error already makes the baseline drop the token flag) |
+| Don't move production data to Tiered Storage v2: it is beta and not for production, and a topic's version is fixed at create time (verified 2026-10-31) | https://docs.redpanda.com/cloud-data-platform/manage/tiered-storage-versions/ | `tiered-storage-v2-not-for-production` |
 
 ## Other claims in SKILL.md
 
@@ -24,6 +27,7 @@ Redpanda-Github-Read MCP connector; do not clone them.
 | A BYOC cluster is a Control Plane API resource of type `TYPE_BYOC` on a Network resource, plus an agent that `rpk cloud byoc <aws\|gcp\|azure>` installs with Terraform | cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`Cluster.Type`); streaming-enterprise `src/go/rpk/pkg/cli/cloud/byoc/` (`byoc.go`, `install.go`) |
 | Create, update, and delete return a long-running operation; poll `GET /v1/operations/{id}` until `STATE_COMPLETED` or `STATE_FAILED` | cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`UpdateCluster` returns `UpdateClusterOperation`, `patch: "/v1/clusters/{cluster.id}"`, `body: "cluster"`), `operation.proto` (`Operation.State`) |
 | Docs URLs | served at https://docs.redpanda.com/cloud-data-platform/ |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) |
 | `get_config_property` with `platform: "cloud"` says whether a cluster property is supported or editable in Redpanda Cloud | Live `tools/list` from `https://docs.redpanda.com/mcp` (checked 2026-10-30; see `skills/redpanda-docs/references/SOURCES.md`) |
 
 ## Docs gaps reported (not skill claims; do not re-verify here)

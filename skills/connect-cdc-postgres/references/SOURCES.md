@@ -21,6 +21,8 @@ https://docs.redpanda.com/connect/components/inputs/postgres_cdc/. Read source w
 | Backfill with a signal, never by dropping the slot: `stream_snapshot` runs only when the slot does not exist; the `snapshot-execute` signal with `{"tables": [...]}` and no schema prefix; incremental snapshots are incompatible with `stream_snapshot` | `pglogicalstream/logical_stream.go` (existing-slot branch resumes from `confirmed_flush_lsn` and returns before the snapshotter), `input_pg_stream.go` (input description); `internal/replication/signalling.go` (`SnapshotSignalType`), `input_pg_stream.go` (`signal_table_name` description and example); `internal/impl/postgresql/config.go` (`parseIncrementalSnapshotCfg`) | `backfill-table-via-signal-not-slot-drop` |
 | Before signaling, or when a signal was rejected, check the table in order: in `tables`, primary key without a rejected key type, `publish_via_partition_root` on `pglog_stream_<slot_name>` for a partitioned table, `REPLICA IDENTITY FULL` for TOASTable columns; a finished table is re-read by changing or clearing `checkpoint_cache_key` | `pglogicalstream/incremental_snapshot.go` (`incrementalPKColumns`, `checkKeyTypesBindable`, `checkDedupReachable`, `warnUndedupableTables`); `input_pg_stream.go` (`incremental_snapshot.enabled` description); `pglogicalstream/logical_stream.go` (`pubName := "pglog_stream_" + config.ReplicationSlotName`, `publication_names` plugin arg); `pglogicalstream/incremental_snapshot.go` (`warnToastFidelity`); `input_pg_stream.go` (`incremental_snapshot.checkpoint_cache_key` and `signal_table_name` descriptions) | `rejected-backfill-check-key-type` |
 | Choose `batch_transactions` or a `batching` policy, never both (verified 2026-10-27) | `input_pg_stream.go` (`resolveBatchingPolicy` error "batch_transactions cannot be combined with a batching policy", field `Version("4.115.0")`). Published in the field description on the postgres_cdc page | `batch-transactions-without-batching-policy` |
+| Ask the user before `ALTER TABLE ... REPLICA IDENTITY FULL` for a TOASTable table (part of the step 4 check) (verified 2026-10-31) | `pglogicalstream/incremental_snapshot.go` (`warnToastFidelity`) | `toast-backfill-ask-before-replica-identity` |
+| When WAL piles up behind the slot, move the slot forward: measure `confirmed_flush_lsn` lag, restart a stopped pipeline, keep `heartbeat_interval` above `0s` for quiet tables, and drop the slot only when the pipeline is removed for good, after asking (verified 2026-10-31) | `input_pg_stream.go` (`heartbeat_interval` description), `pglogicalstream/logical_stream.go` (resume from `confirmed_flush_lsn`, heartbeat via `pg_logical_emit_message`) | `wal-growth-keep-slot-fix-heartbeat` |
 
 ## Other claims in SKILL.md
 
@@ -29,17 +31,17 @@ https://docs.redpanda.com/connect/components/inputs/postgres_cdc/. Read source w
 | Enterprise connector, license required | `internal/impl/postgresql/input_pg_stream.go` (imports `internal/license`; file is under the Redpanda Community License) |
 | `pg_stream` is the deprecated former name (frontmatter description) | `input_pg_stream.go` (`MustRegisterBatchInput("pg_stream", ...).Deprecated()`) |
 | `get_connect_component` looks up `postgres_cdc` and its fields | Live `tools/list` from `https://docs.redpanda.com/mcp` (checked 2026-10-30; see `skills/redpanda-docs/references/SOURCES.md`) |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) |
 
 ## Docs gaps reported (not skill claims; do not re-verify here)
 
-- The heartbeat message prefix and payload (`redpanda_connect_<slot_name>`,
-  `{"type":"heartbeat"}`, from `pglogicalstream/logical_stream.go`) are not on the published
-  page. The fix belongs in the connect field description for `heartbeat_interval`. The suite
-  still carries the behavioral case `heartbeat-prefix-per-slot` (baseline fails, docs fail),
-  but the skill has no line for it; it stays a docs gap.
 - The connector reconciles the publication's table list to `tables` on every start
-  (`pglogicalstream/pglogrepl.go` `CreatePublication`), and a top-level
-  `heartbeat_interval: 0s` is rejected at startup with incremental snapshots (`config.go`).
+  (`pglogicalstream/pglogrepl.go` `CreatePublication`).
+
+The heartbeat prefix and payload, and the rejection of `heartbeat_interval: 0s` with
+incremental snapshots, are published in the `heartbeat_interval` field description (checked
+2026-10-31). The suite keeps the behavioral case `heartbeat-prefix-per-slot`; the skill has no
+line for it.
 
 ## TODO / re-verify
 

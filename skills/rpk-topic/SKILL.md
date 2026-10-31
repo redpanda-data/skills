@@ -24,6 +24,17 @@ non-negative `-p/--partition` is also given (any value, for example `-p 0`);
 the parsed value then wins. Without `-p`, records go wherever the default
 partitioner puts them and rpk reports no error.
 
+**Preview a regex before deleting or altering by it.** `rpk topic delete -r` and
+`rpk topic alter-config -r` act on every topic the anchored expression matches,
+and `delete` does not ask for confirmation. Run `rpk topic list -r` with the same
+expression first, and leave out, or ask about, any match the user didn't mean.
+
+**Get the user's go-ahead before deleting records or making a change that can't
+be undone.** That covers `trim-prefix` (`-o end` removes every record), lowering
+retention, `delete`, and `add-partitions` (partitions can't be removed). Say what
+each option would remove, then ask. `trim-prefix` prompts because the records
+are gone for good; don't add `--no-confirm` to get past the prompt on your own.
+
 ## Use the docs for everything else
 
 Look up flags, defaults, format tokens, offset syntax, topic properties, and
@@ -37,6 +48,13 @@ procedures in the Redpanda docs instead of from memory:
   page per subcommand) and the topic properties reference at
   https://docs.redpanda.com/streaming/current/reference/properties/topic-properties/.
   Swap `current` for the user's version.
+- For a Redpanda Cloud cluster, pass `platform: "cloud"`. The Cloud topic
+  properties page at
+  https://docs.redpanda.com/cloud-data-platform/reference/properties/topic-properties/
+  says which properties you can set and where Serverless limits differ.
+
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the
+user to sign in through `/mcp` rather than answering from memory.
 
 `rpk topic <subcommand> --help` on the installed rpk is the live check for
 flags in that version. `describe-storage` needs the Admin API, so it does not

@@ -14,12 +14,16 @@ Paths below are relative to that repo.
 | How to work line | Source | Eval case |
 |---|---|---|
 | A parsed `%p` needs a non-negative `-p/--partition` as well, and the parsed value wins; without `-p` the default partitioner places records and rpk reports no error | `src/go/rpk/pkg/cli/topic/produce.go` (`partition >= 0` selects `kgo.ManualPartitioner()`; help text on `%p`) | `produce-parsed-partition-file` |
+| Preview a regex with `rpk topic list -r` before `delete -r` or `alter-config -r`; `delete` does not ask for confirmation (verified 2026-10-31) | `src/go/rpk/pkg/cli/topic/delete.go` (no confirmation; `--regex` help and the long help's `rpk topic list -r` advice), `src/go/rpk/pkg/cli/topic/list.go` (same anchored regex format) | `regex-delete-preview-matches` |
+| Get the user's go-ahead before `trim-prefix`, lowering retention, `delete`, or `add-partitions`; `trim-prefix` prompts and `--no-confirm` skips it; `-o end` removes every record (verified 2026-10-31) | `src/go/rpk/pkg/cli/topic/trim.go` (`out.Confirm("Confirm deletion of all data before the new start offsets?")`, `--no-confirm`, `--offset` help), `src/go/rpk/pkg/cli/topic/add_partitions.go` | `free-disk-confirm-before-deleting-records` |
 
 ## Other claims in SKILL.md
 
 | Claim | Source | Eval case |
 |---|---|---|
 | `get_config_property` looks up one topic property and `list_config_properties` finds a property's name | Live `tools/list` from `https://docs.redpanda.com/mcp` (checked 2026-10-30; see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| For a Cloud cluster, pass `platform: "cloud"`; the Cloud topic properties page says which properties can be set and where Serverless limits differ | https://docs.redpanda.com/cloud-data-platform/reference/properties/topic-properties/ (checked 2026-10-31) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 | `describe-storage` needs the Admin API, so it does not work on Redpanda Cloud | `src/go/rpk/pkg/cli/topic/describe_storage.go` (`config.CheckExitCloudAdmin`) | none |
 
 ## Lines removed for lack of a failing baseline
@@ -30,3 +34,9 @@ Paths below are relative to that repo.
   older release than both the rpk client and the latest docs) passed 3/3 in the baseline:
   without the skill, the agent ran `rpk version` and linked the brokers' release. Finding the
   version is covered by `/redpanda:redpanda-docs`, so the case was not kept.
+- "Before advising a specific `alter-config --set` key on Serverless, verify it against a live
+  cluster or the Cloud UI" was not restored as a line on 2026-10-31. A screening query (raise a
+  Serverless topic's maximum message size to 30 MiB and confirm the producers are good to go)
+  passed 3/3 in the baseline: without the skill, the agent warned that Serverless caps the value
+  lower than BYOC and Dedicated and told the user to check before relying on it. The skill keeps
+  only the docs pointer for Cloud topic properties.

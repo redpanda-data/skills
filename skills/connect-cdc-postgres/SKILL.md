@@ -41,8 +41,10 @@ signal is only logged; replication continues and nothing else reports it.
    setting works around a rejected key type; changing the key is a schema change, so stop and ask
    the user.
 3. If it is partitioned, `pglog_stream_<slot_name>` has `publish_via_partition_root = true`.
-4. If it has large (TOASTable) columns, set `REPLICA IDENTITY FULL` for the backfill, or updates
-   during the backfill can deliver only the `unchanged_toast_value` placeholder.
+4. If it has large (TOASTable) columns, it needs `REPLICA IDENTITY FULL` for the backfill, or
+   updates during the backfill can deliver only the `unchanged_toast_value` placeholder. Ask the
+   user before running that `ALTER TABLE`: it takes a lock, and every later update and delete logs
+   the full old row.
 
 A table that already finished is skipped. To read it again, point
 `incremental_snapshot.checkpoint_cache_key` at a fresh key or clear that entry in the checkpoint
@@ -50,6 +52,12 @@ cache; the signal payload has no force option.
 
 **Choose `batch_transactions` or a `batching` policy, never both.** The input rejects the
 combination at startup.
+
+**When WAL piles up behind the slot, move the slot forward; don't drop it.** Measure how far the
+slot's `confirmed_flush_lsn` trails `pg_current_wal_lsn()` in `pg_replication_slots`. If the
+pipeline is stopped, restart it. If it runs but its tables are quiet while others are busy, keep
+`heartbeat_interval` above `0s` so heartbeats advance the slot. Drop the slot only when the
+pipeline is removed for good, and ask the user first: dropping it discards the stream position.
 
 ## Use the docs for everything else
 
@@ -59,3 +67,6 @@ and its fields, and `ask_redpanda_question` for setup and procedures. If the Doc
 available, fetch the Markdown twin of the page:
 
 - https://docs.redpanda.com/connect/components/inputs/postgres_cdc.md
+
+If the server refuses for quota and you can't fetch the page, tell the user to sign in through
+`/mcp` rather than answering from memory.

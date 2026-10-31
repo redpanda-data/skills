@@ -4,8 +4,8 @@ description: >-
   Writes and runs read-only Redpanda SQL queries on Redpanda Cloud and manages
   which SQL users can read which topics. Use when a user wants to connect to
   Redpanda SQL with psql, a PostgreSQL driver, or SQL Studio, query
-  topic-backed tables, export results with COPY TO, grant or revoke access to
-  topics, fix a user who lost SQL access, or check how Redpanda SQL differs
+  topic-backed tables, create views, export results with COPY TO, grant or
+  revoke access to topics or views, fix a user who lost SQL access, or check how Redpanda SQL differs
   from PostgreSQL. For enabling SQL, the SQL Manage and SQL Access roles, and
   the access model, see `/redpanda:sql-admin-api`. For catalogs, mapping
   topics with CREATE TABLE, and Iceberg-enabled topics, see
@@ -24,7 +24,8 @@ producing to topics, never by `INSERT` or `COPY FROM`. Host, port, and credentia
 
 **Find the table in its catalog before writing a query.** A topic-backed table is referenced as
 `catalog=>table`, almost always `default_redpanda_catalog=>orders`. A bare `orders` or
-`catalog.orders` fails, and the unqualified `SHOW TABLES` is an error. Start with:
+`catalog.orders` fails, and the unqualified `SHOW TABLES` is an error. A view is the exception:
+it lives in a schema, so query it by name with no catalog prefix. Start with:
 
 ```sql
 SHOW REDPANDA TABLES default_redpanda_catalog;
@@ -81,3 +82,6 @@ Redpanda SQL runs in Redpanda Cloud. Start from:
 
 Only statements, functions, and types in the published reference are supported. If a
 PostgreSQL feature is not listed there, say so rather than assume it works.
+
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the user to sign in
+through `/mcp` rather than answering from memory.
