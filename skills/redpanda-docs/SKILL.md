@@ -35,6 +35,9 @@ Use the direct lookups first when the question names a specific property or comp
 - `search_api_reference` and `get_api_reference_content` for the Admin, HTTP Proxy, Schema
   Registry, Control Plane, and Data Plane APIs.
 
+Pass `platform` and, for self-managed Redpanda, `version` to `get_config_property` and
+`list_config_properties` as well, set as below. Without `version` they answer for the latest release.
+
 For everything else, use `ask_redpanda_question`:
 
 - Set `platform` to `cloud` or `self-managed`. Without it, answers mix both.
