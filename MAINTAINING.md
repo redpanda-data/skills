@@ -88,7 +88,8 @@ Every source-grounded skill carries a `SOURCES.md` (at `skills/<name>/references
 plus a **"Deferred to live introspection"** section (what NOT to hardcode) and a **"TODO / re-verify"**
 section. This is what the generators, critic, and drift audit read first, and where a human starts
 when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 Core; 4 SQL;
-10 Connect). Each names its authoritative source repo(s):
+10 Connect), and so does the `redpanda-docs` lookup skill, which the drift audit re-verifies too.
+Each names its authoritative source repo(s):
 
 - **ADP / Cloud** → `cloudv2` (+ `cloud-docs`), private.
 - **Core** → `redpanda-data/redpanda` (public) + `docs` (private). A release counts as shipped once the
@@ -102,6 +103,8 @@ when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 
   version marker, and record it as a TODO in the skill's `SOURCES.md`.
 - **SQL** → `cloud-docs` module `sql` and the `reference/sql` pages (private), which set the scope: a skill covers only what the published Cloud docs document for users. `redpanda-data/oxla` (private) confirms the behavior of documented surfaces at the shipped tag and never adds undocumented ones (no engine config, env vars, admin API, raw metrics, or self-hosted deployment).
 - **Connect** → `redpanda-data/connect` + the `benthos` engine + the auto-generated `rp-connect-docs`.
+- **`redpanda-docs`** → the live Docs MCP `tools/list`, `redpanda-data/docs-site` (private), and the
+  `rpk` and `rpk connect` version commands in `streaming-enterprise` (private) and `benthos`.
 
 When adding a new source-grounded skill, add a `SOURCES.md` beside it and register it in the
 drift-audit scope.

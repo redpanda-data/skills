@@ -15,7 +15,9 @@ Every case is a user question, asked in five arms and graded the same way in eac
 
 The docs arms use the Redpanda Docs MCP server at `https://docs.redpanda.com/mcp`. `docs` and
 `both` are told to look the question up before answering. `installed` is not: it is what a user
-with the plugin gets, so it shows whether an agent consults the docs on its own.
+with the plugin gets, so it shows whether an agent consults the docs on its own. It overstates
+real use in one way: the runner always puts the full `redpanda-docs` SKILL.md in the system
+prompt, while a plugin user gets that skill only when the model loads it.
 
 ## Reading the result
 

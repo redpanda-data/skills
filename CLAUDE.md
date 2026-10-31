@@ -170,6 +170,11 @@ before editing or verifying any file**, and open the cited paths first.
   generated `proto/gen/openapi/openapi.{controlplane,dataplane}.yaml`; the user-facing
   Cloud changelog is `cloud-docs/modules/get-started/pages/whats-new-cloud.adoc`).
 
+- Docs lookup: `skills/redpanda-docs/references/SOURCES.md` (grounded in the live Docs MCP
+  `tools/list`, `docs-site`, and the `rpk` and `rpk connect` version commands). The drift audit
+  re-verifies it like any other skill; its behavior is exercised by the `installed` arm of every
+  suite rather than a suite of its own.
+
 When adding a source-grounded skill, add a `SOURCES.md` beside it and list it here.
 
 ## Frontmatter and size standards (CI-enforced)
