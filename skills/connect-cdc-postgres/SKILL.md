@@ -53,12 +53,6 @@ cache; the signal payload has no force option.
 **Choose `batch_transactions` or a `batching` policy, never both.** The input rejects the
 combination at startup.
 
-**When WAL piles up behind the slot, move the slot forward; don't drop it.** Measure how far the
-slot's `confirmed_flush_lsn` trails `pg_current_wal_lsn()` in `pg_replication_slots`. If the
-pipeline is stopped, restart it. If it runs but its tables are quiet while others are busy, keep
-`heartbeat_interval` above `0s` so heartbeats advance the slot. Drop the slot only when the
-pipeline is removed for good, and ask the user first: dropping it discards the stream position.
-
 ## Use the docs for everything else
 
 For config fields, defaults, metadata keys, signal table columns, PostgreSQL setup, and cloud
