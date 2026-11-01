@@ -38,6 +38,8 @@ them into hardcoded facts:
 
 ## TODO / re-verify
 
+- **Drift audit 2026-11-01:** two rows of the common-config table in `manage.md` were wrong. `min.insync.replicas` is in redpanda's `allowlist_topic_noop_confs` (`src/v/kafka/server/handlers/topics/types.h`, tag v26.2.2) — accepted for Kafka compatibility and ignored, not an ISR floor. `replication.factor` can be altered after creation (docs `modules/reference/partials/properties/topic-properties.adoc`, regenerated for tag v26.2.4: altering it changes the partitions' replica sets, which is why `rpk topic describe` does not return it); the other `rpk topic` skills already said so. Command aliases (`list`/`ls`, `describe`/`info`, `trim-prefix`/`trim`) re-verified in `src/go/rpk/pkg/cli/topic/`.
+
 - **Command-to-filename mismatches** (verified, noted so a future audit doesn't flag a "missing" file): `trim-prefix` is defined in `trim.go`, `add-partitions` in `add_partitions.go`, and `alter-config` in `config.go` (`Use: "alter-config [TOPICS...] --set key=value --delete key2,key3"`). There is no `trim-prefix.go`/`add-partitions.go`/`alter-config.go`.
 - **Enterprise topic-property accepted values, defaults, and expiration behavior** are broker config, not rpk. Treat `topic-properties.adoc` as the citation of record; upstream is `src/v/config/configuration.cc` (not line-verified per-key here). Confluent-compatible aliases (`confluent.key/value.schema.validation`, `confluent.key/value.subject.name.strategy`) are also broker-side.
 - Individual produce/consume `--format` percent-escape tokens and modifiers were not each re-verified against `produce.go`/`consume.go` in this pass — re-check the token/modifier tables there if editing.

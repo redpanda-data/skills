@@ -38,6 +38,8 @@ must not "correct" them into hardcoded values:
 
 ## TODO / re-verify
 
+- **Drift audit 2026-11-01:** `enterprise-features.md` listed `iceberg_rest_catalog_prefix`, which is not a cluster property; replaced with `iceberg_rest_catalog_base_location`, which is. `command-map.md` spelled the self-test group `rpk cluster selftest`; the command is `rpk cluster self-test` with no alias (redpanda `src/go/rpk/pkg/cli/cluster/selftest/selftest.go`, tag v26.2.2). Iceberg cluster keys swept against docs `modules/reference/partials/properties/cluster-properties.adoc` (regenerated for tag v26.2.4).
+
 - **Where releases are published (verified 2026-10-20).** `v26.2.2` is the last
   Redpanda release published as a GitHub Release, and the public repo carries no
   tag or branch head for the releases after it — its `v26.2.x` branch head is
