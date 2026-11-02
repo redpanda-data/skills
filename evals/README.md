@@ -157,7 +157,7 @@ A case can grade what the agent does instead of what it says. Give it a `tools` 
 
 Each response's `match` is a regex tested against the call's arguments as JSON, and the first match wins. A call that matches nothing gets an error result, the way a real tool fails on input it doesn't understand. `args` in an assertion is a regex too. Calls are graded from the mock's own log, before any pattern or invariant.
 
-The rule for facts applies to behavior: generic good practice, such as checking the obvious setting first, is something the baseline already does. A behavioral case earns its place only on a procedure specific to the product.
+The rule for facts applies to behavior: generic good practice, such as checking the obvious setting first, is something the baseline already does. A behavioral case earns its place only on a procedure specific to the product. The exception is a safety guardrail: a line that guards against data loss, an irreversible change, or changing a cluster's network exposure stays in the skill, and its case stays as a regression guard, even when the baseline passes. `SOURCES.md` records it as a safety guardrail with its baseline result.
 
 Assert a literal with a pattern and an idea with an invariant. Patterns are
 case-insensitive JavaScript regexes matched against the whole response. Keep

@@ -125,11 +125,13 @@ run them, so a maintainer does.
   case id in `SOURCES.md`. The PR stays unmerged until a maintainer runs the case
   (`node evals/run-evals.mjs --case <id> --arms baseline,skill,installed`) and the baseline
   fails it while the skill arms pass. The maintainer records the pass rates in the PR. If the
-  baseline passes, the line comes out.
+  baseline passes, the line comes out, unless it guards against data loss, an irreversible
+  change, or changing a cluster's network exposure. Such a safety guardrail stays, is recorded
+  in `SOURCES.md` with its baseline result, and keeps its case as a regression guard.
 - **Scheduled re-run.** "The baseline fails it" stops being true as models improve. Each month,
   when the drift audit runs, a maintainer re-runs the behavioral cases of every thin skill
   (`--arms baseline,installed`). A line whose case the baseline now passes is flagged for
-  removal in a PR; a line whose case the installed arm fails is a skill or docs problem to fix.
+  removal in a PR (safety guardrails excepted); a line whose case the installed arm fails is a skill or docs problem to fix.
 - **Converting a skill.** Convert one skill at a time, after its own evals show which of its
   facts the docs already cover. Every fact the skill drops that the docs lack is a docs gap,
   and the conversion waits until the docs cover it.

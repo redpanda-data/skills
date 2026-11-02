@@ -22,6 +22,7 @@ https://docs.redpanda.com/connect/components/inputs/postgres_cdc/. Read source w
 | Before signaling, or when a signal was rejected, check the table in order: in `tables`, primary key without a rejected key type, `publish_via_partition_root` on `pglog_stream_<slot_name>` for a partitioned table, `REPLICA IDENTITY FULL` for TOASTable columns; a finished table is re-read by changing or clearing `checkpoint_cache_key` | `pglogicalstream/incremental_snapshot.go` (`incrementalPKColumns`, `checkKeyTypesBindable`, `checkDedupReachable`, `warnUndedupableTables`); `input_pg_stream.go` (`incremental_snapshot.enabled` description); `pglogicalstream/logical_stream.go` (`pubName := "pglog_stream_" + config.ReplicationSlotName`, `publication_names` plugin arg); `pglogicalstream/incremental_snapshot.go` (`warnToastFidelity`); `input_pg_stream.go` (`incremental_snapshot.checkpoint_cache_key` and `signal_table_name` descriptions) | `rejected-backfill-check-key-type` |
 | Choose `batch_transactions` or a `batching` policy, never both (verified 2026-10-27) | `input_pg_stream.go` (`resolveBatchingPolicy` error "batch_transactions cannot be combined with a batching policy", field `Version("4.115.0")`). Published in the field description on the postgres_cdc page | `batch-transactions-without-batching-policy` |
 | Ask the user before `ALTER TABLE ... REPLICA IDENTITY FULL` for a TOASTable table (part of the step 4 check) (verified 2026-10-31) | `pglogicalstream/incremental_snapshot.go` (`warnToastFidelity`) | `toast-backfill-ask-before-replica-identity` |
+| When WAL piles up behind the slot, move the slot forward: measure `confirmed_flush_lsn` lag, restart a stopped pipeline, keep `heartbeat_interval` above `0s` for quiet tables, and drop the slot only when the pipeline is removed for good, after asking (verified 2026-10-31). Safety guardrail: the baseline passed its case 3/3 on 2026-10-31, and the line and case stay as a regression guard. | `input_pg_stream.go` (`heartbeat_interval` description), `pglogicalstream/logical_stream.go` (resume from `confirmed_flush_lsn`, heartbeat via `pg_logical_emit_message`) | `wal-growth-keep-slot-fix-heartbeat` |
 
 ## Other claims in SKILL.md
 
@@ -41,15 +42,6 @@ The heartbeat prefix and payload, and the rejection of `heartbeat_interval: 0s` 
 incremental snapshots, are published in the `heartbeat_interval` field description (checked
 2026-10-31). The suite keeps the behavioral case `heartbeat-prefix-per-slot`; the skill has no
 line for it.
-
-## Lines removed for lack of a failing baseline
-
-- "When WAL piles up behind the slot, move the slot forward: measure `confirmed_flush_lsn` lag,
-  keep `heartbeat_interval` above `0s` for quiet tables, and drop the slot only when the pipeline
-  is removed for good" was restored from the pre-thin skill and removed on 2026-10-31. Its
-  behavioral case (a 94% full primary with WAL held by an active slot on a quiet table and
-  `heartbeat_interval: 0s`) passed 3/3 in the baseline: without the skill, the agent measured the
-  slot lag, kept the slot, and turned heartbeats back on. The case was not kept.
 
 ## TODO / re-verify
 

@@ -26,6 +26,12 @@ the Redpanda Terraform provider in one configuration, as in
 https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/byoc/azure/vnet-azure/.
 Do not call the Cloud API or run `rpk cloud byoc azure apply` to create it.
 
+**Send a change in network exposure to Redpanda Support.** Moving a cluster between private-only
+and publicly reachable, and any BYOVPC migration to or from dual listener mode, goes through
+Support; the API refuses the first. Don't build a public path around the cluster in the
+customer's account (a load balancer, an open security group, or a proxy). Tell the user to
+request the change from Support.
+
 **Never pass `--cloud-api-token`, and keep `RPK_CLOUD_SKIP_VERSION_CHECK` to developer testing.**
 rpk hands the Cloud API token to the BYOC plugin itself. The skip-check variable makes
 `rpk cloud byoc` run whatever plugin is installed instead of the version pinned for the cluster,

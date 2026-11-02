@@ -230,6 +230,10 @@ run the evals, so:
    evals; the maintainer records the pass rates in the PR.
 3. If the baseline passes, the line is general knowledge: drop it, and keep the case only if
    it guards a real misroute.
+4. Exception: a line that guards against data loss, an irreversible change, or changing a
+   cluster's network exposure stays even when the baseline passes, because a few clean runs are
+   thin evidence and a miss is costly. Record it in `SOURCES.md` as a safety guardrail with its
+   baseline result, and keep its case as a regression guard.
 
 Correcting a drifted fact inside an existing line (rule 3) needs no new case.
 
