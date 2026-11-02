@@ -459,8 +459,8 @@ rpk topic delete -r '^test-.*'
 | `message.timestamp.type` | `CreateTime` or `LogAppendTime` |
 | `redpanda.remote.write` | `true`/`false` — enable tiered storage writes |
 | `redpanda.remote.read` | `true`/`false` — enable tiered storage reads |
-| `min.insync.replicas` | Minimum ISR count for successful produce |
-| `replication.factor` | Cannot be changed after creation via this API |
+| `min.insync.replicas` | Accepted for Kafka compatibility, but ignored — Redpanda does not act on it |
+| `replication.factor` | Replication factor; altering it moves the partitions' replica sets, so it is not returned by `rpk topic describe` as a Kafka property |
 | `write.caching` | `true`/`false` — ack on majority before fsync (see enterprise reference) |
 
 **Enterprise topic properties** (Tiered Storage, Cloud Topics, Iceberg Topics,

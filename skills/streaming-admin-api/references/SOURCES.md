@@ -54,6 +54,8 @@ broker-side module is `cluster_link` — search source for `shadow_link` and `cl
 
 ## TODO / re-verify
 
+- **Drift audit 2026-11-01:** `enterprise-features.md` named `cloud_topics_reconciliation_interval`, which is not a cluster property; the reconciliation loop interval is bounded by `cloud_topics_reconciliation_min_interval` and `cloud_topics_reconciliation_max_interval` (docs `modules/reference/partials/properties/cluster-properties.adoc`, regenerated for tag v26.2.4), and both are `integer` properties in milliseconds, as is `cloud_topics_produce_upload_interval`, so the table's type column was corrected with them. Endpoint paths under `/v1/debug/` re-verified against redpanda `src/v/redpanda/admin/api-doc/debug.json` at tag v26.2.2, and `/v1/debug/partitions/{topic}/{partition}/offset_for_leader_epoch` confirmed as declared in `partition.json` (not `debug.json`) — not drift.
+
 - **Schema-endpoint metadata added in v26.2.4 — key names not pinned
   (2026-10-20).** The `v26.2.4` release notes
   (`modules/reference/pages/releases/redpanda.adoc` in the private

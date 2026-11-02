@@ -45,6 +45,8 @@ still exists before describing the feature as GA:
 
 ## TODO / re-verify
 
+- **Drift audit 2026-11-01:** the `connection_type` row cited the proto zero-value `CONNECTION_TYPE_UNSPECIFIED`, which the published API reference does not carry — api-docs `cloud-controlplane/cloud-controlplane.yaml` publishes `ConnectionType` with `CONNECTION_TYPE_PUBLIC` and `CONNECTION_TYPE_PRIVATE` only. The row now states the published values and that the field must be set explicitly. Every `/v1/...` path in the three Cloud skills was swept against the published control-plane and data-plane specs and all resolve (the four "there is no X path" statements in `cloud-serverless/references/data-plane.md` are still correct).
+
 - **Cluster PATCH without `update_mask` (open, 2026-09-18).** The published dual-listener how-to's
   Cloud API migration example sends the `connections` body with no `update_mask`, while
   `validateConnectionsUpdate` keys every guard off the mask paths. Whether the gateway derives a

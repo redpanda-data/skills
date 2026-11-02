@@ -392,3 +392,30 @@ surface was re-opened for the release itself.
   the Connect team should confirm whether a matched pair lints clean.
 - **Out of scope for this routine:** nothing this window belongs to another
   product's skill.
+
+### Drift audit 2026-11-01 (connect v4.116.1 / benthos v4.84.0)
+
+Full re-verification pass, not a release sync. `internal/plugins/info.csv` re-read
+at tag `v4.116.1`: the enterprise-tier roster in `connector-catalog.md` is still
+complete and still correct (the eight enterprise CDC inputs plus `tigerbeetle_cdc`
+as `certified`, the Snowflake trio, `gcp_bigquery_write_api`, `iceberg`,
+`sap_hana`, both `jira` entries with the processor still `deprecated=y`, the Splunk,
+OpenTelemetry, Slack, Google Drive and Salesforce families, and `gateway` /
+`a2a_message` still enterprise with no reference page); `pg_stream` and
+`redpanda_common` are still enterprise-and-deprecated, so still excluded. All 16
+AI/ML processors are still `certified`. `aws_dynamodb_cdc` still has no
+`license.CheckRunningEnterprise` call in `internal/impl/aws/dynamodb/input_cdc.go`,
+so the tier-vs-gate caveat stands. Stale version stamps in `connector-catalog.md`
+and `enterprise.md` refreshed to `v4.116.1`. `connect/go.mod` at `v4.116.1` still
+pins benthos `v4.84.0`, so the engine-level claims (CLI verbs, Bloblang, config
+model, base logger/metrics/tracer/buffer) are unchanged since the last sync.
+
+Not applied here, for the next change-triggered Connect sync: `v4.116.0` adds an
+incremental snapshot mode to `mongodb_cdc` — an `incremental_snapshot` block
+(`enabled`, `chunk_size`, `checkpoint_cache_key`), a `signal_collection_name`
+field and a `snapshot-execute` signal, mutually exclusive with `stream_snapshot`
+(`internal/impl/mongodb/cdc/input.go`, `incremental_snapshot.go`,
+`signalling.go`). It adds a surface rather than contradicting one: the
+`connect-cdc-mongodb` claims about the blocking snapshot, checkpointing,
+unresumable-position recovery and `snapshot_parallelism` all still hold at
+`v4.116.1`.

@@ -38,6 +38,8 @@ must not "correct" them into hardcoded values:
 
 ## TODO / re-verify
 
+- **Drift audit 2026-11-01:** `enterprise-features.md` listed `iceberg_rest_catalog_prefix` and `iceberg_rest_catalog_warehouse` as two separate REST-catalog keys. `_prefix` is a deprecated alias of `iceberg_rest_catalog_warehouse` and is still accepted (redpanda `src/v/config/configuration.cc`, tag v26.2.2, `.aliases = {"iceberg_rest_catalog_prefix"}`), so listing it separately was the error. It was replaced with `iceberg_rest_catalog_base_location`, a distinct property the list was missing. A user's existing `_prefix` setting is not invalid. Method note for future sweeps: a deprecated alias is recorded as an `| Aliases` row inside its canonical property's table in the generated property partials, not as a `=== <name>` anchor of its own, so a sweep that reads only the anchors reports every aliased name as missing. Build the authoritative set from the anchors plus the Aliases rows; the partials carry eight such aliases today, and `iceberg_rest_catalog_warehouse` -> `iceberg_rest_catalog_prefix` is one of them. `command-map.md` spelled the self-test group `rpk cluster selftest`; the command is `rpk cluster self-test` with no alias (redpanda `src/go/rpk/pkg/cli/cluster/selftest/selftest.go`, tag v26.2.2). Iceberg cluster keys swept against docs `modules/reference/partials/properties/cluster-properties.adoc` (regenerated for tag v26.2.4).
+
 - **Where releases are published (verified 2026-10-20).** `v26.2.2` is the last
   Redpanda release published as a GitHub Release, and the public repo carries no
   tag or branch head for the releases after it — its `v26.2.x` branch head is

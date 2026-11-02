@@ -288,7 +288,7 @@ GET /v1/debug/partition/{namespace}/{topic}/{partition}
 curl -s http://localhost:9644/v1/debug/partition/kafka/orders/0 | jq
 
 # Internal topics
-curl -s http://localhost:9644/v1/debug/partition/_redpanda-internal/controller/0 | jq
+curl -s http://localhost:9644/v1/debug/partition/redpanda/controller/0 | jq
 ```
 
 Get producer info for a partition (queries the leader):

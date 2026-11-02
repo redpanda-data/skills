@@ -102,9 +102,10 @@ Object-storage-native topics that use durable object storage as the primary back
 | Key | Type | Purpose |
 |-----|------|---------|
 | `cloud_topics_enabled` | boolean | **Deprecated in v26.2.1 and ignored.** Was the Cloud Topics master switch before v26.2; from v26.2 on `cloud_storage_enabled` is the only cluster-level prerequisite. |
-| `cloud_topics_produce_upload_interval` | duration | How often buffered produce data is uploaded to object storage. |
+| `cloud_topics_produce_upload_interval` | integer (ms) | How often buffered produce data is uploaded to object storage. |
 | `cloud_topics_produce_batching_size_threshold` | integer | Produce batch size that triggers an upload. |
-| `cloud_topics_reconciliation_interval` | duration | Base reconciliation loop interval. |
+| `cloud_topics_reconciliation_min_interval` | integer (ms) | Minimum reconciliation interval for adaptive scheduling: the reconciler never runs more frequently than this. |
+| `cloud_topics_reconciliation_max_interval` | integer (ms) | Maximum reconciliation interval for adaptive scheduling. |
 | `cloud_topics_reconciliation_target_fill_ratio` | number | Target object fill ratio used during reconciliation. |
 | `cloud_topics_num_metastore_partitions` | integer | Partition count for the Cloud Topics metastore. |
 | `cloud_topics_compaction_interval_ms` | integer (ms) | Compaction loop interval. |
