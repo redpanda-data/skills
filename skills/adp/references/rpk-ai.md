@@ -243,7 +243,7 @@ rpk ai docs cli --url           # print the URL instead (needs no network)
 
 ## `kill-switch-policy` subcommands
 
-Aliases: `kill-switch-policies`, `ksp`, `kill-switch`. Subcommands: `create <name> --parent agents/<agent>`, `get`, `list --parent agents/<agent>` (the parent is required), `update`, `delete`. A policy belongs to one agent and watches one signal (`--spec.signal guardrail-block-rate|datapolicy-deny-rate|evaluation-error-rate`) with *Burst* (`--spec.burst.threshold`, `--spec.burst.confidence 95|99|999`) or *Drift* (`--spec.drift.baseline`, `.slack`, `.threshold`) detection. `--spec.mode shadow` is the UI's **Observe** and `enforce` its **Enforce**. `create` and `update` take `-f` and `--dry-run` like other groups. For what containment does and who may manage it, see [governance.md](governance.md#kill-switch).
+Aliases: `kill-switch-policies`, `ksp`, `kill-switch`. Subcommands: `create <name> --parent agents/<agent>`, `get`, `list --parent agents/<agent>` (the parent is required), `update`, `delete`, `firings` (list kill-switch firings), `signal-history` (an agent's signal history). A policy belongs to one agent and watches one signal (`--spec.signal guardrail-block-rate|datapolicy-deny-rate|evaluation-error-rate`) with *Burst* (`--spec.burst.threshold`, `--spec.burst.confidence 95|99|999`) or *Drift* (`--spec.drift.baseline`, `.slack`, `.threshold`) detection. `--spec.mode shadow` is the UI's **Observe** and `enforce` its **Enforce**. `create` and `update` take `-f` and `--dry-run` like other groups. For what containment does and who may manage it, see [governance.md](governance.md#kill-switch).
 
 ## `agent-kill-switch` subcommands
 

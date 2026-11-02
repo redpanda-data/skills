@@ -9,9 +9,9 @@ description: >-
   user-delegated OAuth), setting up LLM providers and models with `rpk ai llm-provider` and
   `rpk ai model`, writing Cedar access policies with `rpk ai policy`, storing secrets with
   `rpk ai secret`, reading conversation transcripts or the audit log with
-  `rpk ai agent transcript` and `rpk ai auditlog`, tracing a slow or failed run in Traces,
-  launching a coding tool with `rpk ai run`, or working with API keys, budgets, guardrails, and
-  cost reporting in the ADP UI. For the separate rpk cloud mcp control-plane MCP server, see
+  `rpk ai agent transcript` and `rpk ai auditlog`, tracing a slow or failed run with `rpk ai trace`,
+  launching a coding tool with `rpk ai run`, or managing API keys, budgets, guardrails, and
+  cost reporting. For the separate rpk cloud mcp control-plane MCP server, see
   `/redpanda:rpk-cloud`.
 ---
 
@@ -134,7 +134,7 @@ rpk ai model list                      # model catalog (optionally --provider-ty
 
 ## Key patterns and gotchas
 
-- **Use `rpk ai` or the UI, and check the live tree first.** Newer releases keep adding command groups — budgets, spending, traces, the agent network, guardrails, API keys, conversation sessions and manual containment all arrived after this table said "none" for them — so run `rpk ai --help` before you tell a user a task is UI-only, read that group's own `--help` instead of guessing its flags, and never invent a group or flag the live help does not show. Each resource page in the UI also carries a **Use with rpk ai** button that prints the commands for the resource in front of you.
+- **Use `rpk ai` or the UI, and check the live tree first.** Newer releases keep adding command groups — budgets, spending, traces, the agent network, guardrails, API keys, conversation sessions and manual containment all arrived after this table said "none" for them — so run `rpk ai --help` before you tell a user a task is UI-only, read that group's own `--help` instead of guessing its flags, and never invent a group or flag the live help does not show. Most resource pages in the UI also carry a **Use with rpk ai** button that prints the commands for the resource in front of you.
 - **Cost unit.** The UI shows dollars. Raw cost values in manifests or `-o yaml` output are **USD microcents** ($1 = 100,000,000 microcents). Never treat them as cents.
 - **Piping a secret value needs `--value-file=-`, with the equals sign.** Under `rpk ai`, a bare `-` given as a separate argument never reaches the plugin, so `rpk ai secret create ID --value-file -` fails with an argument error instead of reading stdin. `rpk ai policy --cedar-file` has no stdin mode at all; it takes a path only. See [rpk-ai.md](references/rpk-ai.md#secret-subcommands).
 - **Creating an LLM provider turns transcript content capture ON.** If the create does not mention transcripts, prompts and completions are recorded verbatim. To opt out, pass `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set them in the manifest). Existing providers are not changed. See [gateway-and-providers.md](references/gateway-and-providers.md#transcript-recording-defaults-to-on).
