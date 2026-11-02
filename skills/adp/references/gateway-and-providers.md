@@ -9,10 +9,11 @@ Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `mode
 ```bash
 rpk ai llm-provider --help          # aliases: llm-providers, llm, provider, lp
 rpk ai llm-provider create --help   # per-type flag groups
+rpk ai llm-provider types           # supported provider types
 rpk ai model list                   # the model catalog (--provider-type narrows it)
 ```
 
-In the UI, providers live under **LLM providers** in the sidebar. Provider types, model identifiers, and prices change with catalog updates; read them live rather than hardcoding them.
+In the UI, providers live under **LLM providers** in the sidebar. Provider types, model identifiers, and prices change with catalog updates; read them live (`rpk ai llm-provider types`, `rpk ai model list`) rather than hardcoding them.
 
 ## Manage providers
 

@@ -103,11 +103,11 @@ Running as an rpk plugin, some long flags are renamed to avoid colliding with rp
 | `guardrail` | `guardrails` | Manage guardrails (see [`guardrail` and `api-key`](#guardrail-and-api-key-subcommands)) |
 | `ingest-feedback` | (none) | `summary`: telemetry the ingestion pipeline dropped, and why (read-only) |
 | `kill-switch-policy` | `kill-switch-policies`, `ksp`, `kill-switch` | Manage an agent's kill switch policies (see [`kill-switch-policy`](#kill-switch-policy-subcommands)) |
-| `llm-provider` | `llm-providers`, `llm`, `provider`, `lp` | Manage LLM providers |
+| `llm-provider` | `llm-providers`, `llm`, `provider`, `lp` | Manage LLM providers; `types` lists the supported types |
 | `mcp-server` | `mcp-servers`, `mcp` | Manage MCP servers |
 | `model` | `models`, `m` | Discover models in the catalog (read-only) |
-| `oauth-client` | `oauth-clients`, `oc` | Manage OAuth clients |
-| `oauth-provider` | `oauth-providers`, `oauth`, `op` | Manage OAuth providers |
+| `oauth-client` | `oauth-clients`, `oc` | Manage OAuth clients; also `dcr`, `cimd` and `catalog` |
+| `oauth-provider` | `oauth-providers`, `oauth`, `op` | Manage OAuth providers; also `catalog` and `discover` |
 | `policy` | `policies`, `pol` | Manage Cedar authorization policies, and check a draft without saving |
 | `policy-template` | `policy-templates` | Manage policy templates that policies link to |
 | `run` | (none) | Launch Claude Code, Codex or Antigravity CLI routed through the AI Gateway |

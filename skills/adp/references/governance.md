@@ -8,14 +8,14 @@ Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`policy`, `oauth-clie
 
 ```bash
 rpk ai policy --help            # + analyze and format, which validate draft Cedar without saving
-rpk ai oauth-client --help      # inbound clients; `dcr` and `revoke-tokens` live here
+rpk ai oauth-client --help      # inbound clients; dcr, cimd, catalog, revoke-tokens live here
 rpk ai oauth-provider --help    # outbound providers
 rpk ai connection --help        # your own OAuth connections (list, revoke)
 rpk ai budget --help            # budgets; `guardrail`, `api-key` and `spending` are groups too
 rpk ai agent-kill-switch --help # contain or release one agent (get, update)
 ```
 
-SKILL.md's "Where a task lives" table routes each feature to its CLI group and UI page. Two cases it does not cover: **CIMD settings** are UI-only (**Integrations setup** → **Inbound clients** → **Self-registration**), and **access policies** appear in the sidebar as **Access** only when they are enabled for your organization.
+SKILL.md's "Where a task lives" table routes each feature to its CLI group and UI page. One case it does not cover: **access policies** appear in the sidebar as **Access** only when they are enabled for your organization.
 
 Treat any "none" as provisional: budgets, spending, guardrails, API keys and manual containment each had one in an earlier release. Run `rpk ai --help` before you send a user to the UI, read the group's own `--help` rather than guessing its flags, and never invent a group or flag the live help does not show.
 
@@ -331,7 +331,7 @@ OAuth clients govern **inbound** auth (an external MCP client, such as Claude or
 
 ### OAuth clients (inbound)
 
-CLI: `rpk ai oauth-client` (`create`, `get`, `list`, `update`, `delete`, `apply`, `diff`, `dcr`, `revoke-tokens`). UI: **Integrations setup** → **Inbound clients** → **Add external tool** (well-known presets prefill redirect URIs, or *Custom client*).
+CLI: `rpk ai oauth-client` (`create`, `get`, `list`, `update`, `delete`, `apply`, `diff`, `dcr`, `cimd`, `catalog` for the known clients, `revoke-tokens`). UI: **Integrations setup** → **Inbound clients** → **Add external tool** (well-known presets prefill redirect URIs, or *Custom client*).
 
 The fields that bite: `Name` **becomes the OAuth `client_id` and is immutable**, `Redirect URIs` match **exactly**, `Allowed MCP Resources` defaults to `*`, and a confidential client's `client_secret` is shown **once** at creation and can't be regenerated — delete and recreate for a new one. Take the rest (display name, logo, grant types, token-endpoint auth method, PKCE, enabled) from the form or `rpk ai oauth-client create --help`.
 
@@ -339,7 +339,7 @@ The fields that bite: `Name` **becomes the OAuth `client_id` and is immutable**,
 rpk ai oauth-client revoke-tokens <name>   # revoke every refresh token issued under the client; idempotent
 ```
 
-Already-issued short-lived access tokens keep working until they expire (typically minutes). Deleting a client also revokes its tokens.
+Already-issued access tokens keep working until they expire; deleting a client also revokes its tokens.
 
 #### Inbound client registration: DCR and CIMD
 
@@ -358,13 +358,13 @@ rpk ai oauth-client dcr iat revoke <token-id>
 
 Admission modes: `open` (anonymous registration, still rate-limited and capped) or `initial-access-token` (callers present a one-shot admin-minted token). `software-statement` is reserved and not supported. Self-registered clients appear in `rpk ai oauth-client list` as `dcr-<id>` with a DCR badge, use PKCE with no secret, and are removed after the inactivity TTL (`0` keeps them).
 
-**Client ID Metadata Documents (CIMD)** — **UI only** (no CLI command): **Integrations setup** → **Inbound clients** → **Self-registration** → *Accept client metadata documents (CIMD)*. The client's `client_id` is an HTTPS URL hosting a JSON metadata document; nothing is persisted and the client does not appear in the client list.
+**Client ID Metadata Documents (CIMD)** — `rpk ai oauth-client cimd`, or **Integrations setup** → **Inbound clients** → **Self-registration** → *Accept client metadata documents (CIMD)*. The client's `client_id` is an HTTPS URL hosting a JSON metadata document; nothing is persisted and the client does not appear in the client list.
 
 Its settings are *Trusted document domains* (*Any domain*, or *Only these domains*, which also covers subdomains) and *Allowed resources* (the MCP URLs CIMD clients may request tokens for, or any MCP server on the gateway). **Turning CIMD on sets *Allowed resources* to any server**, so narrow it right away. CIMD works only when the switch is on, *Allowed resources* isn't empty, and the gateway can fetch metadata documents; *Not active on this gateway* means the last condition fails, which only the gateway operator can fix. Resource matching is exact: copy each URL from the server's **Connection** tab, drop trailing slashes, and list a code-mode URL separately. Because CIMD admits clients no admin sees, prefer *Only these domains* and keep *Allowed resources* narrow.
 
 ### OAuth providers (outbound)
 
-CLI: `rpk ai oauth-provider` (aliases `oauth`, `op`; `create`, `get`, `list`, `update`, `delete`, `apply`, `diff`). UI: **Integrations setup** → **Outbound providers** → **Add provider** (catalog preset, *Custom Provider*, or *Discover from MCP server URL*).
+CLI: `rpk ai oauth-provider` (aliases `oauth`, `op`; `create`, `get`, `list`, `update`, `delete`, `apply`, `diff`, `catalog`, `discover`). UI: **Integrations setup** → **Outbound providers** → **Add provider** (catalog preset, *Custom Provider*, or *Discover from MCP server URL*).
 
 The settings that bite: the name (positional) and the client ID are **immutable**, the client secret is a secret-store key in `UPPER_SNAKE_CASE`, grant types must select browser consent because token exchange is not usable, and **a new provider is disabled unless you pass `--enabled`**. You can't delete a provider while an MCP server uses it, and deleting one revokes every stored user token for it. Providers Redpanda creates for an MCP server are *Managed* and can't be edited or deleted. Take the endpoints, scopes, auth method, PKCE setting and extra params from the form or `--help`; `--register-from-url` drives discovery, and Slack adds the token type below.
 
