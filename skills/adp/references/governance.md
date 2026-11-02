@@ -15,10 +15,6 @@ rpk ai budget --help            # budgets; `guardrail`, `api-key` and `spending`
 rpk ai agent-kill-switch --help # contain or release one agent (get, update)
 ```
 
-SKILL.md's "Where a task lives" table routes each feature to its CLI group and UI page. One case it does not cover: **access policies** appear in the sidebar as **Access** only when they are enabled for your organization.
-
-Treat any "none" as provisional: budgets, spending, guardrails, API keys and manual containment each had one in an earlier release. Run `rpk ai --help` before you send a user to the UI, read the group's own `--help` rather than guessing its flags, and never invent a group or flag the live help does not show.
-
 ## Budgets
 
 In the UI, open **Budgets** in the sidebar; from the terminal, `rpk ai budget` (`create NAME`, `get`, `list`, `update`, `delete`).
@@ -284,12 +280,12 @@ A credential that an LLM provider, MCP server, OAuth provider, OAuth client, tri
 
 Tags are key/value labels that let a policy or a report act on a whole team or environment instead of a list of resource names. Agents, MCP servers, LLM providers, guardrails, budgets and secrets all carry them, and a policy can also read the tags on OAuth clients, OAuth providers and policies.
 
-All six are settable in the UI — an agent under **Advanced** → **Tags** on the create canvas and on its Settings tab, an MCP server, LLM provider, guardrail, budget or secret in the **Tags** section of its create form and its edit form or Settings tab. With `rpk ai`: `--tag` on `agent create` / `update`, `--tags` on `mcp-server` and `llm-provider` `create` / `update`, `--tag` on `secret create` / `update`, and `--remove-tag` on `secret update`. For guardrail and budget tags, use the UI unless `rpk ai --help` shows a group for them.
+Set them in the **Tags** section of each resource's create and edit forms (for an agent, **Advanced** → **Tags**), or with `--tag` on `agent` and `secret` `create` / `update`, `--tags` on `mcp-server` and `llm-provider` `create` / `update`, and `--remove-tag` on `secret update`. For guardrail and budget tags, use the UI unless `rpk ai --help` shows a group for them.
 
 - **Limits.** At most 50 pairs per resource, values up to 256 characters, both halves required. An entry whose key already exists replaces that key's value.
 - **A write replaces the whole map.** `--tags` on a provider or server update, and a save in the UI, send the full set, so keep the pairs you want. `rpk ai secret update` is the exception: it merges `--tag` onto the stored tags and drops only what `--remove-tag` names.
 - **Three consumers, one set of tags.** Policies condition on them, cost reporting groups by them, and lists filter on them. Only the **calling agent's** tags are stamped on an LLM call, never the provider's or the server's, and a call made outside an agent carries none. A budget's own tags do not decide which agents it covers — its target agent does.
-- **Lists.** The agents, MCP servers, LLM providers, guardrails and secrets lists show a Tags column (the first to drop on a narrow window); the agents and secrets lists also carry a `Tag` filter matching one `key=value` pair.
+- **Lists.** The agents and secrets lists carry a `Tag` filter matching one `key=value` pair.
 - Keep keys consistent across resource types (one `team` key on agents, servers and providers) so one policy and one spend report cover a team's whole footprint, keep values lowercase (a condition compares exactly), and tag at creation — an untagged resource falls outside every policy and report that relies on the tag. Never put secrets or PII in tag values.
 
 ## API keys

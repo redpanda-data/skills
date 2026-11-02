@@ -43,7 +43,7 @@ Both types share one registry, the same governance views, and the same cost attr
 | `transcript list\|get` | Conversation transcripts (see [observability.md](observability.md)) |
 | `a2a card\|send\|task` | Talk to a running agent over A2A (see [A2A](#a2a-endpoint-and-agent-card)) |
 
-**A new agent starts with no policy of its own.** `rpk ai agent create` writes no policy for the agent. It prints a notice on **stderr** saying the agent has no access until a policy names it, with the two commands that bind one, and leaves stdout as the created object so `-o json` stays parseable. In the UI, a managed agent's **Permissions** tab warns until you author its first policy; registering a self-managed agent in the UI is the exception, because its required **Access** section writes that policy for you. Bind a built-in template with `rpk ai policy create --agent <name> --template sandboxed`, or supply Cedar whose principal is that agent. Its **creator** can invoke it meanwhile, through the built-in *Owner lifecycle* policy, which is enough to test the agent but grants nothing to anyone else and is not the agent's own access. See [governance.md](governance.md#give-a-new-agent-access).
+**A new agent starts with no policy of its own.** `rpk ai agent create` writes none and says so on **stderr**, leaving stdout parseable; bind one with `rpk ai policy create --agent <name> --template sandboxed`, or with Cedar whose principal is that agent. Its creator can invoke it meanwhile through the built-in *Owner lifecycle* policy, which is not the agent's own access. For the UI cases (the managed agent's **Permissions** tab warning, the self-managed **Access** section that writes the first policy), see [governance.md](governance.md#give-a-new-agent-access).
 
 Scalar flags on `create` / `update`: `--display-name`, `--description`, `--model`, `--llm-provider`, `--system-prompt`, `--max-iterations`, `--mcp-server` (repeatable), `--tag key=value` (repeatable; on `update` it replaces the whole tag map). `create` also takes `--self-managed` and `--spec-file <json|yaml>`, which loads a complete managed spec and is the only create-time way to set subagents or an agent card; `--spec-file` is mutually exclusive with `--self-managed` and the scalar spec flags. For anything the flags cannot express on an existing agent (subagents, agent card, reasoning effort), edit the manifest and `rpk ai agent apply -f`.
 
@@ -60,7 +60,7 @@ Every agent carries, independent of type:
 | `description` | Up to 1,024 characters; an internal note, not the system prompt |
 | `tags` | Key/value map, up to 50 pairs, each value up to 256 characters. Set with `--tag` on `create` / `update`, or in the UI under **Advanced** → **Tags** on the create canvas and on the Settings tab |
 
-`tags` does three jobs at once, so adding or removing a key affects all three: Cedar policies can condition on them (`resource.getTag("team")`, `resource.hasTag("team")`), the registry filters on them, and the gateway stamps them on each LLM call the agent makes, so spend groups by them. Only the **calling agent's** tags are recorded on a call, never the provider's or server's, and attribution is point-in-time: spend already recorded keeps the tags it had. Do not put secrets or PII in tag values; they surface in cost reports. See [governance.md](governance.md#tags-on-adp-resources).
+`tags` drive Cedar conditions (`resource.getTag("team")`, `resource.hasTag("team")`), registry filtering and spend attribution at once, so changing a key affects all three. Only the calling agent's tags are stamped on an LLM call, as they were at the time. No secrets or PII in values; see [governance.md](governance.md#tags-on-adp-resources).
 
 ## Managed agent spec
 
@@ -163,15 +163,11 @@ rpk ai agent a2a task get|watch|cancel <agent> <task-id>
 
 An agent's context lasts one conversation (one A2A context). There is no built-in memory across conversations; expose earlier information through a tool instead.
 
-## Conversation sessions (UI)
+## Conversation sessions
 
-A **session** is a managed agent's saved conversation thread. **There is no `rpk ai` command for sessions** (`rpk ai agent --help` lists none); work with them in the UI:
+A **session** is a managed agent's saved conversation thread. Work with sessions in **Agent → Playground → History** (reopen one to continue it; **New session** and **Clear context** start a fresh one and keep the previous one in history), or with `rpk ai session`, which inspects, renames and deletes them; read its `--help` for the flags.
 
-- **Agent → Playground → History** opens Session history, newest first, with **Show more** for older sessions. Once a conversation has messages, the control reads *Session* plus the session ID, with a copy control.
-- **Filter:** **Session ID (exact)**, or **Updated from** / **Updated through** (local timezone, both ends inclusive), then **Apply filters**; **Clear filters** resets.
-- **Reopen** a session to replay it (including attached files and data); the next message continues that session.
 - **Delete** a session from its row's actions; the UI says this permanently removes the session and its transcript. <!-- TODO(human): confirm whether deleting a session in the Playground also removes the matching entry on the agent's Transcripts tab, or only the Playground's stored copy. -->
-- **New session** and **Clear context** both start a fresh session; the previous one stays in history.
 
 **A session ID is the A2A context ID.** The `context-id` that `rpk ai agent a2a send` prints and accepts via `--context-id` is the same ID Session history shows, so you can resume a CLI conversation from the Playground and vice versa.
 
@@ -201,7 +197,7 @@ Triggers invoke a **managed** agent without a direct API call. Two kinds:
 
 **UI:** agent → **Triggers** tab → **Add trigger**. Edit a trigger on its card; pause/resume icons exist only for schedule triggers. Teams triggers show **Pending**, **Connected**, or **Error** from a background credential check (about every 30 seconds); schedule triggers show the last run outcome and next run time, or **Paused** / **Failing**.
 
-**CLI:** the **top-level** `rpk ai trigger` group (aliases `triggers`, `agent-trigger`), not `rpk ai agent trigger`. See [rpk-ai.md](rpk-ai.md#trigger-subcommands).
+**CLI:** the **top-level** `rpk ai trigger` group (aliases `triggers`, `agent-trigger`), not `rpk ai agent trigger`; the subcommand list is in [rpk-ai.md](rpk-ai.md#trigger-subcommands).
 
 ```bash
 rpk ai trigger create <agent> --cron-schedule "0 9 * * 1-5" --cron-timezone Europe/Prague --cron-input "Daily report"
@@ -232,6 +228,4 @@ rpk ai trigger delete agents/<agent>/triggers/<id>            # idempotent
 
 ## Permissions
 
-Agent operations are gated by `dataplane_adp_agent_*`, with separate families for credentials (`dataplane_adp_agent_credential_*`), triggers (`dataplane_adp_agent_trigger_*`), and conversation sessions (`dataplane_adp_agent_session_*`). Reading a session exposes its full conversation content, so grant it as deliberately as transcript access. Every A2A call to an agent is covered by one permission, `dataplane_adp_a2a_invoke`; grant it with a policy on `Action::"Agent.invoke"`. See [governance.md](governance.md#roles-and-permissions).
-
-These are the permissions for operating *on* an agent. What the agent itself may do is governed the same way, and a new agent has no policy of its own: see [Give a new agent access](governance.md#give-a-new-agent-access).
+Agent operations are gated by `dataplane_adp_agent_*`, with separate families for credentials, triggers and conversation sessions; reading a session exposes its full conversation content, so grant it as deliberately as transcript access. Every A2A call to an agent is covered by `dataplane_adp_a2a_invoke`; grant it with a policy on `Action::"Agent.invoke"`. What the agent itself may reach is a separate grant: see [Give a new agent access](governance.md#give-a-new-agent-access) and [Roles and permissions](governance.md#roles-and-permissions).
