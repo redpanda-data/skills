@@ -2,19 +2,17 @@ Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `mode
 
 # AI Gateway, LLM Providers, and Models Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm flags live with `--help` before relying on them.
+**Maturity:** GA, but command groups and flags change between releases — confirm them with `--help` before relying on them.
 
 ## Discover the live surface
 
 ```bash
-rpk ai llm-provider --help          # verbs and flags (aliases: llm-providers, llm, provider, lp)
+rpk ai llm-provider --help          # aliases: llm-providers, llm, provider, lp
 rpk ai llm-provider create --help   # per-type flag groups
-rpk ai llm-provider list            # providers in the current environment
-rpk ai model list                   # the model catalog
-rpk ai model list --provider-type anthropic
+rpk ai model list                   # the model catalog (--provider-type narrows it)
 ```
 
-In the UI, providers live under **LLM providers** in the sidebar (the **AI Gateway** group, alongside Guardrails, Cost and usage, and Budgets). Provider types, model identifiers, and prices change with catalog updates; read them live rather than hardcoding them.
+In the UI, providers live under **LLM providers** in the sidebar. Provider types, model identifiers, and prices change with catalog updates; read them live rather than hardcoding them.
 
 ## Manage providers
 

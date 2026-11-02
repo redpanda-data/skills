@@ -2,19 +2,18 @@ Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent`, `a2a`, `trig
 
 # Agentic Data Plane Agents Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm flags with `--help` before relying on them.
+**Maturity:** GA, but command groups and flags change between releases — confirm them with `--help` before relying on them.
 
 ## Discover the live surface
 
 ```bash
-rpk ai agent --help                 # a2a, apply, create, credential, delete, diff, get, list, start, stop, transcript, update
-rpk ai agent create --help          # current create flags
+rpk ai agent --help                 # a2a, credential, transcript and start/stop live here
 rpk ai agent get <name> -o yaml     # the complete manifest shape for an existing agent
-rpk ai trigger --help               # triggers are a top-level group
-rpk ai model list                   # models the gateway can route to
+rpk ai trigger --help               # triggers are a top-level group, not `agent trigger`
+rpk ai session --help               # a managed agent's conversation sessions
 ```
 
-In the UI, agents live under **Agents** in the sidebar. A managed agent's detail page has **Settings**, **Triggers**, **Playground**, **Cost & Usage**, **Transcripts**, and (when access policies are enabled) **Permissions** tabs. A self-managed agent has **Setup** and **Credentials** tabs (plus Cost & Usage, Transcripts, and a Settings tab with only Integration and Identity), and no Triggers or Playground tab.
+In the UI, agents live under **Agents** in the sidebar. **A self-managed agent has no Triggers or Playground tab** and carries **Setup** and **Credentials** instead, with a Settings tab holding only Integration and Identity — so don't send its owner to the Playground. **Permissions** appears only where access policies are enabled.
 
 ## Agent types: managed vs. self-managed
 

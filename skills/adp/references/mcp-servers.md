@@ -2,23 +2,24 @@ Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`mcp-server` group), 
 
 # Agentic Data Plane MCP Servers Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Output format and data policies are Preview capabilities, and individual managed types carry their own maturity badges in the managed catalog; confirm the badge in the UI or docs rather than assuming GA.
+**Maturity:** Output format, data policies and the Google Identity-Aware Proxy setting are Preview, and individual managed types carry their own maturity badges in the managed catalog; confirm the badge in the UI or docs rather than assuming GA.
 
 For the separate `rpk cloud mcp` control-plane server, see /redpanda:rpk-cloud.
 
 ## Discover the live surface
 
 ```bash
-rpk ai mcp-server --help                    # aliases: mcp-servers, mcp
-rpk ai mcp-server create --help             # flags grouped by backend (remote.*, managed.*)
-rpk ai mcp-server list                      # NAME, TYPE, URL, ENABLED
-rpk ai mcp-server get <name> -o yaml        # full manifest, including data policies
-rpk ai mcp-server types                     # managed types available to you (-o wide adds type URLs)
-rpk ai mcp-server tools list <name>         # live tools/list through the gateway
-rpk ai mcp-server tools call <name> <tool> --args '{"k":"v"}'
+rpk ai mcp-server --help                  # aliases: mcp-servers, mcp
+rpk ai mcp-server create --help           # flags grouped by backend (remote.*, managed.*)
+rpk ai mcp-server get <name> -o yaml      # full manifest, including data policies
+rpk ai mcp-server types                   # managed types available to you (-o wide adds type URLs)
+rpk ai mcp-server tools list <name>       # live tools/list through the gateway
+rpk ai mcp-server ping <name>             # negotiated protocol version and advertised capabilities
+rpk ai mcp-server resources list <name>   # also resource-templates, prompts
+rpk ai mcp-server sql-exposure <name>     # also sql-sources, test-sql-exposure
 ```
 
-In the UI: **MCP servers** in the sidebar → **Add MCP server**. A server's detail page has **Overview**, **Data Policies**, **Connection** (the `Server URL`, the `Code mode URL`, and client snippets), and **Inspector** tabs, plus **Access** and **Activity** where enabled.
+In the UI: **MCP servers** in the sidebar → **Add MCP server**. On a server's page, **Connection** carries the `Server URL`, the `Code mode URL` and client snippets, **Data Policies** the data shaping, and **Inspector** the live tool view the protocol commands above also reach.
 
 ## Commands
 
@@ -30,9 +31,16 @@ In the UI: **MCP servers** in the sidebar → **Add MCP server**. A server's det
 | `delete NAME` | Delete the record |
 | `types` | Managed types you can create |
 | `tools list NAME` / `tools call NAME TOOL` | Call `tools/list` / a tool through the gateway, with the same auth and per-user token path a client uses. `--code-mode` targets the code-mode endpoint |
+| `ping NAME` | Open a session and report the negotiated MCP protocol version and the capabilities the server advertises. **Start here when a server misbehaves:** a server that answers `ping` is reachable and authenticated |
+| `resources list/read`, `resource-templates list`, `prompts list/get` | Browse and read what the server serves besides tools — the same surface the UI's **Inspector** tab shows |
+| `sql-exposure NAME`, `sql-sources`, `test-sql-exposure NAME` | Inspect a server's SQL exposure, list its SQL sources, and run a read-only exposure test (see [SQL table exposure](#sql-table-exposure-on-a-managed-connector)) |
+| `preview-data-policies NAME`, `preview-tool-response NAME` | Preview the data policies in force on a tool, and what they do to a tool response, without calling the tool |
+| `google-identity NAME` | Print the identity the gateway mints Google ID tokens with, and the `gcloud` commands that trust it (see [Google Identity-Aware Proxy](#google-identity-aware-proxy-and-cloud-run-preview)) |
 | `apply -f` / `diff -f` | GitOps reconcile / dry-run (see [rpk-ai.md](rpk-ai.md)) |
 
 `create` and `update` also accept `-f <manifest>` (flags override file values) and `--dry-run` (print the request, including the computed update mask, without sending it).
+
+**A server serves only what it advertises**, so `resources`, `resource-templates` and `prompts` against a capability it does not offer fail saying so rather than returning an empty list — "empty" and "not offered" are different answers. `resources read` goes *through* the server and never fetches the URI itself. The `list` commands return one page: pass their `nextCursor` back as `--cursor`.
 
 A missing server reads `Error: MCP server not found (use 'rpk ai mcp-server list' to see what's available)` followed by `Code: not_found`. An invalid enum value lists the valid ones, for example `--remote.transport: invalid value "websocket"; valid values: sse, streamable-http`.
 
@@ -95,6 +103,25 @@ Consequences:
 - **Only sign-in-fixable failures** (no connection, an expired one, a missing scope) open the token-less listing path. An unresolvable provider, an unreachable token store, or a connection that does not verify fails listings too. So a `tools/list` that fails **hard** on a user-OAuth remote server is an infrastructure or configuration problem, **not** a missing user connection — do not prompt the user to sign in.
 
 A connected caller is not automatically the *acting* identity: on a managed connector the provider can decide that, and for Slack it does — see [below](#user-delegated-oauth-on-a-managed-connector-whose-identity-acts).
+
+### Google Identity-Aware Proxy and Cloud Run (Preview)
+
+A remote server behind **Google Identity-Aware Proxy (IAP)**, or a **Cloud Run** service that requires authentication, needs no public endpoint and no service-account key: the gateway presents the gate with a Google-signed ID token for a service account you control. This is **not** a sixth auth mode — it sits *alongside* the server's own authentication, in a different header, and the server still checks its own credential. It also applies to a JavaScript managed server, where the gate protects the backend that server's code calls, not the server itself (which runs inside the gateway).
+
+```bash
+rpk ai mcp-server google-identity <name>    # the identity to trust, and the gcloud commands; the server need not exist yet
+rpk ai mcp-server create <name> --enabled \
+  --remote.url https://internal.example.com/mcp --remote.transport streamable-http \
+  --remote.google-identity-aware-proxy.service-account gate@my-project.iam.gserviceaccount.com \
+  --remote.google-identity-aware-proxy.audience <oauth-client-id>.apps.googleusercontent.com
+```
+
+- **Audience and header both differ by gate.** IAP takes an OAuth client ID it accepts for programmatic access (ending `.apps.googleusercontent.com`) and reads `Proxy-Authorization`, the `header-name` default; Cloud Run takes the service URL or a custom audience and reads `X-Serverless-Authorization`. **The token can't share a header with the server's own credential**, so `Authorization` is admissible only on a server with no authentication of its own, and never on a JavaScript server. The URL must be `https://`.
+- **`workload-identity-provider` is required on an AWS-hosted environment and must be empty on a Google Cloud one** — on AWS the gateway federates its own AWS role, on Google Cloud it uses its own service account. Run `google-identity` rather than guessing: it prints the setup for the environment you are pointed at.
+- **The blast radius differs by environment.** On AWS the binding trusts **one server's session**, so a second server naming the same service account is refused and needs its own binding. On Google Cloud it trusts the **whole gateway**: anyone who can create or update an MCP server there can get tokens as that service account, so treat that permission as equivalent to acting as it. Either way grant each service account access at **one gate only** — gates in a project commonly share one OAuth client, so the IAM grant is all that scopes the token.
+- **In the UI the setting is read-only** on a self-managed server's edit page and saving the form does not change it; use `update`. `get` prints a `Gate:` line naming the service account, audience and header.
+- **Verifying differs by server kind.** `tools list` proves the gate admitted the gateway for a *self-managed* server. A **JavaScript** server's tool list comes from its own bundle and never reaches the backend, so it proves nothing — call a tool that fetches a listed host instead. Such a server names the hosts that get the token: up to eight exact hostnames, no wildcards, fetchable without also being in `Allowed Hosts`, token added only to HTTPS requests to a listed host on the default port, never visible to the code.
+- **Misconfiguration surfaces at the first token request, not at save.** A missing binding or unenabled API is Google's to detect, so calls fail with **`502 upstream_auth_error`** naming the problem (a JavaScript server's `fetch()` fails with that message). A `user_oauth` server returns `Authorization required` *before* any token is minted, so that error says nothing about the gate. A client's own `Proxy-Authorization` is never forwarded, and the token's header is dropped from any redirect leaving the server's origin.
 
 ## Connecting clients
 
