@@ -34,7 +34,7 @@ In the UI: **MCP servers** in the sidebar → **Add MCP server**. On a server's 
 | `ping NAME` | Open a session and report the negotiated MCP protocol version and the capabilities the server advertises. **Start here when a server misbehaves:** a server that answers `ping` is reachable and authenticated |
 | `resources list/read`, `resource-templates list`, `prompts list/get` | Browse and read what the server serves besides tools — the same surface the UI's **Inspector** tab shows |
 | `sql-exposure NAME`, `sql-sources`, `test-sql-exposure NAME` | Inspect a server's SQL exposure, list its SQL sources, and run a read-only exposure test (see [SQL table exposure](#sql-table-exposure-on-a-managed-connector)) |
-| `preview-data-policies NAME`, `preview-tool-response NAME` | Preview the data policies in force on a tool, and what they do to a tool response, without calling the tool |
+| `preview-data-policies`, `preview-tool-response` (`--name` and `--tool` required) | Preview the data policies in force on a tool, and what they do to a tool response, without calling the tool |
 | `google-identity NAME` | Print the identity the gateway mints Google ID tokens with, and the `gcloud` commands that trust it (see [Google Identity-Aware Proxy](#google-identity-aware-proxy-and-cloud-run-preview)) |
 | `apply -f` / `diff -f` | GitOps reconcile / dry-run (see [rpk-ai.md](rpk-ai.md)) |
 
@@ -54,7 +54,7 @@ As they appear in flags and `get -o yaml`:
 | backend | `--remote.*` or `--managed.config` | Remote (a server you host, proxied by the gateway) or managed (hosted by Redpanda). The flag group you use selects it; mixing groups is an error. Immutable |
 | `enabled` | `--enabled` | **The CLI creates a server disabled unless you pass `--enabled`**; the UI creates it enabled. A disabled server rejects every request, connection attempts included |
 | `description` | `--description` | Up to 256 characters |
-| `tags` | `--tags key=value` (repeatable) | Up to 50 pairs, values up to 256 characters; for filtering and tag-based access-policy conditions. An update replaces the whole map. The UI has a **Tags** section too, last on the create form and on the edit form. No secrets or PII (see [governance.md](governance.md#tags-on-adp-resources)) |
+| `tags` | `--tags key=value` (repeatable) | Up to 50 pairs, values up to 256 characters; an update replaces the whole map. No secrets or PII (see [governance.md](governance.md#tags-on-adp-resources)) |
 | `code_mode` | `--code-mode` | See [Code mode](#code-mode) |
 | `response_format` | `--response-format jton\|toon` | See [Output format](#output-format-token-optimization). Omitted = JSON |
 | `data_policies` | `--data-policies` (repeatable) | See [Data policies](#data-policies-preview). Returned by `get`, omitted by `list` |
@@ -180,14 +180,9 @@ The selected encoding may not be active on every gateway; until it is, results a
 
 ## Data policies (preview)
 
-Data policies shape a server's tool traffic before the model sees it: mask, redact, hash, or drop result fields; restrict tool-call argument values; and filter elements out of list results. They apply to managed and remote servers, compose **most-restrictively** across every matching policy, and **fail closed** (a rule that cannot be enforced denies matching calls). Each policy names the `tools` it shapes and the `principals` (`User:<email>`) it applies to; an empty list means all. Data policies decide *how data looks*; access policies decide *whether* a call runs.
+Data policies mask or drop fields, limit tool-call arguments and filter list results before the model sees them, on managed and remote servers. They compose **most-restrictively** across every matching policy and **fail closed**; they decide *how data looks*, access policies *whether* a call runs. Author them on the server's **Data Policies** tab (its **Configuration** and **Preview** tabs show the composed effect and run sample data before you save) or with `--data-policies`: one JSON object per flag, and on `update` it **replaces the server's whole list**, so pass every policy the server should keep — it is also the only way to make one policy shape several tools. `preview-data-policies` and `preview-tool-response` preview them from the CLI; `get <name> -o yaml` shows them and `list` omits them.
 
-- **UI:** server → **Data Policies** tab. Pick a tool, click **New policy**, choose **Keep / Mask / Drop** per field, or edit the rules as YAML.
-- **Preview before saving (UI):** the **Configuration** tab shows the composed effect for the selected tool across all of the server's policies, including unsaved edits, with each field's winning treatment. The **Preview** tab runs editable sample data (seeded from the tool's schema) through the rules and shows before/after for both the request and the response, with counts of masked, dropped, and filtered items, and a banner when matching calls would be denied. There is no CLI preview command.
-- **CLI:** `--data-policies` on `create` / `update` takes one policy per flag as a JSON object and **replaces the server's whole list**, so pass every policy the server should keep. This is also the only way to make one policy shape several tools. Read policies with `rpk ai mcp-server get <name> -o yaml`; `list` omits them.
-- Rules written in YAML or via `--data-policies` are **strict** unless marked absence-safe: a strict mask or drop whose selector matches nothing denies the call. Rules created in the UI form default to absence-safe.
-
-For the transform vocabulary (mask methods, selectors, allowlist mode, argument limits, row filters), limitations, and audit-log outcomes, see [governance.md](governance.md).
+Selectors, strict versus absence-safe rules (rules written in YAML or `--data-policies` are strict unless marked absence-safe; UI-form rules default to absence-safe), limits and audit-log outcomes: [governance.md](governance.md#data-policies-mcp-data-shaping).
 
 ## Managed catalog
 
@@ -225,31 +220,15 @@ Behavior to design around:
 - **Paged scans are best-effort.** Page sizes are capped per table, the upstream keeps changing under a multi-page scan, and a cursor is bound to the query that produced it — reusing one with different predicates or against another table is refused rather than quietly restarting.
 - **A value list longer than the cap fails** instead of being silently truncated.
 - **Authentication is the server's own**, so with user-delegated OAuth a query returns only what the calling user can see. Neither tool writes.
-- **A data-policy mask does not hide row membership.** Masking a column that the table also declares filterable hides that column's values, but a caller who can call `execute_query` can still filter on it, and whether any rows come back tells them whether the value is there. A mask on a column that cannot be filtered is not exposed this way, and `list_tables` is what reports which columns are filterable. Where a caller must not learn which records exist, withhold `execute_query` from them instead of relying on the mask. The remedy is an access policy that denies `McpServerTool.call` on that one tool, written as Cedar text because the policy form cannot scope to a single tool:
-
-```cedar
-forbid (
-  principal in Group::"contractors",
-  action == Action::"McpServerTool.call",
-  resource == McpServerTool::"execute_query"
-) when {
-  resource in McpServer::"zendesk"
-};
-```
-
-Keep the `when` clause: Cedar identifies a tool by name alone, so without it the policy denies every tool named `execute_query` on every server the principal can reach. See [governance.md](governance.md#deny-one-tool-on-one-mcp-server) for the full form and [governance.md](governance.md#data-policies-mcp-data-shaping) for data policies.
+- **A data-policy mask does not hide row membership.** A caller who can call `execute_query` can filter on a masked column that the table declares filterable (`list_tables` reports which), and whether rows come back tells them whether the value is there. Where a caller must not learn which records exist, withhold `execute_query` from them with the single-tool Cedar `forbid` in [governance.md](governance.md#deny-one-tool-on-one-mcp-server) — written as Cedar text, because the policy form cannot scope to one tool, and keeping its `when` clause, or it denies every tool named `execute_query` on every server the principal can reach. Data policies themselves: [governance.md](governance.md#data-policies-mcp-data-shaping).
 - **The tools reach every caller of the server**, agents included. Leave the setting off on a server whose agents should only reach the curated tools.
 
 ### User-delegated OAuth on a managed connector: whose identity acts
 
-On a managed connector that supports user-delegated OAuth, the per-user connection decides **which** stored credential is used, not necessarily **whose identity** the upstream call carries. Slack is the case where these differ, because one Slack authorization can issue both a bot token and a user token. The acting identity is fixed by the OAuth provider's **Slack OAuth token type** (`slack_token_type`), not by who owns the connection:
-
-- **`Bot User OAuth Token`** (the default): tools post, read, and react **as the app's bot user**, even on a user-OAuth server.
-- **`User OAuth Token`**: tools act **as the person who authorized**. Offered only when the provider uses Slack's standard OAuth v2 authorize and token endpoints, so not on a provider set up by discovery.
-- The setting is chosen at provider creation and is immutable, so serving both identities means two providers (they can share one Slack app). See [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
+On a managed connector that supports user-delegated OAuth, the per-user connection picks **which** stored credential is used, not **whose identity** the upstream call carries. For Slack the OAuth provider's **Slack OAuth token type** (`slack_token_type`) decides: the default `Bot User OAuth Token` acts **as the app's bot user**, even on a user-OAuth server, and `User OAuth Token` — offered only on Slack's standard OAuth v2 endpoints, so not on a provider set up by discovery — acts as the person who authorized. It is immutable, so serving both identities means two providers (they can share one Slack app); see [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
 
 Some Slack tools accept only one identity: search needs a user token, and a bot token comes back as `not_allowed_token_type` or `user_token_required`. That is a provider token-type problem, not a missing connection or scope.
 
 ## Permissions
 
-`dataplane_adp_mcpserver_*` gates both server management and each MCP protocol call against a running server (`initialize`, `tools_list`, `tools_call`, `resources_read`, `prompts_get`, and so on). Grant tool calls with a policy on `Action::"McpServerTool.call"`, scoped to one server where possible (`resource is McpServerTool in McpServer::"<name>"`). Attaching an OAuth provider to a server needs `dataplane_aigateway_oauthprovider_attach`. See [governance.md](governance.md#roles-and-permissions).
+Grant tool calls with a policy on `Action::"McpServerTool.call"`, scoped to one server where possible (`resource is McpServerTool in McpServer::"<name>"`). Attaching an OAuth provider to a server needs `dataplane_aigateway_oauthprovider_attach`. For the `dataplane_adp_mcpserver_*` family, which gates each MCP protocol call as well as management, see [governance.md](governance.md#roles-and-permissions).

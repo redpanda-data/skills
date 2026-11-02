@@ -17,19 +17,10 @@ In the UI, providers live under **LLM providers** in the sidebar. Provider types
 
 ## Manage providers
 
-| Task | CLI | UI |
-|---|---|---|
-| Create | `rpk ai llm-provider create NAME [flags]` or `-f manifest.yaml` | **LLM providers** → **Add provider** |
-| Read | `get NAME`, `list` (`-o table\|wide\|json\|yaml\|markdown`) | Provider detail page (Overview, Models, Connect, Playground when enabled, Settings tabs) |
-| Edit | `update NAME [flags]`; `--dry-run` prints the request and computed update mask without sending it | **Settings** tab → change fields → **Save changes** |
-| Enable / disable | `update NAME --enabled=false` (or `--enabled`) | **Settings** tab → **Disable provider**; or the row's actions menu in the list |
-| Delete | `delete NAME` | **Settings** tab → **Delete this provider** (type `delete`), or the list row's actions menu (type the display name) |
-| Test connectivity | `check NAME` | **Test connection** (see [Test a connection](#test-a-connection)) |
-| GitOps | `apply -f`, `diff -f` | — |
+CLI: `rpk ai llm-provider create NAME` (or `-f manifest.yaml`), `get`, `list`, `update` (`--dry-run` prints the request and computed update mask; `--enabled=false` disables), `delete`, `check` ([Test a connection](#test-a-connection)), `apply`, `diff`. UI: **LLM providers** → **Add provider**, then the provider's tabs, where **Settings** holds edit, disable and delete.
 
 - `NAME` is the resource ID: starts with a lowercase letter, lowercase letters/digits/hyphens, ends alphanumeric, at most 63 characters, **immutable**. It is the `<provider-name>` in the proxy URL. The UI derives it from the display name without showing it on the create form.
 - The provider **type is immutable** after creation. In the CLI, the type is selected by which flag group you set (`--openai-config.*`, `--anthropic-config.*`, `--google-config.*`, `--bedrock-config.*`, `--openai-compatible-config.*`, `--vertex-config.*`); setting flags from two groups is an error.
-- `update` with no field flags fails: `Error: no fields to update; pass at least one field flag or -f`.
 - `--provider-models` and `--tags` **replace** the full list/map on update. Tags are editable in the UI too, in the **Tags** section of the create form and of the provider's **Settings** tab; see [governance.md](governance.md#tags-on-adp-resources).
 - A missing provider returns `Error: LLM provider not found (use 'rpai llm-provider list' to see what's available)` with `Code: not_found`.
 - A disabled provider rejects all requests to its proxy URL; its configuration is kept.
@@ -81,7 +72,7 @@ A green result proves the credential and network path, not access to any one mod
 
 ## Investigate failed calls
 
-This is a **UI-only** workflow; no `rpk ai` command exposes it.
+From the terminal, `rpk ai agent-network provider-failures` queries provider call failures (`--llm-provider`, `--start-time` and `--end-time` are required); in the UI, start from the provider's **Overview** tab.
 
 On a provider's **Overview** tab (which reports over one selectable time range, default last 7 days), a warning above **Who calls what** counts the callers with failed requests. Click **Inspect** on a caller — or its node in the graph, or its error count in the **Callers** table — to open the **Failed provider calls** panel: that caller's failed calls, newest first, with **Load more** for paging.
 
@@ -218,13 +209,8 @@ The AI Gateway is a managed HTTP proxy. Each provider has its own URL (copy it f
 <gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>
 ```
 
-- Clients keep using the provider's native SDK and API, pointed at the proxy URL.
-- Upstream keys stay in the Redpanda secret store; applications never see them (except passthrough, where the client supplies its own).
-- The gateway injects the credential per request (API key, SigV4 signing or a bearer Bedrock API key for Bedrock, or the caller's passthrough `Authorization`).
-- Inbound clients authenticate with an ADP API key, with OIDC client credentials (applications and self-managed agents), or with the `rpk ai` sign-in for CLI work. See [How a client authenticates to the gateway](#how-a-client-authenticates-to-the-gateway).
-- Spend, requests, and tokens are recorded per provider (list view, provider Overview, **Cost and usage**).
-- Optionally captures message bodies — on by default for new providers; see [Transcript recording defaults to ON](#transcript-recording-defaults-to-on).
-- Optionally evaluates an attached guardrail before forwarding. On non-Bedrock providers, guardrail evaluation sends prompt and response text to Amazon Bedrock Guardrails, even when the provider itself is self-hosted.
+- Clients keep using the provider's native SDK and API, pointed at the proxy URL. Upstream keys stay in the secret store and the gateway injects the credential per request, except under [passthrough](#authorization-passthrough).
+- For how callers authenticate, content capture and guardrails, see [How a client authenticates to the gateway](#how-a-client-authenticates-to-the-gateway), [Transcript recording defaults to ON](#transcript-recording-defaults-to-on) and [governance.md](governance.md#guardrails). Spend, requests and tokens are recorded per provider.
 
 ## Not in scope
 
@@ -237,4 +223,4 @@ Do not try to configure routing, failover, load balancing, or request rate limit
 
 ## Permissions
 
-`dataplane_adp_llmprovider_*` gates provider management. `dataplane_adp_llmprovider_invoke` is all an application needs to send traffic through the gateway, which makes it the narrowest useful grant for a service account; grant it with a policy on `Action::"LLMProvider.invoke"`. Testing a connection needs `dataplane_adp_llmprovider_check_connection`: neither read nor create access alone allows it. A client that authenticates with an API key is evaluated as the **user who created the key**, so that user needs the invoke grant. Minting a key of your own needs `dataplane_adp_apikey_create`. See [governance.md](governance.md#roles-and-permissions).
+`dataplane_adp_llmprovider_invoke` is all an application needs to send traffic, and testing a connection needs `dataplane_adp_llmprovider_check_connection` (see [Roles and permissions](governance.md#roles-and-permissions)). A client that authenticates with an API key is evaluated as the **user who created the key**, so that user needs the invoke grant (`Action::"LLMProvider.invoke"`).

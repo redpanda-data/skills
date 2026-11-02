@@ -140,7 +140,7 @@ CRUD and lifecycle: `create`, `get`, `list`, `update`, `delete`, `start`, `stop`
 - `send <agent|url> [message]` — flags: `--context-id`, `--task-id`, `--stream`, `--no-block`, `--timeout` (default 5m; `0` waits forever)
 - `task get|cancel|watch <agent|url> <task-id>` (`watch` alias: `resubscribe`)
 
-Your bearer token is attached only for a registered agent or a URL on the environment's dataplane host; other hosts are called without credentials (a note on stderr says so). Exit codes: `0` success (including a task waiting for input), `4` task ended failed/canceled/rejected, `1` anything else.
+Your bearer token is attached only for a registered agent or a URL on the environment's dataplane host; other hosts are called without credentials (a note on stderr says so). Exit codes: `0` success (including a task waiting for input), `4` task ended failed/canceled/rejected, `3` an authentication or authorization failure, `1` anything else (see [Exit codes](#exit-codes)).
 
 ## `connection` subcommands
 
@@ -206,7 +206,7 @@ Aliases: `oauth-providers`, `oauth`, `op`. Subcommands: `create`, `get`, `list`,
 
 Aliases: `policies`, `pol`. Subcommands: `create`, `get`, `list`, `update` (Cedar body or metadata), `delete`, `apply`, `diff`, plus two that touch no stored policy: `analyze` parses and validates draft Cedar against the environment's schema, and `format` formats draft Cedar without saving it or overwriting the input. Use `analyze` to catch an unknown action or entity before a save, which is where most policy errors land. See [governance.md](governance.md).
 
-`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in a single command. That is how you give a newly created agent its first policy, because none is written for it at create time. See [governance.md](governance.md#give-a-new-agent-access).
+`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in one command — how a new agent, which gets no policy at create time, gets its first. See [governance.md](governance.md#give-a-new-agent-access).
 
 ## `secret` subcommands
 
@@ -261,7 +261,7 @@ Both are generated groups with `create`, `get`, `list`, `update`, `delete`; `gua
 
 ## Read-only query and inspection groups
 
-`trace`, `spending` and `agent-network` return the same data the observability and cost pages show — see [observability.md](observability.md#read-traces-from-the-cli). `spending` and `agent-network` take their request fields as **dotted flags** (`--filter.start-time`, `--filter.end-time`) or a whole request with `-f`, and under `-o json` / `-o yaml` print the entire response envelope, pagination token included, rather than just the rows; pass that token back with `--page-token`. The remaining read-only groups in the command tree — `system-policy`, `effective-policy-set`, `policy-template`, `session`, `ingest-feedback` — take their flags from their own `--help`.
+`trace`, `spending` and `agent-network` return the same data the observability and cost pages show — see [observability.md](observability.md#read-traces-from-the-cli). `spending` and `agent-network` take their request fields as **dotted flags** (`--filter.start-time`, `--filter.end-time`) or a whole request with `-f`, and under `-o json` / `-o yaml` print the entire response envelope, pagination token included, rather than just the rows; pass that token back with `--page-token`. The remaining groups in the command tree — read-only `system-policy`, `effective-policy-set` and `ingest-feedback`, plus `policy-template` and `session`, which also write — take their flags from their own `--help`.
 
 ## `trigger` subcommands
 
@@ -271,33 +271,7 @@ Subcommands: `create <agent>`, `get <name>`, `list <agent>` (alias `ls`), `updat
 
 A trigger belongs to one agent, but its command group is **top-level** (`rpk ai trigger …`, not `rpk ai agent trigger …`), which keeps `rpk ai trigger apply` drivable from a GitOps tool like every other group.
 
-**Naming.** A trigger's name carries its parent: `agents/{agent}/triggers/{trigger}`. `create` and `list` take the parent agent, as a bare ID (`my-agent`) or `agents/my-agent`; `get`, `update`, `delete` and `runs` take the full name exactly as `list` prints it. A bare trigger ID is rejected (`expected 4 path segments, got 1`). The trigger ID is server-assigned unless `--id <dns-1123-label>` names one; the full name is printed on success.
-
-**Kind.** Exactly one kind per trigger, chosen at `create` by which flag family you pass, and immutable afterwards (delete and recreate to change it):
-
-| Kind | Flags |
-|---|---|
-| Microsoft Teams | `--teams-bot-app-id` (Azure Bot application/client ID), `--teams-bot-tenant-id` (Azure AD tenant ID), `--teams-bot-app-secret-ref` (secret-store key holding the bot client secret — a bare `UPPER_SNAKE_CASE` key, never the secret itself) |
-| Schedule (cron) | `--cron-schedule` (standard 5-field expression, e.g. `"0 9 * * 1-5"`), `--cron-timezone` (IANA zone, e.g. `Europe/Prague`; **required** — there is no UTC fallback), `--cron-input` (message text each scheduled run sends to the agent) |
-
-Common flags on `create` and `update`: `--display-name`, `--description`, `--enabled` (default `true`). A `create` with no kind flags is an error naming both flag families. On `update`, only the flags you pass change; `--cron-*` flags apply only to a schedule trigger and `--teams-*` only to a Teams trigger.
-
-**Pause and resume.** `update <name> --enabled=false` pauses a trigger, keeping its configuration and run history; `--enabled=true` resumes it from the next scheduled instant, with no catch-up of missed runs. See [agents.md](agents.md).
-
-**`runs <name>`** lists a schedule trigger's recorded runs, newest first. Only cron triggers have runs; a Teams trigger reports an empty history. Each run's `conversation_id` joins it to its transcript (`rpk ai agent transcript get`).
-
-**`get -o yaml`** shows the kind configuration and the reported health, which the table output does not.
-
-**Credentials are not validated at create time.** A trigger is stored without checking the Teams credentials or resolving the secret refs, so an accepted trigger can still be reported unhealthy — read its status (`get -o yaml`) after creating one.
-
-`delete` is idempotent.
-
-```bash
-rpk ai trigger create my-agent --cron-schedule "0 9 * * 1-5" --cron-timezone Europe/Prague --cron-input "Post the daily summary"
-rpk ai trigger list my-agent
-rpk ai trigger update agents/my-agent/triggers/<id> --enabled=false
-rpk ai trigger runs agents/my-agent/triggers/<id>
-```
+Naming, kinds and their flags, pause and resume, run history and health: see [Triggers in agents.md](agents.md#triggers). On `update`, only the flags you pass change; `--cron-*` flags apply only to a schedule trigger and `--teams-*` only to a Teams trigger.
 
 ## GitOps: `apply` and `diff`
 
