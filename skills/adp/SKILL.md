@@ -9,9 +9,9 @@ description: >-
   user-delegated OAuth), setting up LLM providers and models with `rpk ai llm-provider` and
   `rpk ai model`, writing Cedar access policies with `rpk ai policy`, storing secrets with
   `rpk ai secret`, reading conversation transcripts or the audit log with
-  `rpk ai agent transcript` and `rpk ai auditlog`, tracing a slow or failed run in Traces,
-  launching a coding tool with `rpk ai run`, or working with API keys, budgets, guardrails, and
-  cost reporting in the ADP UI. For the separate rpk cloud mcp control-plane MCP server, see
+  `rpk ai agent transcript` and `rpk ai auditlog`, tracing a slow or failed run with `rpk ai trace`,
+  launching a coding tool with `rpk ai run`, or managing API keys, budgets, guardrails, and
+  cost reporting. For the separate rpk cloud mcp control-plane MCP server, see
   `/redpanda:rpk-cloud`.
 ---
 
@@ -21,7 +21,7 @@ The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agen
 
 **How to operate it.** ADP has two supported operator surfaces: the **`rpk ai` CLI** and the **ADP UI** (ai.redpanda.com). Applications and agents then call the endpoints ADP exposes: the AI Gateway's per-provider LLM URLs, each MCP server's URL, and each agent's A2A endpoint. Operate ADP with `rpk ai`, and send the user to the UI for tasks the CLI does not cover. Confirm the live surface with `--help` before acting.
 
-**Maturity.** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, and MCP output format are Preview. Each reference file names these markers.
+**Maturity.** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, MCP output format and the Google Identity-Aware Proxy setting on an MCP server are Preview. Each reference file names these markers.
 
 ## Where each task lives
 
@@ -36,14 +36,18 @@ The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agen
 | Roles and permissions (RBAC) | role bindings via `/redpanda:rpk-cloud` | Access → Roles (read-only view) |
 | Data policies on an MCP server | `rpk ai mcp-server create/update --data-policies` | MCP server → Data Policies tab |
 | Kill switch policies that contain an agent | `rpk ai kill-switch-policy` | Agent → Govern tab |
+| Containing an agent by hand, and releasing it | `rpk ai agent-kill-switch` | Agent → **Contain agent** / **Release agent** |
 | OAuth clients (inbound) and providers (outbound) | `rpk ai oauth-client`, `rpk ai oauth-provider` | Integrations setup |
 | Your own OAuth connections | `rpk ai connection` | Connections |
-| Budgets, cost and usage, guardrail authoring | none | Budgets, Cost and usage, Guardrails |
+| Budgets that cap agent spend | `rpk ai budget` | Budgets |
+| Cost and usage analysis | `rpk ai spending` | Cost and usage |
+| Guardrails | `rpk ai guardrail` | Guardrails |
 | Transcripts | `rpk ai agent transcript` | Agent → Transcripts |
 | Audit log | `rpk ai auditlog` | Observability → Audit log |
-| Traces: one row per run, span by span | none | Observability → Traces |
-| Agent network, conversation sessions | none | Observability → Agent network; Agent → Playground history |
-| API keys for long-lived clients | none | API keys |
+| Traces: one row per run, span by span | `rpk ai trace` | Observability → Traces |
+| Agent network | `rpk ai agent-network` | Observability → Agent network |
+| Conversation sessions | `rpk ai session` | Agent → Playground history |
+| API keys for long-lived clients | `rpk ai api-key` | API keys |
 | Secrets other resources reference by ID | `rpk ai secret` | Secrets store |
 | Read the product docs in the terminal | `rpk ai docs`, `rpk ai docs search` | — |
 | Coding tools through the gateway | `rpk ai run claude`, `rpk ai run codex`, `rpk ai run agy` | — |
@@ -72,13 +76,13 @@ See [references/gateway-and-providers.md](references/gateway-and-providers.md).
 
 ### Governance
 
-- **Budgets** (UI): per-agent spend caps over a daily, weekly, or monthly period, with a warning threshold. A capped agent's LLM calls get `HTTP 429` until the period resets.
-- **Cost and usage** (UI): spend and token reporting, groupable by cost-allocation tags taken from agent tags.
-- **Guardrails** (Preview; UI to author, `rpk ai llm-provider update --guardrail` to attach): content safety backed by Amazon Bedrock Guardrails. Policy types are content filters, word filters, denied topics, sensitive information (PII), contextual grounding, and automated reasoning.
+- **Budgets** (`rpk ai budget`, **Budgets**): per-agent spend caps over a daily, weekly, or monthly period, with a warning threshold. A capped agent's LLM calls get `HTTP 429` until the period resets.
+- **Cost and usage** (`rpk ai spending`, **Cost and usage**): spend and token reporting, groupable by cost-allocation tags taken from agent tags.
+- **Guardrails** (Preview; `rpk ai guardrail` or the UI to author, `rpk ai llm-provider update --guardrail` to attach): content safety backed by Amazon Bedrock Guardrails. Policy types are content filters, word filters, denied topics, sensitive information (PII), contextual grounding, and automated reasoning.
 - **Access policies** (`rpk ai policy`, UI): Cedar policies that decide *whether* a call runs. A new agent has no policy of its own; `rpk ai policy create --agent <name> --template <template>` binds one.
 - **Roles and permissions**: every operation checks one fine-grained permission (`dataplane_adp_*`, `dataplane_aigateway_*`). Among built-in roles only Admin carries ADP permissions; everyone else gets access through policies, which name action IDs such as `Action::"LLMProvider.invoke"`, not permission strings.
 - **Data policies** (Preview): shape *what data* a permitted MCP call exposes, and to whom.
-- **Kill switch** (`rpk ai kill-switch-policy`, agent **Govern** tab): a per-agent policy that watches a guardrail or data-policy signal and, in Enforce mode, contains the agent, cutting off all of its gateway traffic until it is released. Start in Observe.
+- **Containment and the kill switch** (`rpk ai agent-kill-switch`, and `rpk ai kill-switch-policy` or the agent's **Govern** tab): containing an agent cuts off all of its gateway traffic until someone releases it. Contain one yourself with a required reason, or have a per-agent policy do it when a guardrail or data-policy signal spikes — start such a policy in Observe.
 - **Secrets** (`rpk ai secret`, UI **Secrets store**): the write-only store every credential reference points at. Rotate a value in one place instead of editing each resource that uses it.
 - **OAuth**: inbound clients (including Dynamic Client Registration), outbound providers, and per-user connections.
 
@@ -88,8 +92,8 @@ See [references/governance.md](references/governance.md).
 
 - **Transcripts** (`rpk ai agent transcript list|get`, UI): what an agent did in a conversation: turns, tool calls, models, timing.
 - **Audit log** (`rpk ai auditlog list|get`, UI): who was allowed or refused what across ADP, which policy decided, and on whose behalf an agent acted.
-- **Traces** (UI): one row per agent run or gateway call, expandable into a span waterfall — model calls, tool calls, subagent hand-offs, gateway calls, and the guardrail and data-policy decisions each met. Start here to find which call made a run slow, expensive, or wrong.
-- **Home, Agent network, Playground history** (UI): headline metrics, agent-to-resource topology, and per-agent conversation sessions.
+- **Traces** (`rpk ai trace`, **Observability → Traces**): one row per agent run or gateway call, expandable into a span waterfall — model calls, tool calls, subagent hand-offs, gateway calls, and the guardrail and data-policy decisions each met. Start here to find which call made a run slow, expensive, or wrong.
+- **Home** (UI), **Agent network** (`rpk ai agent-network`) and **Playground history** (`rpk ai session`): headline metrics, agent-to-resource topology, and per-agent conversation sessions.
 
 See [references/observability.md](references/observability.md).
 
@@ -130,7 +134,7 @@ rpk ai model list                      # model catalog (optionally --provider-ty
 
 ## Key patterns and gotchas
 
-- **Use `rpk ai` or the UI, and check the live tree first.** Newer releases keep adding command groups (budgets and spending among them), so a "none" in the table above can be out of date. Run `rpk ai --help` before sending a user to the UI, and never invent a group or flag the live help does not show. The audit log has one, `rpk ai auditlog`, so don't send a reader to the UI for it.
+- **Use `rpk ai` or the UI, and check the live tree first.** Newer releases keep adding command groups — budgets, spending, traces, the agent network, guardrails, API keys, conversation sessions and manual containment all arrived after this table said "none" for them — so run `rpk ai --help` before you tell a user a task is UI-only, read that group's own `--help` instead of guessing its flags, and never invent a group or flag the live help does not show. Most resource pages in the UI also carry a **Use with rpk ai** button that prints the commands for the resource in front of you.
 - **Cost unit.** The UI shows dollars. Raw cost values in manifests or `-o yaml` output are **USD microcents** ($1 = 100,000,000 microcents). Never treat them as cents.
 - **Piping a secret value needs `--value-file=-`, with the equals sign.** Under `rpk ai`, a bare `-` given as a separate argument never reaches the plugin, so `rpk ai secret create ID --value-file -` fails with an argument error instead of reading stdin. `rpk ai policy --cedar-file` has no stdin mode at all; it takes a path only. See [rpk-ai.md](references/rpk-ai.md#secret-subcommands).
 - **Creating an LLM provider turns transcript content capture ON.** If the create does not mention transcripts, prompts and completions are recorded verbatim. To opt out, pass `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set them in the manifest). Existing providers are not changed. See [gateway-and-providers.md](references/gateway-and-providers.md#transcript-recording-defaults-to-on).
