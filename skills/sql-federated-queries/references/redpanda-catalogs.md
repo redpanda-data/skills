@@ -323,7 +323,7 @@ Cyclic reference at '<parent>.<field>' → '<type>'. Cyclic types are not suppor
 ```
 
 Recreate the table with `struct_mapping_policy = 'JSON'` and query the fields
-with JSON functions (see `/redpanda:sql`).
+with JSON functions (see https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-functions/json-functions/).
 
 | Policy | Use when | Trade-offs |
 |--------|----------|------------|
@@ -347,4 +347,4 @@ topic-backed tables:
   JSON under `JSON`), read with `col['key']`. Duplicate keys are preserved.
 
 Data types, `row` field access, `map`, JSON functions, and casts:
-`/redpanda:sql`.
+https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-data-types/ and https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-functions/.
