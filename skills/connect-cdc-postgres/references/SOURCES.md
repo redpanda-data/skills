@@ -43,6 +43,15 @@ incremental snapshots, are published in the `heartbeat_interval` field descripti
 2026-10-31). The suite keeps the behavioral case `heartbeat-prefix-per-slot`; the skill has no
 line for it.
 
+Findability check for `heartbeat-prefix-per-slot` (2026-11-03): `ask_redpanda_question` with
+the question the `installed` arm sent, "postgres_cdc pg_logical_emit_message prefix heartbeat
+logical decoding message" and `platform: "self-managed"`, returns the `heartbeat_interval`
+section with the prefix and payload as its first result. The case is fair as written. In the
+2026-10-31 `installed` runs (0/3) the agents sent this question and a `get_connect_component`
+lookup and still did not find the prefix, which fits a search index that did not yet hold the
+new field text. If the case keeps failing in `installed` once the index holds it, look at what
+`get_connect_component` returns for `heartbeat_interval`.
+
 ## TODO / re-verify
 
 - The published prerequisites say "PostgreSQL version 14 or later", while `stream_snapshot` needs
