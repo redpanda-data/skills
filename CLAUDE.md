@@ -172,8 +172,9 @@ before editing or verifying any file**, and open the cited paths first.
 
 - Docs lookup: `skills/redpanda-docs/references/SOURCES.md` (grounded in the live Docs MCP
   `tools/list`, `docs-site`, and the `rpk` and `rpk connect` version commands). The drift audit
-  re-verifies it like any other skill; its behavior is exercised by the `installed` arm of every
-  suite rather than a suite of its own.
+  re-verifies it like any other skill. Its own suite, `evals/suites/redpanda-docs.eval.json`, mocks
+  the docs tools to grade how an agent uses them; the `installed` arm of every other suite also
+  loads it.
 
 When adding a source-grounded skill, add a `SOURCES.md` beside it and list it here.
 
