@@ -52,6 +52,17 @@ lookup and still did not find the prefix, which fits a search index that did not
 new field text. If the case keeps failing in `installed` once the index holds it, look at what
 `get_connect_component` returns for `heartbeat_interval`.
 
+## Facts from the v4.115.1 sync not carried in the thin skill
+
+The 2026-10-30 sync added two facts to the pre-thin skill. Both are published, so the thin
+skill leaves them to the docs: `dsn` must point at the primary instance, not a read replica or
+physical standby, and the `stream_snapshot` phase holds the database's `xmin` horizon for as
+long as it runs, which is why large tables should use `incremental_snapshot`. Both are in
+`rp-connect-docs` `modules/components/pages/inputs/postgres_cdc.adoc` and
+`modules/cookbooks/pages/postgres_cdc.adoc`; the source grounding is
+`pglogicalstream/logical_stream.go` (`EXPORT_SNAPSHOT`) and `pglogicalstream/snapshotter.go`
+(`openTxn`, `sql.LevelRepeatableRead`, released in `releaseSnapshot`).
+
 ## TODO / re-verify
 
 - The published prerequisites say "PostgreSQL version 14 or later", while `stream_snapshot` needs

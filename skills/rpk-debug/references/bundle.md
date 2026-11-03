@@ -310,8 +310,8 @@ rpk debug bundle --cpu-profiler-wait 60s
 # Extra Admin API detail for partitions 0, 1, 2 of topic "orders"
 rpk debug bundle --partition orders/0,1,2
 
-# Internal namespace
-rpk debug bundle --partition _redpanda-internal/controller/0
+# Internal namespace (the controller partition)
+rpk debug bundle --partition redpanda/controller/0
 ```
 
 ### Kubernetes with a custom namespace

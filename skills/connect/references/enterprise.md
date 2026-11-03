@@ -317,7 +317,7 @@ Scaffold the full field set with `rpk connect create sap_hana`.
 ### AI/ML processors (certified — no license gate)
 
 AI/ML inference processors are **certified** tier, not enterprise: at Connect
-v4.113.1 all 16 are still marked `certified` in the component catalog
+v4.116.1 all 16 are still marked `certified` in the component catalog
 (`internal/plugins/info.csv`) and their source is Apache-2.0 with no runtime
 license check. (This section previously called them enterprise connectors —
 that was wrong.) They are documented here because they pair with the

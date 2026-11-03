@@ -47,6 +47,8 @@ Shadow Linking is the **user-facing** name; internally the broker module is
 
 ## TODO / re-verify
 
+- **Drift audit 2026-11-01:** the `GET /v1/debug/partition/...` example in `profiling-and-selftest.md` used `_redpanda-internal` as a namespace; the controller partition is `redpanda/controller/0` (`src/v/model/namespace.h`, tag v26.2.2, which defines only `kafka`, `kafka_internal` and `redpanda`). Debug endpoint paths re-verified against `src/v/redpanda/admin/api-doc/debug.json` at the same tag.
+
 - **Admin API endpoint paths** (`/v1/debug/*`, `/v1/partitions/*`, `/v1/cluster/partition_balancer/status`, `/v1/brokers/*`): route bodies are in `src/v/redpanda/admin/{debug,partition,server}.cc`; the canonical path + query-param definitions are in the swagger JSON under `src/v/redpanda/admin/api-doc/`. Cross-check with the `streaming-admin-api` skill.
 - **`debug_bundle_auto_removal_seconds` scope** (`debug-bundle.md`): claim that it governs only remotely-triggered bundles is grounded in `debug_bundle.cc`; re-confirm the exact behavior at the target tag.
 - **Crash-loop mechanics** (`triage-playbooks.md`): `crash_loop_limit`/`crash_loop_sleep_sec`, `startup_log`, and `crash_reports/` are owned by `src/v/crash_tracker/` (`limiter.cc`) reading `src/v/config/node_config.cc`; re-verify default `crash_loop_limit` (skill states `5`) and the 1-hour reset window against source.

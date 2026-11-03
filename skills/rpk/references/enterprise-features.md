@@ -138,7 +138,7 @@ rpk topic create t1 -p5 -r3 \
 **REST catalog connection keys** (cluster config, used with REST catalogs):
 `iceberg_rest_catalog_endpoint`, `iceberg_rest_catalog_authentication_mode`,
 `iceberg_rest_catalog_client_id`, `iceberg_rest_catalog_client_secret`,
-`iceberg_rest_catalog_token`, `iceberg_rest_catalog_prefix`,
+`iceberg_rest_catalog_token`, `iceberg_rest_catalog_base_location`,
 `iceberg_rest_catalog_warehouse`, `iceberg_rest_catalog_request_timeout_ms`,
 and the `iceberg_rest_catalog_aws_*` family (`_access_key`, `_secret_key`,
 `_region`, `_service_name`, `_credentials_source`).

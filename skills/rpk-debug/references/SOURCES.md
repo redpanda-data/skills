@@ -23,6 +23,8 @@ The `rpk debug` command group is Go source in the **public** repo `redpanda-data
 
 ## TODO / re-verify
 
+- **Drift audit 2026-11-01:** the `--partition` example in `bundle.md` used `_redpanda-internal` as a namespace. Redpanda has three namespaces — `kafka`, `kafka_internal` and `redpanda` (`src/v/model/namespace.h`, tag v26.2.2) — and the controller partition is `redpanda/controller/0`. The flag parses `{namespace}/{topic}/[partitions...]` with `kafka` as the default namespace (`src/go/rpk/pkg/out/in.go`).
+
 - **Per-flag defaults** (`--logs-since=yesterday`, `--logs-size-limit=100MiB`, `--controller-logs-size-limit=132MB`, `--cpu-profiler-wait=30s`, `--metrics-samples=2`, `--metrics-interval=10s`, `--kafka-connections-limit=256`, `--wait-timeout=5m`) not each line-verified against flag registrations in `bundle/bundle.go` and `remotebundle/start.go` — re-check. Also re-confirm local `bundle` validates `--cpu-profiler-wait>=15s`/`--metrics-samples>=2` while `remote-bundle` passes them through.
 - **rpadmin client method → file mapping** (e.g., `cl.Brokers`→`admin/brokers.json`, `cl.GetLicenseInfo`→`admin/license.json`, per-node `cl.RawNodeConfig`→`admin/node_config_<addr>.json`) not each line-verified against `bundle_all.go`.
 - **Admin API endpoint names** (`CreateDebugBundle`, `GetDebugBundleStatus`, `DownloadDebugBundleFile`, `CancelDebugBundleProcess`) — verify against `src/v/redpanda/admin/debug_bundle.cc`/`.h` and the Go rpadmin client wrapper (`src/go/rpk/pkg/adminapi/`).

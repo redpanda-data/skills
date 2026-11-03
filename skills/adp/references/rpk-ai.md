@@ -2,7 +2,7 @@ Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help, includin
 
 # rpk ai CLI Reference
 
-**Maturity:** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm them with `--help` before relying on them.
+**Maturity:** GA, but command groups and flags change between releases — confirm them with `--help` before relying on them.
 
 ## Discover the live surface
 
@@ -24,15 +24,7 @@ Always prefer live `--help` output over this document when they disagree.
 
 ## Lifecycle management (rpk-side commands)
 
-| Command | Key flags | Purpose |
-|---------|-----------|---------|
-| `rpk ai install` | `--ai-version string` (default `latest`), `--force` | Download and install the plugin |
-| `rpk ai upgrade` | `--no-confirm` | Upgrade to the latest plugin |
-| `rpk ai uninstall` | (none) | Remove the managed plugin |
-
-Install path: `~/.local/bin/.rpk.managed-rpai`.
-
-Platforms: `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`, `windows-amd64`, `windows-arm64`. There is no FIPS build, so a FIPS-only environment cannot install a FIPS-validated `rpk ai`.
+`rpk ai install` (`--ai-version`, default `latest`; `--force`), `rpk ai upgrade` (`--no-confirm`) and `rpk ai uninstall` manage the plugin, which lands at `~/.local/bin/.rpk.managed-rpai`. macOS, Linux and Windows on amd64 and arm64 are published; **there is no FIPS build**, so a FIPS-only environment cannot install a FIPS-validated `rpk ai`.
 
 **The CLI announces its own updates.** A background check, at most once a day, prints a notice on **stderr** naming a newer version and the command that upgrades it, including after a command that failed or printed help. It never delays a command, and it appears only when **both** stdout and stderr are terminals — so a script, a pipe, an `-o json` capture and an agent never see it — and never in continuous integration. `RPAI_NO_UPDATE_CHECK=1` turns it off.
 
@@ -97,25 +89,37 @@ Running as an rpk plugin, some long flags are renamed to avoid colliding with rp
 | Command | Aliases | Notes |
 |---------|---------|-------|
 | `agent` | `agents` | Manage agents (managed and self-managed) |
-| `auditlog` | `audit-log`, `audit` | Read the audit log: `list`, `get` (read-only; see [observability.md](observability.md#read-the-audit-log-from-the-cli)) |
+| `agent-kill-switch` | (none) | Inspect, set or release one agent's containment (see [`agent-kill-switch`](#agent-kill-switch-subcommands)) |
+| `agent-network` | (none) | Query agent relationships and provider failures: `get`, `node`, `provider-failures` (read-only) |
+| `api-key` | `api-keys` | Manage API keys (see [`guardrail` and `api-key`](#guardrail-and-api-key-subcommands)) |
+| `auditlog` | `audit-log`, `audit` | Read the audit log: `list`, `get`, `query` (read-only; see [observability.md](observability.md#read-the-audit-log-from-the-cli)) |
 | `auth` | (none) | `login`, `logout`, `token`, `status` |
+| `budget` | `budgets` | Manage budgets that cap agent spend (see [`budget`](#budget-subcommands)) |
 | `completion` | (none) | Generate a shell autocompletion script |
 | `connection` | `connections`, `conn` | Manage your own OAuth connections: `list`, `revoke <provider-name>` |
 | `docs` | (none) | Read the published ADP documentation from the terminal; needs no sign-in (see [`docs`](#docs-read-the-product-documentation)) |
+| `effective-policy-set` | (none) | Inspect the authorization policy snapshot in force (read-only) |
 | `env` | `environment` | Manage environments: `add`, `list`, `use`, `show`, `rename`, `delete` |
+| `guardrail` | `guardrails` | Manage guardrails (see [`guardrail` and `api-key`](#guardrail-and-api-key-subcommands)) |
+| `ingest-feedback` | (none) | `summary`: telemetry the ingestion pipeline dropped, and why (read-only) |
 | `kill-switch-policy` | `kill-switch-policies`, `ksp`, `kill-switch` | Manage an agent's kill switch policies (see [`kill-switch-policy`](#kill-switch-policy-subcommands)) |
-| `llm-provider` | `llm-providers`, `llm`, `provider`, `lp` | Manage LLM providers |
+| `llm-provider` | `llm-providers`, `llm`, `provider`, `lp` | Manage LLM providers; `types` lists the supported types |
 | `mcp-server` | `mcp-servers`, `mcp` | Manage MCP servers |
 | `model` | `models`, `m` | Discover models in the catalog (read-only) |
-| `oauth-client` | `oauth-clients`, `oc` | Manage OAuth clients |
-| `oauth-provider` | `oauth-providers`, `oauth`, `op` | Manage OAuth providers |
-| `policy` | `policies`, `pol` | Manage Cedar authorization policies |
+| `oauth-client` | `oauth-clients`, `oc` | Manage OAuth clients; also `dcr`, `cimd` and `catalog` |
+| `oauth-provider` | `oauth-providers`, `oauth`, `op` | Manage OAuth providers; also `catalog` and `discover` |
+| `policy` | `policies`, `pol` | Manage Cedar authorization policies, and check a draft without saving |
+| `policy-template` | `policy-templates` | Manage policy templates that policies link to |
 | `run` | (none) | Launch Claude Code, Codex or Antigravity CLI routed through the AI Gateway |
 | `secret` | `secrets`, `sec` | Manage the secrets other resources reference by ID (see [`secret`](#secret-subcommands)) |
+| `session` | (none) | Inspect, rename or delete a managed agent's conversation sessions |
+| `spending` | (none) | Query cost and usage: `summary`, `breakdown`, `time-series`, `time-series-by-dimension`, `tag-keys` (read-only) |
+| `system-policy` | (none) | `list` and `action-groups`: the read-only policies Redpanda compiles from role bindings |
+| `trace` | (none) | Read traces of agent runs and gateway calls: `list`, `get`, `span` (read-only; see [observability.md](observability.md#read-traces-from-the-cli)) |
 | `trigger` | `triggers`, `agent-trigger` | Manage an agent's triggers (top-level, not under `agent`) |
 | `version` | (none) | Print version and commit |
 
-Newer releases keep adding groups, including ones for budgets, spending, traces and the agent network. Before you tell a user a task is UI-only, check `rpk ai --help`, and read that group's own `--help` instead of guessing its flags.
+Newer releases keep adding groups — everything from `agent-kill-switch` through `trace` in this table arrived that way. Before you tell a user a task is UI-only, check `rpk ai --help`, and read that group's own `--help` instead of guessing its flags.
 
 ## `rpk ai version`
 
@@ -136,7 +140,7 @@ CRUD and lifecycle: `create`, `get`, `list`, `update`, `delete`, `start`, `stop`
 - `send <agent|url> [message]` — flags: `--context-id`, `--task-id`, `--stream`, `--no-block`, `--timeout` (default 5m; `0` waits forever)
 - `task get|cancel|watch <agent|url> <task-id>` (`watch` alias: `resubscribe`)
 
-Your bearer token is attached only for a registered agent or a URL on the environment's dataplane host; other hosts are called without credentials (a note on stderr says so). Exit codes: `0` success (including a task waiting for input), `4` task ended failed/canceled/rejected, `1` anything else.
+Your bearer token is attached only for a registered agent or a URL on the environment's dataplane host; other hosts are called without credentials (a note on stderr says so). Exit codes: `0` success (including a task waiting for input), `4` task ended failed/canceled/rejected, `3` an authentication or authorization failure, `1` anything else (see [Exit codes](#exit-codes)).
 
 ## `connection` subcommands
 
@@ -200,9 +204,9 @@ Aliases: `oauth-providers`, `oauth`, `op`. Subcommands: `create`, `get`, `list`,
 
 ## `policy` subcommands
 
-Aliases: `policies`, `pol`. Subcommands: `create`, `get`, `list`, `update` (Cedar body or metadata), `delete`, `apply`, `diff`. See [governance.md](governance.md).
+Aliases: `policies`, `pol`. Subcommands: `create`, `get`, `list`, `update` (Cedar body or metadata), `delete`, `apply`, `diff`, plus two that touch no stored policy: `analyze` parses and validates draft Cedar against the environment's schema, and `format` formats draft Cedar without saving it or overwriting the input. Use `analyze` to catch an unknown action or entity before a save, which is where most policy errors land. See [governance.md](governance.md).
 
-`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in a single command. That is how you give a newly created agent its first policy, because none is written for it at create time. See [governance.md](governance.md#give-a-new-agent-access).
+`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in one command — how a new agent, which gets no policy at create time, gets its first. See [governance.md](governance.md#give-a-new-agent-access).
 
 ## `secret` subcommands
 
@@ -239,7 +243,25 @@ rpk ai docs cli --url           # print the URL instead (needs no network)
 
 ## `kill-switch-policy` subcommands
 
-Aliases: `kill-switch-policies`, `ksp`, `kill-switch`. Subcommands: `create <name> --parent agents/<agent>`, `get`, `list --parent agents/<agent>` (the parent is required), `update`, `delete`. A policy belongs to one agent and watches one signal (`--spec.signal guardrail-block-rate|datapolicy-deny-rate|evaluation-error-rate`) with *Burst* (`--spec.burst.threshold`, `--spec.burst.confidence 95|99|999`) or *Drift* (`--spec.drift.baseline`, `.slack`, `.threshold`) detection. `--spec.mode shadow` is the UI's **Observe** and `enforce` its **Enforce**. `create` and `update` take `-f` and `--dry-run` like other groups. For what containment does and who may manage it, see [governance.md](governance.md#kill-switch).
+Aliases: `kill-switch-policies`, `ksp`, `kill-switch`. Subcommands: `create <name> --parent agents/<agent>`, `get`, `list --parent agents/<agent>` (the parent is required), `update`, `delete`, `firings` (list kill-switch firings), `signal-history` (an agent's signal history). A policy belongs to one agent and watches one signal (`--spec.signal guardrail-block-rate|datapolicy-deny-rate|evaluation-error-rate`) with *Burst* (`--spec.burst.threshold`, `--spec.burst.confidence 95|99|999`) or *Drift* (`--spec.drift.baseline`, `.slack`, `.threshold`) detection. `--spec.mode shadow` is the UI's **Observe** and `enforce` its **Enforce**. `create` and `update` take `-f` and `--dry-run` like other groups. For what containment does and who may manage it, see [governance.md](governance.md#kill-switch).
+
+## `agent-kill-switch` subcommands
+
+`get` and `update`, each taking `--agent agents/<agent-id>`: `update` contains or releases one agent, `get` reports its state. Containing **requires a reason**; releasing takes none. If the group is not recognized, the installed plugin predates it — run `rpk ai upgrade`. For the commands, what containment does and who may do it, see [governance.md](governance.md#kill-switch).
+
+## `budget` subcommands
+
+Alias: `budgets`. Subcommands: `create NAME`, `get`, `list`, `update`, `delete`. Amounts are stored in USD **microcents** ($1 = 100,000,000), so enter dollars with `--limit-usd` / `--warn-at-usd` — a positive decimal with at most eight places — rather than converting by hand. **Each USD flag stands in for its `--*-microcents` partner rather than joining it:** pass one of a pair, never both, and don't combine one with `--clear` of the same field. `delete` now takes `--dry-run`, like `create` and `update`. See [governance.md](governance.md#budgets).
+
+## `guardrail` and `api-key` subcommands
+
+Both are generated groups with `create`, `get`, `list`, `update`, `delete`; `guardrail` (alias `guardrails`) adds a read-only `providers`. Read `rpk ai guardrail create --help` for what the CLI can set before you send a user to the UI.
+
+`api-key create` takes **no positional name** — the server names the key — and requires `--display-name`. **The key value is printed once, on stderr, while the metadata goes to stdout**, so `... -o json > key.json` saves the metadata and throws the key away. See [governance.md](governance.md#api-keys).
+
+## Read-only query and inspection groups
+
+`trace`, `spending` and `agent-network` return the same data the observability and cost pages show — see [observability.md](observability.md#read-traces-from-the-cli). `spending` and `agent-network` take their request fields as **dotted flags** (`--filter.start-time`, `--filter.end-time`) or a whole request with `-f`, and under `-o json` / `-o yaml` print the entire response envelope, pagination token included, rather than just the rows; pass that token back with `--page-token`. The remaining groups in the command tree — read-only `system-policy`, `effective-policy-set` and `ingest-feedback`, plus `policy-template` and `session`, which also write — take their flags from their own `--help`.
 
 ## `trigger` subcommands
 
@@ -249,33 +271,7 @@ Subcommands: `create <agent>`, `get <name>`, `list <agent>` (alias `ls`), `updat
 
 A trigger belongs to one agent, but its command group is **top-level** (`rpk ai trigger …`, not `rpk ai agent trigger …`), which keeps `rpk ai trigger apply` drivable from a GitOps tool like every other group.
 
-**Naming.** A trigger's name carries its parent: `agents/{agent}/triggers/{trigger}`. `create` and `list` take the parent agent, as a bare ID (`my-agent`) or `agents/my-agent`; `get`, `update`, `delete` and `runs` take the full name exactly as `list` prints it. A bare trigger ID is rejected (`expected 4 path segments, got 1`). The trigger ID is server-assigned unless `--id <dns-1123-label>` names one; the full name is printed on success.
-
-**Kind.** Exactly one kind per trigger, chosen at `create` by which flag family you pass, and immutable afterwards (delete and recreate to change it):
-
-| Kind | Flags |
-|---|---|
-| Microsoft Teams | `--teams-bot-app-id` (Azure Bot application/client ID), `--teams-bot-tenant-id` (Azure AD tenant ID), `--teams-bot-app-secret-ref` (secret-store key holding the bot client secret — a bare `UPPER_SNAKE_CASE` key, never the secret itself) |
-| Schedule (cron) | `--cron-schedule` (standard 5-field expression, e.g. `"0 9 * * 1-5"`), `--cron-timezone` (IANA zone, e.g. `Europe/Prague`; **required** — there is no UTC fallback), `--cron-input` (message text each scheduled run sends to the agent) |
-
-Common flags on `create` and `update`: `--display-name`, `--description`, `--enabled` (default `true`). A `create` with no kind flags is an error naming both flag families. On `update`, only the flags you pass change; `--cron-*` flags apply only to a schedule trigger and `--teams-*` only to a Teams trigger.
-
-**Pause and resume.** `update <name> --enabled=false` pauses a trigger, keeping its configuration and run history; `--enabled=true` resumes it from the next scheduled instant, with no catch-up of missed runs. See [agents.md](agents.md).
-
-**`runs <name>`** lists a schedule trigger's recorded runs, newest first. Only cron triggers have runs; a Teams trigger reports an empty history. Each run's `conversation_id` joins it to its transcript (`rpk ai agent transcript get`).
-
-**`get -o yaml`** shows the kind configuration and the reported health, which the table output does not.
-
-**Credentials are not validated at create time.** A trigger is stored without checking the Teams credentials or resolving the secret refs, so an accepted trigger can still be reported unhealthy — read its status (`get -o yaml`) after creating one.
-
-`delete` is idempotent.
-
-```bash
-rpk ai trigger create my-agent --cron-schedule "0 9 * * 1-5" --cron-timezone Europe/Prague --cron-input "Post the daily summary"
-rpk ai trigger list my-agent
-rpk ai trigger update agents/my-agent/triggers/<id> --enabled=false
-rpk ai trigger runs agents/my-agent/triggers/<id>
-```
+Naming, kinds and their flags, pause and resume, run history and health: see [Triggers in agents.md](agents.md#triggers). On `update`, only the flags you pass change; `--cron-*` flags apply only to a schedule trigger and `--teams-*` only to a Teams trigger.
 
 ## GitOps: `apply` and `diff`
 

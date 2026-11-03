@@ -33,6 +33,8 @@ Critical scope distinction: the `rpk cluster` **commands** are defined in rpk Go
 
 ## TODO / re-verify
 
+- **Drift audit 2026-11-01:** `config.md`'s retention row named a cluster property that does not exist (`log_retention_bytes`); corrected to `retention_bytes` against docs `modules/reference/partials/properties/cluster-properties.adoc` (regenerated for tag v26.2.4). The rest of the file's property names were swept against that partial and the object-storage and broker partials and all resolve. `rpk cluster` command and alias claims (`info` aliases `status`/`metadata`, `license info` alias `status`, `self-test` with no `selftest` alias) re-verified against redpanda `src/go/rpk/pkg/cli/cluster/` at tag v26.2.2 (the public repo's freeze point).
+
 - ~~`rpk node config set fips_mode` drift~~ **RESOLVED (2026-07-07):** all call sites in this skill (and repo-wide) were corrected to `rpk redpanda config set redpanda.fips_mode` (`src/go/rpk/pkg/cli/redpanda/config.go`). rpk has no `node` command group.
 - ~~No `rpk cluster brokers` reference pages exist~~ **SUPERSEDED (2026-07-28):** Redpanda **v26.2 added the `rpk cluster brokers` subgroup** (`decommission`/`decommission-status`/`recommission`), sourced from `src/go/rpk/pkg/cli/cluster/brokers/`. This is now the canonical location; the old `rpk redpanda admin brokers` (`src/go/rpk/pkg/cli/redpanda/admin/brokers/`) is a hidden, deprecated wrapper that forwards to it. Skill files updated for v26.2.1. The generated docs pages may still lag the release.
 - **Enterprise property defaults / enterprise-vs-sanctioned values** in `enterprise-features.md` and `config.md` were not each line-verified against `configuration.cc`. Re-check individual defaults against the property partials and source schema.

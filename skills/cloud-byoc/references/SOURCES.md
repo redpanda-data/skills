@@ -52,3 +52,11 @@ Found by the evals and handed to the docs team:
   ingress limit, with the Control Plane API mocked) passed 3/3 in the baseline: without the
   skill, the agent proposed a larger tier and asked before changing anything. Under the thin
   format the line is general practice, so the case was not kept.
+
+## Corrections to the pre-thin references
+
+- The 2026-11-01 drift audit corrected the `connection_type` row in the pre-thin
+  `references/clusters-and-agent.md`: the published API reference lists only
+  `CONNECTION_TYPE_PUBLIC` and `CONNECTION_TYPE_PRIVATE` (api-docs
+  `cloud-controlplane/cloud-controlplane.yaml`, `ConnectionType`), not the proto zero-value. The
+  thin skill does not carry the row; the API reference is the source for the field.

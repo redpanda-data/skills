@@ -26,6 +26,15 @@ Paths below are relative to that repo.
 | When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 | `describe-storage` needs the Admin API, so it does not work on Redpanda Cloud | `src/go/rpk/pkg/cli/topic/describe_storage.go` (`config.CheckExitCloudAdmin`) | none |
 
+## Docs gaps (not skill claims; do not re-verify here)
+
+- The 2026-11-01 drift audit corrected two rows of the pre-thin `references/manage.md`, which
+  the thin skill no longer carries. `replication.factor` can be altered after creation, which
+  docs `modules/reference/partials/properties/topic-properties.adoc` already says.
+  `min.insync.replicas` is accepted for Kafka compatibility and ignored (redpanda
+  `allowlist_topic_noop_confs` in `src/v/kafka/server/handlers/topics/types.h`, tag v26.2.2);
+  a search of the docs repo on 2026-11-03 found no page that says so.
+
 ## Lines removed for lack of a failing baseline
 
 - "First get the cluster's version from `rpk version` (the Redpanda Cluster lines, not the rpk

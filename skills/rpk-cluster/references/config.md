@@ -182,7 +182,7 @@ These are frequently used properties. Always verify current values with
 | Property | Type | Description |
 |---|---|---|
 | `log_retention_ms` | integer (-1 = unlimited) | Message retention by age (ms) |
-| `log_retention_bytes` | integer (-1 = unlimited) | Message retention by size per partition |
+| `retention_bytes` | integer (-1 = unlimited) | Message retention by size per partition |
 | `log_segment_size` | integer | Segment file size (bytes) |
 | `log_cleanup_policy` | string | `delete`, `compact`, or `compact,delete` |
 | `log_compaction_interval_ms` | integer | How often the compaction runs |
