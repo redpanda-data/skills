@@ -55,6 +55,8 @@ const DOCS_TOOLS = [
   "list_config_properties",
   "get_connect_component",
   "list_connect_components",
+  "get_rpk_command",
+  "list_rpk_commands",
 ].map((t) => `mcp__${DOCS_SERVER}__${t}`);
 const DOCS_DENIED = [`mcp__${DOCS_SERVER}__give_feedback`];
 // Anonymous callers get a handful of tool calls a day per network address, which
@@ -339,8 +341,9 @@ async function runSubject(suite, testCase, arm, model) {
     if (missing.length) throw new Error(`subject lacked tools its arm needs: ${missing.join(", ")}`);
     // The quota refusal comes back as an ordinary tool result, so the subject
     // answers from memory and says it could not check. Scored, that run would
-    // count general knowledge as "the docs".
-    if (run.toolResults.some((r) => r.body.includes("anonymous_quota_exhausted"))) {
+    // count general knowledge as "the docs". Only the real docs server counts: a
+    // behavioral case may mock the refusal on purpose.
+    if (run.toolResults.some((r) => r.name?.startsWith(`mcp__${DOCS_SERVER}__`) && r.body.includes("anonymous_quota_exhausted"))) {
       throw new Error("docs server refused: anonymous quota exhausted (set EVAL_DOCS_CLIENT_KEY)");
     }
     // An upstream failure or timeout on the docs server also comes back as an
