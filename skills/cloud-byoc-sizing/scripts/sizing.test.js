@@ -60,6 +60,21 @@ test('tiered_storage: the string "false" in a JSON file matches the boolean', ()
   assert.deepEqual(str, bool);
 });
 
+test('tiered_storage: on/off aliases are accepted and an unrecognised value is rejected', () => {
+  const off = S.sizeCluster('AWS', [{ ...base, tiered_storage: false }], true);
+  const on = S.sizeCluster('AWS', [base], true);
+  for (const v of ['off', 'OFF', 'no', 'n', '0', 0]) {
+    assert.deepEqual(S.sizeCluster('AWS', [{ ...base, tiered_storage: v }], true), off, String(v));
+  }
+  for (const v of ['on', 'true', 'yes', 'y', '1', 1, null]) {
+    assert.deepEqual(S.sizeCluster('AWS', [{ ...base, tiered_storage: v }], true), on, String(v));
+  }
+  for (const v of ['of', 'single', 'disabled', '']) {
+    assert.throws(() => S.sizeCluster('AWS', [{ ...base, tiered_storage: v }], true),
+      /invalid Tiered Storage value/, JSON.stringify(v));
+  }
+});
+
 test('golden: Iceberg (20 fields) raises cpu, IOPS and network_out; cpu binds', () => {
   const r = S.sizeCluster('AWS', [{ ...base, iceberg_fields: 20 }], true);
   assert.equal(r.binding_constraint, 'cpu');
@@ -191,6 +206,20 @@ test('CLI: lists every missing required input in one error', () => {
   assert.doesNotMatch(err, /ingress MB\/s/);
 });
 
+test('CLI: --tiered-storage is strict, and a bare flag means on', () => {
+  const common = ['--cloud', 'AWS', '--az', 'multi', '--partitions', '1000', '--ingress', '50', '--egress', '150'];
+  const dflt = JSON.parse(run(...common).stdout);
+  assert.deepEqual(JSON.parse(run(...common, '--tiered-storage').stdout), dflt);
+  assert.deepEqual(JSON.parse(run(...common, '--tiered-storage', 'on').stdout), dflt);
+  const off = JSON.parse(run(...common, '--tiered-storage', 'off').stdout);
+  assert.deepEqual(off, JSON.parse(run(...common, '--tiered-storage', 'false').stdout));
+  assert.ok(off.rpu_by_constraint.network_out < dflt.rpu_by_constraint.network_out);
+
+  const typo = run(...common, '--tiered-storage', 'of');
+  assert.equal(typo.status, 1);
+  assert.match(JSON.parse(typo.stdout).error, /invalid Tiered Storage value "of"/);
+});
+
 test('CLI: cloud provider has no default', () => {
   const r = run('--az', 'multi', '--partitions', '1000', '--ingress', '50', '--egress', '150');
   assert.equal(r.status, 1);
@@ -251,4 +280,11 @@ test('CLI: every example in assets/ runs cleanly', () => {
     assert.equal(r.status, 0, `${f}: ${r.stdout}`);
     assert.ok(!('error' in JSON.parse(r.stdout)), f);
   }
+});
+
+test('CLI: a bad --tiered-storage value exits 1 in projection mode too', () => {
+  const r = run('--cloud', 'AWS', '--az', 'multi', '--partitions', '1000', '--ingress', '50', '--egress', '150',
+    '--months', '3', '--tiered-storage', 'of');
+  assert.equal(r.status, 1);
+  assert.match(JSON.parse(r.stdout).error, /invalid Tiered Storage value/);
 });

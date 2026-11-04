@@ -124,7 +124,7 @@ For the per-RPU capacities, target utilizations and the instance catalog, run `n
 - `"error": "No supported deployment within 24 brokers."` (exit 0, `deployment: null`) means the workload needs more brokers than the model allows in one cluster. Suggest splitting it across clusters (re-run with the share each cluster would carry), and say a larger layout needs a sizing conversation with Redpanda.
 - `max 112,500 partitions per cluster` (exit 1) is the model's partition cap; the same advice applies.
 - `missing required input: ...` lists everything that's missing. Ask the user for all of it in one message, as described in Gathering Inputs. Do not fill the gaps with guesses and re-run.
-- Any other `error` is an input problem; explain it plainly and ask for a corrected value. Common ones: an even replication factor (must be odd), an unrecognised AZ value, or zero throughput.
+- Any other `error` is an input problem; explain it plainly and ask for a corrected value. Common ones: an even replication factor (must be odd), an unrecognised AZ or Tiered Storage value, or zero throughput.
 - In a projection, a bad period gets its own `error` and the other periods still run.
 
 ## From Sizing to Provisioning

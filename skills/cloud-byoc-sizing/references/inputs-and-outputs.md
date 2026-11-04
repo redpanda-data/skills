@@ -45,7 +45,7 @@ When `--input` is used, `cloud` and `multi_az` come from the file. If the file o
 | `--format csv` | CSV instead of JSON (projection mode only) | JSON |
 | `--model` | Print the model's capacities, instance catalog and defaults | — |
 
-The AZ value is strict: multi-AZ is `multi`, `multi-az`, `true`, `yes`, `y` or `1`; single-AZ is `single`, `single-az`, `false`, `no`, `n` or `0`. Anything else is an error, so a typo is never quietly treated as multi-AZ. Other booleans (`--tiered-storage`) treat `false`, `0`, `no`, `n` and `single` as false and anything else as true. Passing only `--months` without a growth rate projects a flat workload.
+The AZ value is strict: multi-AZ is `multi`, `multi-az`, `true`, `yes`, `y` or `1`; single-AZ is `single`, `single-az`, `false`, `no`, `n` or `0`. Anything else is an error, so a typo is never quietly treated as multi-AZ. `--tiered-storage` is strict too: `true`, `on`, `yes`, `y` or `1` turns it on; `false`, `off`, `no`, `n` or `0` turns it off; anything else is an error. Passing only `--months` without a growth rate projects a flat workload.
 
 ## Unit Conversions
 
@@ -94,7 +94,7 @@ The AZ value is strict: multi-AZ is `multi`, `multi-az`, `true`, `yes`, `y` or `
 | `consumers` | integer | `ceil(egress_mbps / 10)` |
 | `message_size_bytes` | integer | `1000` |
 | `replication_factor` | odd integer | `3` |
-| `tiered_storage` | boolean, or a string as on the command line | `true`. `false` or `"false"` (also `"0"`, `"no"`) turns it off. |
+| `tiered_storage` | boolean, or a string accepted by `--tiered-storage` | `true`. `false` or `"false"` (also `"off"`, `"no"`, `"0"`) turns it off; an unrecognised value is an error. |
 | `iceberg_fields` | integer | unset (Iceberg off) |
 
 ### `growth`
@@ -202,6 +202,7 @@ Invalid input exits with status 1 and prints `{"error": "<message>"}`. Messages 
 |---|---|
 | `missing required input: <list>` | Supply everything listed: cloud provider, AZ mode and, on the command line, partitions/ingress/egress |
 | `invalid availability zones value "<v>"` | Use `single` or `multi` |
+| `invalid Tiered Storage value "<v>"` | Use `true` or `false` (also `on`/`off`, `yes`/`no`, `1`/`0`) |
 | `... missing required field: <field>` | A workload in an input file lacks `ingress_mbps`, `egress_mbps` or `partitions` |
 | `replication factor must be odd` | Use 1, 3 or 5 |
 | `max 112,500 partitions per cluster` | The model's partition cap; split across clusters |

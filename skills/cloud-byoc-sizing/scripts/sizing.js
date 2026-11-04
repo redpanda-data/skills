@@ -544,7 +544,7 @@ function buildWorkload(w) {
     w.message_size_bytes != null ? Number(w.message_size_bytes) : ESTIMATED_MSG_SIZE_BYTES,
     w.replication_factor != null ? Number(w.replication_factor) : REPLICATION_FACTOR,
     LOCAL_RETENTION_TIME_MINS);
-  const storage = new StorageRequirement(toBool(w.tiered_storage, true));
+  const storage = new StorageRequirement(parseBool(w.tiered_storage, 'Tiered Storage', true));
   const iceberg = new IcebergRequirement(w.iceberg_fields != null ? Number(w.iceberg_fields) : -1);
   return { workload: new Workload(latency, kafka, storage, iceberg), producers, consumers };
 }
@@ -771,11 +771,19 @@ function parseArgs(argv) {
   return args;
 }
 
-const toBool = (v, dflt) => {
-  if (v === undefined) return dflt;
+/**
+ * Strict on/off parser (Tiered Storage): unset -> dflt; anything that is not a
+ * recognised true or false value is an error, so a typo such as "of" is never
+ * quietly treated as on.
+ */
+function parseBool(v, name, dflt) {
+  if (v === undefined || v === null) return dflt;
   if (typeof v === 'boolean') return v;
-  return !['false', '0', 'no', 'n', 'single'].includes(String(v).toLowerCase());
-};
+  const s = String(v).toLowerCase();
+  if (['true', 'on', 'yes', 'y', '1'].includes(s)) return true;
+  if (['false', 'off', 'no', 'n', '0'].includes(s)) return false;
+  throw new Error(`invalid ${name} value "${v}": use true or false (also on/off, yes/no, 1/0)`);
+}
 
 /** Strict AZ parser: multi-AZ -> true, single-AZ -> false; anything else is an error. */
 function parseAz(v) {
@@ -918,7 +926,7 @@ function main() {
       consumers: args.consumers,
       message_size_bytes: args['message-size'],
       replication_factor: args.rf,
-      tiered_storage: args['tiered-storage'] === undefined ? true : toBool(args['tiered-storage'], true),
+      tiered_storage: parseBool(args['tiered-storage'], 'Tiered Storage', true),  // strict; a typo exits 1 in every mode
       iceberg_fields: args['iceberg-fields'],
     }];
     if (args['monthly-growth'] !== undefined || args['annual-growth'] !== undefined || args.months !== undefined) {
