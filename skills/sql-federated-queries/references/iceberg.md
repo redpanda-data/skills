@@ -25,10 +25,10 @@ catalog's own tables standalone is not supported.
   Schema Registry. Cluster and topic settings:
   [redpanda-iceberg-source-config.md](redpanda-iceberg-source-config.md).
 - On a BYOVPC cluster, read access to the Iceberg catalog for the SQL engine's
-  own cloud identity. Redpanda does not grant it when you enable SQL: on AWS you
-  attach a read-only AWS Glue policy to the engine's IAM role, and on GCP the
-  BYOVPC module grants the SQL service account read-only BigLake access. Without
-  it, `REFRESH` against the catalog fails with a permissions error. Steps:
+  own cloud identity. On AWS, Redpanda does not grant it when you enable SQL: you
+  attach a read-only AWS Glue policy to the engine's IAM role. On GCP, the BYOVPC
+  module grants the SQL service account read-only BigLake access. Without that
+  access, `REFRESH` against the catalog fails with a permissions error. Steps:
   `/redpanda:sql-admin-api`.
 
 ## What Redpanda Cloud configures
