@@ -174,7 +174,7 @@ Recovery** (`redpanda.remote.recovery=true`) — both require a license.
 
 ## 5. Securing the Redpanda sink: TLS + SASL (Enterprise auth mechanisms)
 
-The `redpanda`/`kafka_franz` output that receives CDC events supports TLS and
+The `redpanda` output that receives CDC events supports TLS and
 SASL. SCRAM/PLAIN are available in all editions; **OAUTHBEARER/OIDC and Kerberos
 (GSSAPI) authentication require an Enterprise license** on the broker side
 (per the Redpanda licensing overview). Output fields grounded in

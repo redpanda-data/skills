@@ -45,3 +45,18 @@ External upstream (behavioral context only, not transcribed): TigerBeetle CDC do
 ## Usage
 
 For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For any field/default fact, read the generated `partial$fields/inputs/tigerbeetle_cdc.adoc` rather than trusting the transcribed table. Verify Go behavior against `internal/impl/tigerbeetle/input_tigerbeetle.go` at the current release tag. Enterprise cluster/topic properties and `rpk` commands are external — cite their own repos.
+
+## Sync log
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **Links only.** The caches and rate-limits reference links in
+  `references/config-reference.md` were moved from
+  `docs.redpanda.com/redpanda-connect/` to `docs.redpanda.com/connect/`; the old
+  path only 301-redirects. Grounded in the public `redpanda-data/connect` repo at
+  tag `v4.113.1` (`README.md`, `docs/README.md`, `config/README.md`). No claim in
+  this skill changed: `tigerbeetle_cdc` is still `certified` with `cloud: n` in
+  `internal/plugins/info.csv` at the tag, and the only change to
+  `internal/impl/tigerbeetle` in this window was the repo-wide spec-text pass
+  that replaced those hardcoded doc URLs with xrefs and set an introduced-in
+  version on the component — no behavior, field, or metadata change.

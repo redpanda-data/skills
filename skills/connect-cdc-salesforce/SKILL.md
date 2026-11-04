@@ -94,7 +94,7 @@ pipeline:
         meta kafka_topic = "sf.cdc." + metadata("sobject").lowercase()
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! metadata("kafka_topic") }
@@ -218,7 +218,7 @@ Use a **durable** cache backend (Redis, PostgreSQL, DynamoDB) for production. An
 - **Event retention**: Standard retention is 24 hours; Enhanced Event Retention (Salesforce add-on) extends to 72 hours. After the retention window, replaying from `replay_preset: earliest` starts at the oldest available event.
 - **API quota**: The REST snapshot uses Salesforce API call quota. Each page of `snapshot_max_batch_size` records is one API call. Large orgs with many records can consume significant quota during the initial snapshot.
 - **Connected App permissions**: The Run-As user must have read access to all sObjects being captured and Pub/Sub API access (requires API-enabled profile or permission set).
-- **License errors**: `salesforce_cdc` is an Enterprise-gated component. A startup error stating "this feature requires a valid Redpanda Enterprise Edition license that includes the Connect product" means the binary is not licensed. See [https://docs.redpanda.com/redpanda-connect/get-started/licensing/](https://docs.redpanda.com/redpanda-connect/get-started/licensing/) to obtain and configure an Enterprise license.
+- **License errors**: `salesforce_cdc` is an Enterprise-gated component. A startup error stating "this feature requires a valid Redpanda Enterprise Edition license that includes the Connect product" means the binary is not licensed. See [https://docs.redpanda.com/connect/get-started/licensing/](https://docs.redpanda.com/connect/get-started/licensing/) to obtain and configure an Enterprise license.
 - **Stale replay recovery**: When `replay_id` is rejected (event outside retention window), the connector automatically clears the stale ID and reconnects using `replay_preset`. Log line: `topic /data/... replay_id rejected; clearing and reconnecting via configured preset`.
 - **Schema and decode failures are bounded (Connect 4.106.0+)**: `grpc.reconnect_max_attempts` also governs **transient** schema-fetch failures — an event whose schema fetch keeps failing at the same replay position is retried that many times before the topic fails permanently. **Deterministic** failures (a schema that is missing, inaccessible, or fails to compile) and payloads that repeatedly fail to decode give up after a small fixed number of attempts regardless of that setting, since retrying cannot change the outcome. Terminal failures surface clearly on the health check instead of livelocking. Note the interaction with the default `reconnect_max_attempts: 0` (unlimited): before 4.106.0, a transient schema fetch under that default could stall indefinitely.
 - **A terminal failure is never mistaken for a stale replay ID**: an undecodable payload or unfetchable schema is not treated as a stale `replay_id` even when it arrives wrapped in a gRPC `INVALID_ARGUMENT` — that status describes the schema, and clearing the checkpoint would resubscribe from `replay_preset` and silently skip everything between the checkpoint and now.

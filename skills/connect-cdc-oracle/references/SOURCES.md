@@ -25,7 +25,7 @@ the newest sync-log entry below; docs paths on `redpanda-data/rp-connect-docs@ma
 | Skill file | `redpanda-data/connect` source paths | docs / other sources |
 |---|---|---|
 | `SKILL.md` | `internal/impl/oracledb/input_oracledb_cdc.go`, `config.go`, `logminer/config.go`, `logminer/logminer.go`, `logminer/session.go`, `replication/snapshot.go`, `replication/stream.go`, `batcher.go`, `schema.go`, `multitenancy.go` | `modules/components/pages/inputs/oracledb_cdc.adoc` (rp-connect-docs) |
-| `references/config-reference.md` | `internal/impl/oracledb/input_oracledb_cdc.go` (field definitions/descriptions), `config.go` (connection-string parse, wallet fields, snapshot-mode), `logminer/config.go` (the `logminer{}` sub-block fields + defaults), `logminer/session.go` (`NO_ROWID_IN_STMT`, `COMMITTED_DATA_ONLY`), `checkpoint_cache.go`, `multitenancy.go` (`pdb_name` / CDB behavior) | `modules/components/partials/fields/inputs/oracledb_cdc.adoc` (**auto-generated** field/type/default reference), `docs-data/overrides.json` (rp-connect-docs) |
+| `references/config-reference.md` | `internal/impl/oracledb/input_oracledb_cdc.go` (field definitions/descriptions), `config.go` (connection-string parse, wallet fields, snapshot-mode), `logminer/config.go` (the `logminer{}` sub-block fields + defaults, incl. the `WindowStrategy` enum values), `logminer/log_selector.go` + `logminer/redo_volume.go` (how the `redo_volume` budget selects log files and grows on a stall), `logminer/session.go` (`NO_ROWID_IN_STMT`, `COMMITTED_DATA_ONLY`), `checkpoint_cache.go`, `multitenancy.go` (`pdb_name` / CDB behavior) | `modules/components/partials/fields/inputs/oracledb_cdc.adoc` (**auto-generated** field/type/default reference), `docs-data/overrides.json` (rp-connect-docs) |
 | `references/pipeline-and-output.md` | `internal/impl/oracledb/input_oracledb_cdc.go`, `logminer/logminer.go` (mining loop, ORA-01291 handling, checkpoint low-watermark), `replication/snapshot.go` (the two snapshot paths — `snapshotTableFullScan` for unfiltered tables, `processBatch`/`querySnapshotTable` PK-keyset pagination for filtered ones — and the PK requirement scoped to the latter), `batcher.go` (checkpoint/at-least-once), `schema.go` (schema-refresh on new columns), `TYPES.md` (type-coercion table) | `modules/components/pages/inputs/oracledb_cdc.adoc` (Metadata section) |
 | `references/setup-oracle.md` | `internal/impl/oracledb/replication/stream.go` (`VerifyUserTables` → `ALL_LOG_GROUPS`, `C##%` owner exclusion), `input_oracledb_cdc.go` (permission requirements), `replication/snapshot.go` (`ALL_CONSTRAINTS`/`ALL_CONS_COLUMNS` PK discovery), `multitenancy.go` (CDB/PDB) | Oracle server/LogMiner/RMAN/RDS setup is **external** (Oracle docs) — see Deferred |
 | `references/enterprise-features.md` | `internal/impl/oracledb/config.go` (enterprise-license header) for the "enterprise connector" claim; `schema.go` for the `schema` metadata field feeding `schema_registry_encode` | `modules/components/pages/redpanda/about.adoc` (rp-connect-docs — `redpanda{}` config block). **Broker-side** cluster/topic properties (`iceberg_*`, `redpanda.iceberg.*`, `enable_schema_id_validation`, `cloud_storage_enabled`, `redpanda.remote.*`) and licensing behavior are **Redpanda self-managed docs**, not Connect — see TODO |
@@ -48,6 +48,18 @@ the newest sync-log entry below; docs paths on `redpanda-data/rp-connect-docs@ma
 - **`docs-data/overrides.json`** confirmed to exist; the specific `oracledb_cdc` override keys were not individually enumerated — grep when reconciling a field description.
 
 ## Sync log
+
+- **Verified against Connect v4.112.0 (2026-10-09 sync).** One new structural surface: the LogMiner mining window gained a second sizing strategy.
+  - **`logminer.window_strategy` (enum, default `scn_window`) plus `logminer.redo_volume_min` (default `2`) and `logminer.redo_volume_growth_max` (default `4`), all Advanced.** Grounded at tag `v4.112.0` in `internal/impl/oracledb/input_oracledb_cdc.go` (the `service.NewStringEnumField` registration and the three field specs, and the per-strategy validation in the config parse) and `internal/impl/oracledb/logminer/config.go` (`WindowStrategy` with values `scn_window` / `WindowStrategySCNWindow` and `redo_volume` / `WindowStrategyRedoVolume`, the `DefaultRedoVolume*` constants, and `MinRedoVolumeGrowthCeiling` = 2). Applied to `references/config-reference.md` (three new field sections plus the "no effect under `redo_volume`" notes on `scn_window_size` / `max_scn_window_size`), `SKILL.md` (one operational-notes bullet for the CDB/PDB case) and the throughput-tuning table in `references/pipeline-and-output.md`.
+  - **Mutual exclusivity is enforced, not advisory:** under `redo_volume`, a non-default `scn_window_size` or `max_scn_window_size` is rejected with a "has no effect" error, and vice versa for the `redo_volume_*` pair under `scn_window`. `min_scn_window_size` is explicitly exempt — its doc string says the gate "applies regardless of `window_strategy`". `redo_volume_growth_max` must be `>= redo_volume_min` and at least `2`.
+  - **Version note:** the skill says "added in 4.112.0", matching the release changelog. The fields are
+    in fact already present at the `v4.111.1` patch tag, which has no changelog section of its own —
+    its entries were folded into the 4.112.0 one. Confirmed absent at `v4.111.0`: `logminer/config.go`
+    at that tag has no `WindowStrategy` type and no `DefaultRedoVolume*` constants. None of the three
+    fields carries a `Version()` annotation, so the generated reference states no "Requires version"
+    line either.
+  - **Naming note:** the release changelog describes this as a "log_count based algorithm". There is no `log_count` value or field in the source at the tag — the configured enum value is `redo_volume`. The skill follows the source, not the changelog prose.
+  - **No skill change for the LOB commit-checkpoint fix** (`logminer/sqlredo/lob.go`, `logminer/logminer.go`, `logminer/cache.go`): it changes no config field, metadata key, privilege, or error string the skill documents. The skill's existing `logminer.lob_enabled` coverage is unaffected.
 
 - **Verified against Connect v4.110.0 (2026-09-18 sync).** No config fields changed. The connector gained one new metadata field, and the LogMiner read path was reworked internally with no user-facing surface:
   - **New `username` metadata field (#4674).** `logminer/logminer.go` now selects `USERNAME` in the `V$LOGMNR_CONTENTS` content query; `logminer/sqlredo/events.go` carries it as `RedoEvent.Username` (`sql.NullString`) and `DMLEvent.Username` (`string`); `logminer/sqlredo/parser.go` copies it only when `redoEvent.Username.Valid`; `replication/stream_message.go` adds `MessageEvent.Username`; `logminer/cache_resource.go` adds `Username` to `serializedDMLEvent` (`json:"username"`) and copies it in `marshalEvent`/`unmarshalEvent`, so a buffered transaction replayed from the Oracle-based checkpoint cache keeps the field; and `batcher.go` `Publish()` emits it as `msg.MetaSet("username", ...)` **only when the value is non-empty**. So the key is absent whenever Oracle reports NULL or an empty username. `replication/snapshot.go` was not touched and the field is new in this release, so nothing on the snapshot path sets it — snapshot (`read`) messages never carry `username`. Added as a row to the metadata tables in `SKILL.md` and `pipeline-and-output.md`, matching the wording of the connector's own doc string (`input_oracledb_cdc.go`, rendered into `modules/components/pages/inputs/oracledb_cdc.adoc`).
@@ -122,3 +134,73 @@ validate only what the connector enforces.
 - **Skipped: prepared-statement rework** carried over from the v4.110.0 note —
   `logminer/logminer.go` and `logminer/sqlredo/lob.go` changes in this window are
   internal. No config field, privilege, metadata key, or error string moved.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **Three new metadata fields: `rs_id`, `ssn`, `row_seq`.** Verified at tag
+  `v4.113.1` in `internal/impl/oracledb/batcher.go` (all three are set together,
+  and only when `RSID != ""`, with `ssn` and `row_seq` formatted as decimal
+  strings), `internal/impl/oracledb/replication/stream_message.go`
+  (`MessageEvent.RSID` from `V$LOGMNR_CONTENTS.RS_ID`, `SSN` from `SSN`, and
+  `RowSeq` numbering the row changes that share one `(RS_ID, SSN)` pair from 0 in
+  redo order), `internal/impl/oracledb/logminer/logminer.go` (`RS_ID, SSN` added
+  to the `V$LOGMNR_CONTENTS` projection; `rowSeqCounter`; all CSF fragments of
+  one change share the pair, so the first fragment carries it) and the component
+  spec's own metadata list in `internal/impl/oracledb/input_oracledb_cdc.go`
+  (which records the up-to-255-row array-DML case). Added to both metadata tables
+  (`SKILL.md`, `references/pipeline-and-output.md`), including that they are
+  absent on snapshot (`read`) messages and on the synthetic LOB-only updates.
+- **`prefetch_rows` now also sizes the read-ahead buffer.** At the tag,
+  `queryLogMinerContents` reads rows on its own goroutine into a channel whose
+  capacity comes from `readAheadBatches(cfg.PrefetchRows)`, so one fetch's rows
+  are processed while the next round trip is in flight. `readAheadBatches`
+  returns `max(logMinerReadAheadBatches, ceil(prefetchRows /
+  logMinerReadBatchSize))`, a documented minimum of 2000 rows, so the skill
+  states the floor rather than a plain "sized from `prefetch_rows`";
+  `internal/impl/oracledb/config.go` now returns the effective value (including
+  one taken from a `PREFETCH_ROWS` connection-string parameter) and
+  `logminer/config.go` carries it as `Config.PrefetchRows`. Reflected in
+  `references/config-reference.md`, `references/pipeline-and-output.md` and the
+  `SKILL.md` performance section, where "single **synchronous** LogMiner reader"
+  became "single LogMiner reader" with the pipelining noted — the one-reader
+  throughput ceiling is unchanged.
+- **Not documented:** the LOB-only commit-checkpoint hardening in `v4.113.0`
+  (#4920) extends the `v4.112.0` fix already recorded above; it moves no field,
+  metadata key, or documented error string.
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- The cache-resource docs link in `references/config-reference.md` used the
+  wrong host (`www.docs.redpanda.com`) and the retired `/redpanda-connect/`
+  path; both corrected — see the Connect skill's sync log for the docs move.
+
+### Connect v4.115.1 (2026-10-30 sync)
+
+Release checked: `v4.115.1` (the current stable tag, changelog dated
+2026-10-23).
+
+- **TIMESTAMP columns declare microseconds in the emitted schema.** The
+  release's own changelog entry ("TIMESTAMP columns now use the
+  `timestamp-micros` logical type in both the snapshot and streaming schemas,
+  instead of `timestamp-millis` when streaming") is confirmed at the tag in
+  `internal/impl/oracledb/schema.go`: `columnToCommon` now sets `c.Logical` for
+  a `Timestamp` column from `oracleTimestampLogical`, which returns
+  `TimestampParams{Unit: TimeUnitMicros, AdjustToUTC: true}` for every
+  `TIMESTAMP` variant and `nil` — the millis default — for `DATE`, with the
+  comment recording that `TIMESTAMP(6)` is no longer truncated to millis while
+  precision above 6 still is. `internal/impl/oracledb/TYPES.md` at the tag
+  carries the same split in its logical-type column. Recorded in
+  `references/pipeline-and-output.md` beside the type-mapping table, as a
+  property of the `schema` metadata field that `schema_registry_encode`
+  consumes; the JSON wire format of a timestamp is unchanged, so the type table
+  itself still reads ISO-8601.
+- **Not documented:** the `oracledb_cdc` and `microsoft_sql_server_cdc` batchers
+  were refactored onto a shared flush-ticket package and their
+  rebuild-publisher warning gained a second variant naming a sealed flush queue.
+  Both are internal: the skills quote neither log line, and no field, metadata
+  key or guarantee changed.

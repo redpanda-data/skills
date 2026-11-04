@@ -1,220 +1,197 @@
-# Redpanda Enterprise Source Config (Producing the Data Oxla Queries)
+Source: cloud-docs `modules/manage/pages/iceberg/{about-iceberg-topics,use-iceberg-catalogs,specify-iceberg-schema}.adoc` and `rest-catalog/index.adoc`, `modules/manage/pages/schema-reg/schema-id-validation.adoc`, `modules/reference/pages/properties/{cluster-properties,topic-properties}.adoc` (Cloud views of the single-sourced docs pages and property partials), `modules/sql/pages/query-data/query-iceberg-topics.adoc`; verified 2026-10-18. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
-This skill covers the **Oxla read side**: `CREATE KAFKA/REDPANDA CATALOG`,
-`CREATE ICEBERG CATALOG`, transparent Kafka-Iceberg queries, and the Schema
-Registry decoding that powers them. That data does not exist until it is
-produced on the **Redpanda side** by enterprise features. This reference
-documents the Redpanda cluster/topic configuration that creates the Iceberg
-tables, Tiered Storage segments, and validated schemas that Oxla then reads.
+# Iceberg Topics Settings for Redpanda SQL (Redpanda Cloud BYOC)
 
-> **Enterprise license required.** Iceberg Topics, Tiered Storage, and
-> Server-Side Schema ID Validation are Redpanda **Enterprise Edition** features
-> and require a valid license key (`rpk cluster license info`). Without a valid
-> license, topics cannot be created or modified to enable these features.
-> Source: the Redpanda licensing overview and the Disable Enterprise Features page.
+Redpanda SQL reads the Iceberg history of a topic only if the cluster writes
+that history. This file lists the Iceberg Topics settings a BYOC (or BYOVPC)
+user sets so that Redpanda SQL can query live and Iceberg records together.
+The Iceberg integration is available on BYOC and BYOVPC clusters only.
 
-Sources grounded in the Redpanda docs: the About Iceberg Topics and Use Iceberg Catalogs pages, the topic properties reference, the generated cluster-properties JSON for the pinned Redpanda version, the licensing overview, and the Disable Enterprise Features page (paths in [SOURCES.md](SOURCES.md)).
+Defaults and editability for each property are shown in the Cloud Console and
+on the Cloud
+[cluster](https://docs.redpanda.com/cloud-data-platform/reference/properties/cluster-properties/)
+and
+[topic](https://docs.redpanda.com/cloud-data-platform/reference/properties/topic-properties/)
+property references; check there instead of assuming a value.
 
----
+## How to set properties
 
-## How this maps to the Oxla side
-
-| Oxla query path (this skill) | Redpanda enterprise feature that produces it |
-|------------------------------|----------------------------------------------|
-| `CREATE ICEBERG CATALOG` + `catalog=>ns.table` queries | **Iceberg Topics** (`redpanda.iceberg.mode`) writing Parquet + catalog metadata to object storage |
-| Transparent Kafka-Iceberg (`USING CATALOG`, `pandaproxy_url`) | **Iceberg Topics** REST/filesystem catalog backing the topic |
-| Schema decoding (Avro/Protobuf/JSON) via `schema_registry_url` | Schema Registry; optionally **Server-Side Schema ID Validation** guaranteeing only registered schemas land in the topic |
-| Long-retention topic reads / object-store data files | **Tiered Storage** (`cloud_storage_enabled`), a prerequisite for Iceberg Topics |
-
-When Oxla points an `CREATE ICEBERG CATALOG` at a REST catalog, that catalog is
-the **same** catalog Redpanda writes to via `iceberg_rest_catalog_endpoint`. The
-Oxla `uri` / `auth_type` options must match the catalog Redpanda is populating.
-
----
-
-## Iceberg Topics (Enterprise)
-
-Enabling Iceberg for a topic makes Redpanda write topic data to Apache Iceberg
-v2 tables (Parquet data files) in object storage, in addition to the Tiered
-Storage log segments. These are the tables Oxla reads with `CREATE ICEBERG
-CATALOG` or transparent queries.
-
-**Prerequisites** (from the About Iceberg Topics page):
-- Enterprise license applied (`rpk cluster license info`).
-- Tiered Storage enabled for the topic (`cloud_storage_enabled=true`).
-
-### Cluster property to turn it on
+Cluster properties: `rpk` against the Cloud cluster, or the Control Plane API
+(`PATCH /v1/clusters/{id}` with `cluster_configuration.custom_properties`,
+which returns a long-running operation). Topic properties: `rpk topic`, the
+Kafka API, or the Cloud Console.
 
 ```bash
-# Enable the integration cluster-wide (Enterprise).
+rpk cloud login
+rpk profile create --from-cloud <cluster-id>
 rpk cluster config set iceberg_enabled true
-
-# Optional: custom catalog namespace (default "redpanda"); set BEFORE or AT THE
-# SAME TIME as iceberg_enabled, never after. Value is a list.
-rpk cluster config set iceberg_default_catalog_namespace '["<custom-namespace>"]'
 ```
-
-### Per-topic Iceberg properties (`redpanda.iceberg.*`)
-
-Grounded in the topic properties reference. Set with
-`rpk topic alter-config <topic> --set <key>=<value>`.
-
-| Topic property | Type | Default | Accepted values / notes | Cluster default property |
-|----------------|------|---------|-------------------------|--------------------------|
-| `redpanda.iceberg.mode` | string | `null` (disabled) | `key_value`, `value_schema_id_prefix`, `value_schema_latest`, `disabled` | — |
-| `redpanda.iceberg.delete` | boolean | `true` | If `true`, the Iceberg table is dropped when the topic is deleted; `false` keeps the table | `iceberg_delete` |
-| `redpanda.iceberg.invalid.record.action` | string (enum) | `dlq_table` | `drop` or `dlq_table` (writes bad records to `<topic>~dlq`) | `iceberg_invalid_record_action` |
-| `redpanda.iceberg.partition.spec` | string | `(hour(redpanda.timestamp))` | Iceberg partition spec expression | `iceberg_default_partition_spec` |
-| `redpanda.iceberg.target.lag.ms` | integer (ms) | `null` | How often the Iceberg table is refreshed with new topic data | `iceberg_target_lag_ms` |
-
-### The four Iceberg modes
-
-| Mode | Table structure | Schema Registry required |
-|------|-----------------|--------------------------|
-| `key_value` | Two columns: record metadata (incl. key) + a binary value column | No |
-| `value_schema_id_prefix` | Columns match the Redpanda schema; producers must use Schema Registry wire format (5-byte prefix) | Yes |
-| `value_schema_latest` | Columns match the latest registered schema for the subject | Yes |
-| `disabled` (default) | No Iceberg table written | — |
-
-`value_schema_id_prefix` / `value_schema_latest` produce the column-typed
-Iceberg tables that Oxla projects with `SELECT col1, col2 FROM cat=>ns.table`.
-`key_value` produces the two-column binary form.
-
-### Enable example
-
-```bash
-rpk cluster config set iceberg_enabled true          # Enterprise, cluster-wide
-rpk topic create clicks
-rpk topic alter-config clicks --set redpanda.iceberg.mode=value_schema_id_prefix
-rpk topic alter-config clicks --set redpanda.iceberg.target.lag.ms=60000
-rpk topic alter-config clicks --set redpanda.iceberg.partition.spec='(hour(redpanda.timestamp))'
-rpk registry schema create clicks-value --schema clicks.avsc --type avro
-```
-
-The DLQ table `<topic>~dlq` follows the same persistence rules as the main
-table and is itself an Iceberg table Oxla can read.
 
 ---
 
-## Iceberg catalog backing (must match the Oxla `CREATE ICEBERG CATALOG`)
+## What Redpanda SQL requires
 
-Redpanda writes Iceberg metadata to one of two catalog types
-(the Use Iceberg Catalogs page). Whichever Redpanda uses, point Oxla's
-`CREATE ICEBERG CATALOG` at the same catalog.
+| Requirement | Setting |
+|-------------|---------|
+| Iceberg Topics on | Cluster `iceberg_enabled = true` |
+| A REST catalog (the `object_storage` catalog type is not supported for SQL queries) | Cluster `iceberg_catalog_type = rest`, set together with `iceberg_rest_catalog_endpoint` |
+| The topic writes an Iceberg table with typed columns | Topic `redpanda.iceberg.mode` (for example `value_schema_id_prefix`) plus a schema registered for the topic |
+| Matching key/header decode in SQL | Topic mode sections must match the table's `key_decode_mode` / `header_value_type` (see [iceberg.md](iceberg.md#match-the-key-and-header-options-to-the-topics-iceberg-mode)) |
 
-### REST catalog (recommended for production)
-
-```bash
-rpk cluster config set iceberg_catalog_type rest
-rpk cluster config set iceberg_rest_catalog_endpoint http://catalog-service:8181
-```
-
-REST catalog cluster properties (grounded in
-the generated cluster-properties JSON and the Use Iceberg Catalogs page):
-
-| Cluster property | Purpose |
-|------------------|---------|
-| `iceberg_catalog_type` | `rest` or `object_storage` (default) |
-| `iceberg_rest_catalog_endpoint` | Catalog endpoint URL (set together with `iceberg_catalog_type=rest`) |
-| `iceberg_rest_catalog_authentication_mode` | `oauth2`, `aws_sigv4`, `bearer`, or `none` (default) |
-| `iceberg_rest_catalog_oauth2_server_uri` | OAuth token endpoint (oauth2 mode) |
-| `iceberg_rest_catalog_client_id` | OAuth client ID (oauth2 mode) |
-| `iceberg_rest_catalog_client_secret` | OAuth client secret (oauth2 mode) — store as a secret |
-| `iceberg_rest_catalog_token` | Bearer token (bearer mode) |
-| `iceberg_rest_catalog_aws_region` | AWS region (aws_sigv4 mode, e.g. AWS Glue) |
-| `iceberg_rest_catalog_aws_access_key` / `iceberg_rest_catalog_aws_secret_key` | Static AWS creds (aws_sigv4) |
-| `iceberg_rest_catalog_aws_service_name` | SigV4 service segment |
-| `iceberg_rest_catalog_warehouse` | Warehouse identifier |
-| `iceberg_rest_catalog_prefix` | Catalog prefix |
-| `iceberg_rest_catalog_trust` / `iceberg_rest_catalog_trust_file` | CA chain (self-signed) |
-| `iceberg_rest_catalog_crl` / `iceberg_rest_catalog_crl_file` | Certificate revocation list |
-| `iceberg_rest_catalog_request_timeout_ms` | REST request timeout |
-
-**Mapping note:** Redpanda's `iceberg_rest_catalog_authentication_mode=oauth2`
-corresponds to Oxla's `auth_type='oauth2'`; `aws_sigv4` corresponds to Oxla's
-`auth_type='aws_sigv4'`; `bearer`/`none` align with Oxla bearer/unauthenticated
-catalogs. The Redpanda `iceberg_rest_catalog_endpoint` is the value you pass to
-Oxla's `uri`.
-
-### Filesystem (`object_storage`) catalog
-
-```bash
-rpk cluster config set iceberg_catalog_type object_storage   # default
-rpk cluster config set iceberg_catalog_base_location redpanda-iceberg-catalog
-```
-
-With `object_storage`, Redpanda writes HadoopCatalog-format `metadata.json` into
-the same bucket as the data files. Oxla typically consumes these via a REST
-catalog layer or by transparent Kafka-Iceberg queries with a `pandaproxy_url`.
+When Redpanda SQL is enabled on a cluster that already has the REST catalog
+configured, Redpanda Cloud creates and links the SQL-side storage connection
+and Iceberg catalog from this configuration.
 
 ---
 
-## Tiered Storage (Enterprise) — prerequisite
+## Cluster properties
 
-Iceberg Topics require Tiered Storage. Tiered Storage is itself an Enterprise
-feature; disabling it removes the license requirement but also disables Iceberg.
+### Iceberg integration
+
+| Property | Notes |
+|----------|-------|
+| `iceberg_enabled` | Turns on topic-to-Iceberg translation for the cluster; each topic also needs `redpanda.iceberg.mode`. Requires a restart |
+| `iceberg_catalog_type` | `rest` or `object_storage`. Use `rest` for Redpanda SQL. Requires a restart |
+| `iceberg_default_catalog_namespace` | Namespace (array of strings, nested allowed) for Redpanda's Iceberg tables. Set before or together with `iceberg_enabled`, never change afterward. Clusters sharing one catalog (for example AWS Glue) each need a distinct namespace |
+| `iceberg_default_partition_spec` | Default for `redpanda.iceberg.partition.spec` |
+| `iceberg_delete` | Default for `redpanda.iceberg.delete` |
+| `iceberg_invalid_record_action` | Default for `redpanda.iceberg.invalid.record.action`: `drop` or `dlq_table` |
+| `iceberg_target_lag_ms` | Default for `redpanda.iceberg.target.lag.ms` (milliseconds) |
+| `iceberg_dlq_table_suffix` | Suffix for dead-letter tables; pick one your catalog accepts (some don't allow `~`). Don't change after DLQ tables exist |
+| `iceberg_topic_name_dot_replacement` | Replacement for dots in topic names when naming tables; must not contain dots. Don't change after creating dotted Iceberg topics |
+| `iceberg_disable_snapshot_tagging` | Disables snapshot tags; not recommended (tags protect exactly-once delivery). Only for catalogs without tag support |
+
+### REST catalog connection
+
+| Property | Notes |
+|----------|-------|
+| `iceberg_rest_catalog_endpoint` | REST catalog URL; set at the same time as `iceberg_catalog_type = rest` |
+| `iceberg_rest_catalog_authentication_mode` | `none`, `bearer`, `oauth2`, `aws_sigv4`, or `gcp`. `oauth2` is generally recommended; AWS Glue requires `aws_sigv4` |
+| `iceberg_rest_catalog_oauth2_server_uri` | OAuth token endpoint (`oauth2`) |
+| `iceberg_rest_catalog_client_id`, `iceberg_rest_catalog_client_secret` | OAuth client credentials (`oauth2`) |
+| `iceberg_rest_catalog_oauth2_scope` | OAuth scope (`oauth2`) |
+| `iceberg_rest_catalog_token` | Bearer token (`bearer`); used as-is with no refresh, so only for ad hoc or testing use |
+| `iceberg_rest_catalog_aws_region`, `iceberg_rest_catalog_aws_access_key`, `iceberg_rest_catalog_aws_secret_key`, `iceberg_rest_catalog_credentials_source` | SigV4 settings (`aws_sigv4`); each falls back to the cluster's cloud-storage credentials when unset |
+| `iceberg_rest_catalog_gcp_user_project` | GCP project billed for REST catalog requests |
+| `iceberg_rest_catalog_warehouse` | Warehouse; Redpanda reads warehouse-specific config such as the prefix from the catalog |
+| `iceberg_rest_catalog_base_location` | Base URI for tables; some catalogs (for example AWS Glue) require it. Don't change after enabling Iceberg |
+| `iceberg_rest_catalog_trust`, `iceberg_rest_catalog_crl` | CA chain and CRL contents for catalogs with self-signed certificates |
+| `iceberg_rest_catalog_request_timeout_ms` | REST request timeout (milliseconds) |
+
+Per-provider steps (AWS Glue, Databricks Unity, GCP Lakehouse, Snowflake Open
+Catalog):
+[Integrate with REST Catalogs](https://docs.redpanda.com/cloud-data-platform/manage/iceberg/rest-catalog/).
+
+### Secrets for catalog credentials
+
+`iceberg_rest_catalog_client_secret`, `iceberg_rest_catalog_crl`,
+`iceberg_rest_catalog_token`, and `iceberg_rest_catalog_trust` must be set from
+secrets. On BYOVPC, secrets management must be enabled first, and egress to
+the catalog endpoint must be allowed.
 
 ```bash
-# Enable Tiered Storage cluster-wide (Enterprise).
-rpk cluster config set cloud_storage_enabled true
+# Secret names: ^[A-Z][A-Z0-9_]*$
+rpk security secret create --name ICEBERG_CLIENT_SECRET --value '<secret-value>' --scopes redpanda_cluster
+rpk cluster config set iceberg_rest_catalog_client_secret '${secrets.ICEBERG_CLIENT_SECRET}'
 ```
 
-Per the licensing docs, on license expiration: topics cannot be created or
-modified to enable Tiered Storage, and partitions cannot be added to topics with
-Tiered Storage properties. Source: the licensing overview and
-the Disable Enterprise Features page (disable knob:
-`cloud_storage_enabled=false`).
+Example REST configuration:
+
+```yaml
+iceberg_catalog_type: rest
+iceberg_rest_catalog_endpoint: <catalog-endpoint>
+iceberg_rest_catalog_authentication_mode: oauth2
+iceberg_rest_catalog_oauth2_server_uri: <oauth-server-uri>
+iceberg_rest_catalog_client_id: <client-id>
+iceberg_rest_catalog_client_secret: ${secrets.ICEBERG_CLIENT_SECRET}
+```
 
 ---
 
-## Server-Side Schema ID Validation (Enterprise)
+## Topic properties
 
-Oxla decodes records against the Schema Registry. Server-Side Schema ID
-Validation guarantees, on the Redpanda side, that only records whose schema ID
-is registered are accepted — records with unregistered schemas are dropped by
-the broker rather than failing in Oxla's decoder. This keeps Oxla's
-`error_handling_policy` from having to absorb malformed records.
-
-**Enable knob** (cluster, Enterprise):
+| Property | Notes |
+|----------|-------|
+| `redpanda.iceberg.mode` | `disabled` (default), `key_value`, `value_schema_id_prefix`, `value_schema_latest`, or the section-based syntax below |
+| `redpanda.iceberg.delete` | Whether the Iceberg table is deleted when the topic is deleted |
+| `redpanda.iceberg.invalid.record.action` | `drop` or `dlq_table` (bad records go to a dead-letter table) |
+| `redpanda.iceberg.partition.spec` | Iceberg partition spec expression, for example `(hour(redpanda.timestamp))` |
+| `redpanda.iceberg.target.lag.ms` | How often the table is refreshed with new topic data (milliseconds) |
+| `redpanda.schema.registry.context` | Schema Registry context used to resolve the topic's schemas |
 
 ```bash
-rpk cluster config set enable_schema_id_validation true
+rpk topic create orders --topic-config=redpanda.iceberg.mode=value_schema_id_prefix
+rpk topic alter-config orders --set redpanda.iceberg.mode=value_schema_id_prefix
+rpk registry schema create orders-value --schema orders.avsc --type avro
 ```
 
-Disable knob (to drop the license requirement): `enable_schema_id_validation
-false` (source: the Disable Enterprise Features page).
+### Iceberg modes
 
-Per-topic validation properties (grounded in the topic properties reference):
+| Mode | Table structure |
+|------|-----------------|
+| `key_value` | Record metadata (including the key) plus a binary `value` column; no schema required |
+| `value_schema_id_prefix` | Columns from the record's schema; producers must use the Schema Registry wire format |
+| `value_schema_latest` | Columns from the latest schema for the subject; producers must **not** use the wire-format prefix. Override with `value_schema_latest:subject=<subject>,protobuf_name=<full.Message.Name>` |
+| `disabled` | No Iceberg table |
 
-| Topic property | Type | Default | Accepted values |
-|----------------|------|---------|-----------------|
-| `redpanda.key.schema.id.validation` | boolean | `false` | `true` / `false` |
-| `redpanda.value.schema.id.validation` | boolean | `false` | `true` / `false` |
-| `redpanda.key.subject.name.strategy` | string | `TopicNameStrategy` | `TopicNameStrategy`, `RecordNameStrategy`, `TopicRecordNameStrategy` |
-| `redpanda.value.subject.name.strategy` | string | `TopicNameStrategy` | `TopicNameStrategy`, `RecordNameStrategy`, `TopicRecordNameStrategy` |
+For Redpanda SQL, use a schema-backed mode so the Iceberg table has typed
+columns that line up with the topic's schema.
 
-Confluent-compatible aliases also exist: `confluent.key.schema.validation`,
-`confluent.value.schema.validation`, `confluent.key.subject.name.strategy`,
-`confluent.value.subject.name.strategy`.
+### Key, value, and header translation
 
-The subject-name strategy here mirrors Oxla's `schema_subject` /
-`schema_lookup_policy` table options: `TopicNameStrategy` matches the Oxla
-default subject `<topic>-value`; `RecordNameStrategy` /
-`TopicRecordNameStrategy` correspond to multi-schema topics where Oxla should
-use `schema_lookup_policy='SCHEMA_ID'` to resolve per-record schema IDs.
+`redpanda.iceberg.mode` also accepts sections:
+`<section>:<option>=<value>,...;<section>:<option>=<value>`, with sections
+`key`, `value`, and `headers`.
+
+- `key` / `value` options: `mode` (`binary` default, `schema_id_prefix`,
+  `schema_latest`, `string`), `subject` and `protobuf_name` (with
+  `schema_latest`), and `layout` (`flat` default or `nested`, value section
+  only).
+- `headers:value_type=string` stores header values as strings.
+
+Redpanda SQL does not support `value:layout=nested`. Pair the topic mode with
+the SQL table options, for example `key:mode=schema_id_prefix;value:mode=schema_id_prefix`
+with `key_decode_mode = 'schema_id_prefix'` (full table in
+[iceberg.md](iceberg.md#match-the-key-and-header-options-to-the-topics-iceberg-mode)).
+
+### Retention and schema evolution
+
+Iceberg data stays queryable after topic retention removes the records. The
+table (and its dead-letter table, named with `iceberg_dlq_table_suffix`)
+persists unless the topic is deleted with
+`redpanda.iceberg.delete` true, data is deleted with a query engine, or the
+integration is disabled and the Parquet files are removed. Enabling Iceberg on
+an existing topic does not backfill. When the registered schema evolves,
+Redpanda adds columns to the Iceberg table but does not drop them, which is why
+Redpanda SQL requires the topic schema to remain a name-superset of the Iceberg
+table (see [iceberg.md](iceberg.md#schema-differences-between-topic-and-iceberg-table)).
 
 ---
 
-## License expiration behavior (for the source cluster)
+## Server-Side Schema ID Validation (optional)
 
-If the Redpanda cluster producing the data loses its Enterprise license
-(per the licensing overview):
+Validation makes the broker drop records whose schema ID isn't registered
+under the configured subject name strategy, so fewer undecodable records reach
+Redpanda SQL's `error_handling_policy`. It checks only that the schema ID is
+registered, not that the payload matches the schema.
 
-| Feature | Behavior on expiration |
-|---------|------------------------|
-| Iceberg Topics | Topics cannot be created/modified with `redpanda.iceberg.mode`; existing tables remain queryable by Oxla |
-| Tiered Storage | Topics cannot be created/modified to enable it; partitions cannot be added |
-| Server-Side Schema ID Validation | Topics with validation settings cannot be created/modified |
+- Cluster `enable_schema_id_validation`: `none` (disabled), `redpanda` (only
+  `redpanda.*` topic properties accepted), or `compat` (both `redpanda.*` and
+  `confluent.*` accepted). Validation decompresses batches on validated topics,
+  which can raise CPU load.
+- Topic `redpanda.key.schema.id.validation` / `redpanda.value.schema.id.validation`
+  (`true` / `false`) and `redpanda.key.subject.name.strategy` /
+  `redpanda.value.subject.name.strategy` (`TopicNameStrategy`,
+  `RecordNameStrategy`, `TopicRecordNameStrategy`; `TopicNameStrategy` when
+  unset). The `confluent.*` equivalents take strategy names prefixed with
+  `io.confluent.kafka.serializers.subject.`.
 
-Existing Iceberg tables stay readable from Oxla because the data files and
-catalog metadata persist in object storage; only further enablement is blocked.
+```bash
+rpk topic alter-config orders \
+  --set redpanda.value.schema.id.validation=true \
+  --set redpanda.value.subject.name.strategy=TopicNameStrategy
+```
+
+With `TopicNameStrategy` the value subject is `<topic>-value`, which is the
+default `schema_subject` of a Redpanda SQL table. With another strategy, set
+`schema_subject` on the SQL table to the subject the producers use.

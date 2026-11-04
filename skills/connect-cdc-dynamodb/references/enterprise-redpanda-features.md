@@ -26,7 +26,7 @@ rpk cluster config set iceberg_default_catalog_namespace '["dynamodb_cdc"]'
 
 ### Per-topic Iceberg properties
 
-Set on the CDC destination topic (the topic the `kafka_franz` output writes to).
+Set on the CDC destination topic (the topic the `redpanda` output writes to).
 
 | Topic property | Type | Default | Values / notes |
 |---|---|---|---|
@@ -182,7 +182,7 @@ Pair with a `schema_registry_encode` processor in the Connect pipeline so the CD
 | Kerberos (GSSAPI) authentication | Enterprise | add `GSSAPI` to cluster config `sasl_mechanisms` | No change on expiration. |
 | FIPS compliance | Enterprise | node config `fips_mode` (`enabled`/`permissive`/`disabled`) | Run brokers (and Connect via FIPS `rpk`) in FIPS mode. |
 
-The `kafka_franz` output in this skill's pipelines already supports `sasl` (SCRAM today); switch the `mechanism` and credentials to match an OIDC/Kerberos-secured cluster.
+The `redpanda` output in this skill's pipelines already supports `sasl` (SCRAM today); switch the `mechanism` and credentials to match an OIDC/Kerberos-secured cluster.
 
 ---
 

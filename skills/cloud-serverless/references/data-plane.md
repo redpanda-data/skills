@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/gen/openapi/openapi.dataplane.yaml` (endpoint paths, HTTP methods, request/response bodies, field names); redpanda `src/go/rpk/pkg/publicapi/dataplane.go` (`DataPlaneClientSet` service names). Draft pipelines and pipeline provenance fields (verified 2026-10-22): api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `Pipeline.State` value `STATE_DRAFT`, `PipelineCreate.draft` and the `config_yaml` requirement it relaxes, `PipelineUpdate.draft` as an assertion, `ListPipelinesRequest.Filter.states` and `filter.include_drafts` incl. their query-parameter spellings, and the read-only `Pipeline.create_time`, `update_time`, `created_by`). Topic and partition ceilings (verified 2026-10-29): cloud-docs `modules/get-started/pages/cluster-types/serverless.adoc` (published per-cluster topic and partition maximums, the `POLICY_VIOLATION` failure on reaching either, and the Support path for a higher topic limit); api-docs `cloud-dataplane/cloud-dataplane.yaml` (published `PATCH /v1/topics/{topic_name}/partitions`, `TopicService_AddTopicPartitions`, with `AddTopicPartitionsBody.partition_count` as the number of partitions to add and `validate_only`); console `backend/pkg/api/connect/errors/kafka.go` (Kafka `POLICY_VIOLATION` mapped to `INVALID_ARGUMENT` with an `ErrorInfo` detail carrying the Kafka error name, code, and `retriable`, verified 2026-10-29). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Data Plane API for Serverless Clusters
 
@@ -106,6 +106,45 @@ curl -s -X PUT "${DP_URL}/v1/topics/orders/configurations" \
 curl -s -X DELETE "${DP_URL}/v1/topics/orders" \
   -H "Authorization: Bearer ${TOKEN}"
 # Returns 204 No Content
+```
+
+### Topic and partition ceilings
+
+A Serverless cluster has a maximum number of topics and a maximum number of
+partitions, both per cluster. Read the current values from the published
+[Serverless usage limits](https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/serverless/#serverless-usage-limits)
+rather than assuming them: the partition figure counts logical partitions before
+replication, and Redpanda Support can raise a cluster's topic limit on request.
+
+Once a cluster reaches its topic or partition ceiling, requests to create topics
+or add partitions fail with a `POLICY_VIOLATION` error. That is a quota refusal
+rather than a transient failure, so retrying or backing off will not clear it —
+delete topics the workload no longer needs, or ask Redpanda Support for a higher
+topic limit. Treat it as a distinct branch when you script bulk topic creation:
+it means the cluster is full, not that the request was malformed. The HTTP
+response does not make that distinction for you: the refusal comes back as
+`400` / `INVALID_ARGUMENT`, the same status as a malformed request, with
+`POLICY_VIOLATION` carried in the error details (Kafka error code `44`, marked
+not retriable). Match on the error details, not on the status code.
+
+Partitions are added with `PATCH /v1/topics/{topic_name}/partitions`, where
+`partition_count` is the number of partitions to **add**, not the new total. Set
+`validate_only` to have the API validate a request without applying it. A dry
+run checks the request itself; it is not a promise that the cluster has room
+under its partition ceiling:
+
+```bash
+# Dry-run first: validate the request without adding any partitions
+curl -s -X PATCH "${DP_URL}/v1/topics/orders/partitions" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"partition_count": 3, "validate_only": true}' | jq .
+
+# Then apply
+curl -s -X PATCH "${DP_URL}/v1/topics/orders/partitions" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"partition_count": 3}' | jq .
 ```
 
 ---
@@ -290,17 +329,62 @@ curl -s -X POST "${DP_URL}/v1/redpanda-connect/pipelines" \
   }' | jq .pipeline
 ```
 
+### Save a Pipeline as a Draft
+
+Set `draft: true` on create to store a pipeline without deploying it. It lands in `STATE_DRAFT`:
+saved but never deployed, not running, and not billed. The configuration is stored **unvalidated**,
+so a draft may hold an incomplete or invalid config; `StartPipeline` is what validates it and
+deploys it.
+
+```bash
+curl -s -X POST "${DP_URL}/v1/redpanda-connect/pipelines" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipeline": {
+      "display_name": "work-in-progress",
+      "draft": true,
+      "config_yaml": "input:\n  kafka_franz:\n    topics: [\"orders\"]\n"
+    }
+  }' | jq '.pipeline | {id, state}'
+```
+
+Rules that follow from that:
+
+- `config_yaml` is required **unless** `draft` is set. Omitting it on a non-draft create fails with
+  `INVALID_ARGUMENT` and reason `REASON_CONNECT_INVALID_PIPELINE_CONFIGURATION`. On update,
+  `config_yaml` may be empty only when the stored pipeline is still a draft.
+- Drafts count against the cluster's pipeline limit, so an unfinished draft consumes a slot.
+- An update never changes whether a pipeline is a draft. `draft` on `PipelineUpdate` is an
+  assertion, not a setting: `true` means "fail with `FAILED_PRECONDITION` if this has since been
+  started" — use it to avoid overwriting a pipeline someone deployed while you were editing — and
+  `false` is rejected. Leave it unset to update whatever is stored. Promotion out of
+  `STATE_DRAFT` happens through `StartPipeline`.
+
 ### List Pipelines
 
 ```bash
 curl -s "${DP_URL}/v1/redpanda-connect/pipelines" \
   -H "Authorization: Bearer ${TOKEN}" | jq '.pipelines[] | {id, display_name, state}'
+
+# Filter by state, and include drafts (excluded by default)
+curl -s "${DP_URL}/v1/redpanda-connect/pipelines?filter.states=STATE_RUNNING&filter.states=STATE_ERROR" \
+  -H "Authorization: Bearer ${TOKEN}" | jq '.pipelines[] | {id, state}'
+
+curl -s "${DP_URL}/v1/redpanda-connect/pipelines?filter.include_drafts=true" \
+  -H "Authorization: Bearer ${TOKEN}" | jq '.pipelines[] | {id, state}'
 ```
+
+`filter.states` is repeatable and takes `Pipeline.State` values. **Drafts are left out of
+`ListPipelines` unless `filter.include_drafts` is set** — `filter.include_drafts=true` alone is
+what admits them. Add `filter.states=STATE_DRAFT` to list only drafts; naming `STATE_DRAFT` in
+`filter.states` without `include_drafts` returns none.
 
 ### Start/Stop a Pipeline
 
 Start and Stop use **PUT** (`PipelineService_StartPipeline` /
-`PipelineService_StopPipeline`):
+`PipelineService_StopPipeline`). Start is also what promotes a draft: it validates the stored
+configuration and deploys it, so a start is where an invalid draft config first fails.
 
 ```bash
 # Start:
@@ -318,6 +402,15 @@ curl -s -X PUT "${DP_URL}/v1/redpanda-connect/pipelines/${PIPELINE_ID}/stop" \
 curl -s "${DP_URL}/v1/redpanda-connect/pipelines/${PIPELINE_ID}" \
   -H "Authorization: Bearer ${TOKEN}" | jq .pipeline
 ```
+
+The response carries three read-only provenance fields beside the state and config:
+`create_time`, `update_time`, and `created_by` (the principal that created it — a user's email
+address or a service account's identifier). `update_time` tracks writes to the pipeline, so
+starting or stopping one does not move it. Both `update_time` and `created_by` can come back empty
+on older pipelines — `created_by` for one created before the field existed, `update_time` for one
+not written since — so handle an absent value rather than assuming one. `created_by` is attribution
+only: pipeline permissions are cluster-wide, so it does not restrict who can edit or delete the
+pipeline.
 
 ### Delete a Pipeline
 

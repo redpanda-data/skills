@@ -10,7 +10,6 @@
     {
       "name": "redpanda",
       "description": "Skills for Redpanda's five products (Streaming, SQL, Connect, Cloud, Agentic Data Plane) plus the rpk CLI, grounded in Redpanda source, docs, and APIs.",
-      "version": "0.1.0",
       "author": {
         "name": "Redpanda Data"
       },

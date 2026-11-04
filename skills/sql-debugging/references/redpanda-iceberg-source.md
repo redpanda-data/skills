@@ -1,137 +1,166 @@
-# Debugging the Redpanda Iceberg / Kafka Source
+Source: cloud-docs `modules/sql/pages/query-data/query-iceberg-topics.adoc`, `modules/manage/pages/iceberg/{about-iceberg-topics,iceberg-troubleshooting}.adoc` (single-sourced, Cloud rendering), `modules/reference/pages/properties/{cluster-properties,topic-properties}.adoc` (Cloud-tagged entries), `modules/manage/pages/monitor-cloud.adoc`, `modules/reference/pages/sql/system-virtual-tables.adoc` (verified 2026-10-18). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
-Oxla ingests data from external systems registered in `system.catalogs`, where the
-`type` column is either `iceberg` (an Apache Iceberg catalog) or `redpanda` (a
-Kafka-protocol connection to a Redpanda cluster). When ingestion stalls, the root
-cause often lives on the **Redpanda side** — specifically in Redpanda's
-**Iceberg Topics** integration, which is the producer of the Iceberg tables Oxla
-reads. This reference grounds the Redpanda-side configuration so you can correlate
-an Oxla symptom (no new rows, stale Iceberg snapshot, missing records) with the
-upstream Redpanda setting that controls it.
+# Debugging Queries over Iceberg-enabled Topics
 
-> **Enterprise license required.** Redpanda's Iceberg Topics integration is a
-> Redpanda Enterprise Edition feature. Without a valid license, topics cannot be
-> created or modified with the `redpanda.iceberg.mode` property, and existing
-> Iceberg translation stops being configurable. Verify with
-> `rpk cluster license info` on the Redpanda cluster. Tiered Storage (also
-> Enterprise) is a hard prerequisite — Iceberg tables are written alongside the
-> Tiered Storage log segments in object storage.
-
-Sources (Redpanda docs, verified): the About Iceberg Topics, Use Iceberg Catalogs, and Iceberg troubleshooting pages, the topic properties reference, and the licensing overview (paths in [SOURCES.md](SOURCES.md)).
+On a Redpanda Cloud BYOC cluster (AWS or GCP) with an Iceberg REST catalog
+configured, a table mapped from an Iceberg-enabled topic returns both the live
+records still in the topic and the Iceberg-committed history that has aged out of
+topic retention, in one result with no overlap. When that history is stale, rows are
+missing, or the query fails to plan, the cause is usually one of three things: the
+cluster's Iceberg configuration, the topic's `redpanda.iceberg.*` properties, or
+drift between the topic's schema and the Iceberg table.
 
 ---
 
-## How Oxla sees the integration
+## How the pieces connect
+
+When Redpanda SQL is enabled on a BYOC cluster with the Iceberg REST catalog
+configured, Redpanda Cloud creates the storage connection and Iceberg catalog for
+you and links `default_redpanda_catalog` to that Iceberg catalog. You map the topic
+once with `CREATE TABLE default_redpanda_catalog=><table> WITH (topic = ...,
+schema_subject = ...)`; Redpanda SQL plans the union of live and Iceberg data
+internally.
 
 ```sql
--- Which external catalogs are registered, and of what type?
-SELECT name, namespace_name, type FROM system.catalogs;
--- type = 'iceberg'  -> an Iceberg REST/object-storage catalog Oxla reads tables from
--- type = 'redpanda' -> a Kafka-protocol connection to a Redpanda cluster
+-- Is the Redpanda catalog linked to an Iceberg catalog?
+DESCRIBE REDPANDA CATALOG default_redpanda_catalog;
+
+-- Same, as a table (iceberg_catalog is NULL if there is no link,
+-- or if you lack CONNECT/USAGE on the linked catalog's database and schema)
+SELECT name, iceberg_catalog FROM system.kafka_connections;
+
+SHOW ICEBERG CATALOGS;
 ```
 
-If a `redpanda` catalog is registered but `oxla_kafka_messages_consumed_total` is
-flat, the stall is on the Kafka path. If an `iceberg` catalog is registered but a
-table shows no new rows, the stall is in Redpanda's Iceberg translation — check the
-Redpanda-side properties below before assuming the problem is in Oxla.
+Requirements to check first:
+
+- **REST catalog.** The cluster property `iceberg_catalog_type` must be `rest`. The
+  `object_storage` catalog type does not support Iceberg queries from Redpanda SQL.
+  `iceberg_rest_catalog_endpoint` must be set at the same time.
+- **Iceberg enabled.** The cluster property `iceberg_enabled` must be `true`, and the
+  topic must set `redpanda.iceberg.mode` to a mode other than `disabled`.
+- **Schema.** The topic needs a Protobuf, Avro, or JSON schema registered in Schema
+  Registry.
+- **No backfill.** Enabling Iceberg on an existing topic does not backfill the
+  Iceberg table with earlier topic data. Records that aged out of retention before
+  Iceberg was enabled are not in the history.
 
 ---
 
-## Redpanda cluster-level config (enables the integration)
+## Planning errors from Redpanda SQL
 
-These are set on the **Redpanda** cluster (via `rpk cluster config set`), not in
-Oxla. They are the gate for everything downstream.
+| Error or symptom | Cause | Fix |
+|---|---|---|
+| `Schema not found for Iceberg table '<table>'` | The Iceberg table or topic schema changed shape and the SQL schema view is out of date. | `REFRESH <catalog>=><table>`. It updates the schema view only, not data; you do not run it between writes. |
+| `Kafka schema must be a name-superset of Iceberg schema` | The Iceberg table has a column the topic schema no longer has (a field was removed from the value subject). Iceberg tables only widen. | Re-add the column to the topic's Schema Registry subject so the topic schema covers every Iceberg column. |
+| Same superset error on a topic whose mode nests value fields (`value:layout=nested`) | Redpanda SQL exposes value fields as top-level columns, so the Iceberg `value` struct has no counterpart. | Not supported. Use a flat value layout for topics queried from SQL. |
+| Type mismatch at planning time on `(redpanda).key` or headers | The table's `key_decode_mode` / `header_value_type` does not match how the topic's `redpanda.iceberg.mode` encodes keys and headers. | Match them (table below), then drop and recreate the table. Both options are fixed for the table's lifetime. |
+| `CREATE TABLE` or `REFRESH` fails on a nested collection | A `list` whose element is a `list` or a `map` is not supported in the Iceberg schema. | Change the schema; lists of primitives and lists of structs work. |
+| `NULL` in a column on older rows | The column was added to the topic schema after those rows were committed to Iceberg. | Expected. |
+| Arithmetic or aggregate on a `numeric` column fails | Iceberg `decimal(p, s)` maps to `numeric(p, s)`, and some `numeric` operations are not supported yet. | Cast or avoid those operations. |
+| UUID column needs text functions | UUID columns read as `uuid`. | Cast explicitly: `id::text`. |
 
-| Cluster property | Purpose | Default | License |
-|---|---|---|---|
-| `iceberg_enabled` | Master switch for the Iceberg integration on the cluster. Must be `true` before any topic produces Iceberg data. Changing it on a running cluster requires a restart. | `false` | Enterprise |
-| `iceberg_catalog_type` | Catalog backend: `object_storage` (filesystem/HadoopCatalog in the same bucket) or `rest`. | `object_storage` | Enterprise |
-| `iceberg_default_catalog_namespace` | Iceberg namespace for created tables. Each cluster writing to a shared catalog (e.g. AWS Glue) must use a distinct namespace. Cannot be changed after enabling Iceberg. | `redpanda` | Enterprise |
-| `iceberg_delete` | Cluster-wide default for `redpanda.iceberg.delete`. | `true` | Enterprise |
-| `iceberg_invalid_record_action` | Cluster-wide default for `redpanda.iceberg.invalid.record.action`. | `dlq_table` | Enterprise |
-| `iceberg_default_partition_spec` | Cluster-wide default for `redpanda.iceberg.partition.spec`. | `(hour(redpanda.timestamp))` | Enterprise |
+Key and header options to match the topic's Iceberg mode:
 
-### REST catalog connection (`iceberg_catalog_type: rest`)
+| Topic `redpanda.iceberg.mode` | `CREATE TABLE` options |
+|---|---|
+| `value_schema_id_prefix` | Omit the key options; the key stays `bytea`. |
+| `key:mode=schema_id_prefix;value:mode=schema_id_prefix` | `key_decode_mode = 'schema_id_prefix'` |
+| `key:mode=string;value:mode=schema_id_prefix` | `key_decode_mode = 'string'` |
+| `headers:value_type=string;value:mode=schema_id_prefix` | `header_value_type = 'string'` |
 
-When Redpanda writes to a REST catalog that Oxla also reads, the auth/endpoint
-must line up. Nested REST catalog keys:
+---
+
+## Stale history and missing rows
+
+| Symptom | Likely cause | Where to look |
+|---|---|---|
+| Newest records appear live but not yet in history | Redpanda commits topic data to Iceberg on a lag target. | Topic `redpanda.iceberg.target.lag.ms` (cluster default: `iceberg_target_lag_ms`). Redpanda commits within the target subject to resource availability. |
+| History never appears for a topic | `iceberg_enabled` is not `true`, `redpanda.iceberg.mode` is `disabled`, or `iceberg_catalog_type` is not `rest`. | Cluster and topic configuration. |
+| Records present in the topic are missing from history | Records failed translation and went to the DLQ table, or were dropped. | `redpanda.iceberg.invalid.record.action` (`dlq_table` or `drop`; cluster default `iceberg_invalid_record_action`) and the DLQ table. |
+| History disappeared after a topic was deleted | `redpanda.iceberg.delete` (cluster default `iceberg_delete`) deletes the Iceberg table with the topic. | Set `redpanda.iceberg.delete=false` before deleting a topic whose history you need. |
+| Catalog commits failing | REST catalog connectivity or permissions. | `iceberg_rest_catalog_*` settings and the `redpanda_iceberg_rest_client_num_commit_table_update_requests_failed` metric. |
+
+### Dead-letter queue
+
+In the `value_schema_id_prefix` and `value_schema_latest` modes, a record that cannot
+be translated is written to a DLQ Iceberg table named after the topic plus the
+`iceberg_dlq_table_suffix` cluster property (`<topic-name>~dlq` in the published
+examples). Causes:
+
+- The embedded schema ID is not found in Schema Registry.
+- A schema data type cannot be translated to an Iceberg type.
+- In `value_schema_id_prefix` mode, the producer did not use the Schema Registry
+  wire format (magic byte plus schema ID).
+
+The DLQ table uses the `key_value` layout: one column for record metadata including
+the key, one binary column for the value. Query it with an Iceberg-compatible engine
+against your REST catalog. Topic property misconfiguration (for example, overriding
+`value_schema_latest` without the fully qualified Protobuf message name) does not
+send records to the DLQ; translation pauses until the configuration is fixed.
+
+### Redpanda Iceberg metrics
+
+These are Redpanda broker metrics, available from the cluster's OpenMetrics endpoint
+(*Prometheus* tab of the *How to connect* panel on the cluster overview):
+
+- `redpanda_iceberg_translation_dlq_files_created`: DLQ Parquet files created. A
+  non-zero, increasing value means records are failing translation.
+- `redpanda_iceberg_translation_invalid_records`: invalid records encountered,
+  labeled by cause.
+- `redpanda_iceberg_rest_client_num_commit_table_update_requests_failed`: failed
+  table commits to the REST catalog; persistent failures indicate connectivity or
+  permission problems.
+
+---
+
+## Properties a BYOC user can set
+
+Defaults are shown in the Cloud Console; read them there rather than assuming them.
+Set cluster properties with `rpk cluster config set` (after `rpk profile create
+--from-cloud <cluster-id>`) or the Cloud API `PATCH /v1/clusters/{id}` with
+`cluster_configuration.custom_properties`. Set topic properties with `rpk topic
+alter-config <topic> --set <property>=<value>` or in the Cloud Console.
+
+### Topic properties
 
 | Property | Purpose |
 |---|---|
-| `iceberg_rest_catalog_endpoint` | Catalog endpoint URL. Required when `iceberg_catalog_type=rest` (set both together). |
-| `iceberg_rest_catalog_authentication_mode` | `oauth2`, `aws_sigv4`, `gcp`, `bearer`, or `none` (default). Use `aws_sigv4` for AWS Glue. |
-| `iceberg_rest_catalog_oauth2_server_uri` | OAuth token endpoint URI (for `oauth2`). |
-| `iceberg_rest_catalog_client_id` | OAuth client ID (for `oauth2`). |
-| `iceberg_rest_catalog_client_secret` | OAuth client secret (for `oauth2`; store as a secret). |
-| `iceberg_rest_catalog_token` | Bearer token (for `bearer` mode; not auto-refreshed). |
-| `iceberg_rest_catalog_warehouse` | Catalog warehouse name (e.g. for Snowflake Open Catalog/Polaris). |
-| `iceberg_rest_catalog_trust` / `iceberg_rest_catalog_trust_file` | Trusted certificate chain (contents / file path) for self-signed REST catalogs. |
-| `iceberg_rest_catalog_crl` / `iceberg_rest_catalog_crl_file` | Certificate revocation list (contents / file path). |
+| `redpanda.iceberg.mode` | Enables Iceberg for the topic and controls translation: `disabled`, `key_value`, `value_schema_id_prefix`, `value_schema_latest`, or the section-based syntax (`key:...;value:...;headers:...`). |
+| `redpanda.iceberg.target.lag.ms` | How often new topic data is committed to the Iceberg table, in milliseconds. |
+| `redpanda.iceberg.invalid.record.action` | `dlq_table` or `drop` for records that fail translation. |
+| `redpanda.iceberg.delete` | Whether the Iceberg table is deleted when the topic is deleted. |
+| `redpanda.iceberg.partition.spec` | Iceberg partition spec for the table. |
 
-If Oxla's `iceberg` catalog points at the same REST endpoint, an auth/endpoint
-mismatch shows up as Oxla failing to load tables while Redpanda's
-`redpanda_iceberg_rest_client_num_*_requests_failed` counters climb.
+### Cluster properties (BYOC)
 
----
+| Property | Purpose |
+|---|---|
+| `iceberg_enabled` | Enables Iceberg translation on the cluster. Requires a restart. |
+| `iceberg_catalog_type` | `rest` or `object_storage`. Must be `rest` for Redpanda SQL. Requires a restart. |
+| `iceberg_default_catalog_namespace` | Namespace for created tables (`redpanda` unless set). Clusters sharing a catalog need distinct namespaces. Cannot be changed after Iceberg is enabled. |
+| `iceberg_target_lag_ms` | Cluster default for `redpanda.iceberg.target.lag.ms`. |
+| `iceberg_invalid_record_action` | Cluster default for `redpanda.iceberg.invalid.record.action`. |
+| `iceberg_delete` | Cluster default for `redpanda.iceberg.delete`. |
+| `iceberg_default_partition_spec` | Cluster default for `redpanda.iceberg.partition.spec`. |
+| `iceberg_dlq_table_suffix` | Suffix for DLQ table names. Do not change it after DLQ tables exist. |
+| `iceberg_rest_catalog_endpoint` | REST catalog URL. Set together with `iceberg_catalog_type=rest`. |
+| `iceberg_rest_catalog_authentication_mode` | `none`, `bearer`, `oauth2`, `aws_sigv4`, or `gcp`. |
+| `iceberg_rest_catalog_oauth2_server_uri`, `iceberg_rest_catalog_client_id`, `iceberg_rest_catalog_client_secret`, `iceberg_rest_catalog_oauth2_scope` | `oauth2` mode credentials. |
+| `iceberg_rest_catalog_token` | `bearer` mode token (used as is; not refreshed). |
+| `iceberg_rest_catalog_warehouse` | Catalog warehouse name. |
+| `iceberg_rest_catalog_trust`, `iceberg_rest_catalog_crl` | Trusted certificate chain and revocation list contents for the REST catalog. |
+| `iceberg_rest_catalog_request_timeout_ms` | REST catalog request timeout. |
 
-## Redpanda topic-level config (per topic that feeds Oxla)
-
-Set per topic on the Redpanda cluster:
-`rpk topic alter-config <topic> --set redpanda.iceberg.mode=<mode>`.
-All are restored on Whole Cluster Restore.
-
-| Topic property | Type | Accepted values / default | Meaning |
-|---|---|---|---|
-| `redpanda.iceberg.mode` | string | `key_value`, `value_schema_id_prefix`, `value_schema_latest`, `disabled`; default `null`/`disabled` | Enables and shapes the Iceberg table. `key_value` = 2-column semi-structured table; `value_schema_id_prefix` = structured columns from the wire-format schema ID; `value_schema_latest` = structured from latest registered subject schema; `disabled` = no Iceberg writes. |
-| `redpanda.iceberg.delete` | boolean | default `true` | If `true`, the Iceberg table is deleted when the topic is deleted. Set `false` to keep the table (and its history) available to Oxla after the topic is gone. |
-| `redpanda.iceberg.invalid.record.action` | string (enum) | `drop`, `dlq_table`; default `dlq_table` | What happens to records that fail translation. `dlq_table` writes them to `<topic-name>~dlq`; `drop` discards them. |
-| `redpanda.iceberg.partition.spec` | string | default `(hour(redpanda.timestamp))` | Iceberg partition spec for the table. Affects how Oxla/query engines prune partitions. |
-| `redpanda.iceberg.target.lag.ms` | integer (ms) | default `null` | How often Redpanda commits new topic data into the Iceberg table. **This is the single biggest lever for "Oxla sees stale data."** A large value (or unset/under-resourced) means the latest produced records are not yet committed to the table Oxla queries. |
-
-### Schema-based modes depend on Schema Registry + Schema ID Validation
-
-`value_schema_id_prefix` and `value_schema_latest` require a registered schema and
-producers using the Schema Registry wire format (magic byte + schema ID). If
-producers do not use the wire format, records cannot be translated. This intersects
-with Redpanda's **Server-Side Schema ID Validation** (Enterprise:
-`enable_schema_id_validation`, plus topic-level `redpanda.key.schema.id.validation`
-/ `redpanda.value.schema.id.validation`) — when validation is on, unregistered-schema
-records are dropped at the broker and never reach the Iceberg table, so they will
-never appear in Oxla either.
-
----
-
-## Stale-data / missing-rows checklist (Oxla symptom -> Redpanda cause)
-
-| Oxla symptom | Likely Redpanda-side cause | Where to look |
-|---|---|---|
-| Iceberg table exists but no new rows | `redpanda.iceberg.target.lag.ms` too high, or translation paused | Redpanda metric `redpanda_iceberg_pending_commit_lag`, `redpanda_iceberg_pending_translation_lag` |
-| Rows silently missing | Invalid records dropped (`redpanda.iceberg.invalid.record.action=drop`) or sent to DLQ | Query `<topic-name>~dlq`; metric `redpanda_iceberg_translation_invalid_records`, `redpanda_iceberg_translation_dlq_files_created` |
-| Oxla cannot load the table at all | REST catalog auth/endpoint mismatch | Redpanda metric `redpanda_iceberg_rest_client_num_commit_table_update_requests_failed`, `*_num_load_table_requests_failed` |
-| Table disappeared after topic delete | `redpanda.iceberg.delete=true` (default) deleted it with the topic | Topic config on Redpanda |
-| Topic never produced any Iceberg data | `iceberg_enabled=false`, no Enterprise license, or Tiered Storage not enabled | `rpk cluster license info`; `rpk cluster config get iceberg_enabled` |
-
-### Dead-letter queue (DLQ)
-
-When translation fails in the schema modes, Redpanda writes the record to a DLQ
-Iceberg table named `<topic-name>~dlq` (always `key_value` schema: one metadata
-column + one binary `value` column). The DLQ table follows the same persistence
-rules as the main table. From Oxla / any Iceberg query engine:
-
-```sql
--- Inspect failed records (binary value)
-SELECT value FROM <catalog-name>."<topic-name>~dlq";
-```
-
-A non-empty DLQ with `redpanda_iceberg_translation_invalid_records` climbing means
-the gap between what producers send and what Oxla can read is caused by
-translation failures (missing schema ID, untranslatable type, or wire-format not
-used) — not by Oxla.
+Full descriptions: [Cluster properties](https://docs.redpanda.com/cloud-data-platform/reference/properties/cluster-properties/)
+and [Topic properties](https://docs.redpanda.com/cloud-data-platform/reference/properties/topic-properties/).
+REST catalog provider setup: [Integrate with REST catalogs](https://docs.redpanda.com/cloud-data-platform/manage/iceberg/rest-catalog/).
 
 ---
 
 ## Cross-references
 
-- Oxla side of the catalog: [system-tables.md](system-tables.md) (`system.catalogs`, `system.tables`).
-- Kafka ingestion metrics on the Oxla side: [metrics-and-logging.md](metrics-and-logging.md) (`oxla_kafka_*`).
-- Kafka ingestion stall playbook: [troubleshooting.md](troubleshooting.md) (Playbook 4).
+- Mapping options (`key_decode_mode`, `header_value_type`, ...) and catalog metadata
+  tables: `/redpanda:sql-federated-queries`.
+- Topic mapping and deserialization errors on the live side:
+  [troubleshooting.md](troubleshooting.md) Playbook 5.

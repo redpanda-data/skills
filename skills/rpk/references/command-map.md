@@ -45,7 +45,7 @@ rpk cluster config set <key> <value>
 rpk cluster loggers set <logger> --node-id <id>  # temp broker log level (v26.2+)
 rpk cluster upgrade status         # deferred major-version upgrade state (v26.2+)
 rpk cluster partitions balance
-rpk cluster selftest start
+rpk cluster self-test start
 rpk cluster license info          # check license + Enterprise-feature violations
 rpk cluster license set --path /etc/redpanda/redpanda.license
 ```

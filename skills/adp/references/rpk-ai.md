@@ -1,12 +1,8 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help output, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (auth, env, connection, trigger, run, llm pricing), `cloudv2 apps/rpai/internal/gitops/`, `cloudv2 apps/rpai/.goreleaser.yaml` and publish manifest (platforms, no FIPS build), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/` (install path, lifecycle errors), `adp-docs modules/cli/`. Evidence date: 2026-09-23 (command tree, canonical group names and aliases, `rpk ai` global flags, `llm-provider create` flags including `--pricing`, `mcp-server tools`, `trigger`, `run claude`/`run codex` help, and GitOps `apply`/`diff` help re-verified against the snapshot); earlier: `run claude` transport-mode guards 2026-09-14, `auth login --no-browser` 2026-08-24, `connection` 2026-08-03. Maturity re-verified 2026-09-28 against `adp-docs modules/reference/pages/rpk/rpk-ai/` and `modules/cli/pages/index.adoc` (no Preview attribute on the `rpk ai` pages). Drift audit 2026-10-01: full command tree, `rpk ai`-mode global flags, `agent`/`a2a`/`trigger`/`policy`/`mcp-server`/`oauth-*` subcommands and `run claude`/`run codex` flags re-confirmed against `cloudv2 apps/rpai/testdata/commands-snapshot.md`; the `llm-provider` provider-config groups were corrected there (a sixth `vertex-config` group, and authorization-passthrough flags on the OpenAI-family groups). Sync 2026-10-05: the exit-code table and `--verbose` request logging verified against `cloudv2 apps/rpai/internal/cmd/root.go` (`exitCode`, the verbose writer in `PersistentPreRunE`), `apps/rpai/internal/cmd/cmdutil/cmdutil.go` (`IsAuthError`, `VerboseHTTPClient`), `apps/rpai/internal/client/transport.go` (`verboseTransport`: method, URL, status, latency; no headers or bodies), `apps/rpai/internal/auth/token_source.go` (`ErrNotAuthenticated`), `apps/rpai/internal/cmd/exit_test.go` and `internal/client/verbose_test.go`, and against `adp-docs modules/cli/pages/index.adoc` ("Check exit codes in scripts", "Trace requests with verbose output"). Note: the published page describes exit 3 as missing or expired credentials; source shows the same code also covers a refused identity, which is why this file states both.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (golden help, including the `rpk ai`-mode root help), `cloudv2 apps/rpai/internal/cmd/` (incl. `run/`, `secret/`, `docs/`), `apps/rpai/internal/{gitops,updatecheck,client}/`, `apps/rpai/.goreleaser.yaml` (platforms), `cloudv2 adp/RELEASE_NOTES.md` (shipped status), `redpanda/src/go/rpk/pkg/cli/ai/`, `adp-docs modules/cli/pages/index.adoc`, `modules/connect/pages/coding-agents.adoc`, `modules/control/pages/secrets.adoc`. Full per-claim mapping and the dated verification log: the `references/rpk-ai.md` rows of `SOURCES.md`.
 
 # rpk ai CLI Reference
 
-**Maturity:** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm them with `--help` before relying on them.
-
-Audience: an AI agent using `rpk ai` to operate the Redpanda Agentic Data Plane. Optimize for correct command usage.
-
-Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [observability.md](observability.md).
+**Maturity:** GA, but command groups and flags change between releases — confirm them with `--help` before relying on them.
 
 ## Discover the live surface
 
@@ -28,15 +24,9 @@ Always prefer live `--help` output over this document when they disagree.
 
 ## Lifecycle management (rpk-side commands)
 
-| Command | Key flags | Purpose |
-|---------|-----------|---------|
-| `rpk ai install` | `--ai-version string` (default `latest`), `--force` | Download and install the plugin |
-| `rpk ai upgrade` | `--no-confirm` | Upgrade to the latest plugin |
-| `rpk ai uninstall` | (none) | Remove the managed plugin |
+`rpk ai install` (`--ai-version`, default `latest`; `--force`), `rpk ai upgrade` (`--no-confirm`) and `rpk ai uninstall` manage the plugin, which lands at `~/.local/bin/.rpk.managed-rpai`. macOS, Linux and Windows on amd64 and arm64 are published; **there is no FIPS build**, so a FIPS-only environment cannot install a FIPS-validated `rpk ai`.
 
-Install path: `~/.local/bin/.rpk.managed-rpai`.
-
-Platforms: `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`, `windows-amd64`, `windows-arm64`. There is no FIPS build, so a FIPS-only environment cannot install a FIPS-validated `rpk ai`.
+**The CLI announces its own updates.** A background check, at most once a day, prints a notice on **stderr** naming a newer version and the command that upgrades it, including after a command that failed or printed help. It never delays a command, and it appears only when **both** stdout and stderr are terminals — so a script, a pipe, an `-o json` capture and an agent never see it — and never in continuous integration. `RPAI_NO_UPDATE_CHECK=1` turns it off.
 
 ## Authentication
 
@@ -74,6 +64,8 @@ Define a local or manual gateway with `rpk ai env add <name> --ai-gateway-url <u
 
 For headless or CI use, pass `--token <bearer>` on the command line. Under `rpk ai` the ambient `RPAI_TOKEN` environment variable is **ignored**; only the flag works.
 
+**A sign-in is not a client credential.** It authenticates the management commands; the gateway's own traffic is authenticated by an **ADP API key** (see [API keys](governance.md#api-keys) and [The session credential is an ADP API key](#the-session-credential-is-an-adp-api-key)).
+
 ## Global flags (under `rpk ai`)
 
 Running as an rpk plugin, some long flags are renamed to avoid colliding with rpk's own global flags. Short flags are unchanged.
@@ -97,21 +89,37 @@ Running as an rpk plugin, some long flags are renamed to avoid colliding with rp
 | Command | Aliases | Notes |
 |---------|---------|-------|
 | `agent` | `agents` | Manage agents (managed and self-managed) |
+| `agent-kill-switch` | (none) | Inspect, set or release one agent's containment (see [`agent-kill-switch`](#agent-kill-switch-subcommands)) |
+| `agent-network` | (none) | Query agent relationships and provider failures: `get`, `node`, `provider-failures` (read-only) |
+| `api-key` | `api-keys` | Manage API keys (see [`guardrail` and `api-key`](#guardrail-and-api-key-subcommands)) |
+| `auditlog` | `audit-log`, `audit` | Read the audit log: `list`, `get`, `query` (read-only; see [observability.md](observability.md#read-the-audit-log-from-the-cli)) |
 | `auth` | (none) | `login`, `logout`, `token`, `status` |
+| `budget` | `budgets` | Manage budgets that cap agent spend (see [`budget`](#budget-subcommands)) |
 | `completion` | (none) | Generate a shell autocompletion script |
 | `connection` | `connections`, `conn` | Manage your own OAuth connections: `list`, `revoke <provider-name>` |
+| `docs` | (none) | Read the published ADP documentation from the terminal; needs no sign-in (see [`docs`](#docs-read-the-product-documentation)) |
+| `effective-policy-set` | (none) | Inspect the authorization policy snapshot in force (read-only) |
 | `env` | `environment` | Manage environments: `add`, `list`, `use`, `show`, `rename`, `delete` |
-| `llm-provider` | `llm-providers`, `llm`, `provider`, `lp` | Manage LLM providers |
+| `guardrail` | `guardrails` | Manage guardrails (see [`guardrail` and `api-key`](#guardrail-and-api-key-subcommands)) |
+| `ingest-feedback` | (none) | `summary`: telemetry the ingestion pipeline dropped, and why (read-only) |
+| `kill-switch-policy` | `kill-switch-policies`, `ksp`, `kill-switch` | Manage an agent's kill switch policies (see [`kill-switch-policy`](#kill-switch-policy-subcommands)) |
+| `llm-provider` | `llm-providers`, `llm`, `provider`, `lp` | Manage LLM providers; `types` lists the supported types |
 | `mcp-server` | `mcp-servers`, `mcp` | Manage MCP servers |
 | `model` | `models`, `m` | Discover models in the catalog (read-only) |
-| `oauth-client` | `oauth-clients`, `oc` | Manage OAuth clients |
-| `oauth-provider` | `oauth-providers`, `oauth`, `op` | Manage OAuth providers |
-| `policy` | `policies`, `pol` | Manage Cedar authorization policies |
-| `run` | (none) | Launch Claude Code or Codex routed through the AI Gateway |
+| `oauth-client` | `oauth-clients`, `oc` | Manage OAuth clients; also `dcr`, `cimd` and `catalog` |
+| `oauth-provider` | `oauth-providers`, `oauth`, `op` | Manage OAuth providers; also `catalog` and `discover` |
+| `policy` | `policies`, `pol` | Manage Cedar authorization policies, and check a draft without saving |
+| `policy-template` | `policy-templates` | Manage policy templates that policies link to |
+| `run` | (none) | Launch Claude Code, Codex or Antigravity CLI routed through the AI Gateway |
+| `secret` | `secrets`, `sec` | Manage the secrets other resources reference by ID (see [`secret`](#secret-subcommands)) |
+| `session` | (none) | Inspect, rename or delete a managed agent's conversation sessions |
+| `spending` | (none) | Query cost and usage: `summary`, `breakdown`, `time-series`, `time-series-by-dimension`, `tag-keys` (read-only) |
+| `system-policy` | (none) | `list` and `action-groups`: the read-only policies Redpanda compiles from role bindings |
+| `trace` | (none) | Read traces of agent runs and gateway calls: `list`, `get`, `span` (read-only; see [observability.md](observability.md#read-traces-from-the-cli)) |
 | `trigger` | `triggers`, `agent-trigger` | Manage an agent's triggers (top-level, not under `agent`) |
 | `version` | (none) | Print version and commit |
 
-The canonical group names are `llm-provider` and `mcp-server`; `llm` and `mcp` remain aliases, so `rpk ai llm create …` and `rpk ai mcp tools list …` still work.
+Newer releases keep adding groups — everything from `agent-kill-switch` through `trace` in this table arrived that way. Before you tell a user a task is UI-only, check `rpk ai --help`, and read that group's own `--help` instead of guessing its flags.
 
 ## `rpk ai version`
 
@@ -132,7 +140,7 @@ CRUD and lifecycle: `create`, `get`, `list`, `update`, `delete`, `start`, `stop`
 - `send <agent|url> [message]` — flags: `--context-id`, `--task-id`, `--stream`, `--no-block`, `--timeout` (default 5m; `0` waits forever)
 - `task get|cancel|watch <agent|url> <task-id>` (`watch` alias: `resubscribe`)
 
-Your bearer token is attached only for a registered agent or a URL on the environment's dataplane host; other hosts are called without credentials (a note on stderr says so). Exit codes: `0` success (including a task waiting for input), `4` task ended failed/canceled/rejected, `1` anything else.
+Your bearer token is attached only for a registered agent or a URL on the environment's dataplane host; other hosts are called without credentials (a note on stderr says so). Exit codes: `0` success (including a task waiting for input), `4` task ended failed/canceled/rejected, `3` an authentication or authorization failure, `1` anything else (see [Exit codes](#exit-codes)).
 
 ## `connection` subcommands
 
@@ -153,42 +161,16 @@ Aliases: `llm-providers`, `llm`, `provider`, `lp`.
 
 Subcommands: `create`, `get`, `list`, `update`, `delete`, `check` (connectivity check), `apply`, `diff`.
 
-`create` takes the provider name as a **positional argument** and has no `--type` or `--name` flag. The provider type is selected by which provider-config flag group you set — `openai-config`, `anthropic-config`, `google-config`, `bedrock-config`, `openai-compatible-config` or `vertex-config` — and setting flags from two groups is an error. Provider-config flags carry the group as a dotted prefix (`--<group>.<field>`); there are no bare `--api-key-ref` or `--base-url` flags (an unknown flag error suggests the dotted spelling). Key flags:
+`create` takes the provider name as a **positional argument** and has no `--type` or `--name` flag. The provider type is selected by which provider-config flag group you set — `openai-config`, `anthropic-config`, `google-config`, `bedrock-config`, `openai-compatible-config` or `vertex-config` — and setting flags from two groups is an error. Provider-config flags carry the group as a dotted prefix (`--<group>.<field>`); there are no bare `--api-key-ref` or `--base-url` flags (an unknown flag error suggests the dotted spelling). For each group's credential flags and rules, see [Provider types and credentials](gateway-and-providers.md#provider-types-and-credentials), and read the full flag schema with `rpk ai llm-provider create --help -o json`. Flags that commonly trip writers:
 
-| Flag | Description |
-|------|-------------|
-| `NAME` (positional) | LLM provider name |
-| `--display-name string` | Human-readable label |
-| `--provider-models stringArray` | Model identifiers; repeatable, bare names (comma-split) or a JSON object. Empty allows all models. Replaces the full list on `update` |
-| `--enabled` | True when set; `--enabled=false` to disable |
-| `--<group>.api-key-ref string` (`openai-config`, `anthropic-config`, `google-config`, `openai-compatible-config`) | Secret-store reference for the API key; setting one selects that provider type. OpenAI and Anthropic need either a key or authorization passthrough; only `openai-compatible-config` may leave it empty for a no-auth endpoint |
-| `--<group>.base-url string` (all six groups) | Override the default endpoint |
-| `--<group>.authorization-passthrough` (`openai-config`, `anthropic-config`, `openai-compatible-config`) | Forward the caller's `Authorization` header upstream instead of a stored key (on Anthropic, enterprise/Max plan OAuth; on the OpenAI family, also the caller's `ChatGPT-Account-ID`); `=false` to disable. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough) |
-| `--bedrock-config.region string` (alias `--region`) | AWS region; required within the Bedrock group |
-| `--bedrock-config.static-credentials.access-key-id-ref` (alias `--access-key-id-ref`), `--bedrock-config.static-credentials.secret-access-key-ref` (alias `--secret-access-key-ref`) | Static AWS credentials; both required within their sub-group |
-| `--bedrock-config.assume-role.role-arn` (alias `--role-arn`), `.external-id`, `.session-name` | STS assume-role credentials; `role-arn` required within its sub-group |
-| `--bedrock-config.api-key.api-key-ref` | Secret-store reference for a Bedrock API key (no `Bearer` prefix); required within its sub-group, and exclusive with the other Bedrock credential modes |
-| `--vertex-config.project`, `--vertex-config.location` | Google Cloud project and the single Vertex AI location the provider serves from (`global`, `us`/`eu`, or a region); both required within the Vertex group |
-| `--vertex-config.credentials-json.credentials-json-ref` | Secret-store reference for the Google service-account key JSON; required within its sub-group |
-| `--transcripts.record-input-messages`, `--transcripts.record-output-messages` | Transcript content capture; `=false` to disable |
-| `--guardrail string` | Guardrail to attach |
-| `--tags stringArray` | `key=value`, repeatable; replaces the full map on `update` |
-| `-f, --filename string` | Manifest to create from (YAML or JSON; `-` for stdin). Flags override file values |
-| `--dry-run` | Print the request that would be sent and exit |
-| `--pricing stringArray` | Per-model pricing override in USD per million tokens; repeatable. Also on `update` |
-
-<!-- TODO(human): the `--openai-config.api-key-ref` help says to leave it empty "for authorization passthrough or no-auth endpoints (Ollama, vLLM, local models)". The passthrough half is correct, but the no-auth half describes the OpenAI-compatible type, not OpenAI, and the product docs say OpenAI requires a key or passthrough. That half of the help text looks copied from the OpenAI-compatible group. -->
-
-Authorization passthrough is a flag on the `openai-config`, `anthropic-config` and `openai-compatible-config` groups; Google AI, Vertex AI and Bedrock always use stored credentials. A new provider type or field shows up as a new flag group or dotted flag, not as a new value of a `--type` flag.
+- On `update`, `--provider-models` (repeatable; empty allows all models) and `--pricing` each **replace the provider's whole model list**, and `--tags` replaces the whole tag map.
+- `--enabled` and the `--transcripts.record-*-messages` flags are booleans: true when set, `=false` to turn off. Transcript capture defaults to on.
+- The CLI help says `--openai-config.api-key-ref` can be empty for no-auth endpoints, but that's true only of `openai-compatible-config`: an OpenAI provider needs a key or authorization passthrough.
+- `-f` creates from a manifest (flags override file values), and `--dry-run` prints the request instead of sending it.
 
 `update` adds `--clear <field-path>` (add a field to the update mask with it unset) and `--update-mask` (override the inferred mask); `update` with no changed flags is an error.
 
-**`--pricing`.** Repeatable once per model. Each value is `model=<name>,input=<usd>,output=<usd>,cached=<usd>,cache_write_5m=<usd>,cache_write_1h=<usd>`: `model` is required and at least one rate must be set. Rates are **US dollars per million tokens**; an omitted rate keeps the catalog default and an explicit `0` sets a free rate. Naming the same model twice is rejected. The flag merges each rate card into `--provider-models` by model name (appending the model if absent), so on `update` it replaces the whole model list like `--provider-models` does. Hand-written `--provider-models` JSON carrying `custom_pricing` keeps working. See [gateway-and-providers.md](gateway-and-providers.md).
-
-```bash
-rpk ai llm-provider create openai-prod --openai-config.api-key-ref OPENAI_KEY \
-  --pricing model=gpt-4o,input=2.50,output=10.00,cached=1.25
-```
+**`--pricing`** takes one `model=<name>,input=<usd>,…` rate card per model, in US dollars per million tokens, and **on `update` replaces the whole model list** like `--provider-models`. For the keys and their rules, see [Per-model pricing overrides](gateway-and-providers.md#per-model-pricing-overrides).
 
 ## `mcp-server` subcommands
 
@@ -222,9 +204,64 @@ Aliases: `oauth-providers`, `oauth`, `op`. Subcommands: `create`, `get`, `list`,
 
 ## `policy` subcommands
 
-Aliases: `policies`, `pol`. Subcommands: `create`, `get`, `list`, `update` (Cedar body or metadata), `delete`, `apply`, `diff`. See [governance.md](governance.md).
+Aliases: `policies`, `pol`. Subcommands: `create`, `get`, `list`, `update` (Cedar body or metadata), `delete`, `apply`, `diff`, plus two that touch no stored policy: `analyze` parses and validates draft Cedar against the environment's schema, and `format` formats draft Cedar without saving it or overwriting the input. Use `analyze` to catch an unknown action or entity before a save, which is where most policy errors land. See [governance.md](governance.md).
 
-`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in a single command. That is how you give a newly created agent its first policy, because none is written for it at create time. See [governance.md](governance.md#give-a-new-agent-access).
+`create` also takes `--agent <id>` and `--template readonly|sandboxed|standard|full`, which bind a policy to one agent in one command — how a new agent, which gets no policy at create time, gets its first. See [governance.md](governance.md#give-a-new-agent-access).
+
+## `secret` subcommands
+
+Aliases: `secrets`, `sec`. Subcommands: `create <id>`, `get <id>`, `list` (alias `ls`), `update <id>`, `delete <id>` (alias `rm`). Every verb takes the bare ID (`OPENAI_API_KEY`) or the `secrets/<id>` resource name. Secret values are **write-only**: no command prints one, and `get` and `list` return IDs, tags and audit fields only. For what a secret is, who may manage one, and when a rotated value takes effect, see [governance.md](governance.md#secrets).
+
+```bash
+printf %s "$OPENAI_API_KEY" | rpk ai secret create OPENAI_API_KEY --value-file=-   # stdin
+rpk ai secret create GITHUB_TOKEN --value-file ./token.txt --tag team=ai
+rpk ai secret update OPENAI_API_KEY --tag env=prod --remove-tag stale              # value kept
+rpk ai secret list --tag team=ai
+rpk ai secret delete OPENAI_API_KEY --etag <etag>
+```
+
+- **Write `--value-file=-`, with the equals sign, to read from stdin.** Under `rpk ai`, a bare `-` passed as a separate argument is dropped before it reaches the plugin, so `--value-file -` fails with an argument error instead of reading the pipe. This does not carry over to `rpk ai policy --cedar-file`, which takes a file path only and has no stdin mode: write the Cedar to a file, or pass it with `--cedar`.
+- `--value` takes the value inline, which leaves it in your shell history and the process list; prefer `--value-file`. The two are mutually exclusive, and one trailing newline is stripped from a file or stdin.
+- `update` changes only what you pass: omit the value to keep the stored one, `--tag KEY=VALUE` adds or overwrites a tag, `--remove-tag KEY` drops one. A tag change reads the secret first and writes the merged set fenced by the etag it read, so a concurrent edit fails the update rather than being overwritten. `delete` takes an optional `--etag`.
+- `list` ANDs `--filter` (AIP-160 over `name`, `created_by`, `updated_by`, `created_at`, `updated_at`, `tags.KEY`, `tags:KEY`) with `--tag`, then `--name-contains` narrows to IDs holding that substring, case-insensitively.
+- **Delete does not check references.** An LLM provider, MCP server, OAuth client, trigger or agent that still names the secret keeps its reference and fails at its next call. Repoint those first.
+
+## `docs`: read the product documentation
+
+`rpk ai docs [path]` reads the published ADP documentation in the terminal and `rpk ai docs search <query...>` searches it, both with **no sign-in and no selected environment** — safe to reach for before `rpk ai auth login`.
+
+```bash
+rpk ai docs                     # searchable picker in a terminal; an index when piped
+rpk ai docs cli                 # a page by its documentation path
+rpk ai docs search "oauth"      # --limit 1-100 (default 20)
+rpk ai docs cli --url           # print the URL instead (needs no network)
+```
+
+- Flags: `--web` (open in a browser), `--url`, `--no-pager`, `--non-interactive` (plain Markdown, no picker or pager — the one for scripts), `--refresh` (require a fresh fetch).
+- `search` matches page **titles, paths and descriptions, not page bodies**, so a phrase that appears only inside a page does not find it.
+- Responses are cached for an hour; after a temporary failure the cached copy is printed with a warning, marked `stale=true` under `-o json` / `-o yaml`, unless `--refresh` refuses the fallback. The documentation tracks the published site, not the installed CLI, so confirm flags with `--help` rather than from a page.
+
+## `kill-switch-policy` subcommands
+
+Aliases: `kill-switch-policies`, `ksp`, `kill-switch`. Subcommands: `create <name> --parent agents/<agent>`, `get`, `list --parent agents/<agent>` (the parent is required), `update`, `delete`, `firings` (list kill-switch firings), `signal-history` (an agent's signal history). A policy belongs to one agent and watches one signal (`--spec.signal guardrail-block-rate|datapolicy-deny-rate|evaluation-error-rate`) with *Burst* (`--spec.burst.threshold`, `--spec.burst.confidence 95|99|999`) or *Drift* (`--spec.drift.baseline`, `.slack`, `.threshold`) detection. `--spec.mode shadow` is the UI's **Observe** and `enforce` its **Enforce**. `create` and `update` take `-f` and `--dry-run` like other groups. For what containment does and who may manage it, see [governance.md](governance.md#kill-switch).
+
+## `agent-kill-switch` subcommands
+
+`get` and `update`, each taking `--agent agents/<agent-id>`: `update` contains or releases one agent, `get` reports its state. Containing **requires a reason**; releasing takes none. If the group is not recognized, the installed plugin predates it — run `rpk ai upgrade`. For the commands, what containment does and who may do it, see [governance.md](governance.md#kill-switch).
+
+## `budget` subcommands
+
+Alias: `budgets`. Subcommands: `create NAME`, `get`, `list`, `update`, `delete`. Amounts are stored in USD **microcents** ($1 = 100,000,000), so enter dollars with `--limit-usd` / `--warn-at-usd` — a positive decimal with at most eight places — rather than converting by hand. **Each USD flag stands in for its `--*-microcents` partner rather than joining it:** pass one of a pair, never both, and don't combine one with `--clear` of the same field. `delete` now takes `--dry-run`, like `create` and `update`. See [governance.md](governance.md#budgets).
+
+## `guardrail` and `api-key` subcommands
+
+Both are generated groups with `create`, `get`, `list`, `update`, `delete`; `guardrail` (alias `guardrails`) adds a read-only `providers`. Read `rpk ai guardrail create --help` for what the CLI can set before you send a user to the UI.
+
+`api-key create` takes **no positional name** — the server names the key — and requires `--display-name`. **The key value is printed once, on stderr, while the metadata goes to stdout**, so `... -o json > key.json` saves the metadata and throws the key away. See [governance.md](governance.md#api-keys).
+
+## Read-only query and inspection groups
+
+`trace`, `spending` and `agent-network` return the same data the observability and cost pages show — see [observability.md](observability.md#read-traces-from-the-cli). `spending` and `agent-network` take their request fields as **dotted flags** (`--filter.start-time`, `--filter.end-time`) or a whole request with `-f`, and under `-o json` / `-o yaml` print the entire response envelope, pagination token included, rather than just the rows; pass that token back with `--page-token`. The remaining groups in the command tree — read-only `system-policy`, `effective-policy-set` and `ingest-feedback`, plus `policy-template` and `session`, which also write — take their flags from their own `--help`.
 
 ## `trigger` subcommands
 
@@ -234,33 +271,7 @@ Subcommands: `create <agent>`, `get <name>`, `list <agent>` (alias `ls`), `updat
 
 A trigger belongs to one agent, but its command group is **top-level** (`rpk ai trigger …`, not `rpk ai agent trigger …`), which keeps `rpk ai trigger apply` drivable from a GitOps tool like every other group.
 
-**Naming.** A trigger's name carries its parent: `agents/{agent}/triggers/{trigger}`. `create` and `list` take the parent agent, as a bare ID (`my-agent`) or `agents/my-agent`; `get`, `update`, `delete` and `runs` take the full name exactly as `list` prints it. A bare trigger ID is rejected (`expected 4 path segments, got 1`). The trigger ID is server-assigned unless `--id <dns-1123-label>` names one; the full name is printed on success.
-
-**Kind.** Exactly one kind per trigger, chosen at `create` by which flag family you pass, and immutable afterwards (delete and recreate to change it):
-
-| Kind | Flags |
-|---|---|
-| Microsoft Teams | `--teams-bot-app-id` (Azure Bot application/client ID), `--teams-bot-tenant-id` (Azure AD tenant ID), `--teams-bot-app-secret-ref` (secret-store key holding the bot client secret — a bare `UPPER_SNAKE_CASE` key, never the secret itself) |
-| Schedule (cron) | `--cron-schedule` (standard 5-field expression, e.g. `"0 9 * * 1-5"`), `--cron-timezone` (IANA zone, e.g. `Europe/Prague`; **required** — there is no UTC fallback), `--cron-input` (message text each scheduled run sends to the agent) |
-
-Common flags on `create` and `update`: `--display-name`, `--description`, `--enabled` (default `true`). A `create` with no kind flags is an error naming both flag families. On `update`, only the flags you pass change; `--cron-*` flags apply only to a schedule trigger and `--teams-*` only to a Teams trigger.
-
-**Pause and resume.** `update <name> --enabled=false` pauses a trigger, keeping its configuration and run history; `--enabled=true` resumes it from the next scheduled instant, with no catch-up of missed runs. See [agents.md](agents.md).
-
-**`runs <name>`** lists a schedule trigger's recorded runs, newest first. Only cron triggers have runs; a Teams trigger reports an empty history. Each run's `conversation_id` joins it to its transcript (`rpk ai agent transcript get`).
-
-**`get -o yaml`** shows the kind configuration and the reported health, which the table output does not.
-
-**Credentials are not validated at create time.** A trigger is stored without checking the Teams credentials or resolving the secret refs, so an accepted trigger can still be reported unhealthy — read its status (`get -o yaml`) after creating one.
-
-`delete` is idempotent.
-
-```bash
-rpk ai trigger create my-agent --cron-schedule "0 9 * * 1-5" --cron-timezone Europe/Prague --cron-input "Post the daily summary"
-rpk ai trigger list my-agent
-rpk ai trigger update agents/my-agent/triggers/<id> --enabled=false
-rpk ai trigger runs agents/my-agent/triggers/<id>
-```
+Naming, kinds and their flags, pause and resume, run history and health: see [Triggers in agents.md](agents.md#triggers). On `update`, only the flags you pass change; `--cron-*` flags apply only to a schedule trigger and `--teams-*` only to a Teams trigger.
 
 ## GitOps: `apply` and `diff`
 
@@ -275,25 +286,33 @@ Every group that has `apply` and `diff` — `agent`, `llm-provider`, `mcp-server
 
 ## `run` subcommands
 
-Routes an AI coding tool's model traffic through the AI Gateway for the active environment, reusing the `rpk ai` login with an auto-refreshing token: the tool authenticates to the gateway, never directly to the upstream provider, and no upstream key is written to disk. `-L`/`-m` are command-local flags (not renamed under `rpk ai`); pass the tool's own flags after a literal `--`.
+Routes a coding tool's model traffic through the AI Gateway for the active environment: the tool authenticates to the gateway, never directly to the upstream provider, and no upstream key is written to disk. `-L`/`-m` are command-local flags (not renamed under `rpk ai`); pass the tool's own flags after a literal `--`.
+
+All three share `-L, --llmprovider` (the provider to route through), `-m, --model` (a model ID on the provider's allowlist) and `--api-key ask|yes|no` (see below). Each section lists only its own flags; confirm them with `rpk ai run <tool> --help`.
+
+### The session credential is an ADP API key
+
+**A sign-in token never authenticates the session itself.** Every `run` session authenticates to the gateway with an [ADP API key](governance.md#api-keys), so a long session keeps working after the sign-in that started it expires. Starting one still needs a valid sign-in, which `run` uses to read the provider and to create or check the key. There is **no fallback to the login token**: if no key can be obtained, the launch stops.
+
+`--api-key` chooses the behavior on all three subcommands: `ask` (the default) asks before creating a key, `yes` creates one without asking — use it where nothing can answer a prompt, such as a script or an IDE task — and `no` requires a key you already provided with `--token`.
+
+- The first launch in an environment creates a key valid for **30 days**, named after the command and your hostname, stored beside the `rpk ai` credentials and keyed by organization and environment. A later launch reuses it until the last tenth of its lifetime (three days of a 30-day key), then replaces it, as it does a key that expired or no longer exists. A replaced key stays valid until it expires, so a session still running on it is not cut off.
+- The key a running session uses is **pinned** to the organization and environment you launched in, so `rpk ai env use` or signing in to another organization does not change it. If a different sign-in replaces the stored key mid-session, the session stops and asks you to restart it rather than carrying on as that other user.
+- `--token` on a `run` command accepts **only an API key** (`rpadp_…`), not a sign-in token; such a launch uses that key and never creates one.
+- ADP issues keys only to users who sign in directly, so a **service account cannot start a session**; creating one needs the *Sandboxed* template or above. Configure a CI runner or application with OIDC client credentials instead.
+- An environment whose auth mode is `none` keeps its no-auth behavior for `run claude` / `run codex`; `run agy` requires a key regardless.
 
 ### `run claude [flags] [-- CLAUDE_ARGS...]`
 
-Launches Claude Code with `ANTHROPIC_BASE_URL` pointed at the gateway for the chosen provider. Works against **anthropic and bedrock** LLM providers. It runs in your real Claude Code config home (trust, onboarding, theme and MCP servers apply) and writes nothing into it.
+Launches Claude Code with `ANTHROPIC_BASE_URL` pointed at the gateway for the chosen provider. Works against **anthropic, bedrock and vertex** LLM providers. It runs in your real Claude Code config home (trust, onboarding, theme and MCP servers apply) and writes nothing into it.
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--llmprovider string` | `-L` | Required; the LLM provider to route through (`anthropic` or `bedrock` type) |
-| `--model string` | `-m` | Model ID (must be in the provider's allowlist); omit for Claude Code's default. For bedrock, pass an inference-profile ID (e.g. `us.anthropic.claude-sonnet-4-6`) |
-| `--passthrough` | (none) | Force enterprise/Max-subscription passthrough mode (anthropic only). Only needed with invoke-only access, when the provider can't be read to detect the mode |
-| `--bedrock` | (none) | Force bedrock mode. Only needed with invoke-only access, when the provider type can't be read |
-| `--claude-config-dir string` | (none) | Run against this `CLAUDE_CONFIG_DIR` instead of your real config home (never written to) |
-| `--print-settings` | (none) | Print the generated settings and launch environment, then exit |
+Omit `-m` for Claude Code's default; on Bedrock pass an inference-profile ID (e.g. `us.anthropic.claude-sonnet-4-6`). Own flags: `--passthrough` and `--bedrock` force that mode, needed only with invoke-only access, when the provider can't be read to detect it (`--passthrough` is anthropic-only); `--claude-config-dir` runs against that `CLAUDE_CONFIG_DIR` instead of your real config home (never written to); `--print-settings` prints the generated settings and launch environment, then exits.
 
 Modes:
 - **Managed (API key)**: the gateway credential helper is passed through `claude --settings` as a JSON overlay, merged on top of your settings; `~/.claude/settings.json` is untouched.
-- **Passthrough**: your existing subscription login is used; only the gateway base URL and a freshly minted `X-Redpanda-Cloud-Token` header are set in the environment. That token is inherited by Claude Code's tool subprocesses.
-- **Bedrock**: the gateway signs the upstream call with the provider's AWS credentials, so no AWS credentials reach your machine; passthrough does not apply. If the provider's allowlist lacks Claude Code's background (small/fast) model, export `ANTHROPIC_SMALL_FAST_MODEL` with an allowlisted ID.
+- **Passthrough**: your existing subscription login stays in `Authorization` and is relayed upstream unchanged; the launch sets only the gateway base URL and the session's API key in the `X-Redpanda-Api-Key` header. That header is inherited by Claude Code's tool subprocesses. Tokens bill against your subscription seat, not as API usage.
+- **Bedrock**: the gateway signs the upstream call with the provider's AWS credentials, so no AWS credentials reach your machine; passthrough does not apply, and `--passthrough` on a Bedrock provider is an error. If the provider's allowlist lacks Claude Code's background (small/fast) model, export `ANTHROPIC_SMALL_FAST_MODEL` with an allowlisted ID.
+- **Vertex**: Claude Code runs in its native Vertex mode against the provider's own project and location, which the launch reads off the provider — so a Vertex provider needs **read** access (`dataplane_adp_llmprovider_get`), not only invoke access, and no flag substitutes for it. With invoke-only access the launch warns, falls back to the managed Anthropic shape, and the gateway rejects the first request. The gateway signs the upstream call with the provider's service account, so no Google credentials are needed locally. Passthrough does not apply, and `--passthrough` on a Vertex provider is an error. Pass `-m` a Claude model the provider allows.
 
 `--passthrough` and `--bedrock` are mutually exclusive.
 
@@ -317,23 +336,29 @@ Fix either case by removing the setting from `settings.json`. Use `--print-setti
 
 ### `run codex [flags] [-- CODEX_ARGS...]`
 
-Launches the OpenAI Codex CLI with a throwaway `CODEX_HOME` pointed at the gateway's OpenAI-compatible Responses endpoint, with its bearer refreshed through `rpk ai auth token`. Your own `~/.codex` is never read or modified. Works against **openai and openai_compatible** providers only.
+Launches the OpenAI Codex CLI with a throwaway `CODEX_HOME` pointed at the gateway's OpenAI-compatible Responses endpoint, authenticated with the session's ADP API key. Your own `~/.codex` is never read or modified, and no key is written to `config.toml`. Works against **openai and openai_compatible** providers only.
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--llmprovider string` | `-L` | Required; the LLM provider to route through (`openai`/`openai_compatible`) |
-| `--model string` | `-m` | Model ID (must be in the provider's allowlist); omit for Codex's default |
-| `--effort string` | `-e` | Reasoning effort: `minimal`, `low`, `medium`, `high`; omit for Codex's default |
-| `--codex-home string` | (none) | Persistent `CODEX_HOME` (default: a throwaway temp dir; `~/.codex` is refused). Its `config.toml` is regenerated each run |
-| `--no-auto-trust` | (none) | Don't pre-trust the launch directory (default: auto-trusted under a workspace-write sandbox) |
-| `--print-config` | (none) | Print the generated `config.toml` and exit |
+`-L` is required; omit `-m` for Codex's default. Own flags: `-e, --effort minimal|low|medium|high` (omit for Codex's default); `--codex-home` for a persistent `CODEX_HOME` (default a throwaway temp dir; `~/.codex` is refused; its `config.toml` is regenerated each run); `--no-auto-trust` to skip pre-trusting the launch directory (default: auto-trusted under a workspace-write sandbox); `--print-config` to print the generated `config.toml` and exit.
 
-Under `rpk ai`, `run codex` rejects a static `--token`; use `rpk ai auth login`.
-
-`run codex` wires API-key-style gateway authentication. It does **not** set up ChatGPT/Codex *subscription* passthrough. Configure that yourself: create the provider with `--openai-config.authorization-passthrough` (or the `openai-compatible-config` equivalent) and set that group's `base-url` to `https://chatgpt.com/backend-api/codex`, then configure Codex by hand so it sends the subscription token in `Authorization` and the gateway token in `X-Redpanda-Cloud-Token`. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough).
+`run codex` does **not** set up ChatGPT/Codex *subscription* passthrough. Configure that yourself: create the provider with `--openai-config.authorization-passthrough` (or the `openai-compatible-config` equivalent) and set that group's `base-url` to `https://chatgpt.com/backend-api/codex`, then configure Codex by hand so it sends the subscription token in `Authorization` and the ADP API key in `X-Redpanda-Api-Key`. See [gateway-and-providers.md](gateway-and-providers.md#authorization-passthrough).
 
 ```bash
 rpk ai run codex -L openai -m gpt-5.3-codex -e high -- --ask-for-approval never
+```
+
+### `run agy [flags] [-- AGY_ARGS...]`
+
+Launches **Antigravity CLI** (`agy`), Google's command-line coding assistant, against a **google or vertex** provider. Requires **agy 1.3.5 or newer**; an older or unparseable version is refused before a key is created, rather than falling back to your personal Google sign-in. The session runs against a throwaway settings directory, so your own Antigravity CLI settings are neither read nor changed, and the launch clears the Google and Vertex credential variables from the session environment.
+
+`-L` names an enabled Google or Vertex provider. `-m` takes a Gemini model the provider allows and has **no default**: omit it and pick a model in Antigravity CLI before the first prompt. Own flags: `-e, --effort low|medium|high|xhigh|max` (requires `-m`); `--print-config` prints the isolated Antigravity settings and exits (no gateway call, no credential).
+
+- **Read access is always required**, unlike `run claude`: the launch reads the provider every time to check its type and models, so invoke-only access cannot start a session.
+- **The model is checked before launch.** It must be a Gemini model on the provider's allowlist — embedding models, Claude models on a Vertex provider, and a provider with no Gemini model are all refused, so a Claude-only Vertex provider cannot serve this command. A Vertex provider also needs a configured project and location; the gateway signs the upstream call over its Gemini-compatibility route, so no Google credentials or ADC are needed locally.
+- Set the model and effort with `-m` / `-e`, not with Antigravity CLI's own flags; only the native flags the launch supports pass through after `--`, and the gateway still enforces the allowlist.
+
+```bash
+rpk ai run agy -L <gemini-provider> -m <gemini-model>
+rpk ai run agy -L <gemini-provider> -m <gemini-model> -e medium -- -p "Summarize this repository"
 ```
 
 ## Exit codes

@@ -54,6 +54,16 @@ and `shadow_link`, not `shadow-link`.
 
 ## TODO / re-verify
 
+- **Iceberg manifest statistics and Parquet-writer table properties (`v26.2.3`,
+  deliberately not in `iceberg-topics.md`, 2026-10-20).** The `v26.2.3` release
+  notes say Iceberg topics now persist statistics in Iceberg manifests, and that
+  Iceberg translation now honors "several" table properties controlling how
+  Parquet is written, including compression and Bloom filters. They name no
+  property keys, and the public `redpanda-data/redpanda` repo carries no tag or
+  branch head for releases after `v26.2.2`, so the honored property set cannot be
+  read from source. Do not add a property list to the skill until the keys can be
+  confirmed from source, the generated property reference, or a live cluster;
+  until then this is not a gap for the sync to re-flag.
 - **Iceberg / Cloud Topics per-topic property parsing:** grounded via `topic-properties.adoc` + the feature modules (`src/v/datalake/`, `src/v/cloud_topics/`). The exact C++ file registering the `redpanda.iceberg.*` / `redpanda.cloud_topic.*` topic-property strings is not pinned; `handlers/topics/types.cc` and `handlers/configs/storage_mode_properties.h` are the verified entry points.
 
 ## Usage

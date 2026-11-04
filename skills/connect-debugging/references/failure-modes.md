@@ -178,7 +178,7 @@ rpk cluster info -X brokers=<broker:9092> \
 
 ```yaml
 input:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - broker.example.com:9093
     tls:
@@ -245,7 +245,7 @@ has expired.
 **At component startup with no Enterprise license** (grounded in
 `internal/license/shared_service.go`, `CheckRunningEnterprise`):
 ```
-this feature requires a valid Redpanda Enterprise Edition license that includes the Connect product. For more information check out: https://docs.redpanda.com/redpanda-connect/get-started/licensing/
+this feature requires a valid Redpanda Enterprise Edition license that includes the Connect product. For more information check out: https://docs.redpanda.com/connect/get-started/licensing/
 ```
 
 ### Fixing license errors
@@ -364,11 +364,11 @@ curl -s http://localhost:4195/metrics | \
 **Fixes:**
 
 1. **Slow output**: increase output parallelism if the component supports
-   `max_in_flight`. Example for kafka output:
+   `max_in_flight`. Example for the `redpanda` output:
 
    ```yaml
    output:
-     kafka_franz:
+     redpanda:
        seed_brokers: ["broker:9092"]
        topic: my-topic
        max_in_flight_requests: 10
@@ -380,7 +380,7 @@ curl -s http://localhost:4195/metrics | \
 
    ```yaml
    output:
-     kafka_franz:
+     redpanda:
        seed_brokers: ["broker:9092"]
        topic: my-topic
      batching:

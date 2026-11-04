@@ -110,6 +110,17 @@ redpanda:
   pipeline_id: my-pipeline
 ```
 
+### Credentials in URLs are redacted
+
+A URL carrying credentials (`https://user:pass@host/…`) is redacted before it
+reaches a log line, an error message, a trace span, or an HTTP request dump,
+and credential headers such as `Authorization` are hidden the same way. This
+covers the HTTP components, `websocket`, the `parse_url` Bloblang method, and
+URL config fields. So a connection error that names a host without its
+credentials is the engine redacting them, not a truncated message — look up the
+real value in your secret store or `--env-file`, and do not expect to confirm a
+password from the logs.
+
 ---
 
 ## Metrics
@@ -127,6 +138,7 @@ Grounded in `connect/docs/modules/components/pages/metrics/prometheus.adoc`.
 metrics:
   prometheus:
     use_histogram_timing: false     # true = histograms; false = summaries
+    histogram_timing_seconds_suffix: false  # 4.112.0+; rewrite _ns -> _seconds in histogram mode
     histogram_buckets: []           # custom histogram buckets in seconds
     summary_quantiles_objectives:
       - quantile: 0.5
@@ -161,6 +173,24 @@ metrics:
     push_interval: 30s
     push_job_name: my-pipeline
 ```
+
+**Timing metrics are named `_ns` but recorded in seconds under
+`use_histogram_timing: true`.** The histogram observes the delta converted to
+seconds (to fit the bucket definitions) while the series keeps its `_ns`
+suffix, which is a common source of dashboards that are off by a factor of
+10^9. Two things follow:
+
+- Set `histogram_timing_seconds_suffix: true` (added in 4.112.0, default
+  `false`) to rewrite the suffix, so `processor_latency_ns` is exported as
+  `processor_latency_seconds`. It has no effect when `use_histogram_timing`
+  is `false`, and enabling it **renames existing series** — update dashboards
+  and alerts first.
+- If a remote-write target (Vector, Mimir, …) rejects a batch with a
+  **"multiple metric kinds"** error, the cause is usually a fleet where some
+  nodes set `use_histogram_timing: true` and others `false`: both then export
+  the same `_ns` name, one as a histogram and one as a summary. Either make the
+  setting uniform, or set `histogram_timing_seconds_suffix: true` on the
+  histogram nodes so the two series no longer collide.
 
 ### StatsD
 
@@ -461,7 +491,7 @@ tracer:
       ratio: 0.1
 
 input:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["broker:9092"]
     topics: ["orders"]
     consumer_group: orders-group
@@ -472,7 +502,7 @@ pipeline:
         root = this
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["broker:9092"]
     topic: orders-processed
 ```

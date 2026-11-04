@@ -1,72 +1,54 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model` groups), `cloudv2 apps/rpai/internal/cmd/llm/` (`check`), `cloudv2 apps/rpai/internal/cmd/model/` (`list`, `get`), `adp-docs modules/gateway/pages/configure-provider.adoc`, `adp-docs modules/gateway/pages/overview.adoc` — verified 2026-09-23. Behavioral claims carried over from earlier source verification (passthrough header handling, transcript create default, catalog token limits and reasoning efforts): 2026-09-21. Google Vertex AI as a provider type, its required `--vertex-config.*` fields and its per-location model rule, and the OpenAI-family `authorization-passthrough` flags verified 2026-10-01 against `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider create`/`update` help and the generated Vertex create/update sections) and `adp-docs modules/reference/pages/release-notes.adoc`; the published `modules/gateway/pages/configure-provider.adoc` provider-type table still lists five types (see the TODO below). Bedrock credential modes (including the Bedrock API key mode, its flag, and its connection check) and the per-provider pricing rule verified 2026-09-28 against `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider create`/`update` `--bedrock-config.*` flags and the flag-metadata block), `adp-docs modules/gateway/pages/configure-provider.adoc`, `bedrock-setup.adoc`, and `adp-docs modules/control/pages/cost-usage.adoc`. Sync 2026-10-05: the Vertex AI per-model connection check (billed one-output-token call per model, parallel fan-out under one shared timeout, `MODELS_PARTIAL` with `unreachableModels`, the no-models-named fallback to a single model served at the location) verified against `cloudv2 apps/aigw/internal/llm/provider/vertex/check.go` and `vertex/README.md`, `apps/aigw/internal/llm/provider/README.md` (probe-path table), `apps/rpai/internal/cmd/llm/check.go` (`check` long help) and `proto/public/cloud/redpanda/api/adp/v1alpha1/llm_provider.proto` (`VertexConfig.location` comment).
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`llm-provider`, `model`), `cloudv2 apps/rpai/internal/cmd/{llm,model}/`, `cloudv2 pkg/apikey/` and the `apps/aigw` passthrough handlers, `adp-docs modules/gateway/pages/` (`configure-provider.adoc`, `overview.adoc`, `connect-agent.adoc`, `vertex-setup.adoc`), `modules/control/pages/` (`secrets.adoc`, `tags.adoc`). Full per-claim mapping and the dated verification log: the `references/gateway-and-providers.md` rows of `SOURCES.md`.
 
 # AI Gateway, LLM Providers, and Models Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm flags live with `--help` before relying on them.
-
-Audience: an AI agent operating the Agentic Data Plane AI Gateway through `rpk ai llm-provider` / `rpk ai model` and the ADP UI (ai.redpanda.com), or calling the gateway from an application.
-
-Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [mcp-servers.md](mcp-servers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
+**Maturity:** GA, but command groups and flags change between releases — confirm them with `--help` before relying on them.
 
 ## Discover the live surface
 
 ```bash
-rpk ai llm-provider --help          # verbs and flags (aliases: llm-providers, llm, provider, lp)
+rpk ai llm-provider --help          # aliases: llm-providers, llm, provider, lp
 rpk ai llm-provider create --help   # per-type flag groups
-rpk ai llm-provider list            # providers in the current environment
-rpk ai model list                   # the model catalog
-rpk ai model list --provider-type anthropic
+rpk ai llm-provider types           # supported provider types
+rpk ai model list                   # the model catalog (--provider-type narrows it)
 ```
 
-In the UI, providers live under **LLM providers** in the sidebar (the **AI Gateway** group, alongside Guardrails, Cost and usage, and Budgets). Provider types, model identifiers, and prices change with catalog updates; read them live rather than hardcoding them.
+In the UI, providers live under **LLM providers** in the sidebar. Provider types, model identifiers, and prices change with catalog updates; read them live (`rpk ai llm-provider types`, `rpk ai model list`) rather than hardcoding them.
 
 ## Manage providers
 
-| Task | CLI | UI |
-|---|---|---|
-| Create | `rpk ai llm-provider create NAME [flags]` or `-f manifest.yaml` | **LLM providers** → **Add provider** |
-| Read | `get NAME`, `list` (`-o table\|wide\|json\|yaml\|markdown`) | Provider detail page (Overview, Models, Connect, Playground when enabled, Settings tabs) |
-| Edit | `update NAME [flags]`; `--dry-run` prints the request and computed update mask without sending it | **Settings** tab → change fields → **Save changes** |
-| Enable / disable | `update NAME --enabled=false` (or `--enabled`) | **Settings** tab → **Disable provider**; or the row's actions menu in the list |
-| Delete | `delete NAME` | **Settings** tab → **Delete this provider** (type `delete`), or the list row's actions menu (type the display name) |
-| Test connectivity | `check NAME` | **Test connection** (see [Test a connection](#test-a-connection)) |
-| GitOps | `apply -f`, `diff -f` | — |
+CLI: `rpk ai llm-provider create NAME` (or `-f manifest.yaml`), `get`, `list`, `update` (`--dry-run` prints the request and computed update mask; `--enabled=false` disables), `delete`, `check` ([Test a connection](#test-a-connection)), `apply`, `diff`. UI: **LLM providers** → **Add provider**, then the provider's tabs, where **Settings** holds edit, disable and delete.
 
 - `NAME` is the resource ID: starts with a lowercase letter, lowercase letters/digits/hyphens, ends alphanumeric, at most 63 characters, **immutable**. It is the `<provider-name>` in the proxy URL. The UI derives it from the display name without showing it on the create form.
 - The provider **type is immutable** after creation. In the CLI, the type is selected by which flag group you set (`--openai-config.*`, `--anthropic-config.*`, `--google-config.*`, `--bedrock-config.*`, `--openai-compatible-config.*`, `--vertex-config.*`); setting flags from two groups is an error.
-- `update` with no field flags fails: `Error: no fields to update; pass at least one field flag or -f`.
-- `--provider-models` and `--tags` **replace** the full list/map on update.
+- `--provider-models` and `--tags` **replace** the full list/map on update. Tags are editable in the UI too, in the **Tags** section of the create form and of the provider's **Settings** tab; see [governance.md](governance.md#tags-on-adp-resources).
 - A missing provider returns `Error: LLM provider not found (use 'rpai llm-provider list' to see what's available)` with `Code: not_found`.
 - A disabled provider rejects all requests to its proxy URL; its configuration is kept.
 
 ## Provider types and credentials
 
-Every credential field is a **secret-store reference** (an `UPPER_SNAKE_CASE` key name such as `OPENAI_API_KEY`), never the secret value. The UI create form can also store a new key inline (**Bring a new API key reference** → Key name + API key → **Save key**).
+Every credential field is a **secret-store reference** (an `UPPER_SNAKE_CASE` key name such as `OPENAI_API_KEY`), never the secret value. The UI create form can also store a new key inline (**Bring a new API key reference** → Key name + API key → **Save key**). Manage the stored values themselves with `rpk ai secret` or under **Secrets store**; a rotated key reaches an OpenAI, Anthropic or Google provider within about five minutes and a Bedrock provider on its next request, with no edit to the provider. See [governance.md](governance.md#secrets).
 
 | Type (UI label) | CLI flag group | Credential |
 |---|---|---|
 | OpenAI | `--openai-config.base-url`, `--openai-config.api-key-ref`, `--openai-config.authorization-passthrough` | Exactly one of an API key reference or authorization passthrough. `base-url` defaults to `https://api.openai.com/v1`. |
 | Anthropic | `--anthropic-config.base-url`, `--anthropic-config.api-key-ref`, `--anthropic-config.authorization-passthrough` | Exactly one of an API key reference or authorization passthrough. |
-| Google AI | `--google-config.base-url`, `--google-config.api-key-ref` | API key reference required. Clients send their gateway token in `X-Redpanda-Cloud-Token`; the gateway sets `x-goog-api-key` to the stored key upstream (the gateway does not read a client's `x-goog-api-key`). |
+| Google Gemini API | `--google-config.base-url`, `--google-config.api-key-ref` | API key reference required; the gateway sets `x-goog-api-key` to the stored key upstream. Inbound, the Google SDKs put their `api_key` in `x-goog-api-key`, which the gateway reads **only** as an ADP API key — a sign-in token sent there authenticates nothing, so send one in `X-Redpanda-Cloud-Token`. See [below](#how-a-client-authenticates-to-the-gateway). |
 | AWS Bedrock | `--bedrock-config.region` (required), `--bedrock-config.base-url`, plus one credential mode | UI **Credential type**: *Bedrock API key* (`--bedrock-config.api-key.api-key-ref`; see below), *Default chain* (leave credentials unset; needs an ambient AWS identity, so it cannot work on an environment hosted outside AWS), *Static keys* (`--bedrock-config.static-credentials.access-key-id-ref` + `.secret-access-key-ref`, an IAM access key pair only), or *Assume IAM role* (`--bedrock-config.assume-role.role-arn`, optional `.external-id`, `.session-name`; the AssumeRole call itself still authenticates through the default chain). One mode per provider. |
 | OpenAI-compatible | `--openai-compatible-config.base-url`, `--openai-compatible-config.api-key-ref`, `--openai-compatible-config.authorization-passthrough` | API key, passthrough, or **neither** (no-auth endpoints such as Ollama, vLLM, LM Studio, LocalAI); never both. **Always set the base URL**: the UI requires it. |
-| Google Vertex AI | `--vertex-config.project` and `--vertex-config.location` (both required), `--vertex-config.credentials-json.credentials-json-ref` (required in its group), `--vertex-config.base-url` | A stored Google service-account key JSON document, referenced from the secret store; there is no passthrough mode. `project` is the Google Cloud project that hosts the models and is billed for them. `location` is `global`, a multi-region (`us`, `eu`) or a region (for example `us-east5`), and **every model on the provider is served from that one location**; omit `base-url` to derive the endpoint from the location. |
+| Gemini Enterprise Agent Platform | `--vertex-config.project` and `--vertex-config.location` (both required), `--vertex-config.credentials-json.credentials-json-ref` (required in its group), `--vertex-config.base-url` | A stored Google service-account key JSON document, referenced from the secret store; there is no passthrough mode. `project` is the Google Cloud project that hosts the models and is billed for them. `location` is `global`, a multi-region (`us`, `eu`) or a region (for example `us-east5`), and **every model on the provider is served from that one location**; omit `base-url` to derive the endpoint from the location. |
+
+**Two UI labels differ from their CLI flag groups.** **Google Gemini API** is `--google-config.*`, and **Gemini Enterprise Agent Platform** is `--vertex-config.*`, whose CLI help still says Vertex AI.
 
 Short aliases exist for some Bedrock flags (`--region`, `--access-key-id-ref`, `--secret-access-key-ref`, `--role-arn`); the Bedrock API key flag has none, so spell it in full. An unknown flag such as `--api-key-ref` errors with a "did you mean" list of the per-group flags.
 
 **Vertex AI serves catalogued models from one location.** A Vertex provider accepts catalogued models only, and a create is rejected when the chosen `location` does not serve a requested model; the error names the locations that do (for example `model "<model>" is not served at location "europe-west4" (served at: global, us, eu)`). Because `location` is a property of the provider rather than of a model, models served in disjoint locations need separate providers. Read the per-model locations live rather than hardcoding them.
 
-<!-- TODO(human): Google Vertex AI is a provider type in the CLI (a `--vertex-config` flag group, exercised end to end) and the published release notes refer to Vertex AI provider billing, but the published provider-type page still lists only OpenAI, Anthropic, Google AI, AWS Bedrock and OpenAI-compatible. The CLI surface above is from the CLI's own help; no UI walkthrough is written for Vertex. Confirm the intended maturity and whether the UI exposes it, then document the UI side (or mark the type CLI-only). -->
+**Gemini Enterprise Agent Platform setup lives mostly in GCP.** The stored service account needs `roles/aiplatform.user` on the project, and Claude models must also be enabled in the GCP project and organization, or they fail upstream even though you can select them. In the UI, choose the location first: the model picker offers only models served there. Upstream `404`, `403`, `400 FAILED_PRECONDITION` and `429` errors from this type come from the GCP setup (role, Model Garden enablement, organization policy, location), not from ADP. Follow the product docs' setup guide for the rest.
 
-**Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google AI rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both; Vertex AI requires its project, location and credentials reference.
+**Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google Gemini API rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both; Vertex AI requires its project, location and credentials reference, and rejects a create — or an update that changes the models or the location — naming a model that location does not serve. Create and rotate the referenced secrets with `rpk ai secret` or under **Secrets store** in the UI; see [governance.md](governance.md#secrets).
 
-**Bedrock API key mode.** Instead of signing requests with SigV4, the gateway sends a stored Amazon Bedrock API key as a bearer token. Choose it when you want one credential and no IAM access key pair.
-
-- `--bedrock-config.api-key.api-key-ref` (UI: **Bedrock API key reference**) is a secret-store reference, `UPPER_SNAKE_CASE`, required in its group. Store the key value on its own: no `Bearer` prefix, no quotes.
-- The identity behind the key needs `bedrock:CallWithBearerToken`, the invoke permissions for the models you call, and `bedrock:ListFoundationModels` for **Test connection**.
-- The gateway never generates or renews a key, so an expired or revoked key fails every call until you update the secret. Generate the key in the Amazon Bedrock console. A short-term key works only in the region it was generated for and expires within 12 hours, so rotate the secret ahead of expiry.
-- A provider in this mode rejects a `base-url` that does not start with `https://`.
-- Region is still required, and the mode is exclusive: an API key reference cannot be combined with static keys or a role ARN.
+**Bedrock API key mode** sends a stored Amazon Bedrock API key as a bearer token instead of signing with SigV4. Store the bare key (no `Bearer` prefix, no quotes). Its identity needs `bedrock:CallWithBearerToken`, invoke permission on the models, and `bedrock:ListFoundationModels` for **Test connection**. The gateway never renews a key: a short-term key expires within 12 hours and works only in its own region, so rotate the secret ahead of expiry. The mode rejects a non-`https://` `base-url` and can't be combined with static keys or a role ARN.
 
 **Bedrock `base-url` caveat:** with a custom base URL every request goes to that URL, so models Bedrock serves only on its separate `bedrock-mantle` endpoint are not reachable through that provider.
 
@@ -82,22 +64,15 @@ Short aliases exist for some Bedrock flags (`--region`, `--access-key-id-ref`, `
 
 `check` prints `OK  NAME  (<latency>)` on success. On failure it writes `FAIL  NAME  code=<N>  <message>` to stderr, followed by `reason=… domain=…` and any metadata lines, and exits non-zero — script on the exit code, not the latency.
 
-What a green result proves: for most types, the gateway listed the upstream's models with your credential (authentication + network path, not access to any one model); for Bedrock, the AWS credentials work in the configured region (model access is granted separately by IAM). On a Bedrock provider in API key mode the check lists the region's foundation models, and AWS answers a rejected key and an under-privileged key the same way, so both are reported as an authentication failure; the message names the cause, such as an expired key, when AWS's response does. As with the other Bedrock modes, a green check does not prove the key can invoke a model or use a guardrail.
+A green result proves the credential and network path, not access to any one model: for most types the gateway listed the upstream's models, and for Bedrock the AWS credentials worked in the region (model access is granted separately by IAM, so a green check doesn't prove a model or guardrail call will work). In Bedrock API key mode, AWS answers a rejected key and an under-privileged key the same way, so both report as an authentication failure.
 
-**A Vertex AI check calls every model, and those calls are billed.** For the other provider types the probe is cheap — a model listing, or an identity check on Bedrock. For Vertex AI the gateway sends a real request, capped at one output token, to each model the provider serves, in parallel, because a free listing or token count also succeeds for models the project was never granted in Model Garden, or that are not served at the provider's location. What that means in practice:
-
-- **A check costs money.** One billed call per model, each capped at one output token. Do not run it in a loop or on every reconcile.
-- **A partial result is its own outcome.** Every model answering is `OK`. Some answering is a failed-precondition verdict carrying `reason=MODELS_PARTIAL`, with the models that did not answer named in the message and in the `unreachableModels` metadata; the UI shows that case as a warning rather than a failure. None answering reports the first model's failure, with every model named.
-- **A provider that names no models**, and so allows all of them, is probed with a single model served at its location, so its check says nothing about the rest.
-- **One timeout covers the whole fan-out**, not each call, so a provider with many models can fail on time rather than on access.
-
-So a green Vertex AI check proves more than the other types' do — each of those models answered — and a red one is worth reading before blaming the credential: `MODELS_PARTIAL` names the models to grant access to, or to serve from a location that has them, and says in passing that the credential, project and location are fine.
+**A Vertex AI check calls every model, and each call is billed** (one output token per model, in parallel, under one shared timeout), so don't run it in a loop or on every reconcile. A partial result is a **failed** check (non-zero exit; the UI shows it as a warning) with `reason=MODELS_PARTIAL`, naming the models that didn't answer in the message and in the `unreachableModels` metadata. It means the credential, project and location are fine and those models need access or another location. Because one timeout covers the whole fan-out, a provider with many models can fail on time rather than on access. A provider that names no models is probed with a single model, so its check says nothing about the rest.
 
 **A passthrough provider cannot be probed.** There is no server-side credential, so the UI says the first real request verifies upstream access, and `check` reports a failed-precondition verdict. That is about the configuration, not reachability; do not gate a create or update on a green check for these providers.
 
 ## Investigate failed calls
 
-This is a **UI-only** workflow; no `rpk ai` command exposes it.
+From the terminal, `rpk ai agent-network provider-failures` queries provider call failures (`--llm-provider`, `--start-time` and `--end-time` are required); in the UI, start from the provider's **Overview** tab.
 
 On a provider's **Overview** tab (which reports over one selectable time range, default last 7 days), a warning above **Who calls what** counts the callers with failed requests. Click **Inspect** on a caller — or its node in the graph, or its error count in the **Callers** table — to open the **Failed provider calls** panel: that caller's failed calls, newest first, with **Load more** for paging.
 
@@ -127,9 +102,18 @@ Each provider has two independent toggles — UI **Record inputs** / **Record ou
 
 **Privacy consequence:** captured bodies may contain PII or secrets. If a provider must not record content, set both fields explicitly on create.
 
+## How a client authenticates to the gateway
+
+Apart from the `rpk ai` sign-in, which covers command-line work, a client calling a provider's proxy URL presents one of two credentials:
+
+- An **ADP API key** — for a desktop AI client, a long-running script, a workstation tool, and every `rpk ai run` session. It travels in `X-Redpanda-Api-Key`, or in `Authorization: Bearer`, `X-Api-Key` or `X-Goog-Api-Key`, which the gateway reads as a key only when the value carries the `rpadp_` prefix. See [API keys](governance.md#api-keys).
+- **OIDC client credentials** — for applications, CI, and self-managed agents, where the caller should be a service account. The access token travels in `Authorization: Bearer` or `X-Redpanda-Cloud-Token`.
+
+A key authenticates **as the user who created it**, so its calls are attributed to that person in transcripts and the audit log, and it authenticates the ADP management API as well as the gateway's traffic. Two combinations fail with **401**: a key sent alongside an `X-Redpanda-Cloud-Token` header, and two different keys in one request. A key replaces the *gateway* credential only — the gateway still attaches the upstream provider credential itself, except under passthrough.
+
 ## Authorization passthrough
 
-Passthrough makes the gateway forward the **caller's** upstream credential instead of a stored key, so no upstream API key is held in ADP. Available on OpenAI, Anthropic, and OpenAI-compatible providers; Google AI, Google Vertex AI, and Bedrock always use stored credentials.
+Passthrough makes the gateway forward the **caller's** upstream credential instead of a stored key, so no upstream API key is held in ADP. Available on OpenAI, Anthropic, and OpenAI-compatible providers; Google Gemini API, Vertex AI, and Bedrock always use stored credentials.
 
 - **UI:** the **Authorization passthrough** toggle in the type's configuration. Turning it on clears the API key reference and hides the credential picker.
 - **CLI:** `--<group>.authorization-passthrough` on `create` / `update` (`=false` to disable), where `<group>` is `openai-config`, `anthropic-config` or `openai-compatible-config`. Every passthrough-capable type is configurable from the CLI; none of them requires the UI.
@@ -137,12 +121,12 @@ Passthrough makes the gateway forward the **caller's** upstream credential inste
 
 **What the gateway forwards.** On OpenAI and OpenAI-compatible, only `Authorization` and `ChatGPT-Account-ID` (a Codex workspace selector), and only when the caller sent them; no other caller header reaches the upstream. On Anthropic, `Authorization`.
 
-**Gateway authentication travels in its own header.** With passthrough, `Authorization` carries the upstream credential, so the caller sends its Redpanda gateway token in `X-Redpanda-Cloud-Token`; the gateway token is never forwarded upstream. On OpenAI-family passthrough providers a request without `X-Redpanda-Cloud-Token` is rejected with **HTTP 400** (`authorization passthrough requires gateway authentication in X-Redpanda-Cloud-Token`) before the upstream is contacted. Send the header on every passthrough call regardless of type; a client that cannot send two separate credentials cannot use this mode.
+**Passthrough requires an ADP API key, in its own header.** `Authorization` carries the upstream credential, so the gateway credential has to travel separately — and under passthrough it must be an [API key](governance.md#api-keys) in `X-Redpanda-Api-Key`. A sign-in or client-credentials token does **not** work here. On Anthropic, OpenAI and OpenAI-compatible providers alike, a passthrough request that did not authenticate with a key is rejected with **HTTP 400** (`authorization passthrough requires verified ADP API-key authentication`) before the upstream is contacted. Anthropic answers a second **HTTP 400** (`authorization passthrough requires separate upstream authorization`) when `Authorization` is empty. The gateway strips the key from the request, so it is never forwarded upstream. A client that cannot send two separate credentials cannot use this mode.
 
 ```bash
 curl "$GATEWAY/llm/v1/providers/<provider-name>/chat/completions" \
   -H "Authorization: Bearer $UPSTREAM_TOKEN" \
-  -H "X-Redpanda-Cloud-Token: $(rpk ai auth token)" \
+  -H "X-Redpanda-Api-Key: $REDPANDA_ADP_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"model":"<model>","messages":[{"role":"user","content":"hi"}]}'
 ```
@@ -157,7 +141,7 @@ curl "$GATEWAY/llm/v1/providers/<provider-name>/chat/completions" \
 
 ### Models enabled on a provider
 
-`--provider-models` (repeatable; a bare name, comma-split names, or a protojson object) sets the models a provider exposes; the CLI help says an empty list allows all models. The UI model picker starts with the full catalog selected for OpenAI, Anthropic, Google AI, and Bedrock (you can also type an identifier the catalog does not show); OpenAI-compatible takes a freeform list of the exact identifiers your upstream serves. On a saved provider, toggle models on the **Models** tab.
+`--provider-models` (repeatable; a bare name, comma-split names, or a protojson object) sets the models a provider exposes; the CLI help says an empty list allows all models. The UI model picker starts with the full catalog selected for OpenAI, Anthropic, Google Gemini API, and Bedrock (you can also type an identifier the catalog does not show); OpenAI-compatible takes a freeform list of the exact identifiers your upstream serves. On a saved provider, toggle models on the **Models** tab.
 
 A request for a model not enabled on the provider is rejected with **HTTP 403**, error type `model_not_allowed`, on every provider type. On Bedrock, the picker lists inference-profile IDs for profile-only models and bare model IDs for in-region models.
 
@@ -213,7 +197,7 @@ rpk ai llm-provider update openai \
 | `cache_write_5m` | Cache write (5-minute TTL) | 5-minute cache writes |
 | `cache_write_1h` | Cache write (1-hour TTL) | 1-hour cache writes |
 
-Omitted rates keep the catalog default; set at least one rate per model. `--pricing` merges into `--provider-models` by model name, and **on `update` it replaces the whole model list**, so include every model the provider should keep. Cache writes with an unknown TTL always bill at the catalog rate.
+Omitted rates keep the catalog default and an explicit `0` sets a free rate; set at least one rate per model, and name each model only once (a repeat is rejected). `--pricing` merges into `--provider-models` by model name (appending a model that is absent), and **on `update` it replaces the whole model list**, so include every model the provider should keep. Cache writes with an unknown TTL always bill at the catalog rate.
 
 **In manifests and `get -o yaml`**, overrides appear as `provider_models[].custom_pricing` with fields `input_per_million`, `output_per_million`, `cached_input_per_million`, `cache_creation_5m_per_million`, `cache_creation_1h_per_million`, stored in **microcents** per million tokens (not dollars). Prefer `--pricing`, which converts for you; if you hand-write `custom_pricing`, use microcents. See [rpk-ai.md](rpk-ai.md).
 
@@ -225,13 +209,8 @@ The AI Gateway is a managed HTTP proxy. Each provider has its own URL (copy it f
 <gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>
 ```
 
-- Clients keep using the provider's native SDK and API, pointed at the proxy URL.
-- Upstream keys stay in the Redpanda secret store; applications never see them (except passthrough, where the client supplies its own).
-- The gateway injects the credential per request (API key, SigV4 signing or a bearer Bedrock API key for Bedrock, or the caller's passthrough `Authorization`).
-- Inbound clients authenticate with short-lived tokens: `rpk ai auth login` / `rpk ai auth token` for local use, OIDC client credentials for applications and self-managed agents.
-- Spend, requests, and tokens are recorded per provider (list view, provider Overview, **Cost and usage**).
-- Optionally captures message bodies — on by default for new providers; see [Transcript recording defaults to ON](#transcript-recording-defaults-to-on).
-- Optionally evaluates an attached guardrail before forwarding. On non-Bedrock providers, guardrail evaluation sends prompt and response text to Amazon Bedrock Guardrails, even when the provider itself is self-hosted.
+- Clients keep using the provider's native SDK and API, pointed at the proxy URL. Upstream keys stay in the secret store and the gateway injects the credential per request, except under [passthrough](#authorization-passthrough).
+- For how callers authenticate, content capture and guardrails, see [How a client authenticates to the gateway](#how-a-client-authenticates-to-the-gateway), [Transcript recording defaults to ON](#transcript-recording-defaults-to-on) and [governance.md](governance.md#guardrails). Spend, requests and tokens are recorded per provider.
 
 ## Not in scope
 
@@ -244,4 +223,4 @@ Do not try to configure routing, failover, load balancing, or request rate limit
 
 ## Permissions
 
-`dataplane_adp_llmprovider_*` gates provider management. `dataplane_adp_llmprovider_invoke` is all an application needs to send traffic through the gateway, which makes it the narrowest useful grant for a service account; grant it with a policy on `Action::"LLMProvider.invoke"`. Testing a connection needs `dataplane_adp_llmprovider_check_connection`: neither read nor create access alone allows it. See [governance.md](governance.md#roles-and-permissions).
+`dataplane_adp_llmprovider_invoke` is all an application needs to send traffic, and testing a connection needs `dataplane_adp_llmprovider_check_connection` (see [Roles and permissions](governance.md#roles-and-permissions)). A client that authenticates with an API key is evaluated as the **user who created the key**, so that user needs the invoke grant (`Action::"LLMProvider.invoke"`).

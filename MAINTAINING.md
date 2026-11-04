@@ -31,8 +31,8 @@ human loop**:
 |---------|--------------------|-----------------|---------------|
 | ADP skills sync | `skills/adp/` | `redpanda-data/cloudv2` (private) | commit-watch, keyed off `adp/RELEASE_NOTES.md` |
 | Cloud skills sync | `skills/cloud-serverless`, `skills/cloud-byoc`, `skills/cloud-dedicated` (3; **not** `cloud-byoc-sizing`) | `cloudv2` + `cloud-docs` (private) | commit-watch, keyed off `whats-new-cloud.adoc` + OpenAPI diff |
-| Redpanda Core skills sync | `skills/streaming*`, `skills/rpk*` (12) | `redpanda-data/redpanda` + `docs` (public) | **release-pinned** (GitHub Release notes) |
-| SQL skills sync | `skills/sql*` (4) | `redpanda-data/oxla` (private) + `cloud-docs` | pin-watch: the Oxla version `cloudv2` pins, verified at that version's Oxla release tag (not the default branch) |
+| Redpanda Core skills sync | `skills/streaming*`, `skills/rpk*` (12) | `redpanda-data/redpanda` (public) + `docs` (private) | **release-pinned**, keyed off the published Redpanda release notes (`modules/reference/pages/releases/redpanda.adoc` in `docs`), not GitHub Releases |
+| SQL skills sync | `skills/sql*` (4) | `cloud-docs` (private; the published Cloud SQL docs are the scope gate) + `redpanda-data/oxla` (private; confirms documented behavior only) | pin-watch: the Oxla version `cloudv2` pins, verified at that version's Oxla release tag (not the default branch) |
 | Connect skills sync | `skills/connect*` (10) | `connect` + `benthos` engine + `rp-connect-docs` (public) | **release-pinned** (Connect releases) |
 | Skills sync critic | reviews all generator PRs | (per skill's `SOURCES.md`) | every 6h, read-only |
 | Skills drift audit | all 30 source-grounded skills | (per skill's `SOURCES.md`) | monthly full re-verification |
@@ -77,8 +77,16 @@ when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 
 10 Connect). Each names its authoritative source repo(s):
 
 - **ADP / Cloud** → `cloudv2` (+ `cloud-docs`), private.
-- **Core** → `redpanda-data/redpanda` + `docs`, public (verify at the current stable release tag).
-- **SQL** → `redpanda-data/oxla` (private) + `cloud-docs` module `sql`. (`sql-admin-api` is source-only.)
+- **Core** → `redpanda-data/redpanda` (public) + `docs` (private). A release counts as shipped once the
+  release-notes page has a `== vX.Y.Z (date)` section for it. `v26.2.2` is the last release published
+  as a GitHub Release, and the public repo carries no tag or branch head for later releases, so verify
+  in this order: the public source at the release's tag, when one exists; otherwise the generated docs
+  in `docs` (property partials, rpk reference), but only once the commit that last regenerated them
+  names that release or a later one (the rpk reference can lag several releases behind the property
+  partials, and generated docs from an earlier release are not evidence for or against a later
+  release's change); otherwise describe the change only as far as the release notes state it, with a
+  version marker, and record it as a TODO in the skill's `SOURCES.md`.
+- **SQL** → `cloud-docs` module `sql` and the `reference/sql` pages (private), which set the scope: a skill covers only what the published Cloud docs document for users. `redpanda-data/oxla` (private) confirms the behavior of documented surfaces at the shipped tag and never adds undocumented ones (no engine config, env vars, admin API, raw metrics, or self-hosted deployment).
 - **Connect** → `redpanda-data/connect` + the `benthos` engine + the auto-generated `rp-connect-docs`.
 
 When adding a new source-grounded skill, add a `SOURCES.md` beside it and register it in the

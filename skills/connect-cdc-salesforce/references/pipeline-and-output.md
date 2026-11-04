@@ -140,7 +140,7 @@ pipeline:
         meta sf_sobject = metadata("sobject")
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! metadata("kafka_topic") }
@@ -179,7 +179,7 @@ pipeline:
         meta kafka_topic = "sf.cdc." + metadata("sobject").lowercase()
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! metadata("kafka_topic") }
@@ -228,7 +228,7 @@ pipeline:
         }
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! metadata("kafka_topic") }
@@ -268,7 +268,7 @@ pipeline:
         meta kafka_topic = "sf.events." + metadata("topic").trim_prefix("/event/").lowercase()
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: ${! metadata("kafka_topic") }

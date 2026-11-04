@@ -105,7 +105,7 @@ input:
     region: us-east-1
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers: ["localhost:9092"]
     topic: '${! meta("dynamodb_table") }-cdc'
 ```
@@ -206,12 +206,12 @@ output:
     cases:
       - check: 'meta("dynamodb_table") == "orders"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["localhost:9092"]
             topic: orders-cdc
       - check: 'meta("dynamodb_table") == "customers"'
         output:
-          kafka_franz:
+          redpanda:
             seed_brokers: ["localhost:9092"]
             topic: customers-cdc
 ```

@@ -57,6 +57,8 @@ DELETE events include the row values from the redo log (the pre-image of the del
 | `BLOB`, `RAW`, `LONG RAW` | base64-encoded JSON string (when `lob_enabled: true`) |
 | `JSON` column | JSON string (streaming) or native JSON (snapshot) |
 
+The `schema` metadata field (the serialised schema `schema_registry_encode` consumes) also carries each timestamp column's unit: `DATE` declares **milliseconds**, while `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE` and `TIMESTAMP WITH LOCAL TIME ZONE` declare **microseconds**, so a `TIMESTAMP(6)` value is not truncated (precision above 6 still is). Snapshot and streaming messages declare the same unit; streaming declared milliseconds before 4.115.1, so a consumer holding the older schema sees that unit change.
+
 See `TYPES.md` in the source for the complete type-coercion specification.
 
 ---
@@ -76,6 +78,9 @@ Access metadata in Bloblang with `meta("field_name")`.
 | `source_ts_ms` | string | CDC only | Milliseconds since Unix epoch when Oracle wrote the change to redo log; absent on snapshot messages |
 | `commit_ts_ms` | string | CDC + snapshot | Milliseconds since Unix epoch at transaction commit (from `V$LOGMNR_CONTENTS.TIMESTAMP` on the COMMIT redo record). On snapshot (`read`) messages this is Oracle's `SYSTIMESTAMP` captured when the snapshot SCN was taken, so every snapshot row carries the same value (since 4.99.0). |
 | `username` | string | CDC only | The Oracle database username of the session that performed the DML, from `V$LOGMNR_CONTENTS.USERNAME`. Absent on snapshot (`read`) messages, and on CDC events where Oracle reports a NULL or empty username — the field is only set when the value is non-empty, so downstream mappings must tolerate its absence (since 4.110.0). |
+| `rs_id` | string | CDC only | The LogMiner record set ID, from `V$LOGMNR_CONTENTS.RS_ID`: it identifies the redo record that produced this change. Absent on snapshot (`read`) messages and on the synthetic updates Connect emits for LOB-only transactions. Use `rs_id`, `ssn`, and `row_seq` together to identify a single row change and to order the changes within one transaction (since 4.113.1). |
+| `ssn` | string | CDC only | The SQL sequence number, from `V$LOGMNR_CONTENTS.SSN`, rendered as a numeric string — compare it numerically, not lexically. Present exactly when `rs_id` is (since 4.113.1). |
+| `row_seq` | string | CDC only | The position of this row change among the consecutive changes that report the same `rs_id` and `ssn`, starting at `0` in redo order, rendered as a numeric string. Oracle writes every row of an array DML record (for example a bulk `DELETE` of up to 255 rows) with the same `rs_id` and `ssn`, so this is what tells those rows apart; it is `0` for every other change. Present exactly when `rs_id` is (since 4.113.1). |
 | `schema` | string | When schema resolution succeeds | Serialised table schema (fingerprinted `schema.Common`) for use with `schema_registry_encode`. Present whenever schema lookup succeeds; absent if schema resolution fails (a warning is logged). |
 
 ---
@@ -103,7 +108,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: oracle-cdc-events
@@ -145,7 +150,7 @@ pipeline:
         root.payload    = this
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: ${! meta("topic") }
@@ -180,7 +185,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: oracle-cdc-orders
@@ -220,7 +225,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: oracle-cdc-orders
@@ -250,7 +255,7 @@ input:
     # Checkpoint table auto-derived to C##RPCN.CDC_CHECKPOINT_MYPDB in CDB mode
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - redpanda-broker:9092
     topic: mypdb-cdc-orders
@@ -387,7 +392,8 @@ The `online_catalog` LogMiner strategy does not capture DDL in the redo log. DDL
 
 | Knob | Tune when... | Direction |
 |---|---|---|
-| `logminer.scn_window_size` | High-volume database, large change backlog | Increase (50000–100000) |
+| `logminer.scn_window_size` | High-volume database, large change backlog | Increase (50000–100000). Only under the default `window_strategy: scn_window` |
+| `logminer.window_strategy` | SCN advances without matching transaction volume (for example a CDB's shared SCN bumped by another PDB) | Switch to `redo_volume` and tune `redo_volume_min` / `redo_volume_growth_max` instead of the SCN window fields |
 | `logminer.backoff_interval` | Low-traffic tables, reducing Oracle load | Increase (10s–60s) |
 | `logminer.mining_interval` | Near-real-time latency needed | Decrease (100ms) |
 | `max_parallel_snapshot_tables` | Snapshot of many tables is slow | Increase (2–8) |

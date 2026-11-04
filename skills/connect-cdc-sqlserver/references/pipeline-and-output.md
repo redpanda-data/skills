@@ -23,7 +23,7 @@ input:
     stream_backoff_interval: 5s
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: sqlserver-cdc
@@ -59,7 +59,7 @@ input:
       period: 500ms
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: '${! "sqlserver." + meta("database_schema") + "." + meta("table") }'
@@ -99,7 +99,7 @@ input:
     stream_backoff_interval: 10s
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - localhost:9092
     topic: '${! meta("table") }'
@@ -120,7 +120,7 @@ input:
     checkpoint_limit: 1024
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - seed-abc123.cloud.redpanda.com:9092
     tls:

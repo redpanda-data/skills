@@ -265,6 +265,7 @@ logger:
 metrics:
   prometheus:
     use_histogram_timing: false
+    histogram_timing_seconds_suffix: false   # 4.112.0+; see note below
     add_process_metrics: false
     add_go_metrics: false
     # Push to Prometheus Pushgateway
@@ -286,6 +287,18 @@ metrics:
 metrics:
   none: {}
 ```
+
+**Prometheus timing-metric names.** With `use_histogram_timing: true`, timing
+deltas are recorded in **seconds** so they fit the bucket definitions, but the
+metric names keep their `_ns` suffix by default. Set
+`histogram_timing_seconds_suffix: true` (added in 4.112.0, default `false`) to
+rewrite that suffix — `processor_latency_ns` becomes `processor_latency_seconds`
+— so the name matches the unit, and so the histogram series stays distinct from
+the summary series that nodes with `use_histogram_timing: false` emit under the
+`_ns` name. That distinction is what stops remote-write targets rejecting a
+batch with a "multiple metric kinds" error when a fleet mixes the setting.
+Enabling it **renames existing series**, so update dashboards and alerts that
+query the `_ns` names. It has no effect when `use_histogram_timing` is `false`.
 
 ## Buffers
 

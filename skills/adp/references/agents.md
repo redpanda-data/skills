@@ -1,24 +1,19 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent`, `agent a2a`, `agent a2a send`, `agent a2a task watch`, `trigger` sections), `cloudv2 apps/rpai/internal/cmd/agent/` (positional arguments), `docs modules/reference/partials/rpk-ai/` (`rpk-ai-agent-create`, `-update`, `-credential-create`, `-transcript-list` flag tables), `adp-docs modules/connect/pages/create-agent.adoc`, `self-managed-agents.adoc`, `concepts.adoc`, `triggers/overview.adoc`, `adp-docs modules/monitor/pages/monitor-agents.adoc` (session history), `adp-docs modules/cli/pages/gitops.adoc` — verified 2026-09-23. Write-time validation, subagent, tag and agent-card behavior carried forward from the earlier source-verified revision and cross-checked against `create-agent.adoc` on 2026-09-23. Maturity re-verified 2026-09-28 against `adp-docs modules/reference/pages/rpk/rpk-ai/` and `modules/cli/pages/index.adoc` (no Preview attribute on the `rpk ai` pages). Sync 2026-10-05: the no-access-at-create behavior, its stderr notice and the stdout/`-o json` split verified against `cloudv2 apps/rpai/internal/cmd/agent/create.go` and `agent/cmd_test.go`; the A2A exit codes re-verified against `cloudv2 apps/rpai/internal/cmd/root.go` (`exitCode`), `apps/rpai/internal/cmd/exit_test.go` and `adp-docs modules/cli/pages/index.adoc`. Reasoning-effort retention on a UI model change verified 2026-10-05 against `adp-docs modules/connect/pages/create-agent.adoc` (the Settings-tab paragraph: kept only where the new model's catalog capabilities list it, cleared to the provider default otherwise, always cleared on an OpenAI-compatible provider, and a subagent model override still rejected at save). The no-policy-at-create wording re-checked 2026-10-05 against `adp-docs modules/connect/pages/create-agent.adoc` (Create the agent) and `modules/control/pages/access-policies.adoc` (Grant an agent its own permissions): both state that a new agent has no policy of its own, neither states that its runtime calls are refused, and the self-managed UI exception comes from the latter.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`agent`, `a2a`, `trigger`), `cloudv2 apps/rpai/internal/cmd/agent/`, `docs modules/reference/partials/rpk-ai/`, `adp-docs modules/connect/pages/` (`create-agent.adoc`, `self-managed-agents.adoc`, `concepts.adoc`, `triggers/`), `modules/monitor/pages/monitor-agents.adoc`, `modules/cli/pages/gitops.adoc`. Full per-claim mapping and the dated verification log: the `references/agents.md` rows of `SOURCES.md`.
 
 # Agentic Data Plane Agents Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Command groups and flags still change between releases, so confirm flags with `--help` before relying on them.
-
-Audience: an AI agent operating Agentic Data Plane agents through `rpk ai` and the ADP UI (ai.redpanda.com). Optimize for correct programmatic use.
-
-Related references: [SKILL.md](../SKILL.md), [mcp-servers.md](mcp-servers.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
+**Maturity:** GA, but command groups and flags change between releases — confirm them with `--help` before relying on them.
 
 ## Discover the live surface
 
 ```bash
-rpk ai agent --help                 # a2a, apply, create, credential, delete, diff, get, list, start, stop, transcript, update
-rpk ai agent create --help          # current create flags
+rpk ai agent --help                 # a2a, credential, transcript and start/stop live here
 rpk ai agent get <name> -o yaml     # the complete manifest shape for an existing agent
-rpk ai trigger --help               # triggers are a top-level group
-rpk ai model list                   # models the gateway can route to
+rpk ai trigger --help               # triggers are a top-level group, not `agent trigger`
+rpk ai session --help               # a managed agent's conversation sessions
 ```
 
-In the UI, agents live under **Agents** in the sidebar. A managed agent's detail page has **Settings**, **Triggers**, **Playground**, **Cost & Usage**, **Transcripts**, and (when access policies are enabled) **Permissions** tabs. A self-managed agent has **Setup** and **Credentials** tabs (plus Cost & Usage, Transcripts, and a Settings tab with only Integration and Identity), and no Triggers or Playground tab.
+In the UI, agents live under **Agents** in the sidebar. **A self-managed agent has no Triggers or Playground tab** and carries **Setup** and **Credentials** instead, with a Settings tab holding only Integration and Identity — so don't send its owner to the Playground. **Permissions** appears only where access policies are enabled.
 
 ## Agent types: managed vs. self-managed
 
@@ -48,7 +43,7 @@ Both types share one registry, the same governance views, and the same cost attr
 | `transcript list\|get` | Conversation transcripts (see [observability.md](observability.md)) |
 | `a2a card\|send\|task` | Talk to a running agent over A2A (see [A2A](#a2a-endpoint-and-agent-card)) |
 
-**A new agent starts with no policy of its own.** `rpk ai agent create` writes no policy for the agent. It prints a notice on **stderr** saying the agent has no access until a policy names it, with the two commands that bind one, and leaves stdout as the created object so `-o json` stays parseable. In the UI, a managed agent's **Permissions** tab warns until you author its first policy; registering a self-managed agent in the UI is the exception, because its required **Access** section writes that policy for you. Bind a built-in template with `rpk ai policy create --agent <name> --template sandboxed`, or supply Cedar whose principal is that agent. See [governance.md](governance.md#give-a-new-agent-access).
+**A new agent starts with no policy of its own.** `rpk ai agent create` writes none and says so on **stderr**, leaving stdout parseable; bind one with `rpk ai policy create --agent <name> --template sandboxed`, or with Cedar whose principal is that agent. Its creator can invoke it meanwhile through the built-in *Owner lifecycle* policy, which is not the agent's own access. For the UI cases (the managed agent's **Permissions** tab warning, the self-managed **Access** section that writes the first policy), see [governance.md](governance.md#give-a-new-agent-access).
 
 Scalar flags on `create` / `update`: `--display-name`, `--description`, `--model`, `--llm-provider`, `--system-prompt`, `--max-iterations`, `--mcp-server` (repeatable), `--tag key=value` (repeatable; on `update` it replaces the whole tag map). `create` also takes `--self-managed` and `--spec-file <json|yaml>`, which loads a complete managed spec and is the only create-time way to set subagents or an agent card; `--spec-file` is mutually exclusive with `--self-managed` and the scalar spec flags. For anything the flags cannot express on an existing agent (subagents, agent card, reasoning effort), edit the manifest and `rpk ai agent apply -f`.
 
@@ -63,15 +58,9 @@ Every agent carries, independent of type:
 | `name` | Immutable ID, a lowercase slug up to 63 characters. The UI derives it from the display name (adding a suffix on collision); check it on the Settings tab after create |
 | `display_name` | Up to 128 characters |
 | `description` | Up to 1,024 characters; an internal note, not the system prompt |
-| `tags` | Key/value map, up to 50 pairs, each value up to 256 characters |
+| `tags` | Key/value map, up to 50 pairs, each value up to 256 characters. Set with `--tag` on `create` / `update`, or in the UI under **Advanced** → **Tags** on the create canvas and on the Settings tab |
 
-`tags` does three jobs at once, so adding or removing a key affects all three:
-
-- **Access policies** — Cedar policies can condition on an agent's tags (`resource.getTag("team")`, `resource.hasTag("team")`); see [governance.md](governance.md).
-- **Organization** — filter agents in the registry by tag.
-- **Cost grouping** — the gateway stamps the agent's tags on each LLM call it makes, so spend can be grouped and filtered by tag (see [governance.md](governance.md)). Attribution is point-in-time: spend already recorded keeps the tags it had.
-
-Do not put secrets or PII in tag values; they surface in cost reports.
+`tags` drive Cedar conditions (`resource.getTag("team")`, `resource.hasTag("team")`), registry filtering and spend attribution at once, so changing a key affects all three. Only the calling agent's tags are stamped on an LLM call, as they were at the time. No secrets or PII in values; see [governance.md](governance.md#tags-on-adp-resources).
 
 ## Managed agent spec
 
@@ -87,7 +76,6 @@ Manifest fields under `managed.spec` (also the shape `--spec-file` accepts). The
 | `subagents` | no | Map keyed by subagent name, up to 16 entries (see [Subagents](#subagents)) |
 | `agent_card` | no | A2A discovery metadata (see [A2A](#a2a-endpoint-and-agent-card)) |
 | `reasoning.effort` | no | Provider-owned string; omit for the provider default (see [Reasoning effort](#reasoning-effort)) |
-| `reasoning_effort` | no | **Deprecated**; use `reasoning.effort` |
 
 There is no `tools` field on an agent: agents reach tools only through `mcp_servers`.
 
@@ -110,7 +98,7 @@ Create and update validate a managed spec's references before saving, so a bad r
 
 Scoping rules:
 
-- **OpenAI-compatible providers are not model-checked** at write time; any identifier saves, and the gateway enforces the model per request.
+- **OpenAI-compatible and Gemini Enterprise Agent Platform providers are not model-checked** at write time; any identifier saves, and the gateway enforces the model per request, refusing one the provider does not allow. A managed agent can run on a Gemini Enterprise Agent Platform provider, so expect a model mistake there to surface at the first call rather than at save time.
 - **Non-Bedrock catalog providers get only the catalog check.** Their allowlist is enforced by the gateway at request time (`403 model_not_allowed`).
 - **Updates validate only the pairings they change**, so an agent that already stores an out-of-catalog model stays editable. A partial update that changes only a model is still checked against the provider it inherits.
 - Rarely, an update fails with a `changed while the update was in flight; retry` message; retry the update.
@@ -127,14 +115,14 @@ A retired model disappears from the provider's catalog, but an agent already usi
 
 **Validation.** When an effort is set, every effective model pairing must accept it:
 
-- A model that does not list the value fails with `model "…" does not support reasoning effort <value>`; several offending models are reported together. The error addresses whichever field you wrote (`agent.managed.spec.reasoning.effort` or the deprecated `agent.managed.spec.reasoning_effort`).
+- A model that does not list the value fails with `model "…" does not support reasoning effort <value>`; several offending models are reported together.
 - On an **OpenAI-compatible** provider any explicit effort is rejected; leave it unset.
 - A model the gateway cannot resolve is an invalid-argument error; a lookup that cannot complete fails as unavailable (retry).
 - Updates check only the pairings they change. Leaving the effort unset is always accepted.
 
 **Changing the agent's model from the UI clears an effort the new model will not take.** On the **Settings** tab, picking a new model for the agent itself keeps the stored effort only if that model's catalog capabilities list it; otherwise the effort falls back to the provider default and the save goes through, so a model change is never blocked by a level the new model does not offer. Switching the agent to an OpenAI-compatible provider always clears it. This is the one path that drops an effort silently — re-apply the manifest if you want a specific level on the new model, and re-read the agent rather than assuming the level survived. A **subagent's** model override is not adjusted this way: pick a subagent model that does not accept the agent's effort and the save is still rejected with the validation error above.
 
-**Deprecated `reasoning_effort`.** Older manifests may set the closed `reasoning_effort` enum. It is still accepted and kept in step with `reasoning.effort` (`reasoning.effort` wins on read; a provider value the enum cannot represent leaves the enum unspecified). Setting the two to different values fails with `reasoning effort fields must not conflict`. Use `reasoning.effort` for new work.
+An older manifest's deprecated `reasoning_effort` is still accepted. Write `reasoning.effort`, and never set both to different values.
 
 ## Subagents
 
@@ -175,15 +163,11 @@ rpk ai agent a2a task get|watch|cancel <agent> <task-id>
 
 An agent's context lasts one conversation (one A2A context). There is no built-in memory across conversations; expose earlier information through a tool instead.
 
-## Conversation sessions (UI)
+## Conversation sessions
 
-A **session** is a managed agent's saved conversation thread. **There is no `rpk ai` command for sessions** (`rpk ai agent --help` lists none); work with them in the UI:
+A **session** is a managed agent's saved conversation thread. Work with sessions in **Agent → Playground → History** (reopen one to continue it; **New session** and **Clear context** start a fresh one and keep the previous one in history), or with `rpk ai session`, which inspects, renames and deletes them; read its `--help` for the flags.
 
-- **Agent → Playground → History** opens Session history, newest first, with **Show more** for older sessions. Once a conversation has messages, the control reads *Session* plus the session ID, with a copy control.
-- **Filter:** **Session ID (exact)**, or **Updated from** / **Updated through** (local timezone, both ends inclusive), then **Apply filters**; **Clear filters** resets.
-- **Reopen** a session to replay it (including attached files and data); the next message continues that session.
 - **Delete** a session from its row's actions; the UI says this permanently removes the session and its transcript. <!-- TODO(human): confirm whether deleting a session in the Playground also removes the matching entry on the agent's Transcripts tab, or only the Playground's stored copy. -->
-- **New session** and **Clear context** both start a fresh session; the previous one stays in history.
 
 **A session ID is the A2A context ID.** The `context-id` that `rpk ai agent a2a send` prints and accepts via `--context-id` is the same ID Session history shows, so you can resume a CLI conversation from the Playground and vice versa.
 
@@ -200,7 +184,7 @@ rpk ai agent credential delete <credential-name>   # full name from list, e.g. a
 ```
 
 - The client ID is `serviceaccounts/<agent-name>`, shared by every secret on the agent. The secret is shown **once**; store it immediately.
-- A secret created without `--ttl` (and every secret created on the UI **Credentials** tab) expires after 90 days. `--ttl` sets another lifetime with no enforced maximum. The product docs state every secret has an expiry, so do not rely on `--ttl 0` for a non-expiring secret. <!-- TODO(human): the flag help says "0 means no expiry" but the product docs say every secret expires; confirm what --ttl 0 actually produces. -->
+- A secret created without `--ttl` (and every secret created on the UI **Credentials** tab) expires after 90 days. `--ttl` sets another lifetime with no enforced maximum. Every secret expires: `--ttl 0` gets the default lifetime, the same as omitting `--ttl`, even though the flag help says "0 means no expiry".
 - Up to 10 unexpired secrets per agent; the next create fails with `secret cap exceeded`. Expired secrets do not count.
 - Rotate without downtime: create a new secret, deploy it, then revoke the old one.
 
@@ -213,7 +197,7 @@ Triggers invoke a **managed** agent without a direct API call. Two kinds:
 
 **UI:** agent → **Triggers** tab → **Add trigger**. Edit a trigger on its card; pause/resume icons exist only for schedule triggers. Teams triggers show **Pending**, **Connected**, or **Error** from a background credential check (about every 30 seconds); schedule triggers show the last run outcome and next run time, or **Paused** / **Failing**.
 
-**CLI:** the **top-level** `rpk ai trigger` group (aliases `triggers`, `agent-trigger`), not `rpk ai agent trigger`. See [rpk-ai.md](rpk-ai.md#trigger-subcommands).
+**CLI:** the **top-level** `rpk ai trigger` group (aliases `triggers`, `agent-trigger`), not `rpk ai agent trigger`; the subcommand list is in [rpk-ai.md](rpk-ai.md#trigger-subcommands).
 
 ```bash
 rpk ai trigger create <agent> --cron-schedule "0 9 * * 1-5" --cron-timezone Europe/Prague --cron-input "Daily report"
@@ -244,6 +228,4 @@ rpk ai trigger delete agents/<agent>/triggers/<id>            # idempotent
 
 ## Permissions
 
-Agent operations are gated by `dataplane_adp_agent_*`, with separate families for credentials (`dataplane_adp_agent_credential_*`), triggers (`dataplane_adp_agent_trigger_*`), and conversation sessions (`dataplane_adp_agent_session_*`). Reading a session exposes its full conversation content, so grant it as deliberately as transcript access. Every A2A call to an agent is covered by one permission, `dataplane_adp_a2a_invoke`; grant it with a policy on `Action::"Agent.invoke"`. See [governance.md](governance.md#roles-and-permissions).
-
-These are the permissions for operating *on* an agent. What the agent itself may do is governed the same way, and a new agent has no policy of its own: see [Give a new agent access](governance.md#give-a-new-agent-access).
+Agent operations are gated by `dataplane_adp_agent_*`, with separate families for credentials, triggers and conversation sessions; reading a session exposes its full conversation content, so grant it as deliberately as transcript access. Every A2A call to an agent is covered by `dataplane_adp_a2a_invoke`; grant it with a policy on `Action::"Agent.invoke"`. What the agent itself may reach is a separate grant: see [Give a new agent access](governance.md#give-a-new-agent-access) and [Roles and permissions](governance.md#roles-and-permissions).

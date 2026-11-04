@@ -98,7 +98,7 @@ pipeline:
         meta topic = $schema + "." + $table
 
 output:
-  kafka_franz:
+  redpanda:
     seed_brokers:
       - ${REDPANDA_BROKERS}
     # Uses per-message topic from the mapping processor above.

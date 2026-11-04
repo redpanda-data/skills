@@ -102,9 +102,10 @@ Object-storage-native topics that use durable object storage as the primary back
 | Key | Type | Purpose |
 |-----|------|---------|
 | `cloud_topics_enabled` | boolean | **Deprecated in v26.2.1 and ignored.** Was the Cloud Topics master switch before v26.2; from v26.2 on `cloud_storage_enabled` is the only cluster-level prerequisite. |
-| `cloud_topics_produce_upload_interval` | duration | How often buffered produce data is uploaded to object storage. |
+| `cloud_topics_produce_upload_interval` | integer (ms) | How often buffered produce data is uploaded to object storage. |
 | `cloud_topics_produce_batching_size_threshold` | integer | Produce batch size that triggers an upload. |
-| `cloud_topics_reconciliation_interval` | duration | Base reconciliation loop interval. |
+| `cloud_topics_reconciliation_min_interval` | integer (ms) | Minimum reconciliation interval for adaptive scheduling: the reconciler never runs more frequently than this. |
+| `cloud_topics_reconciliation_max_interval` | integer (ms) | Maximum reconciliation interval for adaptive scheduling. |
 | `cloud_topics_reconciliation_target_fill_ratio` | number | Target object fill ratio used during reconciliation. |
 | `cloud_topics_num_metastore_partitions` | integer | Partition count for the Cloud Topics metastore. |
 | `cloud_topics_compaction_interval_ms` | integer (ms) | Compaction loop interval. |
@@ -413,6 +414,12 @@ To bring a cluster back into compliance without a license (mirrors `rpk cluster 
 | OIDC/OAUTHBEARER | remove `OIDC`/`OAUTHBEARER` from `sasl_mechanisms` and `http_authentication` |
 | FIPS | `fips_mode=disabled` (node config) |
 | RBAC | delete roles (`DELETE /v1/security/roles/{role}`) |
+
+On v26.2.4 and later, `GET /v1/cluster_config/schema` reports each
+property's enterprise-license restrictions — and, for `sasl_mechanisms`, which
+of its accepted values need a license. Enumerate the license-gated settings from
+that response when you need the set a specific cluster enforces; the table above
+is the curated list of the features this skill covers, not a live inventory.
 
 Example:
 

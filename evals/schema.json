@@ -1,0 +1,262 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Skill vs docs eval suite",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "skill",
+    "description",
+    "test_cases"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string",
+      "description": "Directory name under skills/ that this suite measures."
+    },
+    "description": {
+      "type": "string"
+    },
+    "test_cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "query",
+          "why",
+          "verified_against"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "query": {
+            "type": "string",
+            "description": "What a user would ask. Must not contain its own answer."
+          },
+          "why": {
+            "type": "string",
+            "description": "The fact under test and why a model would not already know it. Not graded."
+          },
+          "verified_against": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Public docs URLs or public source paths that confirm the fact. Not graded."
+          },
+          "required_patterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failure_patterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "invariants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "failure_condition"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_]+$"
+                },
+                "failure_condition": {
+                  "type": "string",
+                  "description": "What fails, AND what passes."
+                }
+              }
+            }
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "docs-cited",
+              "sampled",
+              "targeted",
+              "behavioral",
+              "held-out"
+            ],
+            "description": "How the case was picked. docs-cited: written from a published docs page, so it can only show the docs finding what they say. sampled: a claim taken from the skill without regard to the docs. targeted: a claim the author expected the docs to lack. Report verdicts per origin; never pool them. behavioral: a procedure the skill prescribes, graded on the calls the agent makes (needs a tools block). held-out: a procedure case written without seeing any version of the skill, so it can compare skill versions fairly."
+          },
+          "tools": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mock"
+            ],
+            "description": "Behavioral cases: a mocked tool surface given to every arm, and assertions on what the subject called.",
+            "properties": {
+              "mock": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "description",
+                    "responses"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*$"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "input_schema": {
+                      "type": "object"
+                    },
+                    "responses": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "match",
+                          "output"
+                        ],
+                        "properties": {
+                          "match": {
+                            "type": "string"
+                          },
+                          "output": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "expected_calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "tool"
+                  ],
+                  "properties": {
+                    "tool": {
+                      "type": "string",
+                      "description": "Mock tool name."
+                    },
+                    "args": {
+                      "type": "string",
+                      "description": "Case-insensitive regex the call's arguments (as JSON) must match."
+                    }
+                  }
+                },
+                "description": "Each must be matched by at least one call."
+              },
+              "forbidden_calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "tool"
+                  ],
+                  "properties": {
+                    "tool": {
+                      "type": "string",
+                      "description": "Mock tool name."
+                    },
+                    "args": {
+                      "type": "string",
+                      "description": "Case-insensitive regex the call's arguments (as JSON) must match."
+                    }
+                  }
+                },
+                "description": "None may be matched by any call."
+              },
+              "ordered_calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "tool"
+                  ],
+                  "properties": {
+                    "tool": {
+                      "type": "string",
+                      "description": "Mock tool name."
+                    },
+                    "args": {
+                      "type": "string",
+                      "description": "Case-insensitive regex the call's arguments (as JSON) must match."
+                    }
+                  }
+                },
+                "description": "Must each be matched, in this order (other calls may come between)."
+              },
+              "first_call": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "tool"
+                ],
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "description": "Mock tool name."
+                  },
+                  "args": {
+                    "type": "string",
+                    "description": "Case-insensitive regex the call's arguments (as JSON) must match."
+                  }
+                },
+                "description": "The subject's first mock call must match."
+              }
+            }
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "required_patterns"
+            ]
+          },
+          {
+            "required": [
+              "failure_patterns"
+            ]
+          },
+          {
+            "required": [
+              "invariants"
+            ]
+          },
+          {
+            "required": [
+              "tools"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

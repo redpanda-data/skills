@@ -27,7 +27,7 @@ the connect tree. Benthos-defined flags are deferred (see below).
 |---|---|---|---|
 | `SKILL.md` | `internal/cli/dry_run.go`, `internal/cli/custom_lint.go`, `internal/cli/flags_redpanda.go`, `internal/cli/flags_common.go`, `internal/cli/enterprise.go`, `internal/cli/connectors_list.go`, `internal/license/service.go`, `internal/secrets/secrets.go` | `docs/modules/components/pages/http/about.adoc`, `logger/about.adoc`, `metrics/prometheus.adoc`, `metrics/json_api.adoc`, `tracers/open_telemetry_collector.adoc` | `modules/get-started/pages/licensing.adoc` |
 | `references/lint-and-validate.md` | `internal/cli/dry_run.go` (`dryRunCli()`, output format, `--redpanda-license`), `internal/cli/custom_lint.go` (`customLintCli()` = `mcp-server lint`), `internal/cli/flags_common.go` / `flags_redpanda.go` (`--verbose`, `--env-file`/`-e`, `--secrets`) | — | — |
-| `references/logging-metrics-tracing.md` | — | `docs/modules/components/pages/logger/about.adoc`, `metrics/prometheus.adoc`, `metrics/statsd.adoc`, `metrics/json_api.adoc`, `metrics/logger.adoc`, `tracers/open_telemetry_collector.adoc`, `http/about.adoc`, `redpanda/about.adoc` | — |
+| `references/logging-metrics-tracing.md` | `internal/impl/prometheus/metrics_prometheus.go` (the `prometheus` exporter's own config spec — it lives in `redpanda-data/connect`, not in the benthos engine: `use_histogram_timing`, `histogram_timing_seconds_suffix`, the seconds conversion in `promTiming.Timing`, and the `_ns` → `_seconds` rewrite in `histogramTimerName`) | `docs/modules/components/pages/logger/about.adoc`, `metrics/prometheus.adoc`, `metrics/statsd.adoc`, `metrics/json_api.adoc`, `metrics/logger.adoc`, `tracers/open_telemetry_collector.adoc`, `http/about.adoc`, `redpanda/about.adoc` | — |
 | `references/failure-modes.md` | `internal/cli/dry_run.go`, `internal/cli/custom_lint.go`, `internal/license/service.go` (`readLicense`, default-path fallback), `internal/license/shared_service.go` (`CheckRunningEnterprise` error string) | `docs/modules/components/pages/logger/about.adoc`, `metrics/*`, `http/about.adoc`; CDC input skeletons under `docs/modules/components/pages/inputs/` | — |
 | `references/enterprise-features.md` | `internal/cli/enterprise.go` (connector-list apply, `OnConfigParse`), `internal/cli/connectors_list.go` (`ApplyConnectorsList`, allow/deny), `internal/cli/flags_redpanda.go` (`--redpanda-license`, `--secrets`, `defaultLicenseConfig()`), `internal/license/service.go` (`defaultLicenseFilepath`), `internal/secrets/secrets.go` (`parseSecretsLookupURN`, URN schemes) | `docs/modules/components/pages/inputs/postgres_cdc.adoc`, `mysql_cdc.adoc`, `mongodb_cdc.adoc`, `oracledb_cdc.adoc`, `microsoft_sql_server_cdc.adoc`, `aws_dynamodb_cdc.adoc`, `gcp_spanner_cdc.adoc`, `salesforce_cdc.adoc`; `redpanda/about.adoc` | `modules/get-started/pages/licensing.adoc` (Connect enterprise feature table) |
 
@@ -44,6 +44,26 @@ recognized"`.
 - **Runtime log/trace output** — the "Successfully loaded Redpanda license", allow/deny apply, and logfmt/json log-line examples are illustrative runtime output.
 - **Component enterprise-support status** — confirm via the component catalog (`?support=enterprise`) or `rpk connect dry-run` at runtime, not a static list.
 
+## Sync log
+
+### Connect v4.112.0 (2026-10-09)
+
+- **New `prometheus` metrics field `histogram_timing_seconds_suffix`** (bool, default `false`,
+  `Version("4.112.0")`, Advanced). Verified at tag `v4.112.0` in
+  `internal/impl/prometheus/metrics_prometheus.go`: when it and `use_histogram_timing` are both true,
+  `histogramTimerName` rewrites a trailing `_ns` to `_seconds`. It is **opt-in**, not an automatic
+  rename — the release changelog describes the change as a fix, but the source adds a flag and leaves
+  the default behavior (histogram series keep the `_ns` name while recording seconds) unchanged.
+  Enabling it renames existing series.
+- Added to the `prometheus` config block in `references/logging-metrics-tracing.md`, together with the
+  unit mismatch it addresses and the remote-write "multiple metric kinds" rejection that a fleet mixing
+  `use_histogram_timing` produces. The same field was added to the metrics block in
+  `skills/connect/references/config-structure.md`.
+- **Provenance correction:** the `prometheus` metrics exporter is implemented in
+  `redpanda-data/connect` (`internal/impl/prometheus/`), not in the `redpanda-data/benthos` engine, so
+  exporter-level claims verify against the Connect release tag. The source map row for this file was
+  `—` for connect paths and now carries it.
+
 ## TODO / re-verify
 
 - **Licensing doc path mismatch:** the skill cites `docs/modules/get-started/pages/licensing/overview.adoc` and `.../licensing/disable-enterprise-features.adoc`. Neither exists. The Connect licensing page is a single file in **rp-connect-docs**: `modules/get-started/pages/licensing.adoc` (no `licensing/` subdir). `disable-enterprise-features.adoc` is a **self-managed `redpanda-data/docs`** page, out of this skill's scope — re-point or drop.
@@ -59,3 +79,62 @@ every claim still matches. Verify against the current stable release tag of
 (licensing/product docs). Treat the upstream Benthos command surface as live-introspected,
 not pinned. Re-confirm exact flag names, config keys, and error strings before writing any
 new fact.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **Community binary now reports a license error, not an internal fault.**
+  Verified at tag `v4.113.1` in `internal/license/shared_service.go`:
+  `CheckRunningEnterprise` returns `errEnterpriseLicenseRequired` when no license
+  service is registered at all — the case of `redpanda-connect-community`, which
+  can still import enterprise components — instead of the
+  "unable to access license service" error. The same file shows the error string
+  now pointing at `https://docs.redpanda.com/connect/get-started/licensing/`.
+  Both applied to `references/enterprise-features.md`, and the quoted error in
+  `references/failure-modes.md` was updated to the current string.
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.
+- The `connector_list.yaml` allow-list example in
+  `references/enterprise-features.md` and the illustrative lint/connection-test
+  output in `references/lint-and-validate.md` named `kafka_franz`; both now name
+  `redpanda` so no example teaches a deprecated component.
+
+### Connect v4.115.0 / benthos v4.84.0 (2026-10-23 sync)
+
+- **Credentials in URLs are redacted from logs, errors, spans and request
+  dumps.** Benthos `CHANGELOG.md` at tag `v4.83.0` (the engine version pinned at
+  connect `v4.114.0`; `connect/go.mod` at `v4.115.0` pins `v4.84.0`) records the
+  new `public/utils/redact` package and the behavior it backs: a URL's
+  credentials no longer appear in errors, logs, spans or request dumps, and
+  credential headers such as `Authorization` are hidden too, across the HTTP
+  components, `websocket`, the `parse_url` method, URL config fields and the
+  `studio` CLI. Added as a short Logger subsection in
+  `references/logging-metrics-tracing.md`, because a reader debugging a
+  connection failure needs to know a credential-free URL in an error is
+  redaction rather than a truncated message. Grounded in the changelog at the
+  tag; not line-verified against each call site, so the component list is the
+  changelog's.
+- **Not documented:** the `--rpc-plugins` flag being accepted by `dry-run` and
+  merging root- and subcommand-level values (connect
+  `internal/cli/flags_common.go`) — `references/lint-and-validate.md` documents
+  `dry-run`'s `--verbose`, `--env-file` and `--redpanda-license` flags but no
+  RPC-plugin surface, and nothing it claims is contradicted; the HTTP retry
+  backoff fix; and the `v4.84.0` Go API docs-rendering additions. The new
+  `list --docs-format` flag is a discovery surface and was applied in the
+  `connect` skill's `references/connector-catalog.md` instead.
+- **Two invalid literals fixed in the `redpanda:` block example**
+  (`references/enterprise-features.md`). Both fields come from connect
+  `internal/impl/kafka/franz_writer.go` `FranzProducerFields()` at `v4.115.0`:
+  `compression` is an enum (`lz4`/`snappy`/`gzip`/`none`/`zstd`) with
+  `Default("snappy")`, so the example's `compression: ""` was a wrong default
+  left behind when the `v4.113.1` sync deferred that default change;
+  `partitioner` is an `Optional()` enum with no default, so it is now shown
+  commented out instead of as `""`. Confirmed by running `redpanda-connect lint`
+  (v4.115.0 release binary) on the block: as written it failed with `value  is
+  not a valid option for this field` on exactly those two lines, and with the
+  fix it lints clean.

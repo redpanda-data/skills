@@ -1,28 +1,25 @@
-Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`mcp-server`, `mcp-server create`, `mcp-server tools list|call`, `mcp-server types`, `mcp-server get` and error sections), `adp-docs modules/connect/pages/create-server.adoc`, `data-policies.adoc`, `user-delegated-oauth.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`, `managed/slack.adoc`, `managed/managed-catalog.adoc`, `adp-docs modules/gateway/pages/code-mode.adoc` — verified 2026-09-23. The per-method `user_oauth` gating and `response_format` fail-open behavior are carried forward from the earlier source-verified revision and cross-checked against `user-delegated-oauth.adoc` and `create-server.adoc` on 2026-09-23. SQL table exposure on a managed connector and the `scope_upgrade_required` remedy verified 2026-09-28 against `adp-docs modules/connect/pages/managed/jira.adoc` and the user-delegated OAuth scope guidance in `modules/connect/pages/managed/` and `user-delegated-oauth.adoc`. Sync 2026-10-05: the mask-versus-row-membership limit on SQL table exposure verified against `adp-docs modules/connect/pages/data-policies.adoc` (Limitations) and `modules/connect/pages/managed/jira.adoc` (the filterable columns of each table). The tool-call remedy checked 2026-10-05 against `adp-docs modules/connect/pages/data-policies.adoc` (Limitations: deny `McpServerTool.call` on that one tool) and `modules/control/pages/access-policies.adoc` (the only tool resource form shown is per-server, Specific resource scoping a child type to the children of one parent); no single-tool resource form is published.
+Source: `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`mcp-server` group), `adp-docs modules/connect/pages/` (`create-server.adoc`, `data-policies.adoc`, `user-delegated-oauth.adoc`, `remote-mcp-clients.adoc`, `oauth-providers.adoc`, `managed/`), `modules/gateway/pages/code-mode.adoc`, `modules/control/pages/` (`access-policies.adoc`, `tags.adoc`). Full per-claim mapping and the dated verification log: the `references/mcp-servers.md` rows of `SOURCES.md`.
 
 # Agentic Data Plane MCP Servers Reference
 
-**Maturity:** Redpanda Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Output format and data policies are Preview capabilities, and individual managed types carry their own maturity badges in the managed catalog; confirm the badge in the UI or docs rather than assuming GA.
-
-Audience: an AI agent operating Agentic Data Plane MCP servers through `rpk ai mcp-server` and the ADP UI (ai.redpanda.com), and connecting MCP clients to them.
-
-Related references: [SKILL.md](../SKILL.md), [agents.md](agents.md), [gateway-and-providers.md](gateway-and-providers.md), [governance.md](governance.md), [rpk-ai.md](rpk-ai.md), [observability.md](observability.md).
+**Maturity:** Output format, data policies and the Google Identity-Aware Proxy setting are Preview, and individual managed types carry their own maturity badges in the managed catalog; confirm the badge in the UI or docs rather than assuming GA.
 
 For the separate `rpk cloud mcp` control-plane server, see /redpanda:rpk-cloud.
 
 ## Discover the live surface
 
 ```bash
-rpk ai mcp-server --help                    # aliases: mcp-servers, mcp
-rpk ai mcp-server create --help             # flags grouped by backend (remote.*, managed.*)
-rpk ai mcp-server list                      # NAME, TYPE, URL, ENABLED
-rpk ai mcp-server get <name> -o yaml        # full manifest, including data policies
-rpk ai mcp-server types                     # managed types available to you (-o wide adds type URLs)
-rpk ai mcp-server tools list <name>         # live tools/list through the gateway
-rpk ai mcp-server tools call <name> <tool> --args '{"k":"v"}'
+rpk ai mcp-server --help                  # aliases: mcp-servers, mcp
+rpk ai mcp-server create --help           # flags grouped by backend (remote.*, managed.*)
+rpk ai mcp-server get <name> -o yaml      # full manifest, including data policies
+rpk ai mcp-server types                   # managed types available to you (-o wide adds type URLs)
+rpk ai mcp-server tools list <name>       # live tools/list through the gateway
+rpk ai mcp-server ping <name>             # negotiated protocol version and advertised capabilities
+rpk ai mcp-server resources list <name>   # also resource-templates, prompts
+rpk ai mcp-server sql-exposure <name>     # also sql-sources, test-sql-exposure
 ```
 
-In the UI: **MCP servers** in the sidebar → **Add MCP server**. A server's detail page has **Overview**, **Data Policies**, **Connection** (the `Server URL`, the `Code mode URL`, and client snippets), and **Inspector** tabs, plus **Access** and **Activity** where enabled.
+In the UI: **MCP servers** in the sidebar → **Add MCP server**. On a server's page, **Connection** carries the `Server URL`, the `Code mode URL` and client snippets, **Data Policies** the data shaping, and **Inspector** the live tool view the protocol commands above also reach.
 
 ## Commands
 
@@ -34,9 +31,16 @@ In the UI: **MCP servers** in the sidebar → **Add MCP server**. A server's det
 | `delete NAME` | Delete the record |
 | `types` | Managed types you can create |
 | `tools list NAME` / `tools call NAME TOOL` | Call `tools/list` / a tool through the gateway, with the same auth and per-user token path a client uses. `--code-mode` targets the code-mode endpoint |
+| `ping NAME` | Open a session and report the negotiated MCP protocol version and the capabilities the server advertises. **Start here when a server misbehaves:** a server that answers `ping` is reachable and authenticated |
+| `resources list/read`, `resource-templates list`, `prompts list/get` | Browse and read what the server serves besides tools — the same surface the UI's **Inspector** tab shows |
+| `sql-exposure NAME`, `sql-sources`, `test-sql-exposure NAME` | Inspect a server's SQL exposure, list its SQL sources, and run a read-only exposure test (see [SQL table exposure](#sql-table-exposure-on-a-managed-connector)) |
+| `preview-data-policies`, `preview-tool-response` (`--name` and `--tool` required) | Preview the data policies in force on a tool, and what they do to a tool response, without calling the tool |
+| `google-identity NAME` | Print the identity the gateway mints Google ID tokens with, and the `gcloud` commands that trust it (see [Google Identity-Aware Proxy](#google-identity-aware-proxy-and-cloud-run-preview)) |
 | `apply -f` / `diff -f` | GitOps reconcile / dry-run (see [rpk-ai.md](rpk-ai.md)) |
 
 `create` and `update` also accept `-f <manifest>` (flags override file values) and `--dry-run` (print the request, including the computed update mask, without sending it).
+
+**A server serves only what it advertises**, so `resources`, `resource-templates` and `prompts` against a capability it does not offer fail saying so rather than returning an empty list — "empty" and "not offered" are different answers. `resources read` goes *through* the server and never fetches the URI itself. The `list` commands return one page: pass their `nextCursor` back as `--cursor`.
 
 A missing server reads `Error: MCP server not found (use 'rpk ai mcp-server list' to see what's available)` followed by `Code: not_found`. An invalid enum value lists the valid ones, for example `--remote.transport: invalid value "websocket"; valid values: sse, streamable-http`.
 
@@ -50,7 +54,7 @@ As they appear in flags and `get -o yaml`:
 | backend | `--remote.*` or `--managed.config` | Remote (a server you host, proxied by the gateway) or managed (hosted by Redpanda). The flag group you use selects it; mixing groups is an error. Immutable |
 | `enabled` | `--enabled` | **The CLI creates a server disabled unless you pass `--enabled`**; the UI creates it enabled. A disabled server rejects every request, connection attempts included |
 | `description` | `--description` | Up to 256 characters |
-| `tags` | `--tags key=value` (repeatable) | Up to 50 pairs, values up to 256 characters; for filtering and tag-based access-policy conditions. An update replaces the whole map. No UI field. No secrets or PII |
+| `tags` | `--tags key=value` (repeatable) | Up to 50 pairs, values up to 256 characters; an update replaces the whole map. No secrets or PII (see [governance.md](governance.md#tags-on-adp-resources)) |
 | `code_mode` | `--code-mode` | See [Code mode](#code-mode) |
 | `response_format` | `--response-format jton\|toon` | See [Output format](#output-format-token-optimization). Omitted = JSON |
 | `data_policies` | `--data-policies` (repeatable) | See [Data policies](#data-policies-preview). Returned by `get`, omitted by `list` |
@@ -61,7 +65,7 @@ Remote servers take `--remote.url` (alias `--url`) and `--remote.transport` (ali
 
 ## Remote auth modes
 
-A remote server uses exactly one of five auth modes; the flag group you set selects it. Managed types show only the modes that make sense for that type (SQL, for example, never offers user OAuth) and carry their auth shape inside `--managed.config`.
+A remote server uses exactly one of five auth modes; the flag group you set selects it. A managed type configures authentication inside its own `--managed.config` instead: it may offer some of the same modes, showing only those that make sense for the type (SQL, for example, never offers user OAuth), and the AWS types use none of them (see [Managed catalog](#managed-catalog)).
 
 | Mode | UI label | CLI flags | Behavior |
 |---|---|---|---|
@@ -99,6 +103,26 @@ Consequences:
 - **Only sign-in-fixable failures** (no connection, an expired one, a missing scope) open the token-less listing path. An unresolvable provider, an unreachable token store, or a connection that does not verify fails listings too. So a `tools/list` that fails **hard** on a user-OAuth remote server is an infrastructure or configuration problem, **not** a missing user connection — do not prompt the user to sign in.
 
 A connected caller is not automatically the *acting* identity: on a managed connector the provider can decide that, and for Slack it does — see [below](#user-delegated-oauth-on-a-managed-connector-whose-identity-acts).
+
+### Google Identity-Aware Proxy and Cloud Run (Preview)
+
+A remote server behind **Google Identity-Aware Proxy (IAP)**, or a **Cloud Run** service that requires authentication, needs no public endpoint and no service-account key: the gateway presents the gate with a Google-signed ID token for a service account you control. This is **not** a sixth auth mode — it sits *alongside* the server's own authentication, in a different header, and the server still checks its own credential. It also applies to a JavaScript managed server, where the gate protects the backend that server's code calls, not the server itself (which runs inside the gateway).
+
+```bash
+rpk ai mcp-server google-identity <name>    # the identity to trust, and the gcloud commands; the server need not exist yet
+rpk ai mcp-server create <name> --enabled \
+  --remote.url https://internal.example.com/mcp --remote.transport streamable-http \
+  --remote.google-identity-aware-proxy.service-account gate@my-project.iam.gserviceaccount.com \
+  --remote.google-identity-aware-proxy.audience <oauth-client-id>.apps.googleusercontent.com \
+  --remote.google-identity-aware-proxy.workload-identity-provider <provider-resource-name>  # AWS only; omit on Google Cloud
+```
+
+- **Audience and header both differ by gate.** IAP takes an OAuth client ID it accepts for programmatic access (ending `.apps.googleusercontent.com`) and reads `Proxy-Authorization`, the `header-name` default; Cloud Run takes the service URL or a custom audience and reads `X-Serverless-Authorization`. **The token can't share a header with the server's own credential**, so `Authorization` is admissible only if the server's own authentication uses another header or the server has none, and never on a JavaScript server. The URL must be `https://`.
+- **`workload-identity-provider` is required on an AWS-hosted environment and must be empty on a Google Cloud one** — on AWS the gateway federates its own AWS role, on Google Cloud it uses its own service account. Run `google-identity` rather than guessing: it prints the setup for the environment you are pointed at.
+- **The blast radius differs by environment.** On AWS the binding trusts **one server's session**, so a second server naming the same service account is refused and needs its own binding. On Google Cloud it trusts the **whole gateway**: anyone who can create or update an MCP server there can get tokens as that service account, so treat that permission as equivalent to acting as it. Either way grant each service account access at **one gate only** — gates in a project commonly share one OAuth client, so the IAM grant is all that scopes the token.
+- **In the UI the setting is read-only** on a self-managed server's edit page and saving the form does not change it; use `update`. `get` prints a `Gate:` line naming the service account, audience and header.
+- **Verifying differs by server kind.** `tools list` proves the gate admitted the gateway for a *self-managed* server. A **JavaScript** server's tool list comes from its own bundle and never reaches the backend, so it proves nothing — call a tool that fetches a listed host instead. Such a server names the hosts that get the token: up to eight exact hostnames, no wildcards, fetchable without also being in `Allowed Hosts`, token added only to HTTPS requests to a listed host on the default port, never visible to the code.
+- **Misconfiguration surfaces at the first token request, not at save.** A missing binding or unenabled API is Google's to detect, so calls fail with **`502 upstream_auth_error`** naming the problem (a JavaScript server's `fetch()` fails with that message). A `user_oauth` server returns `Authorization required` *before* any token is minted, so that error says nothing about the gate. A client's own `Proxy-Authorization` is never forwarded, and the token's header is dropped from any redirect leaving the server's origin.
 
 ## Connecting clients
 
@@ -156,14 +180,9 @@ The selected encoding may not be active on every gateway; until it is, results a
 
 ## Data policies (preview)
 
-Data policies shape a server's tool traffic before the model sees it: mask, redact, hash, or drop result fields; restrict tool-call argument values; and filter elements out of list results. They apply to managed and remote servers, compose **most-restrictively** across every matching policy, and **fail closed** (a rule that cannot be enforced denies matching calls). Each policy names the `tools` it shapes and the `principals` (`User:<email>`) it applies to; an empty list means all. Data policies decide *how data looks*; access policies decide *whether* a call runs.
+Data policies mask or drop fields, limit tool-call arguments and filter list results before the model sees them, on managed and remote servers. They compose **most-restrictively** across every matching policy and **fail closed**; they decide *how data looks*, access policies *whether* a call runs. Author them on the server's **Data Policies** tab (its **Configuration** and **Preview** tabs show the composed effect and run sample data before you save) or with `--data-policies`: one JSON object per flag, and on `update` it **replaces the server's whole list**, so pass every policy the server should keep — it is also the only way to make one policy shape several tools. `preview-data-policies` and `preview-tool-response` preview them from the CLI; `get <name> -o yaml` shows them and `list` omits them.
 
-- **UI:** server → **Data Policies** tab. Pick a tool, click **New policy**, choose **Keep / Mask / Drop** per field, or edit the rules as YAML.
-- **Preview before saving (UI):** the **Configuration** tab shows the composed effect for the selected tool across all of the server's policies, including unsaved edits, with each field's winning treatment. The **Preview** tab runs editable sample data (seeded from the tool's schema) through the rules and shows before/after for both the request and the response, with counts of masked, dropped, and filtered items, and a banner when matching calls would be denied. There is no CLI preview command.
-- **CLI:** `--data-policies` on `create` / `update` takes one policy per flag as a JSON object and **replaces the server's whole list**, so pass every policy the server should keep. This is also the only way to make one policy shape several tools. Read policies with `rpk ai mcp-server get <name> -o yaml`; `list` omits them.
-- Rules written in YAML or via `--data-policies` are **strict** unless marked absence-safe: a strict mask or drop whose selector matches nothing denies the call. Rules created in the UI form default to absence-safe.
-
-For the transform vocabulary (mask methods, selectors, allowlist mode, argument limits, row filters), limitations, and audit-log outcomes, see [governance.md](governance.md).
+Selectors, strict versus absence-safe rules (rules written in YAML or `--data-policies` are strict unless marked absence-safe; UI-form rules default to absence-safe), limits and audit-log outcomes: [governance.md](governance.md#data-policies-mcp-data-shaping).
 
 ## Managed catalog
 
@@ -181,6 +200,10 @@ rpk ai mcp-server create my-sql --enabled \
 
 Type-specific fields (including a `userOauth` block for types that support user-delegated OAuth) differ per type; take them from the type's setup guide or the UI form.
 
+**The AWS types can run with no stored credentials.** The AWS managed types authenticate either with AWS access keys held in the secret store or by **assuming an IAM role you create in the AWS account the environment runs in**, which keeps no AWS credential in ADP at all. The keyless mode needs the gateway to have an AWS identity, so it works only on an environment hosted on AWS and fails elsewhere. These types do not use the remote auth modes above. Read the AWS setup guide for the role, its trust policy, and the per-type configuration.
+
+**A managed type's `readonly` guardrail is the type's own, and the SQL type's now holds both tools to reads.** With `readonly` set, the SQL type disables `execute` outright *and* constrains `query`: it checks the statement text, then runs it in a transaction it never commits (opened read-only on PostgreSQL), so a write that slips past the text check still does not persist — `DELETE … RETURNING` through `query` fails rather than running. The text check is deliberately strict and refuses some legitimate reads: the statement must start with `SELECT`, `WITH`, `SHOW`, `VALUES` or `TABLE` (or `EXPLAIN` of one of those); a `;` other than a trailing one, and any write, DDL, grant, transaction or session-control keyword, is refused **wherever it appears, string literals and comments included**, the `CREATE` in `SHOW CREATE` being the one exception (so `… WHERE action = 'delete'` is refused — pass such values as query parameters, which the check does not read); `VALUE` after `NEXT` is refused (use `LIMIT`, not `FETCH NEXT`); and advisory-lock functions are refused by name, a safeguard rather than a guarantee. With `readonly` unset, `query` runs whatever it is given. Scope the database user's privileges too: grants are the one control that holds however the statement arrives.
+
 ### SQL table exposure on a managed connector
 
 Some managed types can present their data as read-only SQL tables in addition to their tools, so an agent can filter records the way it would query a database instead of paging through tool results. It is a per-server setting, **off by default** (UI: the **Enabled** toggle under **Queryable** in the server's configuration; CLI: the type's own field in `--managed.config`), so an existing server gains nothing until someone turns it on. Which types offer it changes, so read the type's configuration form or setup guide rather than assuming.
@@ -197,19 +220,15 @@ Behavior to design around:
 - **Paged scans are best-effort.** Page sizes are capped per table, the upstream keeps changing under a multi-page scan, and a cursor is bound to the query that produced it — reusing one with different predicates or against another table is refused rather than quietly restarting.
 - **A value list longer than the cap fails** instead of being silently truncated.
 - **Authentication is the server's own**, so with user-delegated OAuth a query returns only what the calling user can see. Neither tool writes.
-- **A data-policy mask does not hide row membership.** Masking a column that the table also declares filterable hides that column's values, but a caller who can call `execute_query` can still filter on it, and whether any rows come back tells them whether the value is there. A mask on a column that cannot be filtered is not exposed this way, and `list_tables` is what reports which columns are filterable. Where a caller must not learn which records exist, withhold `execute_query` from them instead of relying on the mask. The documented remedy is an access policy that denies `McpServerTool.call` on that one tool, but the only resource form the docs show for tools is the per-server one (`resource is McpServerTool in McpServer::"<name>"`), so until the single-tool form is confirmed, deny that caller the server's tools, leave the setting off on the server they reach, or expose the tables from a separate server. <!-- TODO(human): confirm the Cedar resource form that names one tool; the data-policies Limitations prescribe a per-tool deny but publish no example. Once confirmed, restore the per-tool remedy here and in governance.md. --> See [governance.md](governance.md#data-policies-mcp-data-shaping).
+- **A data-policy mask does not hide row membership.** A caller who can call `execute_query` can filter on a masked column that the table declares filterable (`list_tables` reports which), and whether rows come back tells them whether the value is there. Where a caller must not learn which records exist, withhold `execute_query` from them with the single-tool Cedar `forbid` in [governance.md](governance.md#deny-one-tool-on-one-mcp-server) — written as Cedar text, because the policy form cannot scope to one tool, and keeping its `when` clause, or it denies every tool named `execute_query` on every server the principal can reach. Data policies themselves: [governance.md](governance.md#data-policies-mcp-data-shaping).
 - **The tools reach every caller of the server**, agents included. Leave the setting off on a server whose agents should only reach the curated tools.
 
 ### User-delegated OAuth on a managed connector: whose identity acts
 
-On a managed connector that supports user-delegated OAuth, the per-user connection decides **which** stored credential is used, not necessarily **whose identity** the upstream call carries. Slack is the case where these differ, because one Slack authorization can issue both a bot token and a user token. The acting identity is fixed by the OAuth provider's **Slack OAuth token type** (`slack_token_type`), not by who owns the connection:
-
-- **`Bot User OAuth Token`** (the default, and what providers created before the setting existed keep): tools post, read, and react **as the app's bot user**, even on a user-OAuth server.
-- **`User OAuth Token`**: tools act **as the person who authorized**. Offered only when the provider uses Slack's standard OAuth v2 authorize and token endpoints, so not on a provider set up by discovery.
-- The setting is chosen at provider creation and is immutable, so serving both identities means two providers (they can share one Slack app). See [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
+On a managed connector that supports user-delegated OAuth, the per-user connection picks **which** stored credential is used, not **whose identity** the upstream call carries. For Slack the OAuth provider's **Slack OAuth token type** (`slack_token_type`) decides: the default `Bot User OAuth Token` acts **as the app's bot user**, even on a user-OAuth server, and `User OAuth Token` — offered only on Slack's standard OAuth v2 endpoints, so not on a provider set up by discovery — acts as the person who authorized. It is immutable, so serving both identities means two providers (they can share one Slack app); see [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
 
 Some Slack tools accept only one identity: search needs a user token, and a bot token comes back as `not_allowed_token_type` or `user_token_required`. That is a provider token-type problem, not a missing connection or scope.
 
 ## Permissions
 
-`dataplane_adp_mcpserver_*` gates both server management and each MCP protocol call against a running server (`initialize`, `tools_list`, `tools_call`, `resources_read`, `prompts_get`, and so on). Grant tool calls with a policy on `Action::"McpServerTool.call"`, scoped to one server where possible (`resource is McpServerTool in McpServer::"<name>"`). Attaching an OAuth provider to a server needs `dataplane_aigateway_oauthprovider_attach`. See [governance.md](governance.md#roles-and-permissions).
+Grant tool calls with a policy on `Action::"McpServerTool.call"`, scoped to one server where possible (`resource is McpServerTool in McpServer::"<name>"`). Attaching an OAuth provider to a server needs `dataplane_aigateway_oauthprovider_attach`. For the `dataplane_adp_mcpserver_*` family, which gates each MCP protocol call as well as management, see [governance.md](governance.md#roles-and-permissions).

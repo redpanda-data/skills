@@ -80,3 +80,14 @@ treat the `mysql_cdc` field list/defaults/descriptions as auto-generated (regene
 hand-edit), and re-confirm exact field names, defaults, and metadata keys before writing any new
 fact. For server-side and broker/topic-property claims, verify against the external sources noted
 above, not the connect repo.
+
+### Connect v4.113.1 (2026-10-16 sync)
+
+- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
+  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
+  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
+  description that opens "Use the `redpanda` output instead". The rename is
+  field-safe: both specs are assembled from the same `FranzConnection*`,
+  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
+  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
+  optional there). Each changed YAML block was re-parsed after the rename.

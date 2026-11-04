@@ -19,7 +19,7 @@ properties cannot be set).
 ## 1. Redpanda Connect Enterprise license (required for this connector)
 
 `microsoft_sql_server_cdc` is one of the Redpanda Connect
-[enterprise connectors](https://docs.redpanda.com/redpanda-connect/components/catalog/?support=enterprise).
+[enterprise connectors](https://docs.redpanda.com/connect/components/catalog/?support=enterprise).
 Running it without a license fails at startup. After the 30-day evaluation
 period you are blocked from using enterprise connectors unless you upgrade to an
 Enterprise Edition license.
