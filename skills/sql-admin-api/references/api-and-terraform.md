@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/sql/pages/get-started/deploy-sql-cluster.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc-aws.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc-gcp.adoc`, `modules/manage/pages/terraform-provider.adoc` (section "Enable Redpanda SQL on a BYOC cluster"). Verified 2026-10-21. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/get-started/deploy-sql-cluster.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc-aws.adoc`, `modules/sql/pages/get-started/enable-sql-byovpc-gcp.adoc`, `modules/manage/pages/terraform-provider.adoc` (section "Enable Redpanda SQL on a BYOC cluster"); docs `modules/manage/pages/iceberg/{iceberg-topics-aws-glue,iceberg-topics-gcp-biglake}.adoc` (Cloud rendering, BYOVPC catalog IAM). Verified 2026-11-04. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Enable, Scale, and Disable Redpanda SQL: Cloud API and Terraform
 
@@ -189,7 +189,54 @@ curl -X PATCH "https://api.redpanda.com/v1/clusters/<cluster-id>?update_mask=rps
   }'
 ```
 
-For Iceberg queries against an AWS Glue catalog on BYOVPC, set `enable_glue_iceberg_catalog = true` on the module. After the cluster is running, attach the exported `glue_iceberg_policy_arn` to both `redpanda-cloud-storage-manager-<cluster-id>` and `redpanda-<cluster-id>-redpanda-oxla-cluster`. Without both attachments, `REFRESH` of the Glue-backed catalog fails with a permissions error. Catalog setup itself is covered by `/redpanda:sql-federated-queries`.
+#### AWS Glue access for Iceberg queries
+
+For Iceberg queries against an AWS Glue catalog on BYOVPC, set
+`enable_glue_iceberg_catalog = true` on the module. That widens the agent's
+permissions boundary and creates the Glue policies, exporting their ARNs. With
+`enable_redpanda_sql = true` as well, the module also creates the read-only
+policy the SQL engine needs, so there is one policy per role:
+
+| Module output | Attach to | Why |
+|---|---|---|
+| `glue_iceberg_policy_arn` (read/write) | `redpanda-cloud-storage-manager-<cluster-id>` | The brokers create and update the Iceberg tables in Glue. Without it, nothing is written to Glue, so there is nothing to query. |
+| `glue_iceberg_read_only_policy_arn` (read-only) | `redpanda-<cluster-id>-redpanda-oxla-cluster` | The SQL engine reads the catalog when you query Iceberg topics. Without it, `REFRESH` of the Glue-backed catalog fails with a permissions error. |
+
+Redpanda creates both roles with the cluster, so the module cannot attach the
+policies itself. Attach them after the cluster is running, from the workspace
+that creates it:
+
+```hcl
+resource "aws_iam_role_policy_attachment" "glue_storage_manager" {
+  role       = "redpanda-cloud-storage-manager-${redpanda_cluster.cluster.id}"
+  policy_arn = module.redpanda_byovpc.glue_iceberg_policy_arn
+  depends_on = [redpanda_cluster.cluster]
+}
+
+resource "aws_iam_role_policy_attachment" "glue_rpsql_engine" {
+  role       = "redpanda-${redpanda_cluster.cluster.id}-redpanda-oxla-cluster"
+  policy_arn = module.redpanda_byovpc.glue_iceberg_read_only_policy_arn
+  depends_on = [redpanda_cluster.cluster]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+```
+
+`create_before_destroy` on the engine attachment lets Terraform attach a
+replacement policy before detaching the old one, so queries keep working while
+the attachment changes.
+
+The read-only policy only covers the Glue databases listed in the module's
+`glue_iceberg_namespaces` variable. If you set the cluster property
+`iceberg_default_catalog_namespace` to anything other than its default, set
+`glue_iceberg_namespaces` to the same value.
+
+The read-only policy is newer than the read/write one: the BYOVPC enable page
+for AWS gives the module minimum, and tells you how to move an engine role that
+was attached to `glue_iceberg_policy_arn` over to the read-only ARN. Catalog
+setup itself is covered by `/redpanda:sql-federated-queries`.
 
 ### GCP
 
@@ -217,7 +264,22 @@ curl -X PATCH "https://api.redpanda.com/v1/clusters/<cluster-id>?update_mask=rps
   }'
 ```
 
-On GCP, the module also grants the access needed to query Iceberg topics backed by a GCP Lakehouse (BigLake) REST catalog. No extra IAM step is needed.
+#### Lakehouse access for Iceberg queries
+
+On GCP, the module grants the access needed to query Iceberg topics backed by a
+GCP Lakehouse (BigLake) REST catalog, so no extra IAM step is needed. It enables
+the `biglake.googleapis.com` and `bigquery.googleapis.com` APIs, grants the
+cluster's service account the BigLake Editor and Service Usage Consumer roles,
+and, with `enable_redpanda_sql = true`, grants the SQL service account the
+BigLake Viewer and Service Usage Consumer roles: read-only access to the
+catalog. The BYOVPC enable page for GCP gives the module minimum. An earlier
+module granted the SQL service account BigLake Editor, which is write access;
+upgrading replaces it with BigLake Viewer and needs no manual step.
+
+If you provision the IAM another way, grant the SQL service account
+`roles/biglake.viewer` rather than `roles/biglake.editor`, the Service Usage
+Consumer role, and `roles/storage.objectViewer` rather than
+`roles/storage.objectAdmin` on the bucket.
 
 ### On a new BYOVPC cluster
 
@@ -228,6 +290,16 @@ Add the same `rpsql` object and SQL CMR fields to a `POST /v1/clusters` payload,
 - **Explicit leaf-path masks only.** A `PATCH` must list each field you set in `update_mask`, including each SQL CMR leaf. A grouped mask such as `customer_managed_resources` is silently ignored: the operation returns `STATE_COMPLETED`, but SQL stays disabled.
 - **The SQL CMRs cannot be changed while SQL is enabled.** Disable SQL first to change them.
 - **Disabling with Terraform:** set `rpsql.enabled = false` and remove the `rpsql_*` CMR fields from `customer_managed_resources`. The control plane clears them, so leaving them in place causes permanent drift.
+- **Detach Glue policies before disabling SQL (AWS).** Redpanda deletes the
+  `redpanda-<cluster-id>-redpanda-oxla-cluster` role when you disable SQL, and
+  AWS cannot delete a role that still has a policy attached, so the disable can
+  fail with a `DeleteConflict` error. Remove the engine attachment first: drop
+  the `aws_iam_role_policy_attachment` resource and run `terraform apply`, or
+  run `aws iam detach-role-policy` with the role name and the policy ARN. The
+  role is recreated when you re-enable SQL, so add the attachment back
+  afterward. Detach from both roles before you delete the cluster;
+  `terraform destroy` in the workspace that creates the cluster does this for
+  you.
 - **Cloud resources survive a disable.** The SQL resources stay in your account, and you can reuse them on re-enable. To delete them, wait for the disable operation to complete, then set `enable_redpanda_sql = false` in the module and run `terraform apply`. Removing them while the cluster still references them can make the apply fail.
 - **Private connectivity.** BYOVPC clusters are private, so run SQL clients from a host inside the cluster's VPC.
 - BYOVPC itself is an add-on that requires Premium support. Contact your Redpanda account team to unlock it.

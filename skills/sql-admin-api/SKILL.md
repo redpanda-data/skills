@@ -90,6 +90,7 @@ On BYOVPC, Redpanda does not create resources in your cloud account. Before you 
 - The SQL customer-managed resources cannot be changed while SQL is enabled.
 - A `PATCH` must use an explicit leaf-path `update_mask` for each customer-managed resource field. A grouped mask such as `customer_managed_resources` is silently ignored: the operation completes but SQL stays disabled.
 - Disabling SQL does not delete the SQL cloud resources. With Terraform, also remove the `rpsql_*` fields, or you get permanent drift.
+- On AWS, if you attached an AWS Glue policy to the SQL engine's IAM role for Iceberg queries, detach it before you disable SQL. Redpanda deletes that role on disable, and AWS cannot delete a role that still has a policy attached.
 - BYOVPC clusters are private, so connect from a host inside the VPC.
 
 Field names and steps for each cloud are in [api-and-terraform.md](references/api-and-terraform.md#byovpc).
@@ -132,6 +133,7 @@ The SQL endpoint requires TLS (`sslmode=require`). `dbname=oxla` is the database
 
 - Assigning a Cloud role with *SQL: Manage* (SQL superuser) or *SQL: Access* (regular user) provisions the user in the engine. No `CREATE USER` is needed.
 - A *SQL: Access* user owns nothing by default. A *SQL: Manage* user grants `SELECT` on specific topics, catalogs, or schemas.
+- Taking the Cloud role away revokes `CONNECT` and superuser status at the next sync, but does not drop the SQL user: its grants survive and apply again if the role is reassigned. Use `REVOKE` to remove them.
 - Every query reaches the topics through one internal SASL credential, so **Kafka ACLs do not gate query-time access. `GRANT` / `REVOKE` inside Redpanda SQL do.**
 
 Details: [access-and-authentication.md](references/access-and-authentication.md). GRANT/REVOKE syntax: `/redpanda:sql`.
