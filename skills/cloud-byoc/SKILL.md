@@ -2,17 +2,18 @@
 name: cloud-byoc
 description: >-
   Provisions and manages Redpanda Cloud BYOC (Bring Your Own Cloud) clusters via the
-  Control Plane API (api.redpanda.com) and the `rpk cloud byoc` plugin, where your VPC,
-  IAM roles, and storage stay in your own AWS, GCP, or Azure account. Use when creating or
-  tearing down BYOC clusters and Networks; wiring customer-managed IAM roles, buckets, or
-  subnets into a cluster; setting up private connectivity (AWS PrivateLink, GCP Private
-  Service Connect, Azure Private Link, VPC peering, or Transit Gateway egress);
-  configuring dual listener mode (a public and a private listener per service); scaling a
-  cluster by broker count or tier; registering cross-account AWS access; managing Shadow Link cross-cluster DR; running
-  `rpk cloud byoc apply`; or enabling Enterprise features (Tiered Storage, Cloud Topics,
-  Iceberg Topics, Continuous Data Balancing, RBAC, and more) on a BYOC cluster. For
-  Serverless clusters, see `/redpanda:cloud-serverless`; for fully Redpanda-managed
-  Dedicated clusters, see `/redpanda:cloud-dedicated`.
+  Control Plane API and the `rpk cloud byoc` plugin, where your VPC, IAM roles, and
+  storage stay in your own AWS, GCP, or Azure account. Use when creating or tearing down
+  BYOC clusters and Networks; wiring customer-managed IAM roles, buckets, or subnets into
+  a cluster; setting up private connectivity (AWS PrivateLink, GCP Private Service
+  Connect, Azure Private Link, VPC peering, or Transit Gateway egress); configuring dual
+  listener mode; scaling a cluster by broker count or tier; registering cross-account AWS
+  access; managing Shadow Link cross-cluster DR; running `rpk cloud byoc apply`; or
+  enabling Enterprise features (Tiered Storage, Cloud Topics, Iceberg Topics, Continuous
+  Data Balancing, RBAC, and more) on a BYOC cluster. For workload sizing, see
+  `/redpanda:cloud-byoc-sizing`; for Serverless clusters, see
+  `/redpanda:cloud-serverless`; for fully Redpanda-managed Dedicated clusters, see
+  `/redpanda:cloud-dedicated`.
 ---
 
 # Redpanda Cloud API: BYOC Clusters

@@ -1,0 +1,7 @@
+{
+  "cloud": "AWS",
+  "multi_az": true,
+  "workloads": [
+    { "ingress_mbps": 50, "egress_mbps": 150, "partitions": 1000, "latency_ms": 100 }
+  ]
+}
