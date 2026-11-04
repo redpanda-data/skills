@@ -1,7 +1,7 @@
 # cloud-byoc-sizing
 
 Workload sizing for Redpanda Cloud BYOC. Describe a Kafka workload (throughput, partitions,
-latency target) and get back how many **Redpanda Compute Units (RPUs)** it needs, which
+latency target) and get back how many **Redpanda units (RPUs)** it needs, which
 resource limit drives that number, and the broker layout that fits. You can do this for
 today's workload, or as a **projection over time** that shows when the cluster has to scale
 and how many RPU-hours it uses.
@@ -54,7 +54,7 @@ node scripts/sizing.js --cloud AWS --az single --partitions 1000 --ingress 50 --
   --months 12 --annual-growth 100 --start 2027-01 --format csv
 
 # From a plan file (multiple workloads, growth, or explicit periods; must set "cloud" and "multi_az")
-node scripts/sizing.js --input resources/sizing-phased-plan.json
+node scripts/sizing.js --input assets/sizing-phased-plan.json
 
 # Help and the current model constants
 node scripts/sizing.js --help
@@ -103,7 +103,7 @@ default), so headroom is built in.
 
 ### A growing workload
 
-[`resources/sizing-growth-plan.json`](resources/sizing-growth-plan.json) (AWS, multi-AZ): 50 MB/s in,
+[`assets/sizing-growth-plan.json`](assets/sizing-growth-plan.json) (AWS, multi-AZ): 50 MB/s in,
 150 MB/s out and 1,000 partitions in January 2027, with throughput growing at 100% a year
 and partitions at 50% a year (compounded monthly, so December is at about 1.9× and 1.45×):
 
@@ -164,7 +164,7 @@ cloud-byoc-sizing/
 │   ├── inputs-and-outputs.md        # every flag, JSON key and output field
 │   ├── sizing-model.md              # how the model works; how to change it
 │   └── SOURCES.md                   # source map for maintainers
-└── resources/
+└── assets/
     ├── sizing-single-workload.json
     ├── sizing-multi-workload.json
     ├── sizing-growth-plan.json

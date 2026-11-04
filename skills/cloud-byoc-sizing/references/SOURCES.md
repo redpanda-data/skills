@@ -13,8 +13,9 @@ routine covers `cloud-serverless`, `cloud-byoc` and `cloud-dedicated` only (see
 `MAINTAINING.md`) and should treat this skill as out of scope despite the `cloud-` prefix: there is no
 `cloudv2` or `cloud-docs` path to verify it against, and Cloud releases do not by
 themselves require a change here. Changes are made by hand, following "Changing the
-Model" in [sizing-model.md](sizing-model.md). The drift audit should check only that the
-docs still match the script (run the tests and the examples), not re-derive the model.
+Model" in [sizing-model.md](sizing-model.md). The monthly drift audit covers
+source-grounded skills only, so it does not re-verify this one; verify it by hand with the
+commands under Usage below.
 
 ## File-to-source table
 
@@ -22,10 +23,10 @@ docs still match the script (run the tests and the examples), not re-derive the 
 |---|---|
 | `SKILL.md` | `scripts/sizing.js` (`main` CLI flags and defaults, `sizeCluster` and `sizeTimeline` output fields, `describeModel`); the throughput-tier pointer defers to `/redpanda:cloud-byoc` |
 | `references/inputs-and-outputs.md` | `scripts/sizing.js`: `USAGE`, `parseArgs`, `toBool`, `parseAz` (accepted AZ values), `main` (required inputs and the combined "missing required input" error, mode selection and precedence), `buildWorkload` (per-workload keys and defaults), `expandGrowth` (growth keys and compounding), `hoursInPeriod` (label formats), `sizeCluster` / `sizeTimeline` (output fields), `KafkaRequirement` / `TimeBasedLatencyRequirement` (validation messages) |
-| `references/sizing-model.md` | `scripts/sizing.js`: `TimeBasedLatencyRequirement` / `SizeBasedLatencyRequirement` (batch size), `Workload` (`riops4`, `wiops4`, `cpuProduce`, `cpuFetch`, `cpuIceberg`, `egressBytes`), `ClusterRequirement.calculateRequiredComputeUnits*` (the eight constraints, CPU adjustment), `SupportedMachineType` and `HardwareConstrantOptimizer` (layout, fitness, utilization tie-break) |
+| `references/sizing-model.md` | `scripts/sizing.js`: `TimeBasedLatencyRequirement` / `SizeBasedLatencyRequirement` (batch size), `Workload` (`riops4`, `wiops4`, `cpuProduce`, `cpuFetch`, `cpuIceberg`, `egressBytes`), `ClusterRequirement.calculateRequiredComputeUnits*` (the eight constraints, CPU adjustment), `SupportedMachineType` and `HardwareConstraintOptimizer` (layout, fitness, utilization tie-break) |
 | `scripts/sizing.js` | The sizing model itself: per-cloud compute-unit capacities, the supported instance catalog, and the CPU, IOPS and Iceberg coefficients |
 | `scripts/sizing.test.js` | `scripts/sizing.js` (golden values pin the model's current output) |
-| `resources/*.json` | Input schema in `references/inputs-and-outputs.md` |
+| `assets/*.json` | Input schema in `references/inputs-and-outputs.md` |
 | `README.md` | All of the above |
 
 ## Deferred to live introspection
@@ -73,7 +74,7 @@ To verify the skill, run from the repo root:
 
 ```bash
 node --test skills/cloud-byoc-sizing/scripts/sizing.test.js
-for f in skills/cloud-byoc-sizing/resources/*.json; do
+for f in skills/cloud-byoc-sizing/assets/*.json; do
   node skills/cloud-byoc-sizing/scripts/sizing.js --input "$f" > /dev/null || echo "FAIL $f"
 done
 ```

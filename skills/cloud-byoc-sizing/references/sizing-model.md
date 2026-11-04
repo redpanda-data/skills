@@ -1,4 +1,4 @@
-Source: [`scripts/sizing.js`](../scripts/sizing.js) (`Workload`, `ClusterRequirement`, `SupportedMachineType`, `HardwareConstrantOptimizer`, model constants). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: [`scripts/sizing.js`](../scripts/sizing.js) (`Workload`, `ClusterRequirement`, `SupportedMachineType`, `HardwareConstraintOptimizer`, model constants). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Sizing Model
 

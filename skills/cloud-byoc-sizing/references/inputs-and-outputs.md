@@ -94,7 +94,7 @@ The AZ value is strict: multi-AZ is `multi`, `multi-az`, `true`, `yes`, `y` or `
 | `consumers` | integer | `ceil(egress_mbps / 10)` |
 | `message_size_bytes` | integer | `1000` |
 | `replication_factor` | odd integer | `3` |
-| `tiered_storage` | JSON boolean | `true`. Only the boolean `false` turns it off; the string `"false"` does not. |
+| `tiered_storage` | boolean, or a string as on the command line | `true`. `false` or `"false"` (also `"0"`, `"no"`) turns it off. |
 | `iceberg_fields` | integer | unset (Iceberg off) |
 
 ### `growth`
@@ -116,7 +116,7 @@ Growth scales ingress and egress by the same factor (the egress/ingress ratio st
 | `hours` | Optional; overrides the hours used for `rpu_hours` |
 | `workloads` | Same shape as the top-level `workloads` |
 
-Ready-made examples are in [`resources/`](../resources/).
+Ready-made examples are in [`assets/`](../assets/).
 
 ## Point-in-Time Output
 

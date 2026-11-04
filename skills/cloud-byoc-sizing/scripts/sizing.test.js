@@ -16,7 +16,7 @@ const { spawnSync } = require('node:child_process');
 const S = require('./sizing.js');
 
 const SCRIPT = path.join(__dirname, 'sizing.js');
-const RESOURCES = path.join(__dirname, '..', 'resources');
+const ASSETS = path.join(__dirname, '..', 'assets');
 const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
 
 const base = { ingress_mbps: 50, egress_mbps: 150, partitions: 1000 };
@@ -40,6 +40,35 @@ test('golden: binding constraint and per-constraint breakdown', () => {
 test('golden: Azure is read-IOPS bound for 500/1500 MB/s single-AZ', () => {
   const r = S.sizeCluster('AZURE', [{ ingress_mbps: 500, egress_mbps: 1500, partitions: 5000, latency_ms: 50 }], false);
   assert.equal(r.binding_constraint, 'read_iops');
+});
+
+test('golden: Tiered Storage off lowers network_out and read_iops only', () => {
+  const on = S.sizeCluster('AWS', [base], true).rpu_by_constraint;
+  const off = S.sizeCluster('AWS', [{ ...base, tiered_storage: false }], true).rpu_by_constraint;
+  assert.equal(on.network_out, 3.333);
+  assert.equal(off.network_out, 2.778);
+  assert.equal(on.read_iops, 1.82);
+  assert.equal(off.read_iops, 1.365);
+  for (const k of ['cpu', 'write_iops', 'network_in', 'kafka_ingress', 'kafka_egress', 'partitions']) {
+    assert.equal(off[k], on[k], k);
+  }
+});
+
+test('tiered_storage: the string "false" in a JSON file matches the boolean', () => {
+  const bool = S.sizeCluster('AWS', [{ ...base, tiered_storage: false }], true);
+  const str = S.sizeCluster('AWS', [{ ...base, tiered_storage: 'false' }], true);
+  assert.deepEqual(str, bool);
+});
+
+test('golden: Iceberg (20 fields) raises cpu, IOPS and network_out; cpu binds', () => {
+  const r = S.sizeCluster('AWS', [{ ...base, iceberg_fields: 20 }], true);
+  assert.equal(r.binding_constraint, 'cpu');
+  assert.equal(r.required_rpu, 8.76);
+  assert.equal(r.supported_rpu, 9);
+  assert.equal(r.deployment, '9x m7gd.large');
+  assert.equal(r.rpu_by_constraint.read_iops, 2.275);
+  assert.equal(r.rpu_by_constraint.write_iops, 3.662);
+  assert.equal(r.rpu_by_constraint.network_out, 3.889);
 });
 
 // --- invariants -----------------------------------------------------------
@@ -214,11 +243,11 @@ test('CLI: --format csv emits one row per period', () => {
   assert.match(lines[0], /^cloud,period,/);
 });
 
-test('CLI: every example in resources/ runs cleanly', () => {
-  const files = fs.readdirSync(RESOURCES).filter(f => f.endsWith('.json'));
+test('CLI: every example in assets/ runs cleanly', () => {
+  const files = fs.readdirSync(ASSETS).filter(f => f.endsWith('.json'));
   assert.ok(files.length > 0);
   for (const f of files) {
-    const r = run('--input', path.join(RESOURCES, f));
+    const r = run('--input', path.join(ASSETS, f));
     assert.equal(r.status, 0, `${f}: ${r.stdout}`);
     assert.ok(!('error' in JSON.parse(r.stdout)), f);
   }

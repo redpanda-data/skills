@@ -4,7 +4,7 @@
 /**
  * Redpanda workload sizing calculator.
  *
- * Estimates the Redpanda Compute Units (RPUs) a Kafka workload needs and the
+ * Estimates the Redpanda units (RPUs) a Kafka workload needs and the
  * supported broker deployment that fits it, for one point in time or as a
  * projection over time. Zero dependencies; requires Node.js 18+.
  *
@@ -451,7 +451,7 @@ class SupportedMachineType {
   }
 }
 
-class HardwareConstrantOptimizer {
+class HardwareConstraintOptimizer {
   constructor(maxBrokersSupported, supportedMachines) {
     this.maxBrokersSupported = maxBrokersSupported;
     this.supportedMachines   = supportedMachines;
@@ -544,7 +544,7 @@ function buildWorkload(w) {
     w.message_size_bytes != null ? Number(w.message_size_bytes) : ESTIMATED_MSG_SIZE_BYTES,
     w.replication_factor != null ? Number(w.replication_factor) : REPLICATION_FACTOR,
     LOCAL_RETENTION_TIME_MINS);
-  const storage = new StorageRequirement(w.tiered_storage !== false);
+  const storage = new StorageRequirement(toBool(w.tiered_storage, true));
   const iceberg = new IcebergRequirement(w.iceberg_fields != null ? Number(w.iceberg_fields) : -1);
   return { workload: new Workload(latency, kafka, storage, iceberg), producers, consumers };
 }
@@ -563,7 +563,7 @@ function CALCULATE_RPU_SIMPLE(cloudProvider, enabled, numPartitions, ingressMBps
 
 function CALCULATE_RPU_SUPPORTED(cloudProvider, requiredComputeUnits, isMultiAZ) {
   if (cloudProvider == null) throw new Error('Cloud provider must be defined.');
-  const optimizer = new HardwareConstrantOptimizer(MAX_BROKERS_SUPPORTED, SUPPORTED_BROKER_INSTANCES);
+  const optimizer = new HardwareConstraintOptimizer(MAX_BROKERS_SUPPORTED, SUPPORTED_BROKER_INSTANCES);
   const opt = optimizer.calculateOptimalMachineType(requiredComputeUnits, GetComputeUnit(cloudProvider), isMultiAZ);
   if (opt === null) throw new Error('No supported deployment available.');
   return opt.calculateTotalComputeUnits(requiredComputeUnits, isMultiAZ);
@@ -571,7 +571,7 @@ function CALCULATE_RPU_SUPPORTED(cloudProvider, requiredComputeUnits, isMultiAZ)
 
 function CALCULATE_RPU_OPTIMAL_DEPLOYMENT(cloudProvider, requiredComputeUnits, isMultiAZ) {
   if (cloudProvider == null) throw new Error('Cloud provider must be defined.');
-  const optimizer = new HardwareConstrantOptimizer(MAX_BROKERS_SUPPORTED, SUPPORTED_BROKER_INSTANCES);
+  const optimizer = new HardwareConstraintOptimizer(MAX_BROKERS_SUPPORTED, SUPPORTED_BROKER_INSTANCES);
   const opt = optimizer.calculateOptimalMachineType(requiredComputeUnits, GetComputeUnit(cloudProvider), isMultiAZ);
   if (opt === null) throw new Error('No supported deployment available.');
   return `${opt.calculateInstanceCountNeeded(requiredComputeUnits, isMultiAZ)}x ${opt.name}`;
@@ -591,7 +591,7 @@ function sizeCluster(cloud, workloadSpecs, isMultiAZ) {
   const required = Math.max(...Object.values(breakdown));
   const binding = Object.entries(breakdown).sort((a, b) => b[1] - a[1])[0][0];
 
-  const optimizer = new HardwareConstrantOptimizer(MAX_BROKERS_SUPPORTED, SUPPORTED_BROKER_INSTANCES);
+  const optimizer = new HardwareConstraintOptimizer(MAX_BROKERS_SUPPORTED, SUPPORTED_BROKER_INSTANCES);
   const opt = optimizer.calculateOptimalMachineType(required, cu, isMultiAZ);
 
   const result = {
@@ -801,7 +801,7 @@ Point in time:
 Projection over time:
   node sizing.js --cloud AWS --az multi --partitions 1000 --ingress 50 --egress 150 \\
                  --months 12 --monthly-growth 8
-  node sizing.js --input plan.json          (examples in ../resources/; the file must set
+  node sizing.js --input plan.json          (examples in ../assets/; the file must set
                                              "cloud" and "multi_az")
 
 Optional:

@@ -1,7 +1,7 @@
 ---
 name: cloud-byoc-sizing
 description: >-
-  Estimates the Redpanda Compute Units (RPUs) and the supported broker deployment that a
+  Estimates the Redpanda units (RPUs) and the supported broker deployment that a
   Kafka workload needs on AWS, GCP or Azure, for a single point in time or as a projection
   over months or quarters, by running a bundled zero-dependency sizing script. Use when
   sizing or capacity-planning a BYOC cluster from ingress and egress throughput and
@@ -39,7 +39,7 @@ node scripts/sizing.js --cloud GCP --az multi --partitions 1000 --ingress 50 --e
   --months 12 --monthly-growth 8 --start 2027-01 --format csv
 
 # Several workloads, or a phased plan, from a JSON file (must set "cloud" and "multi_az")
-node scripts/sizing.js --input resources/sizing-phased-plan.json
+node scripts/sizing.js --input assets/sizing-phased-plan.json
 
 # Print the model's capacities, instance catalog, and defaults
 node scripts/sizing.js --model
@@ -137,5 +137,5 @@ BYOC clusters are created with a **throughput tier**, not a broker count, so thi
 - [Sizing Model](references/sizing-model.md): How the model works — the eight constraints and their formulas, the CPU adjustment, batch sizing from the latency target, Iceberg and Tiered Storage effects, the broker-layout optimizer, and how to change the model safely.
 - [scripts/sizing.js](scripts/sizing.js): The calculator. `--help` for usage, `--model` for the current constants.
 - [scripts/sizing.test.js](scripts/sizing.test.js): Golden-value and invariant tests. Run with `node --test scripts/sizing.test.js`.
-- [resources/](resources/): Example inputs — `sizing-single-workload.json`, `sizing-multi-workload.json`, `sizing-growth-plan.json`, `sizing-phased-plan.json`.
+- [assets/](assets/): Example inputs — [`sizing-single-workload.json`](assets/sizing-single-workload.json), [`sizing-multi-workload.json`](assets/sizing-multi-workload.json), [`sizing-growth-plan.json`](assets/sizing-growth-plan.json), [`sizing-phased-plan.json`](assets/sizing-phased-plan.json).
 - [README.md](README.md): Human-facing guide with worked examples.
