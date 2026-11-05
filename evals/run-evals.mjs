@@ -57,6 +57,19 @@ const DOCS_DENIED = [`mcp__${DOCS_SERVER}__submit_documentation_feedback`];
 // one suite exhausts. A trusted client key is not metered, and attributes the
 // traffic to a named service rather than to a person.
 const DOCS_CLIENT_KEY = process.env.EVAL_DOCS_CLIENT_KEY;
+// Credentials a run's environment can hold. Their values are blanked out of a
+// run's reason before it reaches the log or runs.jsonl: CI masks registered
+// secrets in the job log, but not inside an uploaded results file, and a
+// failing `claude` puts its stderr in the reason.
+const SECRET_ENV_VARS = ["AWS_BEARER_TOKEN_BEDROCK", "EVAL_DOCS_CLIENT_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+function redact(text, env = process.env) {
+  let out = String(text ?? "");
+  for (const name of SECRET_ENV_VARS) {
+    const value = env[name];
+    if (value && value.length >= 8) out = out.split(value).join(`<${name}>`);
+  }
+  return out;
+}
 // With no tools at all, `claude -p` can stall after its first thinking block.
 // CronList lists scheduled jobs and reads nothing, so it is safe to give every arm.
 const INERT_BUILTIN = "CronList";
@@ -732,7 +745,7 @@ async function main() {
             } catch (e) {
               // A timeout, a server that did not connect, a tool leak: a fault in
               // the harness, never a verdict on the skill or the docs.
-              Object.assign(row, { status: "errored", reason: e.message, cost: 0 });
+              Object.assign(row, { status: "errored", reason: redact(e.message), cost: 0 });
             }
             cost += row.cost;
             log.write(JSON.stringify(row) + "\n");
@@ -756,7 +769,7 @@ async function main() {
   if (errored) console.log(`⚠️  ${errored} run(s) errored and were not scored.`);
 }
 
-export { tally, caseVerdict, grade };
+export { tally, caseVerdict, grade, incomplete, redact };
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((e) => die(e.stack ?? String(e)));

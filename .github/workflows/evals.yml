@@ -1,0 +1,350 @@
+# Runs the skill evals in CI.
+#
+#   pull_request  the cases a change can reach, in the arms the repository's
+#                 rules gate on (baseline, skill, installed), 3 runs each. A
+#                 "How to work" case that the baseline passes, or that a skill
+#                 arm fails, fails the check. Every other case is reported only.
+#   schedule      weekly, every suite in every arm. This is the only run that
+#                 sees the model change underneath the skills: "the baseline
+#                 fails it" stops being true as models improve, and a run gated
+#                 on "did the repository change" cannot notice that.
+#
+# Model calls go through the Redpanda AI Gateway as the skills-evals agent, so
+# spend is attributed to this workload and no long-lived model key exists in
+# this repository. The gateway credential is minted per job by
+# .github/actions/adp-gateway-auth. There is no API-key fallback: a fallback
+# hands the model a standing credential on exactly the days something is
+# already wrong.
+#
+# Fork pull requests cannot obtain an OIDC token, so they get a notice and a
+# maintainer runs the cases (see evals/README.md). This workflow never uses
+# pull_request_target.
+#
+# It posts nothing to the repository: results go to the job summary and to
+# artifacts. Subject responses are kept out of the log; they are only in the
+# runs.jsonl artifact.
+name: Evals
+
+on:
+  pull_request:
+    paths:
+      # Must stay in step with what evals/scripts/ci.mjs maps to cases.
+      - 'skills/**'
+      - 'evals/**'
+      - '.github/workflows/evals.yml'
+      - '.github/actions/adp-gateway-auth/**'
+  schedule:
+    # Tuesday 03:37 UTC. Off the hour because GitHub delays scheduled runs at
+    # popular times.
+    - cron: '37 3 * * 2'
+  # No inputs: a manual run is the same full sweep as the scheduled one.
+  workflow_dispatch:
+
+# Evals cost money per run, so a superseded push stops paying.
+concurrency:
+  group: evals-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Subject and judge. Both must be on the gateway provider's allowlist: an id
+  # that is not is retried silently and looks like a hang. The judge is a
+  # different model from the subject, so it does not favor its own text.
+  EVAL_MODEL: us.anthropic.claude-sonnet-5
+  EVAL_JUDGE_MODEL: us.anthropic.claude-opus-5
+  # Runs per case and arm: the repository's convention, and what its pass-rate
+  # thresholds are written for.
+  EVAL_RUNS: '3'
+  # The most cases one pull request runs. How to work cases always run; the
+  # cap drops only advisory ones, with a warning. At about $0.47 a case
+  # across the three arms, 20 cases is about $9.
+  EVAL_MAX_CASES: '20'
+  # A hung subject fails its run instead of the job.
+  EVAL_CASE_TIMEOUT_MS: '300000'
+  EVAL_JUDGE_TIMEOUT_MS: '120000'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # What to run. No credentials: this job decides, the next one spends.
+  # ---------------------------------------------------------------------------
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+      matrix: ${{ steps.scope.outputs.matrix }}
+      suites: ${{ steps.scope.outputs.suites }}
+      cases: ${{ steps.scope.outputs.cases }}
+      can_auth: ${{ steps.scope.outputs.can_auth }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Needed to diff against the pull request's base.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      # Free, and they cover the selection and gating rules this run relies on.
+      - name: Test the scoring, selection and gating rules
+        run: node --test evals/run-evals.test.mjs evals/scripts/ci.test.mjs
+
+      - name: Work out what needs testing
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SAME_REPO: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          echo "can_auth=$SAME_REPO" >> "$GITHUB_OUTPUT"
+          sel="$RUNNER_TEMP/selection.json"
+          if [ "$EVENT" = "pull_request" ]; then
+            # Diff from the merge base with the base branch as fetched now.
+            # pull_request.base.sha alone stays at the base tip from when the
+            # pull request was opened, so once main moves on, main's newer
+            # commits would count as this change.
+            base=""
+            if [ -n "$BASE_REF" ] && git rev-parse -q --verify "refs/remotes/origin/$BASE_REF" >/dev/null; then
+              base=$(git merge-base "origin/$BASE_REF" HEAD || true)
+            elif git rev-parse -q --verify HEAD^2 >/dev/null; then
+              base=$(git rev-parse HEAD^1)
+            elif [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+              base=$(git merge-base "$BASE_SHA" HEAD || true)
+            fi
+            if [ -z "$base" ]; then
+              # Nothing to diff against: run the harness smoke set rather than
+              # report green on nothing.
+              echo ".github/workflows/evals.yml" > "$RUNNER_TEMP/changed.txt"
+            else
+              git diff --name-only "$base" HEAD > "$RUNNER_TEMP/changed.txt"
+            fi
+            echo "Changed in this pull request:"
+            sed 's/^/  /' "$RUNNER_TEMP/changed.txt"
+            rc=0
+            node evals/scripts/ci.mjs select --changed "$RUNNER_TEMP/changed.txt" \
+              --max-cases "$EVAL_MAX_CASES" --arms baseline,skill,installed > "$sel" || rc=$?
+          else
+            rc=0
+            node evals/scripts/ci.mjs select --all --arms baseline,skill,docs,both,installed > "$sel" || rc=$?
+          fi
+          if [ "$rc" -gt 1 ]; then
+            echo "::error::evals/scripts/ci.mjs select crashed (exit $rc)."
+            exit 1
+          fi
+
+          {
+            echo "run=$(jq -r '.run' "$sel")"
+            echo "matrix=$(jq -c '.matrix' "$sel")"
+            echo "suites=$(jq -r '.suites | join(",")' "$sel")"
+            echo "cases=$(jq -r '.cases | join(",")' "$sel")"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Eval selection"
+            echo
+            jq -r '.reasons[] | "- " + .' "$sel"
+            echo
+            echo "Suites: $(jq -r '.suites | join(", ")' "$sel")"
+            echo
+            echo "How to work cases that gate: $(jq -r 'if (.gating | length) == 0 then "none" else (.gating | join(", ")) end' "$sel")"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          jq -r '.errors[]' "$sel" | while IFS= read -r e; do echo "::error::$e"; done
+          jq -r '.uncovered[]' "$sel" | while IFS= read -r s; do
+            echo "::warning::skills/$s changed but has no eval suite, so no evals cover it."
+          done
+          dropped=$(jq -r '.dropped | length' "$sel")
+          if [ "$dropped" -gt 0 ]; then
+            echo "::warning::$dropped advisory case(s) over the $EVAL_MAX_CASES-case cap were not run; the weekly sweep runs them: $(jq -r '.dropped | join(", ")' "$sel")"
+          fi
+          if [ "$rc" -ne 0 ]; then exit 1; fi
+
+      - name: Say so when nothing needed running
+        if: steps.scope.outputs.run != 'true'
+        run: echo "::notice::No eval case is affected by this change, so no evals ran."
+
+      - name: Say so when a fork pull request cannot run the evals
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.can_auth != 'true'
+        run: |
+          echo "::notice::Fork pull requests cannot obtain the credentials the evals need, so they did not run. A maintainer runs the affected cases (see evals/README.md)."
+
+  # ---------------------------------------------------------------------------
+  # The runs. One job per arm on a pull request, one per suite and arm on the
+  # sweep, so that no job outlives the gateway bearer, which lasts an hour.
+  # ---------------------------------------------------------------------------
+  evals:
+    needs: select
+    if: needs.select.outputs.run == 'true' && needs.select.outputs.can_auth == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      # Keeps concurrent calls on the gateway near what one local run makes.
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    name: evals (${{ matrix.name }})
+    env:
+      # This repository's role, from the organization's OIDC variables.
+      ROLE_ARN: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      NEEDS_DOCS: ${{ matrix.arm == 'docs' || matrix.arm == 'both' || matrix.arm == 'installed' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      # Pinned, and installed before any credential enters the job: the
+      # package runs a postinstall script.
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.272
+
+      # The docs arms need the Docs MCP trusted client key, or the server's
+      # anonymous quota errors every run. Fetched first, because the gateway
+      # auth below drops the AWS session when it is done.
+      - name: Configure AWS credentials for the docs key (OIDC)
+        if: env.NEEDS_DOCS == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: ${{ env.ROLE_ARN }}
+
+      - name: Fetch the Docs MCP client key
+        if: env.NEEDS_DOCS == 'true'
+        uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/skills_evals_docs_mcp_key
+          parse-json-secrets: true
+
+      - name: Authenticate to the AI Gateway
+        uses: ./.github/actions/adp-gateway-auth
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: ${{ env.ROLE_ARN }}
+          model: ${{ env.EVAL_MODEL }}
+
+      # The runner prints one line per run (case, arm, pass or why not) and
+      # the summary tables; responses go only to runs.jsonl. Its exit code
+      # fails the job on a harness fault (every run errored, or a case that
+      # cannot fail); whether the results gate is the gate job's call.
+      - name: Run the evals
+        env:
+          ARM: ${{ matrix.arm }}
+          SUITES: ${{ matrix.suites }}
+          CASES: ${{ matrix.cases }}
+        run: |
+          set -uo pipefail
+          if [ "$NEEDS_DOCS" = "true" ] && [ -z "${SKILLS_EVALS_DOCS_MCP_KEY:-}" ]; then
+            echo "::error::Docs MCP client key missing (SKILLS_EVALS_DOCS_MCP_KEY); the docs arms would only measure the anonymous quota."
+            exit 1
+          fi
+          args=(--suite "$SUITES" --arms "$ARM" --runs "$EVAL_RUNS" --out evals/results/ci)
+          if [ -n "$CASES" ]; then args+=(--case "$CASES"); fi
+          # The subjects get no shell, but the OIDC request token is still
+          # kept out of their environment.
+          env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
+              -u ACTIONS_RUNTIME_TOKEN \
+              EVAL_DOCS_CLIENT_KEY="${SKILLS_EVALS_DOCS_MCP_KEY:-}" \
+              node evals/run-evals.mjs "${args[@]}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: eval-results-${{ github.run_id }}-${{ matrix.name }}
+          path: evals/results/ci/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # The verdict. No credentials: it reads the artifacts and applies the rule.
+  #
+  # What gates is the rule CLAUDE.md sets for a thin skill: a "How to work"
+  # line stays only while its behavioral case (named in the skill's
+  # SOURCES.md) fails in the baseline arm and passes in the skill arms. So a
+  # How to work case fails this job when the baseline passes more than a third
+  # of its runs, when the skill or installed arm passes fewer than two thirds,
+  # or when too many of its runs errored to tell. Errors fail closed: a case
+  # that was not measured has not shown it still earns its line. Every other
+  # case is advisory, because a thin skill carries no facts, so a fact case
+  # measures the docs rather than the change.
+  # ---------------------------------------------------------------------------
+  gate:
+    needs: [select, evals]
+    # always(), and select's own failure fails this job: a skipped required
+    # check counts as passing, so a selection error must not skip it.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fail when the selection failed
+        if: needs.select.result != 'success'
+        run: |
+          echo "::error::The select job did not succeed (${{ needs.select.result }}), so nothing was measured."
+          exit 1
+
+      - name: Nothing to gate
+        if: needs.select.outputs.run != 'true' || needs.select.outputs.can_auth != 'true'
+        run: echo "No evals ran in this workflow run, so there is nothing to gate."
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: needs.select.outputs.run == 'true' && needs.select.outputs.can_auth == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: needs.select.outputs.run == 'true' && needs.select.outputs.can_auth == 'true'
+        with:
+          node-version: '22'
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: needs.select.outputs.run == 'true' && needs.select.outputs.can_auth == 'true'
+        with:
+          pattern: eval-results-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/results
+
+      - name: Report and gate
+        if: needs.select.outputs.run == 'true' && needs.select.outputs.can_auth == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          SUITES: ${{ needs.select.outputs.suites }}
+          CASES: ${{ needs.select.outputs.cases }}
+          EVALS_RESULT: ${{ needs.evals.result }}
+          RESULTS: ${{ runner.temp }}/results
+        run: |
+          set -uo pipefail
+          dirs=()
+          while IFS= read -r d; do dirs+=("$d"); done < <(find "$RESULTS" -name runs.jsonl -exec dirname {} \; 2>/dev/null | sort)
+          rc=0
+          if [ "${#dirs[@]}" -gt 0 ]; then
+            # The runner's own tables, merged across the jobs. No model calls.
+            joined=$(IFS=,; echo "${dirs[*]}")
+            node evals/run-evals.mjs --report "$joined" >> "$GITHUB_STEP_SUMMARY" || rc=1
+          else
+            echo "No results were uploaded." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # Sweep: only the How to work cases, in the three arms the rule
+          # names, gate; the docs arms are measurement.
+          gate_args=(--suites "$SUITES" --arms "baseline,skill,installed")
+          if [ "$EVENT" = "pull_request" ] && [ -n "$CASES" ]; then gate_args+=(--cases "$CASES"); fi
+          node evals/scripts/ci.mjs gate "${gate_args[@]}" "${dirs[@]}" >> "$GITHUB_STEP_SUMMARY" || rc=1
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::A How to work case failed its rule, or the report could not be built. See the job summary."
+          fi
+          if [ "$EVALS_RESULT" != "success" ]; then
+            echo "::error::An eval job did not finish ($EVALS_RESULT), so this run did not measure everything it selected."
+            rc=1
+          fi
+          exit $rc
