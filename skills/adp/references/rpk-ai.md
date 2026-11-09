@@ -34,20 +34,22 @@ Always prefer live `--help` output over this document when they disagree.
 
 ```bash
 rpk ai auth login              # OAuth device-authorization flow
-rpk ai env list                # your organization's live ADP environments + local manual environments
+rpk ai env list                # live ADP environments (NAME and ID) + local manual environments
 rpk ai env use <environment>   # select the environment whose AI Gateway becomes the active target
 rpk ai auth status             # show the current token state
 ```
 
 `rpk ai auth login` runs the OAuth 2.0 device-authorization grant against Redpanda Cloud and caches the credentials in `~/.rpai/credentials` (mode `0600`). `rpk ai env use <environment>` selects the environment whose AI Gateway URL becomes the active target. `rpk ai env show` prints the resolved environment as YAML (tokens redacted).
 
-**`login` always runs the device flow.** Every `rpk ai auth login` forces a fresh grant and replaces the stored credentials for the organization, even when the current token has time left, so a revoked session cannot leave `rpk ai` insisting you are logged in. Re-authenticating keeps the current environment selection. For a conditional login in a script, guard the call yourself:
+**`login` always runs the device flow.** Every `rpk ai auth login` forces a fresh grant and replaces the stored credentials for the organization, even when the current token has time left, so a revoked session cannot leave `rpk ai` insisting you are logged in. **Without `--env`**, re-authenticating keeps the current environment: an unchanged organization re-confirms the cached selection without prompting, and a manual environment is left alone. For a conditional login in a script, guard the call yourself:
 
 ```bash
 rpk ai auth status -o json | jq -e .logged_in >/dev/null || rpk ai auth login
 ```
 
 **`--no-browser`.** `rpk ai auth login --no-browser` prints the verification URL without opening a browser — for a headless host, an SSH session, or a container. On a Linux host with no `$DISPLAY` / `$WAYLAND_DISPLAY` the CLI skips the browser automatically.
+
+**`--env` picks the environment without prompting.** `rpk ai auth login --env <name-or-id>` selects the ADP environment after sign-in instead of opening the interactive picker. It is the flag for a script, a CI job or a coding agent: with no terminal to prompt in, a plain `login` fails once the organization has more than one environment. `--env` **replaces** the current selection, including a manual environment that a plain login would preserve. When the value matches nothing, or the environment has no AI Gateway URL yet, login fails *after* signing in and **keeps the new credentials** — finish with `rpk ai env use <name>` rather than logging in again. `rpk ai env list` prints the `ID` column that both `--env` and `env use` accept, in every output format.
 
 `auth` subcommands: `login`, `logout` (current organization, or `--all` for a clean slate), `status`, `token` (print the current bearer token, refreshing if expired).
 
@@ -68,17 +70,7 @@ For headless or CI use, pass `--token <bearer>` on the command line. Under `rpk 
 
 ## Global flags (under `rpk ai`)
 
-Running as an rpk plugin, some long flags are renamed to avoid colliding with rpk's own global flags. Short flags are unchanged.
-
-| Flag | Short | Env var | Default | Description |
-|------|-------|---------|---------|-------------|
-| `--rpai-environment` | (none) | (none) | (empty) | Select a manual environment for this invocation; switch environments with `rpk ai env use` |
-| `--rpai-config` | `-c` | `RPAI_CONFIG` | `$HOME/.rpai/config` | Path to the config file |
-| `--rpai-verbose` | `-v` | `RPAI_VERBOSE` | false | One line per HTTP request on stderr: method, URL, response status, latency |
-| `--rpai-endpoint` | `-s` | (none) | `""` | Override the selected environment's AI Gateway URL for this invocation |
-| `--token` | (none) | (none; ambient `RPAI_TOKEN` is ignored under `rpk ai`) | `""` | Static bearer token override |
-| `--format` | `-o` | `RPAI_FORMAT` | `table` | Output format: `table`, `wide`, `json`, `yaml`, `markdown` |
-| `--no-color` | (none) | `NO_COLOR` | false | Disable colored output |
+Running as an rpk plugin, the long flags that would collide with rpk's own globals are renamed, and short flags are unchanged throughout. The renamed four are `--rpai-environment` (select a manual environment for this invocation), `--rpai-config` (`-c`, `RPAI_CONFIG`, default `$HOME/.rpai/config`), `--rpai-verbose` (`-v`, `RPAI_VERBOSE`) and `--rpai-endpoint` (`-s`, override the environment's AI Gateway URL for this invocation). The rest keep their names: `--token`, `--format` (`-o`, `RPAI_FORMAT`, default `table`, one of `table|wide|json|yaml|markdown`) and `--no-color` (`NO_COLOR`).
 
 `--rpai-endpoint` has no environment-variable binding, so it can never silently override the environment chosen with `rpk ai env use`; it takes effect only when passed for a single invocation.
 
@@ -98,6 +90,7 @@ Running as an rpk plugin, some long flags are renamed to avoid colliding with rp
 | `completion` | (none) | Generate a shell autocompletion script |
 | `connection` | `connections`, `conn` | Manage your own OAuth connections: `list`, `revoke <provider-name>` |
 | `docs` | (none) | Read the published ADP documentation from the terminal; needs no sign-in (see [`docs`](#docs-read-the-product-documentation)) |
+| `doctor` | (none) | Diagnose local setup without changing anything (see [`rpk ai doctor`](#rpk-ai-doctor)) |
 | `effective-policy-set` | (none) | Inspect the authorization policy snapshot in force (read-only) |
 | `env` | `environment` | Manage environments: `add`, `list`, `use`, `show`, `rename`, `delete` |
 | `guardrail` | `guardrails` | Manage guardrails (see [`guardrail` and `api-key`](#guardrail-and-api-key-subcommands)) |
@@ -125,11 +118,24 @@ Newer releases keep adding groups — everything from `agent-kill-switch` throug
 
 `rpk ai version` prints `rpai <version> (<commit>)` and works without an environment or config. The root `--version` flag exists for `rpk ai upgrade`'s version probe; use the `version` command for version information.
 
+## `rpk ai doctor`
+
+`rpk ai doctor` reports on local setup and changes nothing — it writes no files, signs nobody in and selects no environment. **Reach for it first on a broken setup**, because it loads the configuration itself instead of going through the normal startup path, so a config that other commands reject outright is reported here rather than failing the command. It checks the configuration, the environment selection, authentication, AI Gateway connectivity and whether a newer CLI release is published, printing each as `[status] id: message` with a fix and a `Run:` command where it has one (`--json`, or `-o json` / `-o yaml`, returns the same report structured). **It exits non-zero only on an `error` check**, so warnings still pass a script that gates on the exit code: a selected environment that cannot be resolved is an `error`, while no environment selected at all is only a `warn`.
+
+```bash
+rpk ai doctor
+rpk ai doctor --offline       # skip the gateway probe and the release lookup
+rpk ai doctor --timeout 10s   # per network check; default 3s, maximum 30s
+```
+
+- **An authentication `pass` does not mean the server accepts the credential.** That check reads local state only — whether stored credentials, a stored API key or a static token exist and have not expired. A green authentication line with a refused request is a permissions problem, not a login problem (see [Exit codes](#exit-codes)).
+- **Connectivity is an unauthenticated probe** of the environment's AI Gateway URL, so it establishes reachability and nothing more. It is skipped under `--offline`, when a tunnel is configured, and when the gateway URL carries credentials, a query or a fragment; it warns on a redirect, a `429`, a `5xx`, and when TLS verification is disabled for the environment.
+
 ## `agent` subcommands
 
 Aliases: `agents`.
 
-CRUD and lifecycle: `create`, `get`, `list`, `update`, `delete`, `start`, `stop`, `apply`, `diff`. `create` makes a managed agent by default; pass `--self-managed` for a metadata-only record of an agent you host yourself.
+CRUD and lifecycle: `create`, `get`, `list`, `update`, `delete`, `start`, `stop`, `apply`, `diff`. `create` makes a managed agent by default; pass `--self-managed` for a metadata-only record of an agent you host yourself, or `--policy-template <template>` to bind the agent's first access policy in the same command (see [governance.md](governance.md#give-a-new-agent-access)).
 
 **`credential`** (aliases: `credentials`, `cred`): `create <agent>`, `list <agent>`, `delete <name>` — client-ID/secret pairs an agent uses to authenticate against the gateway.
 
@@ -146,10 +152,7 @@ Your bearer token is attached only for a registered agent or a URL on the enviro
 
 A *connection* is your personal OAuth grant to a third-party provider, created by signing in through the browser consent flow (the **Connect** action in the UI), that lets `user_oauth` MCP servers act on your behalf. These commands manage connections you already hold — the terminal equivalent of **My Connections** — and do not create them.
 
-| Command | Purpose |
-|---------|---------|
-| `rpk ai connection list` | List your OAuth connections and their status. `-o wide` / `-o yaml` add connected-at, token-expiry, and refresh-token detail |
-| `rpk ai connection revoke <provider-name>` | Revoke your own connection to the named provider: invalidates your stored tokens and calls the provider's revocation endpoint best-effort. Affects only your connection |
+`rpk ai connection list` lists your connections and their status, with `-o wide` / `-o yaml` adding connected-at, token-expiry and refresh-token detail. `rpk ai connection revoke <provider-name>` revokes your own connection to that provider — it invalidates your stored tokens and calls the provider's revocation endpoint best-effort, and affects only your connection.
 
 ## `env` subcommands
 
