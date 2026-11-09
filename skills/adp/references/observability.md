@@ -76,14 +76,15 @@ A transcript is the record of one agent conversation, turn by turn: the user mes
 
 What a transcript holds depends on recording settings. On a managed agent, a *Metadata only* recording mode keeps the conversation's shape (tool names, status, duration) without content, and recording off produces no transcripts (see [agents.md](agents.md)). On an LLM provider, `transcripts.record_input_messages` / `transcripts.record_output_messages` (flags `--transcripts.record-input-messages` / `--transcripts.record-output-messages`) control prompt and response capture and default to on (see [gateway-and-providers.md](gateway-and-providers.md#transcript-recording-defaults-to-on)).
 
-**Access warning:** transcripts can hold full prompts, responses, and tool payloads. The Admin role and every built-in policy template, even Read only, grant transcript read access. Grant it only to people who need it.
+**Access warning:** transcripts can hold full prompts, responses and tool payloads, they are read separately from an agent's configuration, and the Admin role and every built-in policy template — even *Read only* — grant transcript (and audit-log) read access. Grant it only to people who need it.
 
 ### `rpk ai agent transcript list <agent>`
 
-The filter flags — `--query`, `--status`, `--errors-only`, `--since` / `--until` — are all optional and ANDed; take their exact spellings from `--help`.
+The filter flags — `--query`, `--status`, `--errors-only`, `--tool-errors-only`, `--end-user`, `--since` / `--until` — are all optional and ANDed; take their exact spellings from `--help`.
 
 - **`--query` does not search conversation content**, although its help says "titles and content". It is a case-insensitive substring match on the conversation **title or ID**, so paste a conversation ID to find a conversation whose title you don't know, and don't offer it as a content search.
 - `--status` takes `running|completed|error` (`complete`/`done` and `failed` are accepted synonyms) and errors on anything else, naming the valid values. `--since` / `--until` take an RFC 3339 timestamp or a duration meaning "that long ago" (`24h`).
+- **`--tool-errors-only` finds a failed tool call inside a conversation that otherwise succeeded** — the UI's **Tools** filter and its one *Has tool errors* option. It reads a per-conversation count of failed tool calls, independent of `--errors-only` and `--status`, which read the conversation's own outcome; a `completed` conversation holding a failed tool call matches this filter and no other. `--tool-errors-only=false` returns only conversations with none. **The filter misses older conversations:** the count reads zero for a conversation last written before it existed, until new activity republishes it, while `get` derives the count from the conversation's own tool calls — so open an older conversation to see tool errors the list filter will not surface.
 - The command walks every page and returns the full matching set; there is no page-size or sort flag. Duration is not a list column; `get` shows it.
 - A cron trigger's run history links to its transcript by `conversation_id`: `rpk ai trigger runs <agents/<agent>/triggers/<id>>`, then `rpk ai agent transcript get <agent> <conversation_id>`.
 
@@ -189,14 +190,7 @@ The filter flags mirror the UI's columns and field keys (`--actor`, `--agent`, `
 
 Default view: last 24 hours, newest first; the **Fields** panel adds columns beyond the default set.
 
-**Outcome** (as shown, and the values the `outcome` filter takes):
-
-| Outcome | Meaning |
-|---|---|
-| Allowed | Everything the call decided on was allowed |
-| Masked | Allowed and delivered, but a guardrail or data policy masked content |
-| Partial | A call that decided on several resources allowed some and denied others |
-| Denied | Refused, either by access policy or by a guardrail or data policy that ran after access was granted |
+**Outcome** (as shown, and the values the `outcome` filter takes): `Allowed` — everything the call decided on was allowed; `Masked` — allowed and delivered, but a guardrail or data policy masked content; `Partial` — a call that decided on several resources allowed some and denied others; `Denied` — refused, either by access policy or by a guardrail or data policy that ran after access was granted.
 
 "Denied" is not the same as "no permission." When the caller has access but the call reads Denied, open the event: an Access row of Permit plus a Guardrail or Data policy row of Blocked means the later check stopped it. To find all refusals, filter on both `outcome=denied` and `outcome=partial`. The timeline's denied percentage counts Partial as denied.
 
@@ -215,7 +209,7 @@ The table then lists only that call's decisions, denied first, across the call's
 
 ### Delegation (on-behalf-of)
 
-When an agent makes the call, the Actor cell shows the agent's name and the accountable identity, such as the user the agent acted for. **Invoked by** holds the authenticated caller when it differs from the effective user, for example the agent's service account. **Agent** / **Agent UID** name the bound agent. **Actor type** reads User, Service account, or Agent. `Unknown` (older events, configuration changes) means unknown, not User. **Groups** records the effective user's group memberships at authorization time. Empty means none were recorded, not that the actor had none. Filter with `actor_groups=<exact name>`, since spaces are significant.
+When an agent makes the call, **Actor** shows the agent's name and the accountable identity, such as the user it acted for, while **Invoked by** holds the authenticated caller when that differs from the effective user (the agent's service account, for example); **Agent** / **Agent UID** name the bound agent. **Actor type** reads User, Service account or Agent. Two traps: it reads `Unknown` on older events and configuration changes, which means unknown rather than User; and an empty **Groups** means no memberships were recorded at authorization time, not that the actor had none. Filter it with `actor_groups=<exact name>`, since spaces are significant.
 
 ### Inspecting an event (UI)
 
@@ -247,4 +241,4 @@ A trace and a transcript cover the same run from different angles, and **Open tr
 
 ## Permissions
 
-Transcript reads are separate from agent configuration reads and expose full conversation content, and every built-in template from *Read only* up includes transcript and audit-log reads. For the trace permissions see [above](#permissions); for the rest, [governance.md](governance.md#roles-and-permissions).
+For transcript and audit-log read access see the [Transcripts access warning](#transcripts); for the trace permissions see [above](#permissions); for the rest, [governance.md](governance.md#roles-and-permissions).

@@ -50,6 +50,7 @@ The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agen
 | API keys for long-lived clients | `rpk ai api-key` | API keys |
 | Secrets other resources reference by ID | `rpk ai secret` | Secrets store |
 | Read the product docs in the terminal | `rpk ai docs`, `rpk ai docs search` | — |
+| Diagnosing local CLI setup before debugging a command | `rpk ai doctor` | — |
 | Coding tools through the gateway | `rpk ai run claude`, `rpk ai run codex`, `rpk ai run agy` | — |
 
 ## Components

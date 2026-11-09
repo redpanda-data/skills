@@ -30,14 +30,7 @@ rpk ai budget create invoice-monthly --pooling-mode per-agent --period monthly \
 
 `--pooling-mode` and `--period` are both required. Pass `--pooling-mode per-agent` for the tenant default *and* for a per-agent override; `--filter-agent-name agents/<slug>` is what makes it an override. A budget name starts with a lowercase letter and holds only lowercase letters, digits and hyphens.
 
-A budget caps LLM spend per agent over a recurring period. Concepts:
-
-| Setting | Behavior |
-|---|---|
-| Limit (`Limit spend to`) | Hard cap on per-period spend, entered in dollars. When an agent's spend reaches it, the agent's next LLM request gets `HTTP 429` until the period resets. |
-| Warning threshold (`Warn at`) | Percentage of the cap (80% by default). Past it, requests still pass; gateway responses carry a `SpendLimit-Warning` header. Must be greater than zero and less than the limit. |
-| Period | Daily, weekly, or monthly, calendar-aligned in UTC (00:00 daily; 00:00 Monday weekly; 00:00 on the 1st monthly). |
-| Target agent | Unset = the tenant **default** budget. Set to an agent (`agents/<slug>`) = a **per-agent override**. Immutable; to retarget, delete and recreate. |
+A budget caps LLM spend per agent over a recurring period. Its **limit** (`Limit spend to`) is a hard cap on per-period spend, entered in dollars: when an agent's spend reaches it, that agent's next LLM request gets `HTTP 429` until the period resets. Its **warning threshold** (`Warn at`) must be greater than zero and less than the limit, 80% of the cap by default; past it requests still pass and gateway responses carry a `SpendLimit-Warning` header. The **period** is daily, weekly or monthly, calendar-aligned in UTC (00:00 daily, 00:00 Monday weekly, 00:00 on the 1st monthly). The **target agent** is unset for the tenant **default** budget and set to `agents/<slug>` for a **per-agent override**; it is immutable, so retargeting means delete and recreate.
 
 - **Pooling is per agent.** The default budget gives every agent its own independent pool of the limit; one agent hitting its cap does not affect another. There is no shared tenant-wide pool.
 - One default per tenant; at most one override per agent. An override replaces the default for that agent.
@@ -45,6 +38,7 @@ A budget caps LLM spend per agent over a recurring period. Concepts:
 - Only calls made **as an agent** (including on a user's behalf) are capped. A user calling the gateway directly is never capped. If the gateway can't read current spend, it lets the request through (fail-open).
 - A capped request's `429` body uses the provider's own rate-limit format (OpenAI-format: code `budget_exceeded`; Anthropic `rate_limit_error`; Google `RESOURCE_EXHAUSTED`; Bedrock `ThrottlingException`). The message names the budget, spend against the cap, and reset time.
 - Guardrail evaluation is not counted against budgets.
+- **A call the caller's own subscription covered is recorded at $0 and never counts against a budget.** With [authorization passthrough](gateway-and-providers.md#authorization-passthrough) on an Anthropic provider pointed at `api.anthropic.com`, or an OpenAI or OpenAI-compatible provider pointed at `chatgpt.com`, ADP reads the plan state the vendor reports on each response: a call that plan covered is priced at zero, with its request and tokens still recorded, so **a budget cannot cap that traffic**. Usage past the plan, and any call whose plan state cannot be established — no plan state reported, or any other upstream host such as a proxy or aggregator — is priced from the provider's rate card as usual.
 
 ### Amounts and units
 
@@ -93,16 +87,9 @@ The UI shows the guardrail setting only on Bedrock providers; for any other prov
 
 Each policy is optional, but a guardrail needs at least one to be enabled.
 
-| Policy | What it does |
-|---|---|
-| Content filters | Categories `Hate`, `Insults`, `Sexual`, `Violence`, `Misconduct`, `Prompt attack` (input only); per category and direction a strength and an action of `None` (detect) or `Block`. |
-| Word filters | Custom words plus managed lists; `None` or `Block` per direction. |
-| Denied topics | Semantic matching, so it catches paraphrases; up to 30 topics. |
-| Sensitive information | Built-in PII entity types plus custom RE2 regexes; `None`, `Block`, or `Anonymize` per direction. |
-| Contextual grounding | Output only; grounding and relevance thresholds, 0.0-0.99. |
-| Automated reasoning | Output only and **detect-only — it never blocks**; takes versioned Bedrock Automated Reasoning policy ARNs (`DRAFT` rejected). |
-
-Only these six content-filter categories exist; don't use other category taxonomies.
+- **Content filters.** Exactly six categories exist — `Hate`, `Insults`, `Sexual`, `Violence`, `Misconduct` and `Prompt attack` (input only) — each taking a strength and an action of `None` (detect) or `Block` per direction. Don't use another category taxonomy.
+- **Word filters:** custom words plus managed lists, `None` or `Block` per direction. **Denied topics:** semantic matching, so it catches paraphrases, up to 30 topics. **Sensitive information:** built-in PII entity types plus custom RE2 regexes, with `None`, `Block` or `Anonymize` per direction.
+- **Contextual grounding** is output only, with grounding and relevance thresholds from 0.0 to 0.99. **Automated reasoning** is output only and **detect-only — it never blocks**; it takes versioned Bedrock Automated Reasoning policy ARNs (`DRAFT` is rejected).
 
 ### Blocking behavior
 
@@ -178,6 +165,16 @@ rpk ai policy create --agent invoice-triage --cedar-file grant.cedar
 
 The UI offers the same binding from the agent's **Permissions** tab.
 
+**Or create the agent and its policy in one command.** `rpk ai agent create <name> --policy-template <template>` takes the same template values and creates the same `<name>-access` policy as `policy create --agent <name> --template <template>`, so a new agent can make runtime calls straight away:
+
+```bash
+rpk ai agent create invoice-triage --policy-template sandboxed
+```
+
+- The template is checked **before** the agent is created, so a template that cannot be resolved leaves no agent behind.
+- If the agent is created and the bind then fails, **the agent exists with no access**: the created agent still goes to stdout, the error names the `rpk ai policy create` call that binds the template by hand, and the command exits non-zero — under `set -e` a script stops there with the agent already created. Recover by running the named command, not `agent create` again.
+- An already-existing `<name>-access` policy is reported as exactly that rather than as a lack of access; read what it grants with `rpk ai policy get` before adding another.
+
 ### Evaluation rules
 
 - **A run a person starts is authorized as that person.** When someone runs an agent — in the Playground, for example — ADP checks *their* permissions for the model and tool calls the run makes, not the agent's. A run no person started, such as a scheduled trigger, uses the agent's own grants. So granting a team its agents is not enough: grant the LLM providers and the tools those agents use as well, and don't read a successful test run by the agent's author as proof of the agent's own access.
@@ -194,10 +191,31 @@ The UI offers the same binding from the agent's **Permissions** tab.
 - **Resources:** always pin the type (`resource is Agent`, `resource == Agent::"x"`, `resource is McpServerTool in McpServer::"zendesk"`). To name **one tool**, match the tool entity and pin its server in a `when` clause — see [Deny one tool on one MCP server](#deny-one-tool-on-one-mcp-server).
 - **Conditions** can read resource tags (`resource.hasTag("k") && resource.getTag("k") == "v"`), `created_by`/`updated_by` (guard with `resource has created_by`; they hold `User` references), and `changed_tags` on update only. Always guard the read: an unguarded read errors, and an erroring `forbid` denies.
 - On create and update, conditions see the **resulting** state of the resource, not the stored one.
+- **An agent's children evaluate with the agent's tags.** `AgentCredential`, `AgentKillSwitch`, `AgentTrigger`, `AgentTriggerRun`, `KillSwitchPolicy`, `Session` and `Transcript` carry no tags of their own, so a tag condition on any of them matches the parent agent's tags, read at decision time — retagging the agent moves all of them with it, and a child has nothing of its own to tag. That widens a grant further than it looks: a `permit` conditioning on a tag without pinning the resource type reaches the children as well as the agent, and with the action unpinned too it lets the principal mint that agent's credentials and change its kill switch. **Pin `resource is Agent` to grant by tag on the agent alone.** None of the children carries `changed_tags`, so you can condition on their current tags but not on a tag transition.
 
 **Do not copy the Cedar action from the `rpk ai policy create --help` example.** Actions must be entity-qualified action IDs (for example `Action::"McpServerTool.call"`). If a policy fails to save with `Unknown action` because you used a role-permission name, the error names the action ID to use instead.
 
 Data shaping (masking, dropping, row filtering) is **not** configured in Cedar; it lives on the MCP server's data policies (below).
+
+#### Condition on the caller network
+
+A condition can also read `context.ip_address`, the address the listener resolved for the request. Unlike a resource attribute it is **always declared, so it takes no `has` guard** — and a `context has ip_address` guard is rejected at save time, because a guarded `forbid` would skip every caller whose address did not resolve and so fail open. It holds an address rather than text: compare it with `ip()` or test it with `isInRange()`.
+
+```cedar
+forbid (
+  principal is User,
+  action,
+  resource
+) unless {
+  context.ip_address.isInRange(ip("203.0.113.0/24")) ||
+  context.ip_address.isInRange(ip("10.20.0.0/16"))
+};
+```
+
+- **Requests from inside the environment carry the environment's address, not the person's.** A managed agent acting for a user, a cron trigger firing, and a Teams message reaching an agent all authorize as that person but arrive from inside the environment. An allowlist holding only your user networks denies every one of them, so include the environment's own addresses — read them from the audit log's **Source IP**, which reports the same value the policy evaluates, before you enforce.
+- **An unresolved address has no placeholder value.** A `forbid` that reads it errors, and an erroring `forbid` denies; a `permit` that reads it grants nothing. Policies that don't read it are unaffected.
+- Leaving the action unpinned, as above, also covers the `Policy` actions, so an admin outside every listed range cannot edit or delete the policy. Keep a range you can always reach, or list the actions to restrict instead.
+- Validation rejects an address compared with text (`== "203.0.113.7"`) and a range passed as text (`isInRange("203.0.113.0/24")`). Write IPv4 ranges in plain dotted form; an IPv4 client that arrives over IPv6 still matches them. **The condition builder offers no address conditions** — write these in the **Cedar** view.
 
 #### Deny one tool on one MCP server
 
@@ -231,23 +249,15 @@ ADP enforces fine-grained permissions: every operation checks exactly one permis
 
 There are no built-in invoker or transcript-reader roles for ADP. Grant runtime-only or read-only access with an access policy. Older organizations may still carry legacy invoker and transcript-reader roles; don't build new grants on them. A **custom role** holding ADP permissions still works, for when you need a permission bundle bound at a control-plane scope. Until access policies are enabled for an organization, Admin or a custom role is the only way to reach ADP.
 
-**Permission families.** The full list with the operation each one gates is in the ADP roles and permissions reference.
+**Permission families.** The full list with the operation each one gates is in the ADP roles and permissions reference. The families, and what is not obvious about them:
 
-| Family | Gates |
-|---|---|
-| `dataplane_adp_mcpserver_*` | MCP server management (create, get, list, update, delete) and each MCP protocol call against a running server (`initialize`, `tools_list`, `tools_call`, `resources_read`, `prompts_get`, …) |
-| `dataplane_adp_llmprovider_*` | LLM provider management; `_invoke` proxies LLM requests at runtime; `_check_connection` tests a saved or draft provider |
-| `dataplane_adp_agent_*` | Agent configuration, plus `dataplane_adp_agent_credential_*`, `dataplane_adp_agent_trigger_*`, and `dataplane_adp_agent_session_*` for credentials, triggers, and conversation sessions |
-| `dataplane_adp_a2a_invoke` | All agent-to-agent (A2A) runtime calls to an agent |
-| `dataplane_adp_transcript_*` | Reading conversation transcripts |
-| `dataplane_adp_auditlog_list` | Reading the audit log |
-| `dataplane_adp_trace_*` | The Traces view: `_list` for the list and its timeline, `_get` for one trace's spans, `_content_read` for span content nobody owns |
-| `dataplane_adp_apikey_*` | API keys: `_create` to mint your own; `_get`, `_list`, `_update`, `_delete` for *other people's* keys |
-| `dataplane_adp_secret_*` | The secret store. No permission returns a value: `_get` and `_list` disclose IDs and tags only |
-| `dataplane_adp_agentnetwork_get` | The Agent network view |
-| `dataplane_adp_spending_get`, `dataplane_adp_budget_*`, `dataplane_adp_guardrail_*` | Cost reporting, budgets, guardrails |
-| `dataplane_adp_policy_*`, `dataplane_adp_policytemplate_*` | Authoring access policies and templates; granting these is equivalent to granting everything a policy can grant |
-| `dataplane_aigateway_*` | OAuth clients, DCR and CIMD settings, OAuth providers (including attaching one to an MCP server), and OAuth connections (`connection_manage` for your own, `connection_admin` for everyone's) |
+- `dataplane_adp_mcpserver_*` covers both MCP server management (create, get, list, update, delete) **and** each MCP protocol call against a running server (`initialize`, `tools_list`, `tools_call`, `resources_read`, `prompts_get`, …).
+- `dataplane_adp_llmprovider_*` manages providers; `_invoke` is what proxies LLM requests at runtime and `_check_connection` tests a saved or draft provider.
+- `dataplane_adp_agent_*` covers agent configuration, with `dataplane_adp_agent_credential_*`, `_agent_trigger_*` and `_agent_session_*` for credentials, triggers and conversation sessions; `dataplane_adp_a2a_invoke` covers every A2A runtime call to an agent.
+- `dataplane_adp_transcript_*` reads transcripts, `dataplane_adp_auditlog_list` the audit log, and `dataplane_adp_agentnetwork_get` the Agent network view. `dataplane_adp_trace_*` splits three ways: `_list` for the list and its timeline, `_get` for one trace's spans, `_content_read` for span content nobody owns.
+- `dataplane_adp_apikey_*`: `_create` mints your own, while `_get`, `_list`, `_update` and `_delete` reach *other people's* keys. `dataplane_adp_secret_*` covers the secret store, where no permission returns a value — `_get` and `_list` disclose IDs and tags only.
+- `dataplane_adp_spending_get`, `dataplane_adp_budget_*` and `dataplane_adp_guardrail_*` cover cost reporting, budgets and guardrails. `dataplane_adp_policy_*` and `dataplane_adp_policytemplate_*` author policies and templates — granting either is equivalent to granting everything a policy can grant.
+- `dataplane_aigateway_*` covers OAuth clients, DCR and CIMD settings, OAuth providers (including attaching one to an MCP server), and OAuth connections (`connection_manage` for your own, `connection_admin` for everyone's).
 
 Points worth knowing:
 
