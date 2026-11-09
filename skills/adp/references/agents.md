@@ -25,7 +25,7 @@ In the UI, agents live under **Agents** in the sidebar. **A self-managed agent h
 | Connects to ADP through | The managed runtime wires the gateway | A client credential it exchanges for a gateway token; its code points LLM and MCP clients at the gateway |
 | Triggers, Playground, sessions | Yes | No |
 
-Both types share one registry, the same governance views, and the same cost attribution. The managed-or-self-managed kind is create-only: changing it means delete and recreate. For self-managed wiring (token endpoint, `/llm/v1/providers/<name>`, `/mcp/v1/<server>`, span export for transcripts), see [gateway-and-providers.md](gateway-and-providers.md) and [observability.md](observability.md).
+Both types share one registry, the same governance views, and the same cost attribution. The managed-or-self-managed kind is create-only: changing it means delete and recreate. For self-managed wiring (token endpoint, `/llm/v1/providers/<name>`, `/mcp/v1/<server>`, span export for transcripts), see [gateway-and-providers.md](gateway-and-providers.md) and `/redpanda:adp-observability`.
 
 ## Agent commands
 
@@ -38,12 +38,12 @@ Both types share one registry, the same governance views, and the same cost attr
 | `update <name>` | Change only the fields whose flags you pass |
 | `delete <name>` | Delete the agent |
 | `start <name>` / `stop <name>` | Set a managed agent's desired state to running / stopped. Stopping keeps configuration, transcripts, and cost history, and stops serving callers and triggers |
-| `apply -f` / `diff -f` | GitOps reconcile / dry-run from YAML manifests (see [rpk-ai.md](rpk-ai.md)) |
+| `apply -f` / `diff -f` | GitOps reconcile / dry-run from YAML manifests (see [cli.md](cli.md)) |
 | `credential create\|list\|delete` | Client credentials for the agent (see [Agent credentials](#agent-credentials)) |
-| `transcript list\|get` | Conversation transcripts (see [observability.md](observability.md)) |
+| `transcript list\|get` | Conversation transcripts (see `/redpanda:adp-observability`) |
 | `a2a card\|send\|task` | Talk to a running agent over A2A (see [A2A](#a2a-endpoint-and-agent-card)) |
 
-**A new agent starts with no policy of its own.** `rpk ai agent create` writes none and says so on **stderr**, leaving stdout parseable; bind one with `rpk ai policy create --agent <name> --template sandboxed`, or with Cedar whose principal is that agent. Its creator can invoke it meanwhile through the built-in *Owner lifecycle* policy, which is not the agent's own access. For the UI cases (the managed agent's **Permissions** tab warning, the self-managed **Access** section that writes the first policy), see [governance.md](governance.md#give-a-new-agent-access).
+**A new agent starts with no policy of its own.** `rpk ai agent create` writes none and says so on **stderr**, leaving stdout parseable; bind one with `rpk ai policy create --agent <name> --template sandboxed`, or with Cedar whose principal is that agent. Its creator can invoke it meanwhile through the built-in *Owner lifecycle* policy, which is not the agent's own access. For the UI cases (the managed agent's **Permissions** tab warning, the self-managed **Access** section that writes the first policy), see `/redpanda:adp-governance` (*Give a new agent access*).
 
 Scalar flags on `create` / `update`: `--display-name`, `--description`, `--model`, `--llm-provider`, `--system-prompt`, `--max-iterations`, `--mcp-server` (repeatable), `--tag key=value` (repeatable; on `update` it replaces the whole tag map). `create` also takes `--self-managed` and `--spec-file <json|yaml>`, which loads a complete managed spec and is the only create-time way to set subagents or an agent card; `--spec-file` is mutually exclusive with `--self-managed` and the scalar spec flags. For anything the flags cannot express on an existing agent (subagents, agent card, reasoning effort), edit the manifest and `rpk ai agent apply -f`.
 
@@ -60,7 +60,7 @@ Every agent carries, independent of type:
 | `description` | Up to 1,024 characters; an internal note, not the system prompt |
 | `tags` | Key/value map, up to 50 pairs, each value up to 256 characters. Set with `--tag` on `create` / `update`, or in the UI under **Advanced** → **Tags** on the create canvas and on the Settings tab |
 
-`tags` drive Cedar conditions (`resource.getTag("team")`, `resource.hasTag("team")`), registry filtering and spend attribution at once, so changing a key affects all three. Only the calling agent's tags are stamped on an LLM call, as they were at the time. No secrets or PII in values; see [governance.md](governance.md#tags-on-adp-resources).
+`tags` drive Cedar conditions (`resource.getTag("team")`, `resource.hasTag("team")`), registry filtering and spend attribution at once, so changing a key affects all three. Only the calling agent's tags are stamped on an LLM call, as they were at the time. No secrets or PII in values; see `/redpanda:adp-governance` (*Tags on ADP resources*).
 
 ## Managed agent spec
 
@@ -159,7 +159,7 @@ rpk ai agent a2a send <agent> --no-block "…"                   # return the ta
 rpk ai agent a2a task get|watch|cancel <agent> <task-id>
 ```
 
-`<agent>` is a registry agent name or a full `http(s)://` A2A URL. Your token is attached for registry agents and for URLs on your environment's dataplane host; other hosts are called without credentials (stderr says so). Reply text goes to stdout; `context-id`, task id, and state go to stderr as `key: value` lines. Exit codes: `0` success or input-required, `4` task failed/canceled/rejected, `3` an authentication or authorization failure, `1` anything else (see [rpk-ai.md](rpk-ai.md#exit-codes)). `task watch` (alias `resubscribe`) waits with no timeout unless `--timeout` is set.
+`<agent>` is a registry agent name or a full `http(s)://` A2A URL. Your token is attached for registry agents and for URLs on your environment's dataplane host; other hosts are called without credentials (stderr says so). Reply text goes to stdout; `context-id`, task id, and state go to stderr as `key: value` lines. Exit codes: `0` success or input-required, `4` task failed/canceled/rejected, `3` an authentication or authorization failure, `1` anything else (see [cli.md](cli.md#exit-codes)). `task watch` (alias `resubscribe`) waits with no timeout unless `--timeout` is set.
 
 An agent's context lasts one conversation (one A2A context). There is no built-in memory across conversations; expose earlier information through a tool instead.
 
@@ -171,7 +171,7 @@ A **session** is a managed agent's saved conversation thread. Work with sessions
 
 **A session ID is the A2A context ID.** The `context-id` that `rpk ai agent a2a send` prints and accepts via `--context-id` is the same ID Session history shows, so you can resume a CLI conversation from the Playground and vice versa.
 
-Sessions exist for managed agents only. They are not transcripts: a session is the agent's own conversation state; a transcript is the observability record (timing, tool calls, tokens, cost), which also covers self-managed agents and is readable from the CLI with `rpk ai agent transcript`. See [observability.md](observability.md).
+Sessions exist for managed agents only. They are not transcripts: a session is the agent's own conversation state; a transcript is the observability record (timing, tool calls, tokens, cost), which also covers self-managed agents and is readable from the CLI with `rpk ai agent transcript`. See `/redpanda:adp-observability`.
 
 ## Agent credentials
 
@@ -197,7 +197,7 @@ Triggers invoke a **managed** agent without a direct API call. Two kinds:
 
 **UI:** agent → **Triggers** tab → **Add trigger**. Edit a trigger on its card; pause/resume icons exist only for schedule triggers. Teams triggers show **Pending**, **Connected**, or **Error** from a background credential check (about every 30 seconds); schedule triggers show the last run outcome and next run time, or **Paused** / **Failing**.
 
-**CLI:** the **top-level** `rpk ai trigger` group (aliases `triggers`, `agent-trigger`), not `rpk ai agent trigger`; the subcommand list is in [rpk-ai.md](rpk-ai.md#trigger-subcommands).
+**CLI:** the **top-level** `rpk ai trigger` group (aliases `triggers`, `agent-trigger`), not `rpk ai agent trigger`; the subcommand list is in [cli.md](cli.md#trigger-subcommands).
 
 ```bash
 rpk ai trigger create <agent> --cron-schedule "0 9 * * 1-5" --cron-timezone Europe/Prague --cron-input "Daily report"
@@ -228,4 +228,4 @@ rpk ai trigger delete agents/<agent>/triggers/<id>            # idempotent
 
 ## Permissions
 
-Agent operations are gated by `dataplane_adp_agent_*`, with separate families for credentials, triggers and conversation sessions; reading a session exposes its full conversation content, so grant it as deliberately as transcript access. Every A2A call to an agent is covered by `dataplane_adp_a2a_invoke`; grant it with a policy on `Action::"Agent.invoke"`. What the agent itself may reach is a separate grant: see [Give a new agent access](governance.md#give-a-new-agent-access) and [Roles and permissions](governance.md#roles-and-permissions).
+Agent operations are gated by `dataplane_adp_agent_*`, with separate families for credentials, triggers and conversation sessions; reading a session exposes its full conversation content, so grant it as deliberately as transcript access. Every A2A call to an agent is covered by `dataplane_adp_a2a_invoke`; grant it with a policy on `Action::"Agent.invoke"`. What the agent itself may reach is a separate grant: see Give a new agent access in `/redpanda:adp-governance` and Roles and permissions (see `/redpanda:adp-governance`, *Roles and permissions*).

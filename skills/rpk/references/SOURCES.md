@@ -12,7 +12,7 @@ paths, flag names, and config keys. `rpk` is versioned: verify against the **cur
 stable release tag**, not `dev`/`main` (unreleased commands are not yet user-facing).
 
 Scope note: this map covers the core `rpk` skill. `rpk ai` (`src/go/rpk/pkg/cli/ai/`) is
-**out of scope** — it belongs to the ADP skill (`skills/adp/references/rpk-ai.md`).
+**out of scope** — it belongs to the ADP skill (`skills/adp/references/cli.md`).
 
 ## File-to-source table
 
