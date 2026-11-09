@@ -21,13 +21,13 @@ CLI: `rpk ai llm-provider create NAME` (or `-f manifest.yaml`), `get`, `list`, `
 
 - `NAME` is the resource ID: starts with a lowercase letter, lowercase letters/digits/hyphens, ends alphanumeric, at most 63 characters, **immutable**. It is the `<provider-name>` in the proxy URL. The UI derives it from the display name without showing it on the create form.
 - The provider **type is immutable** after creation. In the CLI, the type is selected by which flag group you set (`--openai-config.*`, `--anthropic-config.*`, `--google-config.*`, `--bedrock-config.*`, `--openai-compatible-config.*`, `--vertex-config.*`); setting flags from two groups is an error.
-- `--provider-models` and `--tags` **replace** the full list/map on update. Tags are editable in the UI too, in the **Tags** section of the create form and of the provider's **Settings** tab; see [governance.md](governance.md#tags-on-adp-resources).
+- `--provider-models` and `--tags` **replace** the full list/map on update. Tags are editable in the UI too, in the **Tags** section of the create form and of the provider's **Settings** tab; see `/redpanda:adp-governance` (*Tags on ADP resources*).
 - A missing provider returns `Error: LLM provider not found (use 'rpai llm-provider list' to see what's available)` with `Code: not_found`.
 - A disabled provider rejects all requests to its proxy URL; its configuration is kept.
 
 ## Provider types and credentials
 
-Every credential field is a **secret-store reference** (an `UPPER_SNAKE_CASE` key name such as `OPENAI_API_KEY`), never the secret value. The UI create form can also store a new key inline (**Bring a new API key reference** → Key name + API key → **Save key**). Manage the stored values themselves with `rpk ai secret` or under **Secrets store**; a rotated key reaches an OpenAI, Anthropic or Google provider within about five minutes and a Bedrock provider on its next request, with no edit to the provider. See [governance.md](governance.md#secrets).
+Every credential field is a **secret-store reference** (an `UPPER_SNAKE_CASE` key name such as `OPENAI_API_KEY`), never the secret value. The UI create form can also store a new key inline (**Bring a new API key reference** → Key name + API key → **Save key**). Manage the stored values themselves with `rpk ai secret` or under **Secrets store**; a rotated key reaches an OpenAI, Anthropic or Google provider within about five minutes and a Bedrock provider on its next request, with no edit to the provider. See `/redpanda:adp-governance` (*Secrets*).
 
 | Type (UI label) | CLI flag group | Credential |
 |---|---|---|
@@ -46,13 +46,13 @@ Short aliases exist for some Bedrock flags (`--region`, `--access-key-id-ref`, `
 
 **Gemini Enterprise Agent Platform setup lives mostly in GCP.** The stored service account needs `roles/aiplatform.user` on the project, and Claude models must also be enabled in the GCP project and organization, or they fail upstream even though you can select them. In the UI, choose the location first: the model picker offers only models served there. Upstream `404`, `403`, `400 FAILED_PRECONDITION` and `429` errors from this type come from the GCP setup (role, Model Garden enablement, organization policy, location), not from ADP. Follow the product docs' setup guide for the rest.
 
-**Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google Gemini API rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both; Vertex AI requires its project, location and credentials reference, and rejects a create — or an update that changes the models or the location — naming a model that location does not serve. Create and rotate the referenced secrets with `rpk ai secret` or under **Secrets store** in the UI; see [governance.md](governance.md#secrets).
+**Save-time validation checks the reference, not the secret.** A reference to a nonexistent secret saves fine and fails at the first proxied call (`secret "<NAME>" not found`). Google Gemini API rejects an empty key reference; OpenAI and Anthropic reject neither-or-both of key and passthrough; OpenAI-compatible rejects only both; Vertex AI requires its project, location and credentials reference, and rejects a create — or an update that changes the models or the location — naming a model that location does not serve. Create and rotate the referenced secrets with `rpk ai secret` or under **Secrets store** in the UI; see `/redpanda:adp-governance` (*Secrets*).
 
 **Bedrock API key mode** sends a stored Amazon Bedrock API key as a bearer token instead of signing with SigV4. Store the bare key (no `Bearer` prefix, no quotes). Its identity needs `bedrock:CallWithBearerToken`, invoke permission on the models, and `bedrock:ListFoundationModels` for **Test connection**. The gateway never renews a key: a short-term key expires within 12 hours and works only in its own region, so rotate the secret ahead of expiry. The mode rejects a non-`https://` `base-url` and can't be combined with static keys or a role ARN.
 
 **Bedrock `base-url` caveat:** with a custom base URL every request goes to that URL, so models Bedrock serves only on its separate `bedrock-mantle` endpoint are not reachable through that provider.
 
-**Guardrail:** `--guardrail NAME` attaches an existing guardrail (validated at save; a missing or deleting guardrail is rejected). The UI shows the Guardrail field on Bedrock providers only; for other types use the CLI flag. See [governance.md](governance.md).
+**Guardrail:** `--guardrail NAME` attaches an existing guardrail (validated at save; a missing or deleting guardrail is rejected). The UI shows the Guardrail field on Bedrock providers only; for other types use the CLI flag. See `/redpanda:adp-governance`.
 
 ## Test a connection
 
@@ -98,7 +98,7 @@ Each provider has two independent toggles — UI **Record inputs** / **Record ou
 - Existing providers keep what they were saved with; changes apply to new requests only and do not redact content already recorded.
 - These are per-provider, not per-request. To split sensitive traffic, create two providers (recording on and off) and route each application to the matching proxy URL.
 - Token counts, latency, and spend are recorded regardless; cost reporting is unaffected.
-- These toggles do not control agent transcripts. A managed agent's own transcript recording mode does (see [agents.md](agents.md) and [observability.md](observability.md)).
+- These toggles do not control agent transcripts. A managed agent's own transcript recording mode does (see [agents.md](agents.md) and `/redpanda:adp-observability`).
 
 **Privacy consequence:** captured bodies may contain PII or secrets. If a provider must not record content, set both fields explicitly on create.
 
@@ -106,7 +106,7 @@ Each provider has two independent toggles — UI **Record inputs** / **Record ou
 
 Apart from the `rpk ai` sign-in, which covers command-line work, a client calling a provider's proxy URL presents one of two credentials:
 
-- An **ADP API key** — for a desktop AI client, a long-running script, a workstation tool, and every `rpk ai run` session. It travels in `X-Redpanda-Api-Key`, or in `Authorization: Bearer`, `X-Api-Key` or `X-Goog-Api-Key`, which the gateway reads as a key only when the value carries the `rpadp_` prefix. See [API keys](governance.md#api-keys).
+- An **ADP API key** — for a desktop AI client, a long-running script, a workstation tool, and every `rpk ai run` session. It travels in `X-Redpanda-Api-Key`, or in `Authorization: Bearer`, `X-Api-Key` or `X-Goog-Api-Key`, which the gateway reads as a key only when the value carries the `rpadp_` prefix. See API keys in `/redpanda:adp-governance`.
 - **OIDC client credentials** — for applications, CI, and self-managed agents, where the caller should be a service account. The access token travels in `Authorization: Bearer` or `X-Redpanda-Cloud-Token`.
 
 A key authenticates **as the user who created it**, so its calls are attributed to that person in transcripts and the audit log, and it authenticates the ADP management API as well as the gateway's traffic. Two combinations fail with **401**: a key sent alongside an `X-Redpanda-Cloud-Token` header, and two different keys in one request. A key replaces the *gateway* credential only — the gateway still attaches the upstream provider credential itself, except under passthrough.
@@ -121,7 +121,7 @@ Passthrough makes the gateway forward the **caller's** upstream credential inste
 
 **What the gateway forwards.** On OpenAI and OpenAI-compatible, only `Authorization` and `ChatGPT-Account-ID` (a Codex workspace selector), and only when the caller sent them; no other caller header reaches the upstream. On Anthropic, `Authorization`.
 
-**Passthrough requires an ADP API key, in its own header.** `Authorization` carries the upstream credential, so the gateway credential has to travel separately — and under passthrough it must be an [API key](governance.md#api-keys) in `X-Redpanda-Api-Key`. A sign-in or client-credentials token does **not** work here. On Anthropic, OpenAI and OpenAI-compatible providers alike, a passthrough request that did not authenticate with a key is rejected with **HTTP 400** (`authorization passthrough requires verified ADP API-key authentication`) before the upstream is contacted. Anthropic answers a second **HTTP 400** (`authorization passthrough requires separate upstream authorization`) when `Authorization` is empty. The gateway strips the key from the request, so it is never forwarded upstream. A client that cannot send two separate credentials cannot use this mode.
+**Passthrough requires an ADP API key, in its own header.** `Authorization` carries the upstream credential, so the gateway credential has to travel separately — and under passthrough it must be an API key (see `/redpanda:adp-governance`, *API keys*) in `X-Redpanda-Api-Key`. A sign-in or client-credentials token does **not** work here. On Anthropic, OpenAI and OpenAI-compatible providers alike, a passthrough request that did not authenticate with a key is rejected with **HTTP 400** (`authorization passthrough requires verified ADP API-key authentication`) before the upstream is contacted. Anthropic answers a second **HTTP 400** (`authorization passthrough requires separate upstream authorization`) when `Authorization` is empty. The gateway strips the key from the request, so it is never forwarded upstream. A client that cannot send two separate credentials cannot use this mode.
 
 ```bash
 curl "$GATEWAY/llm/v1/providers/<provider-name>/chat/completions" \
@@ -133,7 +133,7 @@ curl "$GATEWAY/llm/v1/providers/<provider-name>/chat/completions" \
 
 **Redirects are refused on the OpenAI family.** An upstream 3xx becomes **HTTP 502** (`upstream redirects are not allowed with authorization passthrough`) and `Location` is not relayed, so credentials never follow a redirect to another host. Fix by pointing the base URL at the endpoint's final address.
 
-**Codex subscriptions need the Codex base URL.** Passthrough never changes the default endpoint (plain OpenAI still resolves to `https://api.openai.com/v1`). For ChatGPT/Codex subscription passthrough, set the base URL to `https://chatgpt.com/backend-api/codex`. For such a provider, the UI **Connect** tab shows a passthrough setup guide (including a ready-to-paste Codex configuration) instead of the standard client instructions; use that manual setup rather than `rpk ai run codex`, which configures API-key authentication (see [rpk-ai.md](rpk-ai.md)). Whether a subscription tier permits this is an upstream entitlement question.
+**Codex subscriptions need the Codex base URL.** Passthrough never changes the default endpoint (plain OpenAI still resolves to `https://api.openai.com/v1`). For ChatGPT/Codex subscription passthrough, set the base URL to `https://chatgpt.com/backend-api/codex`. For such a provider, the UI **Connect** tab shows a passthrough setup guide (including a ready-to-paste Codex configuration) instead of the standard client instructions; use that manual setup rather than `rpk ai run codex`, which configures API-key authentication (see [cli.md](cli.md)). Whether a subscription tier permits this is an upstream entitlement question.
 
 **Upstream 401 with passthrough on:** confirm the client sends its own `Authorization`, the provider's API key reference is empty, and (OpenAI) the base URL matches the credential type.
 
@@ -199,7 +199,7 @@ rpk ai llm-provider update openai \
 
 Omitted rates keep the catalog default and an explicit `0` sets a free rate; set at least one rate per model, and name each model only once (a repeat is rejected). `--pricing` merges into `--provider-models` by model name (appending a model that is absent), and **on `update` it replaces the whole model list**, so include every model the provider should keep. Cache writes with an unknown TTL always bill at the catalog rate.
 
-**In manifests and `get -o yaml`**, overrides appear as `provider_models[].custom_pricing` with fields `input_per_million`, `output_per_million`, `cached_input_per_million`, `cache_creation_5m_per_million`, `cache_creation_1h_per_million`, stored in **microcents** per million tokens (not dollars). Prefer `--pricing`, which converts for you; if you hand-write `custom_pricing`, use microcents. See [rpk-ai.md](rpk-ai.md).
+**In manifests and `get -o yaml`**, overrides appear as `provider_models[].custom_pricing` with fields `input_per_million`, `output_per_million`, `cached_input_per_million`, `cache_creation_5m_per_million`, `cache_creation_1h_per_million`, stored in **microcents** per million tokens (not dollars). Prefer `--pricing`, which converts for you; if you hand-write `custom_pricing`, use microcents. See [cli.md](cli.md).
 
 ## What the AI Gateway proxy does
 
@@ -210,17 +210,17 @@ The AI Gateway is a managed HTTP proxy. Each provider has its own URL (copy it f
 ```
 
 - Clients keep using the provider's native SDK and API, pointed at the proxy URL. Upstream keys stay in the secret store and the gateway injects the credential per request, except under [passthrough](#authorization-passthrough).
-- For how callers authenticate, content capture and guardrails, see [How a client authenticates to the gateway](#how-a-client-authenticates-to-the-gateway), [Transcript recording defaults to ON](#transcript-recording-defaults-to-on) and [governance.md](governance.md#guardrails). Spend, requests and tokens are recorded per provider.
+- For how callers authenticate, content capture and guardrails, see [How a client authenticates to the gateway](#how-a-client-authenticates-to-the-gateway), [Transcript recording defaults to ON](#transcript-recording-defaults-to-on) and `/redpanda:adp-governance` (*Guardrails*). Spend, requests and tokens are recorded per provider.
 
 ## Not in scope
 
 The ADP gateway overview and provider docs list these as not provided by AI Gateway:
 
 - **Multi-provider routing, failover, and retries.** There is no synthetic provider that fans requests across upstreams, and no cross-provider load balancing.
-- **Rate limits.** No requests-per-second, per-minute, or per-day caps. To cap spend instead, use budgets (per-agent hard caps; see [governance.md](governance.md)). Budgets apply only to agent-attributed requests, so a user calling the gateway directly is not capped.
+- **Rate limits.** No requests-per-second, per-minute, or per-day caps. To cap spend instead, use budgets (per-agent hard caps; see `/redpanda:adp-governance`). Budgets apply only to agent-attributed requests, so a user calling the gateway directly is not capped.
 
 Do not try to configure routing, failover, load balancing, or request rate limits through `rpk ai` or the UI; the features do not exist.
 
 ## Permissions
 
-`dataplane_adp_llmprovider_invoke` is all an application needs to send traffic, and testing a connection needs `dataplane_adp_llmprovider_check_connection` (see [Roles and permissions](governance.md#roles-and-permissions)). A client that authenticates with an API key is evaluated as the **user who created the key**, so that user needs the invoke grant (`Action::"LLMProvider.invoke"`).
+`dataplane_adp_llmprovider_invoke` is all an application needs to send traffic, and testing a connection needs `dataplane_adp_llmprovider_check_connection` (see Roles and permissions in `/redpanda:adp-governance`). A client that authenticates with an API key is evaluated as the **user who created the key**, so that user needs the invoke grant (`Action::"LLMProvider.invoke"`).

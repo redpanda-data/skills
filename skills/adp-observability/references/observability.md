@@ -2,25 +2,9 @@ Source: `cloudv2 apps/rpai/internal/cmd/{agent/transcript.go,auditlog/}` and `ap
 
 # Agentic Data Plane Observability Reference
 
-**Maturity:** The docs carry no Preview or Experimental marker on traces, transcripts, the audit log, the Agent network view, or the Home dashboard. Traces dropped its Preview badge and its documented Preview marker with the release that moved it under **Observability**.
-
-## Discover the live surface
-
-```bash
-# Transcripts are a subcommand of `agent` (aliases: transcripts, tr), not a top-level group
-rpk ai agent transcript list <agent>
-rpk ai agent transcript get <agent> <conversation-id>
-
-# These are read-only top-level groups of their own
-rpk ai auditlog --help      # aliases audit-log, audit; list, get, query
-rpk ai trace --help         # list, get, span
-rpk ai spending --help      # summary, breakdown, time-series, time-series-by-dimension, tag-keys
-rpk ai agent-network --help # get, node, provider-failures
-```
-
 ## Which surface answers which question
 
-Traces (`rpk ai trace`), transcripts (`rpk ai agent transcript`) and the audit log (`rpk ai auditlog`) overlap and are easy to confuse — [Accountability](#accountability-traces-vs-transcripts-vs-the-audit-log) below says which answers what. The agent network (`rpk ai agent-network`) answers which agents call which models and tools and where errors cluster; for spend use `rpk ai spending` or **Cost and usage** (see [governance.md](governance.md)); to try an agent live use its **Playground** tab (UI, managed agents only; see [agents.md](agents.md)).
+Traces (`rpk ai trace`), transcripts (`rpk ai agent transcript`) and the audit log (`rpk ai auditlog`) overlap and are easy to confuse — [Accountability](#accountability-traces-vs-transcripts-vs-the-audit-log) below says which answers what. The agent network (`rpk ai agent-network`) answers which agents call which models and tools and where errors cluster; for spend use `rpk ai spending` or **Cost and usage** (see `/redpanda:adp-governance`); to try an agent live use its **Playground** tab (UI, managed agents only; see `/redpanda:adp`).
 
 ## Traces
 
@@ -74,7 +58,7 @@ rpk ai trace span list <trace-id> --ids      # the span IDs that `span get` take
 
 A transcript is the record of one agent conversation, turn by turn: the user message, the agent's response, the tool calls it made (arguments, result, status, duration, error), per-turn latency and token usage, and the system prompt when one was recorded. Transcripts cover both managed and self-managed agents. A self-managed agent's transcript holds only what its own instrumentation exports.
 
-What a transcript holds depends on recording settings. On a managed agent, a *Metadata only* recording mode keeps the conversation's shape (tool names, status, duration) without content, and recording off produces no transcripts (see [agents.md](agents.md)). On an LLM provider, `transcripts.record_input_messages` / `transcripts.record_output_messages` (flags `--transcripts.record-input-messages` / `--transcripts.record-output-messages`) control prompt and response capture and default to on (see [gateway-and-providers.md](gateway-and-providers.md#transcript-recording-defaults-to-on)).
+What a transcript holds depends on recording settings. On a managed agent, a *Metadata only* recording mode keeps the conversation's shape (tool names, status, duration) without content, and recording off produces no transcripts (see `/redpanda:adp`). On an LLM provider, `transcripts.record_input_messages` / `transcripts.record_output_messages` (flags `--transcripts.record-input-messages` / `--transcripts.record-output-messages`) control prompt and response capture and default to on (see `/redpanda:adp`, *Transcript recording defaults to ON*).
 
 **Access warning:** transcripts can hold full prompts, responses and tool payloads, they are read separately from an agent's configuration, and the Admin role and every built-in policy template — even *Read only* — grant transcript (and audit-log) read access. Grant it only to people who need it.
 
@@ -105,7 +89,7 @@ The filter flags — `--query`, `--status`, `--errors-only`, `--tool-errors-only
 
 **Finding the slow step:** the Detailed view gives a turn's total latency and each tool call's duration, but not each model call's duration. Subtract tool time from turn latency. What remains is model time.
 
-**Cost:** transcripts show tokens, not dollars. For spend by agent, model, or user, use **Cost and usage** (see [governance.md](governance.md)).
+**Cost:** transcripts show tokens, not dollars. For spend by agent, model, or user, use **Cost and usage** (see `/redpanda:adp-governance`).
 
 ### Errors recorded in a conversation
 
@@ -116,7 +100,7 @@ A transcript keeps **each failure as its own record**, so a step that failed sta
 - The tool or model the failure happened on, or the turn it was recorded on.
 - **Technical details**, which expands to the record's source and to the error code when one was recorded.
 
-- **When every record is a sign-in one the notice reads _Sign-in requested_**, not *Errors recorded*: the conversation is waiting on a user connection rather than reporting a fault. Reconnect the provider the record names and run the conversation again (see [mcp-servers.md](mcp-servers.md#what-a-caller-without-a-connection-can-do-user_oauth)).
+- **When every record is a sign-in one the notice reads _Sign-in requested_**, not *Errors recorded*: the conversation is waiting on a user connection rather than reporting a fault. Reconnect the provider the record names and run the conversation again (see `/redpanda:adp`, *What a caller without a connection can do (`user_oauth`)*).
 - **An empty list is not proof of a clean run.** The records cover at most the seven days before the conversation's last turn, up to 1,000 of them; past either limit the notice says the error history is limited. If the lookup itself fails, the notice says error records are unavailable — read the turns and tool calls instead.
 
 ### Context size per turn
@@ -143,7 +127,7 @@ The audit log records authorization decisions across the Agentic Data Plane: who
 
 Two surfaces read the same events: **Audit log**, under **Observability** in the UI sidebar, and `rpk ai auditlog` on the command line. The UI is the better place to explore — the timeline, the Fields panel's value counts, and shareable URLs. The CLI is the better place for a scripted review, a repeatable query, or pulling a window of events into a file. Both need the same permission, and the log is read-only on both: there is no way to write or delete an entry.
 
-Access: needs audit log read permission (`dataplane_adp_auditlog_list`). The Admin role grants it, as does a built-in template such as Read only, or an access policy granting audit log reads (see [governance.md](governance.md)). If the page or the CLI returns nothing for a period you know had activity, audit recording may not be enabled for the deployment. Read access and recording are independent, so an empty result is not proof that nothing happened.
+Access: needs audit log read permission (`dataplane_adp_auditlog_list`). The Admin role grants it, as does a built-in template such as Read only, or an access policy granting audit log reads (see `/redpanda:adp-governance`). If the page or the CLI returns nothing for a period you know had activity, audit recording may not be enabled for the deployment. Read access and recording are independent, so an empty result is not proof that nothing happened.
 
 ### Read the audit log from the CLI
 
@@ -237,8 +221,8 @@ A trace and a transcript cover the same run from different angles, and **Open tr
 
 - **Home**: the landing page after sign-in (attention items, health, recent gateway traffic, spend and budget status), and the one view here with no CLI equivalent.
 - **Observability > Agent network** (`rpk ai agent-network get` / `node` / `provider-failures` from the terminal): a live graph of agents, the agents they **call directly** as well as the subagents configured on them (each named in the legend), and the LLM providers, MCP servers and tools they use, with usage, cost, tokens and health for a chosen window. An agent's or MCP server's detail panel carries a **View traces** link that opens Traces filtered to that resource over the same window. Health derives from the window's error rate, and budget-blocked and provider-failed requests count as errors. Of the header figures, only the agent and MCP server counts follow a search or filter (`3 of 8`); conversations, tool calls, cost and tokens always cover the **whole** network.
-- **Agent Playground**: see [agents.md](agents.md) for live testing, session history, and the token/context estimate.
+- **Agent Playground**: see `/redpanda:adp` for live testing, session history, and the token/context estimate.
 
 ## Permissions
 
-For transcript and audit-log read access see the [Transcripts access warning](#transcripts); for the trace permissions see [above](#permissions); for the rest, [governance.md](governance.md#roles-and-permissions).
+For transcript and audit-log read access see the [Transcripts access warning](#transcripts); for the trace permissions see [above](#permissions); for the rest, `/redpanda:adp-governance` (*Roles and permissions*).

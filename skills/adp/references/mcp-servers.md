@@ -36,7 +36,7 @@ In the UI: **MCP servers** in the sidebar → **Add MCP server**. On a server's 
 | `sql-exposure NAME`, `sql-sources`, `test-sql-exposure NAME` | Inspect a server's SQL exposure, list its SQL sources, and run a read-only exposure test (see [SQL table exposure](#sql-table-exposure-on-a-managed-connector)) |
 | `preview-data-policies`, `preview-tool-response` (`--name` and `--tool` required) | Preview the data policies in force on a tool, and what they do to a tool response, without calling the tool |
 | `google-identity NAME` | Print the identity the gateway mints Google ID tokens with, and the `gcloud` commands that trust it (see [Google Identity-Aware Proxy](#google-identity-aware-proxy-and-cloud-run-preview)) |
-| `apply -f` / `diff -f` | GitOps reconcile / dry-run (see [rpk-ai.md](rpk-ai.md)) |
+| `apply -f` / `diff -f` | GitOps reconcile / dry-run (see [cli.md](cli.md)) |
 
 `create` and `update` also accept `-f <manifest>` (flags override file values) and `--dry-run` (print the request, including the computed update mask, without sending it).
 
@@ -54,7 +54,7 @@ As they appear in flags and `get -o yaml`:
 | backend | `--remote.*` or `--managed.config` | Remote (a server you host, proxied by the gateway) or managed (hosted by Redpanda). The flag group you use selects it; mixing groups is an error. Immutable |
 | `enabled` | `--enabled` | **The CLI creates a server disabled unless you pass `--enabled`**; the UI creates it enabled. A disabled server rejects every request, connection attempts included |
 | `description` | `--description` | Up to 256 characters |
-| `tags` | `--tags key=value` (repeatable) | Up to 50 pairs, values up to 256 characters; an update replaces the whole map. No secrets or PII (see [governance.md](governance.md#tags-on-adp-resources)) |
+| `tags` | `--tags key=value` (repeatable) | Up to 50 pairs, values up to 256 characters; an update replaces the whole map. No secrets or PII (see `/redpanda:adp-governance`, *Tags on ADP resources*) |
 | `code_mode` | `--code-mode` | See [Code mode](#code-mode) |
 | `response_format` | `--response-format jton\|toon` | See [Output format](#output-format-token-optimization). Omitted = JSON |
 | `data_policies` | `--data-policies` (repeatable) | See [Data policies](#data-policies-preview). Returned by `get`, omitted by `list` |
@@ -77,7 +77,7 @@ A remote server uses exactly one of five auth modes; the flag group you set sele
 
 Secret references are `UPPER_SNAKE_CASE` names in the ADP secret store, never the secret value.
 
-**User-delegated OAuth setup.** Name an existing OAuth provider with `--remote.user-oauth.provider-name`, or leave it empty to have the gateway set OAuth up automatically from the server URL. `--remote.user-oauth.client-id` / `.client-secret-ref` are only for automatic setup against a server without dynamic client registration (the secret only for a confidential app). On `update`, `--remote.user-oauth.automatic-setup` re-runs automatic setup instead of keeping the attached provider; do not combine it with a provider name. A connection with fewer scopes than `--remote.user-oauth.required-scopes` fails with `scope_upgrade_required`; the caller clears it by reconnecting and granting the missing scope, and a required scope the OAuth provider does not request keeps failing until the provider asks for it too. See [governance.md](governance.md) for OAuth providers and connections.
+**User-delegated OAuth setup.** Name an existing OAuth provider with `--remote.user-oauth.provider-name`, or leave it empty to have the gateway set OAuth up automatically from the server URL. `--remote.user-oauth.client-id` / `.client-secret-ref` are only for automatic setup against a server without dynamic client registration (the secret only for a confidential app). On `update`, `--remote.user-oauth.automatic-setup` re-runs automatic setup instead of keeping the attached provider; do not combine it with a provider name. A connection with fewer scopes than `--remote.user-oauth.required-scopes` fails with `scope_upgrade_required`; the caller clears it by reconnecting and granting the missing scope, and a required scope the OAuth provider does not request keeps failing until the provider asks for it too. See `/redpanda:adp-governance` for OAuth providers and connections.
 
 **Before a user connects**, `rpk ai mcp-server get <name>` on a user-OAuth server prints the authorize link instead of a tool list:
 
@@ -182,7 +182,7 @@ The selected encoding may not be active on every gateway; until it is, results a
 
 Data policies mask or drop fields, limit tool-call arguments and filter list results before the model sees them, on managed and remote servers. They compose **most-restrictively** across every matching policy and **fail closed**; they decide *how data looks*, access policies *whether* a call runs. Author them on the server's **Data Policies** tab (its **Configuration** and **Preview** tabs show the composed effect and run sample data before you save) or with `--data-policies`: one JSON object per flag, and on `update` it **replaces the server's whole list**, so pass every policy the server should keep — it is also the only way to make one policy shape several tools. `preview-data-policies` and `preview-tool-response` preview them from the CLI; `get <name> -o yaml` shows them and `list` omits them.
 
-Selectors, strict versus absence-safe rules (rules written in YAML or `--data-policies` are strict unless marked absence-safe; UI-form rules default to absence-safe), limits and audit-log outcomes: [governance.md](governance.md#data-policies-mcp-data-shaping).
+Selectors, strict versus absence-safe rules (rules written in YAML or `--data-policies` are strict unless marked absence-safe; UI-form rules default to absence-safe), limits and audit-log outcomes: `/redpanda:adp-governance` (*Data policies (MCP data shaping)*).
 
 ## Managed catalog
 
@@ -220,15 +220,15 @@ Behavior to design around:
 - **Paged scans are best-effort.** Page sizes are capped per table, the upstream keeps changing under a multi-page scan, and a cursor is bound to the query that produced it — reusing one with different predicates or against another table is refused rather than quietly restarting.
 - **A value list longer than the cap fails** instead of being silently truncated.
 - **Authentication is the server's own**, so with user-delegated OAuth a query returns only what the calling user can see. Neither tool writes.
-- **A data-policy mask does not hide row membership.** A caller who can call `execute_query` can filter on a masked column that the table declares filterable (`list_tables` reports which), and whether rows come back tells them whether the value is there. Where a caller must not learn which records exist, withhold `execute_query` from them with the single-tool Cedar `forbid` in [governance.md](governance.md#deny-one-tool-on-one-mcp-server) — written as Cedar text, because the policy form cannot scope to one tool, and keeping its `when` clause, or it denies every tool named `execute_query` on every server the principal can reach. Data policies themselves: [governance.md](governance.md#data-policies-mcp-data-shaping).
+- **A data-policy mask does not hide row membership.** A caller who can call `execute_query` can filter on a masked column that the table declares filterable (`list_tables` reports which), and whether rows come back tells them whether the value is there. Where a caller must not learn which records exist, withhold `execute_query` from them with the single-tool Cedar `forbid` in `/redpanda:adp-governance` (*Deny one tool on one MCP server*) — written as Cedar text, because the policy form cannot scope to one tool, and keeping its `when` clause, or it denies every tool named `execute_query` on every server the principal can reach. Data policies themselves: `/redpanda:adp-governance` (*Data policies (MCP data shaping)*).
 - **The tools reach every caller of the server**, agents included. Leave the setting off on a server whose agents should only reach the curated tools.
 
 ### User-delegated OAuth on a managed connector: whose identity acts
 
-On a managed connector that supports user-delegated OAuth, the per-user connection picks **which** stored credential is used, not **whose identity** the upstream call carries. For Slack the OAuth provider's **Slack OAuth token type** (`slack_token_type`) decides: the default `Bot User OAuth Token` acts **as the app's bot user**, even on a user-OAuth server, and `User OAuth Token` — offered only on Slack's standard OAuth v2 endpoints, so not on a provider set up by discovery — acts as the person who authorized. It is immutable, so serving both identities means two providers (they can share one Slack app); see [governance.md](governance.md#slack-whose-identity-the-connection-acts-as-slack_token_type).
+On a managed connector that supports user-delegated OAuth, the per-user connection picks **which** stored credential is used, not **whose identity** the upstream call carries. For Slack the OAuth provider's **Slack OAuth token type** (`slack_token_type`) decides: the default `Bot User OAuth Token` acts **as the app's bot user**, even on a user-OAuth server, and `User OAuth Token` — offered only on Slack's standard OAuth v2 endpoints, so not on a provider set up by discovery — acts as the person who authorized. It is immutable, so serving both identities means two providers (they can share one Slack app); see `/redpanda:adp-governance` (*Slack: whose identity the connection acts as (`slack_token_type`)*).
 
 Some Slack tools accept only one identity: search needs a user token, and a bot token comes back as `not_allowed_token_type` or `user_token_required`. That is a provider token-type problem, not a missing connection or scope.
 
 ## Permissions
 
-Grant tool calls with a policy on `Action::"McpServerTool.call"`, scoped to one server where possible (`resource is McpServerTool in McpServer::"<name>"`). Attaching an OAuth provider to a server needs `dataplane_aigateway_oauthprovider_attach`. For the `dataplane_adp_mcpserver_*` family, which gates each MCP protocol call as well as management, see [governance.md](governance.md#roles-and-permissions).
+Grant tool calls with a policy on `Action::"McpServerTool.call"`, scoped to one server where possible (`resource is McpServerTool in McpServer::"<name>"`). Attaching an OAuth provider to a server needs `dataplane_aigateway_oauthprovider_attach`. For the `dataplane_adp_mcpserver_*` family, which gates each MCP protocol call as well as management, see `/redpanda:adp-governance` (*Roles and permissions*).

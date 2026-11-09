@@ -29,7 +29,7 @@ human loop**:
 
 | Routine | Skills it maintains | Source of truth | Trigger model |
 |---------|--------------------|-----------------|---------------|
-| ADP skills sync | `skills/adp/` | `redpanda-data/cloudv2` (private) | commit-watch, keyed off `adp/RELEASE_NOTES.md` |
+| ADP skills sync | `skills/adp*` (3: `adp`, `adp-governance`, `adp-observability`) | `redpanda-data/cloudv2` (private) | commit-watch, keyed off `adp/RELEASE_NOTES.md` |
 | Cloud skills sync | `skills/cloud-serverless`, `skills/cloud-byoc`, `skills/cloud-dedicated` (3; **not** `cloud-byoc-sizing`) | `cloudv2` + `cloud-docs` (private) | commit-watch, keyed off `whats-new-cloud.adoc` + OpenAPI diff |
 | Redpanda Core skills sync | `skills/streaming*`, `skills/rpk*` (12) | `redpanda-data/redpanda` (public) + `docs` (private) | **release-pinned**, keyed off the published Redpanda release notes (`modules/reference/pages/releases/redpanda.adoc` in `docs`), not GitHub Releases |
 | SQL skills sync | `skills/sql*` (4) | `cloud-docs` (private; the published Cloud SQL docs are the scope gate) + `redpanda-data/oxla` (private; confirms documented behavior only) | pin-watch: the Oxla version `cloudv2` pins, verified at that version's Oxla release tag (not the default branch) |
@@ -70,7 +70,7 @@ Applied on **every** change, by generators, the critic, and human maintainers al
 ## Source maps (`SOURCES.md`) — the contract between skills and source
 
 Every source-grounded skill carries a `SOURCES.md` (at `skills/<name>/references/SOURCES.md`, or
-`skills/adp/SOURCES.md`) mapping each skill file to the exact source paths its claims derive from,
+`skills/adp*/SOURCES.md`) mapping each skill file to the exact source paths its claims derive from,
 plus a **"Deferred to live introspection"** section (what NOT to hardcode) and a **"TODO / re-verify"**
 section. This is what the generators, critic, and drift audit read first, and where a human starts
 when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 Core; 4 SQL;
