@@ -24,9 +24,8 @@ private `redpanda-data/cloud-docs` repo (`platform: "cloud"` in the Docs MCP). P
 - `modules/manage/pages/iceberg/{about-iceberg-topics,use-iceberg-catalogs,specify-iceberg-schema}.adoc`,
   `modules/manage/pages/iceberg/rest-catalog/index.adoc`
 
-Engine behavior is checked against `redpanda-data/oxla` at the release that the Cloud install
-pack pins (`vars.redpanda_oxla_version` in `redpanda-data/cloudv2` `install-pack/<version>.yml`;
-read the pin, do not copy it here).
+Engine behavior is checked against the SQL engine source at the release that Redpanda Cloud
+runs. Read the pinned release; do not copy it here.
 
 ## Claims in SKILL.md
 
@@ -60,8 +59,8 @@ sampled in 13 fact cases. The docs arm passed every one 3/3 (2026-11-10), so non
   (https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/describe/) says it
   lists the catalog's tables and topic mappings and shows `table_name` and `topic_name` columns.
   The engine runs `SELECT * FROM system.kafka_connections` for the named catalog, so it returns
-  the connection row, including the linked `iceberg_catalog`. Source: oxla
-  `src/query_planner/query_planner.cpp` (`SHOW_KAFKA_CATALOG`) at the pinned release.
+  the connection row, including the linked `iceberg_catalog`. Source: the SQL
+  engine's query planner (`SHOW_KAFKA_CATALOG`) at the pinned release.
   `redpanda-catalogs.adoc` correctly says the statement shows the linked catalog, but the docs
   arm could not say which column holds it.
 
