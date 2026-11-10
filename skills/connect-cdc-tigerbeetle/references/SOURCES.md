@@ -1,62 +1,69 @@
 # connect-cdc-tigerbeetle Skill Source Map
 
-Maps each file in `skills/connect-cdc-tigerbeetle/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
+Maps each claim in `skills/connect-cdc-tigerbeetle/SKILL.md` to the source it derives from, so
+syncs and human maintainers know where to verify it. The skill is thin and carries no "How to
+work" lines: no behavioral case in `evals/suites/connect-cdc-tigerbeetle.eval.json` failed in the
+baseline arm, so the skill sends the agent to the docs for everything. Whether to keep a skill
+with no procedures is a maintainer decision.
 
-The subject is the `tigerbeetle_cdc` **input** of Redpanda Connect (change data capture over TigerBeetle's CDC facility). Two **public** repos are authoritative:
+The `tigerbeetle_cdc` input is Go source in the **public** repo `redpanda-data/connect` at
+`internal/impl/tigerbeetle/input_tigerbeetle.go` (gated `//go:build cgo`). Its reference page is
+generated from the Go config spec into the **private** repo `redpanda-data/rp-connect-docs`
+(`modules/components/pages/inputs/tigerbeetle_cdc.adoc`) and published at
+https://docs.redpanda.com/connect/components/inputs/tigerbeetle_cdc/. The cookbook is
+`modules/cookbooks/pages/tigerbeetle_cdc.adoc`, published at
+https://docs.redpanda.com/connect/cookbooks/tigerbeetle_cdc/. Read source with
+`gh api repos/redpanda-data/connect/contents/internal/impl/tigerbeetle/<path>`. Verified against
+tag `v4.117.0` on 2026-11-10.
 
-- `redpanda-data/connect` — Go implementation in `internal/impl/tigerbeetle/input_tigerbeetle.go` (plus `config_test.go`, `integration_test.go`). The file is gated `//go:build cgo`, carries an **Apache-2.0** license header, registers via `service.MustRegisterBatchInput("tigerbeetle_cdc", ...)`, and has **no Enterprise license gate** (no `license.CheckRunningEnterprise` call) — verified against the file at authoring time. The commercial support tier of record is `internal/plugins/info.csv`: `tigerbeetle_cdc` is **`certified`** (the only `*_cdc` input not marked `enterprise`) with `cloud: n` and `cloud_unsupported_reason: "not yet certified for cloud"` — verified in the CSV at authoring time.
-- `redpanda-data/rp-connect-docs` — the connector reference page, its **auto-generated** field partial, and the TigerBeetle CDC cookbook with runnable example YAMLs.
+## Claims in SKILL.md
 
-Read both via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `gh api .../contents/`. Before writing or changing any fact, re-open the cited source and confirm exact field names, defaults, enums, and metadata keys.
-
-**Critical grounding rule:** the connector's **field list, defaults, and descriptions are auto-generated** from the Go config spec into `modules/components/partials/fields/inputs/tigerbeetle_cdc.adoc`. Treat that generated partial as the citation of record for field/default facts — do **not** hardcode them elsewhere. If `config-reference.md` drifts, the generated partial wins. Note that `rpk connect create tigerbeetle_cdc` does **not** work as a live surface here (rpk builds lack cgo); use `redpanda-connect create tigerbeetle_cdc` on a cgo-enabled binary instead.
-
-## File-to-source table
-
-| Skill file | `redpanda-data/connect` source paths | `redpanda-data/rp-connect-docs` sources |
+| Claim | Source (`redpanda-data/connect`) | Eval case |
 |---|---|---|
-| `SKILL.md` | `internal/impl/tigerbeetle/input_tigerbeetle.go` (registration, `//go:build cgo`, fields, metadata keys, event-type enum, at-least-once + ordering, JSON shape) | `modules/components/pages/inputs/tigerbeetle_cdc.adoc` (intro, 4.65.0, beta status, requirements, metadata table), `modules/cookbooks/pages/tigerbeetle_cdc.adoc` (patterns, Redis cache, troubleshooting) |
-| `references/config-reference.md` | `internal/impl/tigerbeetle/input_tigerbeetle.go` (`configSpec()` — field constants, defaults `2730`/`1000`/`15`, LintRules, `AutoRetryNacksToggleField`; `newTigerbeetleInput` runtime validation incl. cache/rate-limit resource existence; cache key `timestamp_last_<cluster_id>`, 8-byte little-endian value; no custom metrics defined) | `modules/components/partials/fields/inputs/tigerbeetle_cdc.adoc` (**auto-generated** — types, defaults of record), `modules/components/pages/inputs/tigerbeetle_cdc.adoc` (version 4.65.0, `:status: beta`) |
-| `references/pipeline-and-output.md` | `internal/impl/tigerbeetle/input_tigerbeetle.go` (`JsonChangeEvent`/`JsonTransfer`/`JsonAccount` JSON field names and string-vs-number encoding, `MetaSet` keys, `eventTypeString` enum, single-in-flight-batch ordering in `produce`/`consume`, ack-driven checkpoint) | `modules/cookbooks/pages/tigerbeetle_cdc.adoc` + `modules/cookbooks/examples/tigerbeetle_cdc/{basic-capture,filter-events,to-redpanda,to-s3,route-by-event}.yaml` (all pipeline examples), `modules/components/pages/inputs/tigerbeetle_cdc.adoc` (sample event JSON, metadata table, guarantees) |
-| `references/setup-tigerbeetle.md` | `internal/impl/tigerbeetle/input_tigerbeetle.go` (`//go:build cgo`; first-request connection check in `Connect()`; cache key derivation; `timestamp_initial` override logic `timestampLast = timestamp_initial - 1`) | `modules/components/pages/inputs/tigerbeetle_cdc.adoc` (0.16.57 requirement, client-not-newer rule, cgo requirement), `modules/install/pages/prebuilt-binary.adoc` (`redpanda-connect-cgo_*_linux_amd64.tar.gz`, Linux AMD64 only, binary name `redpanda-connect`), `modules/install/pages/build-from-source.adoc`, `modules/cookbooks/pages/tigerbeetle_cdc.adoc` (cache choices: redis/aws_dynamodb/sql; host:port addresses; three-replica note; troubleshooting) |
-| `references/enterprise-redpanda-features.md` | `internal/plugins/info.csv` (`certified` tier — connector itself is not enterprise); `input_tigerbeetle.go` (Apache-2.0 header, no license check) | Connect-side rows cite `connect:` doc pages (licensing, secrets, config service, allow/deny). **Redpanda-cluster/topic** Enterprise properties (Iceberg, Tiered Storage, RRR, Schema ID Validation, Shadow Linking) are **external** — see TODO. The Shadow Linking pointer names the `redpanda-data/docs` disaster-recovery section (`modules/manage/pages/disaster-recovery/index.adoc`) and the `rpk shadow` reference (`modules/reference/pages/rpk/rpk-shadow/`). |
+| `tigerbeetle_cdc` streams change events, each a transfer with its debit and credit accounts | `internal/impl/tigerbeetle/input_tigerbeetle.go` (`configSpec()` description, `JsonChangeEvent`) | none |
+| The source is under `internal/impl/tigerbeetle/` | `internal/impl/tigerbeetle/input_tigerbeetle.go` (`MustRegisterBatchInput("tigerbeetle_cdc", ...)`) | none |
+| `get_connect_component` looks up `tigerbeetle_cdc` and its fields | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 
-External upstream (behavioral context only, not transcribed): TigerBeetle CDC docs at `https://docs.tigerbeetle.com/operating/cdc/` (linked from the component description). Retention/availability of past events is TigerBeetle's domain — the skill deliberately defers it there.
+## Docs gaps reported (not skill claims; do not re-verify here)
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+Both are spec fixes in `internal/impl/tigerbeetle/input_tigerbeetle.go`, because the reference
+page is generated from it. Neither the input page nor the cookbook states them (checked
+2026-11-10). The `docs` arm failed both cases 0/3 on 2026-11-10.
 
-- **Field types / defaults / descriptions** — generated from the Go spec into `modules/components/partials/fields/inputs/tigerbeetle_cdc.adoc`. Read that partial (or run `redpanda-connect create tigerbeetle_cdc` on a cgo binary), don't hand-edit `config-reference.md`.
-- **Connect release versions** and prebuilt-binary download URLs — use the GitHub releases page; the skill uses `<VERSION>` placeholders.
-- **TigerBeetle cluster setup and CDC retention semantics** — external TigerBeetle behavior; verify against TigerBeetle docs, not the connector repo. (The 0.16.57 minimum is stated in both the Go source description and the docs page, so it is pinned.)
-- **Redpanda Enterprise topic/cluster property defaults** — live in `redpanda-data/docs` auto-generated property partials.
+- The progress key is `timestamp_last_<cluster_id>` and its value is the last acknowledged
+  timestamp as an 8-byte little-endian unsigned integer; any other length fails at startup.
+  Source: `newTigerbeetleInput` (`timestampLastKey`), `getTimestampLast`, `setTimestampLast`.
+  Fix: the `progress_cache` field description. Case: `checkpoint-value-format`.
+- The input keeps one batch in flight: it holds the next batch until the current one is
+  acknowledged, so output `max_in_flight` does not raise throughput and `event_count_max` sets
+  the batch size. Source: `consume` ("the next batch can only be flushed when the current one
+  has been acknowledged"). Fix: the component description's Guarantees section. Case:
+  `throughput-single-batch-in-flight`.
+
+## Lines removed for lack of a failing baseline
+
+The pre-thin skill's procedures, tested as behavioral cases on 2026-11-10 (subject
+`claude-sonnet-5-5`, 3 runs per arm):
+
+- Rewind with a cleared checkpoint, not `timestamp_initial` alone: case
+  `replay-from-timestamp-clear-checkpoint`, baseline 2/3, skill 2/3, docs 2/3. The baseline
+  inspected the key and wrote the 8-byte value itself.
+- Give a second pipeline on the same cluster its own progress state, because the key depends
+  only on `cluster_id`: case `second-pipeline-separate-progress`, baseline 2/3, skill 3/3,
+  docs 3/3.
+- If `tigerbeetle_cdc` is not recognized, switch to the cgo-enabled binary: case
+  `install-cgo-build-for-component`, baseline 2/3, skill 3/3, docs 3/3.
+
+None of these guards against data loss, an irreversible change, or a change to network
+exposure, so none stays as a safety guardrail.
+
+Facts the docs already cover (`docs` arm 3/3 on 2026-11-10): the license tier, cgo-only builds,
+the first-run start position, settled event types, and that the input is not available in
+Redpanda Cloud. The Enterprise destination-topic material of the pre-thin skill (Iceberg, Tiered
+Storage, Shadow Linking and so on) is not specific to this input and lives in the Redpanda docs.
 
 ## TODO / re-verify
 
-- **Status drift (flag):** source `configSpec()` registers **`Stable()`**, but the docs page sets `:status: beta` and the cookbook says "in beta. The API is subject to change." The skill follows the **docs (beta)** — the more conservative, user-facing label — but this is the same class of drift flagged for `aws_dynamodb_cdc` (there the skill followed source). Reconcile which is current and align both skills' conventions.
-- **Version drift (flag):** source `configSpec()` declares `Version("0.0.1")` (looks like a placeholder), while the docs page says "Introduced in version 4.65.0". The skill cites 4.65.0 per docs. Confirm 4.65.0 against the release notes when reconciling.
-- **`timeout_seconds` missing from docs page body:** the auto-generated partial `modules/components/partials/fields/inputs/tigerbeetle_cdc.adoc` and the Go source both define `timeout_seconds` (default 15), but the hand-listed Fields section and example config in `modules/components/pages/inputs/tigerbeetle_cdc.adoc` omit it. The page appears hand-maintained rather than including the generated partial — docs bug worth fixing upstream.
-- **No `docs-data/overrides.json` entry** for `tigerbeetle_cdc` existed at authoring time (checked); if one appears, it becomes part of the description citation chain.
-- **Enterprise Redpanda topic/cluster properties** (`redpanda.iceberg.*`, `redpanda.remote.*`, `iceberg_enabled`, `cloud_storage_enabled`, etc.) were mirrored from the `connect-cdc-dynamodb` sibling's enterprise reference, which cites `redpanda-data/docs` auto-generated property partials (upstreamed from `src/v/config/configuration.cc`) — out of the connect/rp-connect-docs scope; verify there.
-- **`rpk shadow` command family** in `enterprise-redpanda-features.md` belongs to rpk/redpanda source — cross-check the `rpk` skill's SOURCES map, not this connector.
-- **FIPS on the cgo binary:** the Connect FIPS doc covers the `rpk`-embedded flow; whether a FIPS-compliant cgo standalone binary exists is unconfirmed — flagged in the enterprise reference.
-- **Sibling-skill conflict (flag, not this skill's scope):** `internal/plugins/info.csv` marks `aws_dynamodb_cdc` as `enterprise`, while the `connect-cdc-dynamodb` skill (and its SOURCES.md) describes it as Community/Stable with no license gate based on its Go source. One of the two is stale — reconcile `info.csv` vs `internal/impl/aws/dynamodb/input_cdc.go` and update the dynamodb skill accordingly.
-- **Cloud availability is volatile:** `cloud: n` / "not yet certified for cloud" in `info.csv` can flip in a release. Re-check the CSV row before repeating the "not available as a Cloud managed pipeline" claim.
-
-## Usage
-
-For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For any field/default fact, read the generated `partial$fields/inputs/tigerbeetle_cdc.adoc` rather than trusting the transcribed table. Verify Go behavior against `internal/impl/tigerbeetle/input_tigerbeetle.go` at the current release tag. Enterprise cluster/topic properties and `rpk` commands are external — cite their own repos.
-
-## Sync log
-
-### Connect v4.113.1 (2026-10-16 sync)
-
-- **Links only.** The caches and rate-limits reference links in
-  `references/config-reference.md` were moved from
-  `docs.redpanda.com/redpanda-connect/` to `docs.redpanda.com/connect/`; the old
-  path only 301-redirects. Grounded in the public `redpanda-data/connect` repo at
-  tag `v4.113.1` (`README.md`, `docs/README.md`, `config/README.md`). No claim in
-  this skill changed: `tigerbeetle_cdc` is still `certified` with `cloud: n` in
-  `internal/plugins/info.csv` at the tag, and the only change to
-  `internal/impl/tigerbeetle` in this window was the repo-wide spec-text pass
-  that replaced those hardcoded doc URLs with xrefs and set an introduced-in
-  version on the component — no behavior, field, or metadata change.
+- Status: `configSpec()` registers `Stable()`, while the cookbook says the input "is in beta. The
+  API is subject to change." Which label is current is a product decision. Flag for a human.
