@@ -60,3 +60,8 @@ Found by the evals and handed to the docs team:
   `CONNECTION_TYPE_PUBLIC` and `CONNECTION_TYPE_PRIVATE` (api-docs
   `cloud-controlplane/cloud-controlplane.yaml`, `ConnectionType`), not the proto zero-value. The
   thin skill does not carry the row; the API reference is the source for the field.
+- Main's tier-only scaling rule (2026-11-05, #124) went into the pre-thin
+  `references/clusters-and-agent.md`: a request that changes only `throughput_tier` keeps the
+  cluster's current broker count, which is checked against the target tier. The thin skill does
+  not carry it. The published scale-cluster page states the rule and its error-table row:
+  https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/

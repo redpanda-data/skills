@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/reference/pages/sql/sql-statements/alter-user.adoc` (Cloud user sync note), `modules/sql/pages/get-started/deploy-sql-cluster.adoc` (bearer-token connect), `modules/get-started/pages/cluster-overview.adoc` (How to connect panel). Verified 2026-10-18. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/connect-to-sql/authenticate.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/reference/pages/sql/sql-statements/alter-user.adoc` (Cloud user sync note), `modules/sql/pages/get-started/deploy-sql-cluster.adoc` (bearer-token connect), `modules/get-started/pages/cluster-overview.adoc` (How to connect panel). Verified 2026-11-04. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Redpanda SQL: Authentication and Access
 
@@ -93,6 +93,13 @@ Assign roles in *Organization IAM* > *Roles*. SQL permissions are on the *Data P
 | *SQL: Access* | Regular user. Can connect, but reads only what it owns or has been granted. Owns nothing by default. |
 
 Assigning either permission provisions a matching SQL user automatically, so no `CREATE USER` is needed. The SQL user identifier is the email on the Redpanda Cloud account or service account. Viewing SQL connection details and creating catalogs, tables, and grants requires cluster admin access in the Console or *SQL: Manage*.
+
+**Removing the role does not remove the user's grants.** When a user no longer has any
+role with *SQL: Access* or *SQL: Manage*, the next user sync revokes the user's
+`CONNECT` privilege and superuser status in the engine, but it does not drop the SQL
+user, so the grants made to that user stay in place. Assign the role again and the next
+sync restores `CONNECT` on the same user, and those earlier grants apply again without
+being re-run. To take the access away for good, `REVOKE` the grants.
 
 Manage superuser status through these Cloud roles, not with `ALTER USER ... SUPERUSER` / `NOSUPERUSER`. Cloud synchronizes SQL users from Organization IAM and can revert attribute changes that do not match the role assignment. Setting a password with `ALTER USER ... WITH PASSWORD` is the supported exception (see [SCRAM for legacy clients](#scram-for-legacy-clients)).
 

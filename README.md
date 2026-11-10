@@ -92,10 +92,13 @@ Redpanda Cloud — the managed control plane and per-cluster data plane.
 - [**cloud-serverless**](./skills/cloud-serverless) — Serverless clusters (multi-tenant, pay-per-use) via the Control Plane API, plus the per-cluster Data Plane API.
 - [**cloud-byoc**](./skills/cloud-byoc) — BYOC (Bring Your Own Cloud) clusters in your own AWS/GCP/Azure account: networks/VPCs, provider setup, and the `rpk` BYOC agent flow.
 - [**cloud-dedicated**](./skills/cloud-dedicated) — Dedicated clusters (fully Redpanda-managed, single-tenant, in Redpanda's cloud account) via the Control Plane API.
+- [**cloud-byoc-sizing**](./skills/cloud-byoc-sizing) — Size a BYOC cluster from a workload: required RPUs, the binding resource constraint, and the broker layout on AWS, GCP or Azure — for today, or as a month-by-month projection with scale-up points and RPU-hours. Runs a bundled zero-dependency Node.js calculator.
 
 ### 🤖 Agentic Data Plane
 Redpanda's governance infrastructure for AI agents and MCP servers — its own product surface that runs on Redpanda, provisioning its own environment.
-- [**adp**](./skills/adp) — Build and operate AI on Redpanda: AI agents, MCP servers (managed catalog + code mode), the AI Gateway (LLM providers and models), governance (budgets, guardrails, Cedar policies, OAuth), and observability (transcripts) — driven through the `rpk ai` CLI and the Agentic Data Plane API.
+- [**adp**](./skills/adp) — Build and run AI on Redpanda: AI agents, MCP servers (managed catalog + code mode), the AI Gateway (LLM providers and models), and the `rpk ai` CLI itself, including sign-in, GitOps and coding tools.
+- [**adp-governance**](./skills/adp-governance) — Govern what agents may do and spend: Cedar access policies and roles, budgets and cost, guardrails, the kill switch, secrets, API keys, data policies and OAuth.
+- [**adp-observability**](./skills/adp-observability) — See what agents did and why: traces, conversation transcripts, the audit log and the monitoring views.
 
 ### ⌨️ rpk — the unifying CLI
 One CLI across every product.

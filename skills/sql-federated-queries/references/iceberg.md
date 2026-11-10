@@ -1,4 +1,4 @@
-Source: cloud-docs `modules/sql/pages/query-data/{query-iceberg-topics,redpanda-catalogs}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{create,alter,drop}-iceberg-catalog.adoc`, `{create,alter,drop}-storage.adoc`, `{create,alter}-redpanda-catalog.adoc`, `create-table.adoc`, `describe.adoc`, `modules/reference/pages/sql/sql-data-types/{map,uuid,numeric-type/numeric}.adoc`, `refresh.adoc`; verified 2026-10-27. File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloud-docs `modules/sql/pages/query-data/{query-iceberg-topics,redpanda-catalogs}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{create,alter,drop}-iceberg-catalog.adoc`, `{create,alter,drop}-storage.adoc`, `{create,alter}-redpanda-catalog.adoc`, `create-table.adoc`, `describe.adoc`, `modules/reference/pages/sql/sql-data-types/{map,uuid,numeric-type/numeric}.adoc`, `refresh.adoc`, `modules/sql/pages/get-started/{enable-sql-byovpc-aws,enable-sql-byovpc-gcp}.adoc` (BYOVPC catalog access); verified 2026-11-04. File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Query Iceberg-enabled Topics
 
@@ -24,6 +24,12 @@ catalog's own tables standalone is not supported.
 - An Iceberg-enabled topic with a Protobuf, Avro, or JSON schema registered in
   Schema Registry. Cluster and topic settings:
   [redpanda-iceberg-source-config.md](redpanda-iceberg-source-config.md).
+- On a BYOVPC cluster, read access to the Iceberg catalog for the SQL engine's
+  own cloud identity. On AWS, Redpanda does not grant it when you enable SQL: you
+  attach a read-only AWS Glue policy to the engine's IAM role. On GCP, the BYOVPC
+  module grants the SQL service account read-only BigLake access. Without that
+  access, `REFRESH` against the catalog fails with a permissions error. Steps:
+  `/redpanda:sql-admin-api`.
 
 ## What Redpanda Cloud configures
 

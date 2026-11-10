@@ -160,9 +160,10 @@ Skills grounded in private or versioned source carry a `SOURCES.md` mapping each
 file to the exact source paths its claims derive from. **Read the relevant `SOURCES.md`
 before editing or verifying any file**, and open the cited paths first.
 
-- ADP: `skills/adp/SOURCES.md` (grounded in the `rpk ai` CLI help and the ADP product docs;
-  primary changelog `adp/RELEASE_NOTES.md`). The skill covers the `rpk ai` CLI, the ADP UI,
-  and the endpoints applications call.
+- ADP: `skills/adp/SOURCES.md`, `skills/adp-governance/SOURCES.md`,
+  `skills/adp-observability/SOURCES.md` (grounded in the `rpk ai` CLI help and the ADP product
+  docs; primary changelog `adp/RELEASE_NOTES.md`). The three skills cover the `rpk ai` CLI, the
+  ADP UI, and the endpoints applications call; each has its own reference-token budget.
 - Cloud: `skills/cloud-serverless/references/SOURCES.md`,
   `skills/cloud-byoc/references/SOURCES.md`,
   `skills/cloud-dedicated/references/SOURCES.md` (grounded in
@@ -175,6 +176,13 @@ before editing or verifying any file**, and open the cited paths first.
   re-verifies it like any other skill. Its own suite, `evals/suites/redpanda-docs.eval.json`, mocks
   the docs tools to grade how an agent uses them; the `installed` arm of every other suite also
   loads it.
+
+- Cloud BYOC sizing: `skills/cloud-byoc-sizing/references/SOURCES.md`. **Not grounded in
+  product source** — its claims derive from the bundled model in
+  `skills/cloud-byoc-sizing/scripts/sizing.js`. It is hand-maintained and out of scope for
+  the Cloud skills sync routine despite the `cloud-` prefix; do not edit it in response to
+  `cloudv2` or `cloud-docs` changes. Verify it with
+  `node --test skills/cloud-byoc-sizing/scripts/sizing.test.js`.
 
 When adding a source-grounded skill, add a `SOURCES.md` beside it and list it here.
 

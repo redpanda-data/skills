@@ -8,8 +8,9 @@ description: >-
   scaling a BYOC cluster, editing its cloud provider tags or cluster properties,
   configuring its private connectivity and listeners, or setting up Shadow Link disaster
   recovery, cross-account AWS access, or Enterprise features such as Tiered Storage on it.
-  For Serverless clusters, see `/redpanda:cloud-serverless`; for fully Redpanda-managed
-  Dedicated clusters, see `/redpanda:cloud-dedicated`.
+  For workload sizing, see `/redpanda:cloud-byoc-sizing`; for Serverless clusters, see
+  `/redpanda:cloud-serverless`; for fully Redpanda-managed Dedicated clusters, see
+  `/redpanda:cloud-dedicated`.
 ---
 
 # Redpanda Cloud BYOC
