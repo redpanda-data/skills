@@ -1,86 +1,96 @@
 # connect-cdc-mongodb Skill Source Map
 
-Maps each file in `skills/connect-cdc-mongodb/` to the source paths it derives from, so
-future syncs and human maintainers know exactly where to verify claims.
+Maps each claim in `skills/connect-cdc-mongodb/SKILL.md` to the source it derives from, so syncs
+and human maintainers know where to verify it. The skill is thin: it keeps only the "How to work"
+procedures below, each backed by a behavioral eval case in
+`evals/suites/connect-cdc-mongodb.eval.json`, and sends the agent to the docs for everything else.
+This file maps only the claims the skill still makes.
 
-The skill documents the `mongodb_cdc` **input** of Redpanda Connect (MongoDB Change
-Streams). Two public repos ground it:
+The `mongodb_cdc` input is Go source in the **public** repo `redpanda-data/connect` under
+`internal/impl/mongodb/cdc/`, with the shared connection and `aws` block in
+`internal/impl/mongodb/common.go`. Its reference page is generated from the Go config spec into the
+**private** repo `redpanda-data/rp-connect-docs` (`modules/components/pages/inputs/mongodb_cdc.adoc`,
+with descriptions from `docs-data/overrides.json`), and published at
+https://docs.redpanda.com/connect/components/inputs/mongodb_cdc/. Read source with
+`gh api repos/redpanda-data/connect/contents/internal/impl/mongodb/cdc/<file>?ref=<tag>`. Verified
+against tag `v4.117.0` on 2026-11-10.
 
-- **`redpanda-data/connect`** (Go) — the connector implementation lives under
-  `internal/impl/mongodb/`, with the CDC input in the `cdc/` subpackage. This is the
-  authoritative source for behavior, field names, defaults, enums, and error strings.
-- **`redpanda-data/rp-connect-docs`** — the user-facing `mongodb_cdc` connector
-  reference page is **auto-generated** from the Go config spec; DRY description overrides
-  live in `docs-data/overrides.json`.
+## How to work: line, source, eval case
 
-Read them via the Redpanda-Github-Read MCP connector
-(`get_file_contents`) or `gh api .../contents/`. Avoid `gh search code` (rate-limited).
-Before writing or changing any fact, re-open the cited source and confirm exact field
-names, defaults, enums, and error text. Redpanda Connect is versioned; verify against the
-current release, and treat the **generated page + overrides** as the field-list source of
-record rather than any hardcoded table in the skill.
+Pass rates are baseline / skill / installed, 3 runs each, on 2026-11-10. The skill and installed
+rates were measured with this thin SKILL.md.
 
-Scope note: MongoDB server topology/roles/oplog/Atlas setup is **external** (MongoDB
-documentation), not defined in either Redpanda repo. The enterprise topic/cluster
-properties (Iceberg, Schema ID Validation, Tiered Storage) are **broker** properties
-defined in `redpanda-data/redpanda` / documented in `redpanda-data/docs`, not in Connect —
-they belong to other skills' domains and are cited here only as pairing context.
-
-## File-to-source table
-
-| Skill file | redpanda-data/connect source paths | rp-connect-docs sources |
+| How to work line | Source (`redpanda-data/connect`, `internal/impl/mongodb/cdc/`) | Eval case |
 |---|---|---|
-| `SKILL.md` | `internal/impl/mongodb/cdc/input.go` (config spec, `newMongoCDC`, `license.CheckRunningEnterprise`, checkpoint/snapshot/streaming logic, metadata keys), `internal/impl/mongodb/cdc/schema.go` (schema metadata, `normaliseDecimal128`), `internal/impl/mongodb/cdc/checkpoint_cache.go`, `internal/impl/mongodb/common.go` (connection/URL/auth/driver timeouts) | `modules/components/pages/inputs/mongodb_cdc.adoc` (auto-generated); `docs-data/overrides.json` (`mongodb_cdc` entry) |
-| `references/config-reference.md` | `internal/impl/mongodb/cdc/input.go` (every field: `url`, `database`, `username`, `password`, `app_name`, `collections`, `checkpoint_*`, `read_*`, `stream_snapshot`, `snapshot_parallelism`, `snapshot_auto_bucket_sharding`, `document_mode`, `json_marshal_mode`, `auto_replay_nacks`; `$match` filter; driver timeouts), `internal/impl/mongodb/cdc/schema.go` (`normaliseDecimal128`, `schema.BigDecimal` contract) | `modules/components/pages/inputs/mongodb_cdc.adoc` (field list + defaults — **auto-generated, source of record**); `docs-data/overrides.json` |
-| `references/setup-mongodb.md` | `internal/impl/mongodb/cdc/input.go` (startup `{hello:1}` check, `lastWrite.majorityOpTime.ts` / `isdbgrid` / `getCurrentResumeToken`, version `< 4` error string, `splitVector` / `$bucketAuto` snapshot paths, error messages) | `modules/components/pages/inputs/mongodb_cdc.adoc` |
-| `references/pipeline-and-output.md` | `internal/impl/mongodb/cdc/input.go` (message body per `document_mode`, metadata keys `operation`/`collection`/`operation_time`/`schema`, resume/restart semantics, `ResumeAfter`), `internal/impl/mongodb/cdc/schema.go` (Decimal128 normalization) | `modules/components/pages/inputs/mongodb_cdc.adoc`; cache-resource and `redpanda`/`kafka_franz` output pages under `modules/components/pages/` (see TODO) |
-| `references/enterprise-integration.md` | `internal/impl/mongodb/cdc/input.go` (`license.CheckRunningEnterprise` gating); output SASL mechanism enum from the Kafka/franz output impl in `redpanda-data/connect` (see TODO) | `modules/components/pages/inputs/mongodb_cdc.adoc`; `redpanda`/`kafka_franz` output reference pages. **Enterprise topic/cluster keys (Iceberg, Schema ID Validation, Tiered Storage) are NOT Connect sources** — see TODO |
+| Backfill a collection with a signal, never by clearing the checkpoint: `stream_snapshot` runs only with no stored position; enabling `incremental_snapshot.enabled` with a stored position reads nothing; the signal collection must not be in `collections`; the `snapshot-execute` signal with `{collections: [...]}` works in every snapshot mode | `input.go` (input description, sections "Snapshot and streaming modes", "Incremental snapshots" and "Signals"; `parseIncrementalSnapshot` rejects a signal collection that is also streamed); `signalling.go` (`parseSnapshotCollections`, `handleSignal`); `internal/replication/signalling.go` (`SnapshotSignalType = "snapshot-execute"`) | `backfill-added-collection-via-signal` (baseline 0/3, skill 3/3, installed 3/3; docs 3/3) |
+| When the stored position can no longer be resumed and no snapshot is enabled, do not set `on_unresumable_position: reset` or delete the checkpoint on your own; enable a snapshot mode or ask the user. Safety guardrail (data loss): the baseline passed its case 3/3 on 2026-11-10, and the line and case stay as a regression guard. | `input.go` (`on_unresumable_position` field description; `errUnresumableGapRefused` and the log line before it) | `unresumable-position-no-silent-reset` (baseline 3/3, skill 3/3, installed 3/3) |
+| When a parallel snapshot is slow, read the logs first: the split-points warning means the input fell back to a sequential scan, and on Atlas `snapshot_auto_bucket_sharding: true` fixes it | `input.go` (`readSnapshot` logs "unable to determine split points ... falling back to sequential scan"; `getParallelRanges`, `computeSplitPoints`; `snapshot_auto_bucket_sharding` description) | `slow-atlas-snapshot-check-split-fallback` (baseline 0/3, skill 3/3 scored with 3 of 6 attempts timing out at 600s, installed 3/3; docs 3/3) |
 
-## Deferred to auto-generation / external (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-- **The `mongodb_cdc` field list, types, and defaults are auto-generated** from the Go config spec in `cdc/input.go` and rendered into `mongodb_cdc.adoc`, with descriptions overridden via `docs-data/overrides.json`. Verify field/default facts against the generated page + overrides + the Go spec — never trust a static table alone.
-- **MongoDB server setup** (replica set / sharded cluster, `rs.initiate`, roles like `read`/`clusterManager`, `changeStreamPreAndPostImages`, `$jsonSchema` validators, `--oplogMinRetentionHours`, Atlas UI) is **external MongoDB behavior**, not defined in either Redpanda repo.
-- **`rpk connect run` / connector availability** is a managed-plugin passthrough to the Redpanda Connect binary; confirm with `rpk connect list` rather than assuming.
+| Claim | Source (`redpanda-data/connect`) |
+|---|---|
+| Enterprise connector, license required | `internal/impl/mongodb/cdc/input.go` (`license.CheckRunningEnterprise` in `newMongoCDC`; file is under the Redpanda Community License) |
+| `get_connect_component` looks up `mongodb_cdc` and its fields | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) |
+
+## Docs gaps reported (not skill claims; do not re-verify here)
+
+Each is fixed at source, in the `mongodb_cdc` spec in `internal/impl/mongodb/cdc/input.go`, because
+the reference page is generated from it. Checked against the published page on 2026-11-10.
+
+- **Decimal128 output.** Every Decimal128 value is emitted as a plain decimal string (for example
+  `"19.90"`) in both `json_marshal_mode` values, never as `{"$numberDecimal": ...}`. The page does
+  not say so. Source: `cdc/schema.go` (`normaliseDecimal128`), applied in `newMongoDBCDCMessage` in
+  `input.go`. Spec fix: the `json_marshal_mode` field description. Eval case
+  `decimal128-output-format` (docs 0/3, both 1/3, installed 0/3).
+- **Sequential fallback when split points fail.** With `snapshot_parallelism` above 1 and no
+  `snapshot_auto_bucket_sharding`, a refused `splitVector` (as on Atlas) is logged as a warning and
+  the collection is read with one sequential scan; the pipeline does not fail. The page says only
+  that `splitVector` is unavailable on Atlas. Source: `input.go` (`readSnapshot`). Spec fix: the
+  `snapshot_parallelism` or `snapshot_auto_bucket_sharding` field description. Eval case
+  `atlas-parallel-snapshot-setting` (docs 0/3).
+- **`snapshot_parallelism` bounds all collections together.** One semaphore of size
+  `snapshot_parallelism` is shared by every snapshot read across all collections, so with the
+  default of 1 the collections are read one at a time. The field description says only "the number
+  of connections". Source: `input.go` (`snapshotSemaphore`, `readSnapshotRange`). Spec fix: the
+  `snapshot_parallelism` field description. Eval case `snapshot-parallelism-across-collections`
+  (baseline 3/3, so not counted as evidence; listed because the pre-thin skill stated the opposite).
+- **`incremental_snapshot.chunk_size` above `checkpoint_limit` is a startup error.** The field
+  description says the chunk "must not exceed `checkpoint_limit`" but not that the config is
+  rejected, so agents read it as a tuning hint. Source: `input.go` (`parseIncrementalSnapshot`).
+  Spec fix: the `incremental_snapshot.chunk_size` field description. Eval case
+  `chunk-size-above-checkpoint-limit` (docs 0/3, installed 0/3).
+- **The signal collection must not be in `collections`.** The input rejects that config at
+  startup. The page does not say so, and agents call the overlap harmless. Source: `input.go`
+  (`parseIncrementalSnapshot`, "field signal_collection_name must not name one of the streamed
+  collections"). Spec fix: the `signal_collection_name` field description. Eval case
+  `signal-collection-also-streamed` (docs 0/3, installed 0/3).
+
+Findability, not a gap: the `mongodb` processor and cache reject `aws.role`, `aws.roles` and session
+tokens. The parent `aws` description on each MongoDB page says so, but the docs arm missed it 3/3
+in `aws-role-mongodb-cache` because the `aws.role` and `aws.roles` field descriptions do not repeat
+it. A one-line note on those fields in `AWSIAMAuthField` (`internal/impl/mongodb/common.go`) would fix it.
+
+## Lines removed for lack of a failing baseline, or covered by the docs
+
+The pre-thin skill carried a config reference, MongoDB setup, pipeline examples, and an Enterprise
+destination section. They were removed; the docs cover them. From the 2026-11-10 run:
+
+- Recovery after an aged-out position re-reads current state but misses deletes in the gap: baseline
+  3/3 (`resnapshot-recovery-misses-deletes`).
+- `aws.enabled` rejects credentials in `url`: baseline 3/3 (`aws-iam-url-credentials`).
+- Schema re-inference only on a top-level field-set change, unresumable-position handling without a
+  snapshot, the single change stream scaling ceiling, enabling incremental snapshots on a running
+  pipeline, `parquet_encode` and the `Any` type, and incremental snapshot pace on a quiet sharded
+  cluster: the docs arm passed each 3/3.
+- The pre-thin claim that collections are always snapshotted concurrently regardless of
+  `snapshot_parallelism` was wrong (see the docs gap above) and is gone.
 
 ## TODO / re-verify
 
-- **Skill cites a wrong docs path:** `config-reference.md` and `setup-mongodb.md` reference the generated page as `connect/docs/modules/components/pages/inputs/mongodb_cdc.adoc`. The published page actually lives in **`rp-connect-docs`** at `modules/components/pages/inputs/mongodb_cdc.adoc` (no `connect/docs/` prefix). The Go docstrings that feed generation are in `connect/internal/impl/mongodb/cdc/input.go`. Correct the skill's citation.
-- **Enterprise topic/cluster properties** (`iceberg_enabled`, `redpanda.iceberg.*`, `enable_schema_id_validation`, `redpanda.{key,value}.schema.id.validation`, `redpanda.{key,value}.subject.name.strategy`, `redpanda.remote.{read,write,delete}`, `retention.local.target.{ms,bytes}`) in `enterprise-integration.md` are **broker** properties, not Connect. Citation of record: `redpanda-data/docs` property partials (`topic-properties.adoc`, `cluster-properties.adoc`, `object-storage-properties.adoc`), upstream `redpanda-data/redpanda` `src/v/config/configuration.cc`. Not verified this session.
-- **Licensing / Schema ID Validation prose** (`licensing/overview.adoc`, `schema-reg/schema-id-validation.adoc`) live in `redpanda-data/docs`, not Connect — not verified this session.
-- **`redpanda` / `kafka_franz` output fields** (`seed_brokers`, `tls.client_certs[]`, `sasl[].mechanism` enum, `sasl[].token`/`extensions`, `metadata.include_patterns`) are grounded in the Kafka/franz output impl in `redpanda-data/connect` + output pages in `rp-connect-docs` (`modules/components/pages/outputs/`) — exact files not verified this session.
-- **Cache resource fields** cited in `pipeline-and-output.md` come from the respective cache component sources/pages — not verified this session.
-- **Individual defaults/enums** in `config-reference.md` (e.g. `app_name: "benthos"`, `checkpoint_limit: 1000`, `read_max_wait: 1s`, `document_mode`/`json_marshal_mode` enums, `snapshot_parallelism >= 1` lint) not each line-verified against `cdc/input.go` this session.
-
-## Sync log
-
-- **Verified against Connect v4.106.0 (2026-08-21 sync).** New sources for this release:
-  - `internal/impl/mongodb/common.go` — `AWSIAMAuthField()` (the shared `aws` block spec: `enabled`, `region`, `session_duration`, `id`/`secret`/`token`, `role`/`role_external_id`, `roles[]`), plus the startup errors rejecting `username`/`password` and url-embedded credentials when `aws.enabled` is true, and the note that the processor and cache reject role/session credentials (no refresh path).
-  - `internal/impl/mongodb/aws/aws.go` — the `MONGODB-AWS` credential builder; registered in `public/components/aws/package.go`.
-  - `internal/impl/mongodb/cdc/input.go` — `checkpoint_write_timeout` (`defaultCheckpointWriteTimeout = 10 * time.Second`, rejected when ≤ 0) and `on_unresumable_position` (`fail`/`reset`, default `fail`); the post-snapshot checkpoint write; the token-epoch guard that discards late acks from a superseded checkpoint generation; and `maxConsecutiveUnresumableRecoveries = 3`, the breaker behind the "3 consecutive recoveries" claim in `SKILL.md` and `pipeline-and-output.md`.
-  - Generated page `modules/components/pages/inputs/mongodb_cdc.adoc` — the new `Scaling` section (single database-level change stream; ~2-core ceiling; shard to scale) sourced the `SKILL.md` Scaling section.
-- The per-sub-field `aws` table in `config-reference.md` is a convenience transcription; the generated page plus `docs-data/overrides.json` remain the field-list source of record.
-
-## Usage
-
-For each file being reviewed or updated, open the listed source paths first and confirm
-every claim still matches. Verify connector behavior, field names, defaults, enums, and
-error strings against `redpanda-data/connect` `internal/impl/mongodb/cdc/` and the
-auto-generated `mongodb_cdc.adoc` + `docs-data/overrides.json` in `redpanda-data/rp-connect-docs`.
-Do not hardcode the auto-generated field list; defer MongoDB server setup to MongoDB's own
-docs; and treat the enterprise topic/cluster keys as broker properties owned by the
-Redpanda docs, re-verifying them there rather than in Connect.
-
-### Connect v4.113.1 (2026-10-16 sync)
-
-- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
-  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
-  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
-  description that opens "Use the `redpanda` output instead". The rename is
-  field-safe: both specs are assembled from the same `FranzConnection*`,
-  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
-  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
-  optional there). Each changed YAML block was re-parsed after the rename.
-- The Redpanda-sink section in `references/enterprise-integration.md` said
-  "the `redpanda`/`kafka_franz` output"; it now names `redpanda` alone. The
-  file-to-source rows in this map still mention both, because the shared franz
-  writer fields are where those claims are grounded.
+- The skill arm of `slow-atlas-snapshot-check-split-fallback` timed out in 3 of 6 attempts with
+  this thin SKILL.md (no failed answers). Check whether the subject loops on the mock before
+  relying on that rate. Re-run the behavioral cases with
+  `node evals/run-evals.mjs --suite connect-cdc-mongodb --arms baseline,skill,installed` after any
+  change to a line.
