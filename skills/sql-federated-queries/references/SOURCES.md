@@ -44,7 +44,8 @@ skill carries no line for it.
 - **After a REST catalog secret rotates, update the cluster-side secret, not the SQL engine's
   managed Iceberg catalog.** Redpanda Cloud writes the managed catalog's options again when the
   cluster's Iceberg configuration changes. Case `rotated-catalog-secret-fixed-on-cluster`:
-  baseline 3/3, skill 3/3, installed 3/3. Not kept as a safety guardrail: changing a managed
+  baseline 3/3, skill 3/3, installed 3/3 (rerun after the case fix below, eval archive run folder
+  `sql-federated-queries`, 2026-11-10). Not kept as a safety guardrail: changing a managed
   catalog is overwritten on the next sync and loses no data. Source: cloud-docs
   `modules/reference/pages/sql/sql-statements/{alter-iceberg-catalog,alter-redpanda-catalog}.adoc`
   (warnings); rpk `src/go/rpk/pkg/cli/security/secret/update.go` in `redpanda-data/redpanda`.
@@ -52,6 +53,13 @@ skill carries no line for it.
 The full skill's facts (managed catalogs, `CREATE TABLE` options, metadata columns, decoding,
 `REFRESH`, Iceberg mode matching and type limits, system tables, Iceberg Topics properties) were
 sampled in 13 fact cases. The docs arm passed every one 3/3 (2026-11-10), so none is carried.
+
+## Corrections after the eval run
+
+- `rotated-catalog-secret-fixed-on-cluster` rejected legitimate commands: its mocks did not match a
+  secret name in double quotes, and its expected call did not match a secret value in double
+  quotes. Both now accept quoted arguments. The rerun did not change the verdict: the baseline
+  still passes, so no line is kept.
 
 ## Docs gaps reported (not skill claims; do not re-verify here)
 

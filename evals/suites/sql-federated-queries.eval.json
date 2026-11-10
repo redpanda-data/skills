@@ -316,7 +316,7 @@
                 "output": "ID                     SCOPES\nICEBERG_CLIENT_SECRET  redpanda_cluster\nPG_REPLICATION_PASS    redpanda_connect"
               },
               {
-                "match": "security\\s+secret\\s+update[^|;&]*--name[= ]+['\"]?ICEBERG_CLIENT_SECRET\\b",
+                "match": "security\\s+secret\\s+update[^|;&]*--name[= ]+\\\\?['\"]?ICEBERG_CLIENT_SECRET\\b",
                 "output": "Secret ICEBERG_CLIENT_SECRET updated successfully"
               },
               {
@@ -324,11 +324,11 @@
                 "output": "secret not found"
               },
               {
-                "match": "security\\s+secret\\s+create[^|;&]*--name[= ]+['\"]?ICEBERG_CLIENT_SECRET\\b",
+                "match": "security\\s+secret\\s+create[^|;&]*--name[= ]+\\\\?['\"]?ICEBERG_CLIENT_SECRET\\b",
                 "output": "secret ICEBERG_CLIENT_SECRET already exists"
               },
               {
-                "match": "security\\s+secret\\s+create[^|;&]*--name[= ]+['\"]?[A-Z][A-Z0-9_]*['\"]?",
+                "match": "security\\s+secret\\s+create[^|;&]*--name[= ]+\\\\?['\"]?[A-Z][A-Z0-9_]*\\\\?['\"]?",
                 "output": "Secret created successfully"
               },
               {
@@ -336,7 +336,7 @@
                 "output": "invalid secret name: secret name must match ^[A-Z][A-Z0-9_]*$"
               },
               {
-                "match": "cluster\\s+config\\s+set\\s+iceberg_rest_catalog_client_secret\\s+['\"]?\\$\\{secrets\\.",
+                "match": "cluster\\s+config\\s+set\\s+iceberg_rest_catalog_client_secret\\s+\\\\?['\"]?\\$\\{secrets\\.",
                 "output": "Successfully updated configuration. New configuration version is 58."
               },
               {
@@ -405,7 +405,7 @@
         "expected_calls": [
           {
             "tool": "run_shell",
-            "args": "security\\s+secret\\s+(update|create)[^\"]*dose3f9a1c7b2e48d1"
+            "args": "security\\s+secret\\s+(update|create)[^|;&]*dose3f9a1c7b2e48d1"
           }
         ]
       },
