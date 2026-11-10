@@ -7,6 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { caseVerdict, grade, tally } from "./run-evals.mjs";
+import { pluginContext } from "./scripts/skill-context.mjs";
 
 const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-evals.mjs");
 const rows = (...statuses) => statuses.map((status) => ({ status }));
@@ -40,4 +41,19 @@ test("--no-judge rows are ungraded and never pooled with judged rows", async () 
     () => execFileSync("node", [RUNNER, "--report", `${tmp}/judged,${tmp}/unjudged`], { stdio: "pipe" }),
     (e) => e.status === 1 && /refusing to pool/.test(e.stderr.toString())
   );
+});
+
+test("pluginContext loads each plugin SKILL.md and the files it names, not scripts", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evals-plugin-"));
+  const skill = path.join(dir, "skills", "a");
+  fs.mkdirSync(path.join(skill, "resources", "recipes"), { recursive: true });
+  fs.mkdirSync(path.join(skill, "resources", "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(skill, "SKILL.md"), "See SETUP.md, `r.md` and ./resources/scripts/x.sh. Write pipeline.yaml.");
+  fs.writeFileSync(path.join(skill, "SETUP.md"), "setup");
+  fs.writeFileSync(path.join(skill, "resources", "recipes", "r.md"), "See [r.yaml](./r.yaml).");
+  fs.writeFileSync(path.join(skill, "resources", "recipes", "r.yaml"), "input: {}");
+  fs.writeFileSync(path.join(skill, "resources", "recipes", "unnamed.md"), "never loaded");
+  fs.writeFileSync(path.join(skill, "resources", "scripts", "x.sh"), "echo");
+  const headings = pluginContext(dir).match(/^## a\/\S+/gm);
+  assert.deepEqual(headings, ["## a/SKILL.md", "## a/SETUP.md", "## a/resources/recipes/r.md", "## a/resources/recipes/r.yaml"]);
 });
