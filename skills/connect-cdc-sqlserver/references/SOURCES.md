@@ -1,95 +1,82 @@
 # connect-cdc-sqlserver Skill Source Map
 
-Maps each file in `skills/connect-cdc-sqlserver/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
+Maps each claim in `skills/connect-cdc-sqlserver/SKILL.md` to the source it derives from, so syncs
+and human maintainers know where to verify it. The skill is thin: it keeps only the "How to
+work" procedures below, each backed by a behavioral eval case in
+`evals/suites/connect-cdc-sqlserver.eval.json`, and sends the agent to the docs for everything
+else. This file maps only the claims the skill still makes.
 
-The `microsoft_sql_server_cdc` input is Go source in the **public** repo `redpanda-data/connect` under `internal/impl/mssqlserver/`; the user-facing connector reference is **auto-generated** into the **private** repo `redpanda-data/rp-connect-docs` (the connector page plus a generated fields partial), with description tweaks in `docs-data/overrides.json`. Read them via the Redpanda-Github-Read MCP connector (`get_file_contents`), or `gh api .../contents/`; avoid `gh search code` (rate-limited). Before writing or changing any fact, re-open the cited source and confirm exact field names, defaults, and behavior.
+The `microsoft_sql_server_cdc` input is Go source in the **public** repo `redpanda-data/connect`
+under `internal/impl/mssqlserver/`. Its reference page is generated from the Go config spec into
+the **private** repo `redpanda-data/rp-connect-docs`
+(`modules/components/pages/inputs/microsoft_sql_server_cdc.adoc`, with descriptions from
+`docs-data/overrides.json`), and published at
+https://docs.redpanda.com/connect/components/inputs/microsoft_sql_server_cdc/. Read source with
+`gh api repos/redpanda-data/connect/contents/internal/impl/mssqlserver/<path>?ref=<tag>`.
+Verified against tag `v4.117.0` on 2026-11-10.
 
-CRITICAL — the connector **field list and defaults are auto-generated**. The citation of record for every config field's type/default is the generated partial `modules/components/partials/fields/inputs/microsoft_sql_server_cdc.adoc` (plus `overrides.json` for prose), **not** a hardcoded table. Behavior beyond the field list (snapshot lifecycle, LSN ordering, checkpoint internals, type mapping, metadata) must be verified against the Go source. SQL Server setup (T-SQL, Agent, Azure) is **external** Microsoft platform behavior, not defined in `redpanda-data/connect`.
+## How to work: line, source, eval case
 
-Connector version at verification: page shows `:status: beta`, "Introduced in version 4.67.5". Verify against the current released connector, not `main`.
-
-## File-to-source table
-
-| Skill file | redpanda-data/connect source paths | docs sources (rp-connect-docs) |
+| How to work line | Source (`redpanda-data/connect`, `internal/impl/mssqlserver/`) | Eval case |
 |---|---|---|
-| `SKILL.md` | `internal/impl/mssqlserver/input_mssqlserver_cdc.go` (config spec, field defaults, include/exclude regexp filtering, `checkpoint_limit`, batching no-op→`count:1`, table verification), `checkpoint_cache.go` (built-in SQL Server cache: table-name validation, `CREATE OR ALTER PROCEDURE`, `rpcn.CdcCheckpointCache`, fixed `max_lsn` key), `batcher.go`, `schema.go`, `replication/snapshot.go` (`prepSnapshotScannerAndMappers`, snapshot type mapping, `operation: read`), `replication/stream.go` (`mapScannedValue`, stream type mapping), `replication/stream_message.go` (metadata + `operation` mapping, `lsn`); license: `internal/cli/flags_redpanda.go`, `internal/license/service.go` | `modules/components/pages/inputs/microsoft_sql_server_cdc.adoc` (auto-gen page), `modules/components/partials/fields/inputs/microsoft_sql_server_cdc.adoc` (**auto-gen field list/defaults — source of truth**), `docs-data/overrides.json` |
-| `references/config-reference.md` | `internal/impl/mssqlserver/input_mssqlserver_cdc.go` (every field + defaults), `checkpoint_cache.go` (table-name format validation `^[A-Za-z_][A-Za-z0-9_$]{0,127}$`, two-part `schema.table` rule, stored-proc/table DDL, `max_lsn`), `batcher.go` (batching sub-fields) | `modules/components/partials/fields/inputs/microsoft_sql_server_cdc.adoc` (**auto-gen; defers here for types/defaults**), `docs-data/overrides.json` |
-| `references/pipeline-and-output.md` | `internal/impl/mssqlserver/replication/stream_message.go` (`MessageEvent` fields incl. `SeqVal`/`CommandID`, op codes 1–4), `batcher.go` `Publish()` (**which keys are actually emitted, and how**: `database_schema`, `table`, `operation`, and — only when `len(m.LSN) != 0` — `lsn` as raw bytes, `seqval` via `LSN.String()` (`0x…` hex), `command_id` via `strconv.Itoa`; plus `schema` via `MetaSetImmut`), `input_mssqlserver_cdc.go` (the metadata list and the `== Ordering` section), `replication/snapshot.go` (`operation: read`, `sys.fn_cdc_get_max_lsn()`, SNAPSHOT isolation, keyset pagination), `replication/stream.go` (poll cycle, `WITH (NOLOCK)`, min-heap LSN ordering, `checkpoint_limit` semantics), `input_mssqlserver_cdc.go` (restart-skips-snapshot), `checkpoint_cache.go` (checkpoint commit) | `modules/components/pages/inputs/microsoft_sql_server_cdc.adoc` (Metadata section) |
-| `references/enterprise-features.md` | `internal/cli/flags_redpanda.go` (`--redpanda-license`), `internal/cli/dry_run.go` (`applyLicenseFlag`), `internal/license/service.go` (`REDPANDA_LICENSE`, `REDPANDA_LICENSE_FILEPATH`, `defaultLicenseFilepath` = `/etc/redpanda/redpanda.license`). **Destination cluster features (Iceberg / Schema ID Validation / Tiered Storage / Cloud Topics) are broker config, NOT connect** — defined in `redpanda-data/redpanda` `src/v/config/configuration.cc` | Connect license: connector page + catalog. Destination features live in **`redpanda-data/docs`** (not rp-connect-docs): `modules/reference/partials/properties/topic-properties.adoc`, `cluster-properties.adoc`, `object-storage-properties.adoc`, plus `manage/` / `get-started/licensing` pages |
-| `references/setup-sqlserver.md` | Only the capture-instance lookup behavior is in source: `input_mssqlserver_cdc.go` (`VerifyUserDefinedTables` → `cdc.change_tables WHERE capture_instance = ?`, startup error on missing instance) and `replication/snapshot.go` (`ALLOW_SNAPSHOT_ISOLATION` requirement). Everything else is **external Microsoft SQL Server / Azure** behavior | none in-repo — external Microsoft Learn docs |
+| Give each pipeline's built-in checkpoint its own schema: the built-in cache writes one fixed row through `<schema>.CdcCheckpointCacheUpdate`, which every start re-creates over its own table, so pipelines sharing a schema overwrite each other's checkpoints; `checkpoint_cache_key` is ignored by the built-in cache; isolate with another schema, another database (`checkpoint_cache_connection_string`), or an external `checkpoint_cache`; don't move the existing pipeline's checkpoint | `checkpoint_cache.go` (`defaultCacheKey = "max_lsn"`; `Get` and `Set` ignore the key argument; `createUpsertStoredProc` runs `CREATE OR ALTER PROCEDURE [schema].[CdcCheckpointCacheUpdate]` over the configured table; `newCheckpointCache` runs it on every start), `input_mssqlserver_cdc.go` (`checkpoint_cache_key` read only when `checkpoint_cache` names a cache resource; `checkpoint_cache_connection_string` used for the built-in cache) | `second-pipeline-checkpoint-isolation` (2026-11-10: baseline 0/3; thin skill: skill 4/4, both 3/3, installed 3/3; docs 0/3) |
+| Ask before disabling CDC on a table: `TRUNCATE TABLE` is rejected on a CDC-enabled table; disabling CDC drops the capture instance and change table, unread changes are lost and the pipeline fails while the change table is missing; `DELETE` streams a delete per row. Safety guardrail (irreversible loss of change data): the baseline passed its case 3/3 on 2026-11-10, and the line and case stay as a regression guard. | `input_mssqlserver_cdc.go` (Performance section, `TRUNCATE TABLE` note), `replication/stream.go` (`VerifyUserDefinedTables` needs the capture instance; `ReadChangeTables` queries `cdc.<schema>_<table>_CT`) | `truncate-cdc-table-ask-first` (2026-11-10: baseline 3/3; thin skill: skill 3/3, both 3/3, installed 3/3) |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-- **All config field types and defaults** — regenerated from the Go config spec into `modules/components/partials/fields/inputs/microsoft_sql_server_cdc.adoc`. Treat that generated partial (+ `overrides.json` for descriptions) as the citation of record. The tables in `SKILL.md` / `config-reference.md` are a convenience copy and can drift.
-- **Field prose descriptions** — sourced from `docs-data/overrides.json` (`microsoft_sql_server_cdc` entries); regenerate via `doc-tools generate rpcn-connector-docs`, do not hand-edit the generated partial.
-- **Connector status / introduced-version** (`:status: beta`, "Introduced in version 4.67.5") — regenerated; do not pin.
-- **Destination-cluster enterprise properties** (Iceberg / Schema ID Validation / Tiered Storage / Cloud Topics accepted values + defaults) — broker config auto-generated from `src/v/config/configuration.cc` into the `redpanda-data/docs` property partials; not part of this connector's source.
-- **SQL Server setup / Azure specifics** (`setup-sqlserver.md`) — external Microsoft platform behavior; confirm against Microsoft Learn, not `redpanda-data/connect`.
+| Claim | Source (`redpanda-data/connect`) |
+|---|---|
+| Enterprise connector, license required | `internal/impl/mssqlserver/input_mssqlserver_cdc.go` (`license.CheckRunningEnterprise`; file is under the Redpanda Community License) |
+| Polls the CDC change tables in LSN order and stores the last delivered LSN as a checkpoint (description and intro) | `input_mssqlserver_cdc.go` (Performance and Ordering sections, `checkpoint_cache` description), `replication/stream.go` (`ReadChangeTables`) |
+| `get_connect_component` looks up `microsoft_sql_server_cdc` and its fields | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) |
 
-## TODO / re-verify
+## Docs gaps reported (not skill claims; do not re-verify here)
 
-- **`database_schema` metadata key — RESOLVED (2026-09-25, at v4.111.0).** The skill is right and the generated page's key list was incomplete: `batcher.go` `Publish()` calls `msg.MetaSet("database_schema", m.Schema)`. There is no plain string `schema` key — `schema` is set separately via `MetaSetImmut` and carries the Benthos common-schema object, which is what the skill's metadata tables already say.
-- **Mapper file paths**: SKILL.md's Column Type Mapping cites `snapshot.go prepSnapshotScannerAndMappers` and `stream.go mapScannedValue` without a dir. Verified location is `internal/impl/mssqlserver/replication/snapshot.go` and `.../replication/stream.go` — update citations to include the `replication/` prefix.
-- **Generated-page repo path in config-reference.md**: cites `connect/docs/modules/components/pages/inputs/microsoft_sql_server_cdc.adoc`. The published reference lives in **rp-connect-docs** at `modules/components/pages/inputs/...` (page) and `modules/components/partials/fields/inputs/...` (fields). Reconcile the citation.
-- **Enterprise gating**: the generated page shows beta status but does not itself mark the connector Enterprise; the Enterprise license requirement is enforced in Go — verify the exact registration/gating in `input_mssqlserver_cdc.go` / `internal/license/`.
-- **Per-field defaults** (`checkpoint_limit: 1024`, `snapshot_max_batch_size: 1000`, `max_parallel_snapshot_tables: 1`, `stream_backoff_interval: 5s`, `auto_replay_nacks: true`, `stream_snapshot: false`, `checkpoint_cache_table_name: rpcn.CdcCheckpointCache`, `checkpoint_cache_key: microsoft_sql_server_cdc`) matched the generated partial as of verification — re-confirm each sync.
-- **Checkpoint internals** (stored-proc-first ordering, `cache_key varchar(7)`, `cache_val varchar(100)`, fixed `max_lsn` key ignoring `checkpoint_cache_key` for the built-in cache): re-verify against `checkpoint_cache.go`.
+The reference page is generated from the connector spec, so each gap is a spec fix in
+`redpanda-data/connect` `internal/impl/mssqlserver/input_mssqlserver_cdc.go`, not an edit to
+rp-connect-docs. The published page checked is
+https://docs.redpanda.com/connect/components/inputs/microsoft_sql_server_cdc/ (2026-11-10).
 
-## Sync log
+- **`checkpoint_cache_key`**: the description says "An alternative key can be provided if
+  multiple CDC inputs share the same cache", but the built-in SQL Server cache ignores the key
+  and always uses one `max_lsn` row (`checkpoint_cache.go`). Say the key applies only to an
+  external `checkpoint_cache` resource. Case `checkpoint-key-ignored-by-builtin-cache`: docs 0/3,
+  both 3/3.
+- **`checkpoint_cache_table_name`**: does not say that the upsert procedure is named per schema
+  (`<schema>.CdcCheckpointCacheUpdate`) and re-pointed at each start, so two inputs whose
+  checkpoint tables share a schema overwrite each other's checkpoints. Say to use a separate
+  schema per input (`checkpoint_cache.go` `createUpsertStoredProc`). Case
+  `second-pipeline-checkpoint-isolation`: docs 0/3.
+- **`include` and `exclude`**: do not say the patterns are matched unanchored
+  (`regexp.MatchString` in `internal/confx/regexp.go`), so `dbo.orders` also matches
+  `dbo.orders_archive`, and that every matched table must have a capture instance or the input
+  fails at startup. Case `include-patterns-unanchored`: docs 0/3, both 3/3.
+- **Snapshot primary key**: neither `stream_snapshot` nor the Permissions section says a table
+  needs a primary key to be snapshotted (`replication/snapshot.go` `getTablePrimaryKeys`: "unable
+  to find primary key for table ..."). Case `snapshot-needs-primary-key`: baseline 3/3, docs 0/3
+  (the docs arm answered that the page is silent).
+- **Capture instance name**: the page does not say the input finds a table's change table by a
+  capture instance named `<schema>_<table>`, so an instance created with a custom
+  `@capture_instance` is not found ("no change table found for table ..."; `replication/stream.go`
+  `VerifyUserDefinedTables`). The baseline handled case `startup-no-change-table-found` 3/3, so the
+  skill has no line for it.
 
-- **Verified against Connect v4.106.0 (2026-08-21 sync).** No config fields changed; the connector's own doc strings did, and they carry durable behavior the skill had wrong or missing. Source: `internal/impl/mssqlserver/input_mssqlserver_cdc.go`, rendered into `modules/components/pages/inputs/microsoft_sql_server_cdc.adoc`:
-  - **`stream_snapshot: false` corrected.** It does *not* start from the current LSN: with no snapshot and no checkpoint, streaming begins at the start of each table's existing change table, replaying everything the CDC capture and cleanup jobs still retain (three days by default). The documented way to start from the present is to disable and re-enable CDC on the table immediately before starting the pipeline.
-  - **`stream_backoff_interval` semantics + tuning direction corrected.** Each pass drains up to the max LSN observed as the pass began, then sleeps the full interval. On high-traffic tables the default `5s` directly costs throughput; upstream now suggests lowering toward `500ms` there. The skill previously called `5s` "good for high-traffic tables" — that was backwards.
-  - **New Performance section** (capture job as the shared upstream ceiling, inherently bursty delivery, storage bandwidth rather than CPU as the practical limit) and the operational rules: `TRUNCATE TABLE` rejected on a CDC-enabled table; AWS RDS requires `msdb.dbo.rds_cdc_enable_db` because `sys.sp_cdc_enable_db` needs sysadmin; a stopped `cdc.<database>_capture` job silently starves the input with no error.
+## Lines removed: the baseline passed (2026-11-10, 3 runs per arm)
 
-## Usage
+| Removed procedure | Case | baseline / skill / installed |
+|---|---|---|
+| After an outage, compare the checkpoint with `sys.fn_cdc_get_min_lsn` and re-snapshot by clearing the checkpoint | `outage-past-retention-resync` | 3/3 / 3/3 / 3/3 |
+| On "no change table found", add a capture instance with the default `<schema>_<table>` name instead of disabling the existing one | `startup-no-change-table-found` | 3/3 / 3/3 / 4/4 |
+| When changes stop with no error, check and start the CDC capture job before touching the pipeline | `silent-stall-capture-job` | 3/3 / 3/3 / 3/3 |
 
-For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For any config field type/default, treat the auto-generated fields partial in rp-connect-docs as authoritative and regenerate rather than hand-editing. Verify Go behavior against the current released `redpanda-data/connect`, and treat all SQL Server / Azure setup as external Microsoft documentation.
+Every config, metadata, ordering, snapshot, permission and setup fact the full skill carried is
+left to the docs. The fact cases in the suite measure coverage of a sample of them.
 
-## Sync log
+## Corrected while converting
 
-### Connect v4.111.0 (2026-09-25)
-
-- **`seqval` and `command_id` metadata added.** Verified in
-  `redpanda-data/connect` at tag `v4.111.0`:
-  `replication/stream_message.go` adds `MessageEvent.SeqVal` (typed `LSN`, the
-  `__$seqval` column, same varbinary(10) shape, empty for snapshot rows) and
-  `MessageEvent.CommandID` (`int`, the `__$command_id` column, zero for snapshot
-  rows); `replication/stream.go` `ReadChangeTables` populates both from
-  `cur.seqVal` / `cur.commandID`; and `batcher.go` `Publish()` emits them inside
-  the existing `if len(m.LSN) != 0` guard, so they are present on exactly the
-  same messages as `lsn` and absent on snapshot (`read`) rows. Note the
-  emission asymmetry that the guard hides: `lsn` is set as raw bytes
-  (`string(m.LSN)`) while `seqval` goes through `LSN.String()` and is therefore
-  a printable `0x…` hex string; `command_id` is `strconv.Itoa`. Applied to
-  `SKILL.md` and `references/pipeline-and-output.md` metadata tables, and the
-  metadata aside in `references/enterprise-features.md`.
-- **Corrected a wrong claim about `UPDATE` pairs.** The skill stated that the
-  before and after images of one `UPDATE` "share the same `__$start_lsn` but
-  have different `__$command_id` values" and are "ordered by command_id". The
-  new `== Ordering` section in `input_mssqlserver_cdc.go` states the opposite
-  and the source agrees: the two rows share `lsn`, `seqval` **and**
-  `command_id`, and `operation` is what distinguishes them, with
-  `update_before` always first. That is exactly what the `__$operation ASC`
-  tiebreaker in `replication/stream.go`'s ordering
-  (`__$start_lsn ASC, __$command_id ASC, __$operation ASC`) is for — a clause
-  `pipeline-and-output.md` already documented one section further down, so the
-  file contradicted itself. Corrected.
-- **Not a skill change:** the rest of this release's `mssqlserver` diff is
-  house-style rewording of the connector's doc strings (em-dash to colon) in
-  `input_mssqlserver_cdc.go`, plus test-only changes under `mssqlservertest/`.
-
-### Connect v4.113.1 (2026-10-16 sync)
-
-- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
-  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
-  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
-  description that opens "Use the `redpanda` output instead". The rename is
-  field-safe: both specs are assembled from the same `FranzConnection*`,
-  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
-  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
-  optional there). Each changed YAML block was re-parsed after the rename.
-- The enterprise-catalog filter link in `references/enterprise-features.md` and
-  the cache-resource link in `references/config-reference.md` (which also used
-  the wrong `www.docs.redpanda.com` host) were moved to the new
-  `docs.redpanda.com/connect/` paths.
+The full skill had two claims that no longer matched source at `v4.117.0`: the built-in cache
+table's `cache_val` column is `varbinary(10)`, not `varchar(100)`, and the table is created before
+the procedure. It also said distinct `checkpoint_cache_table_name` values isolate two pipelines,
+which is wrong within one schema (see the first line above). The thin skill carries none of these
+facts except the corrected isolation rule.
