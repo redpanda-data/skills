@@ -389,7 +389,7 @@
         "expected_calls": [
           {
             "tool": "run_shell",
-            "args": "cluster\\s+config\\s+(set|import|edit)[^|;&]*iceberg_default_catalog_namespace(?![\\s=:'\\\\\"\\[]*redpanda\\b)"
+            "args": "cluster\\s+config\\s+(set|import|edit)[^|;&]*iceberg_default_catalog_namespace(?![\\s=:'\\\\\"\\[]*redpanda['\\\\\"\\]]*(\\s|$|[|;&}]|\\\\n))"
           }
         ]
       },
@@ -614,7 +614,7 @@
       "invariants": [
         {
           "name": "full_config_kept",
-          "failure_condition": "FAILS if the answer says it applied a configuration that holds only the new payments- filter, or tells the user other sections are kept when omitted. PASSES if it built the update from the link's full current configuration, adding a payments- INCLUDE prefix filter alongside the existing topic filters, and applied it with rpk shadow update (a --config-file, or a scripted editor seeded with the current configuration)."
+          "failure_condition": "FAILS if the answer says it applied a configuration that holds only the new payments- filter, or tells the user other sections are kept when omitted. PASSES if it built the update from the link's full current configuration, adding a payments- INCLUDE prefix filter alongside the existing topic filters, and applied it with rpk shadow update (a --config-file, or a scripted editor seeded with the current configuration). The tools are canned: an editor script passed through EDITOR or VISUAL never runs, so a later diff, file listing or re-read shows no change. Do not fail an answer that applied the update through such a scripted editor, built from the current configuration, for reporting that."
         }
       ]
     },
