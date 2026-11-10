@@ -12,7 +12,7 @@ under `src/go/rpk/pkg/cli/debug/`. Verify against the current stable release tag
 
 | How to work line | Source | Eval case |
 |---|---|---|
-| `rpk debug remote-bundle` asks only the brokers in the profile's Admin API addresses (or `-X admin.hosts`); compare with `rpk cluster info` before `start`, and pass every broker's Admin API address on `start`, `status`, and `download` | `src/go/rpk/pkg/cli/debug/remotebundle/start.go` (loops over `p.AdminAPI.Addresses`), `status.go` and `download.go` (same address list) | `remote-bundle-all-brokers` (2026-11-10: baseline 1/3 and 0/3 in two runs; thin skill 3/3, installed 3/3) |
+| `rpk debug remote-bundle` asks only the brokers in the profile's Admin API addresses (or `-X admin.hosts`); compare with `rpk cluster info` before `start`, and pass every broker's Admin API address on `start`, `status`, and `download` | `src/go/rpk/pkg/cli/debug/remotebundle/start.go` (loops over `p.AdminAPI.Addresses`), `status.go` and `download.go` (same address list) | `remote-bundle-all-brokers` (rerun 2026-11-10, archive run `2026-11-10T20-41-56Z`: baseline 1/3, thin skill 3/3, installed 3/3) |
 
 ## Other claims in SKILL.md
 
@@ -50,29 +50,46 @@ an rpk reference page are fixed in rpk's help text at source, not in the docs.
   then the pod's service account namespace file, then `redpanda`. The `--namespace` help says
   only "(K8s only)"; no arm answered (`k8s-namespace-resolution`, 0/3 in every arm). Not
   hidden by an override. Source: `bundle/bundle_k8s_linux.go` (`resolveNamespace`).
-- **remote-bundle download layout (help text).** The download is one ZIP per broker, at
-  `<root>/<broker address>/<job ID>.zip`. The download help and page don't say so
+- **remote-bundle download layout (help text).** The download is one ZIP that holds one ZIP per
+  broker, at `<root>/<broker address>/<job ID>.zip`. The download help and page don't say so
   (`remote-bundle-download-layout`, docs 0/3, baseline 2/3). Source: `remotebundle/download.go`.
 - **`--partition` help example (help text).** The `rpk debug bundle` long help spells the flag
   `--partitions` and uses a `_redpanda-internal` namespace that does not exist; Redpanda's
   namespaces are `kafka`, `kafka_internal`, and `redpanda`, and the controller partition is
-  `redpanda/controller/0`. The docs override for `rpk debug bundle` copies the same example.
-  Sources: `bundle/bundle.go` (`bundleHelpText`), `src/go/rpk/pkg/out/in.go`
+  `redpanda/controller/0`. The docs override for `rpk debug bundle` fixes the flag name to
+  `--partition` but keeps the `_redpanda-internal` example. Sources: `bundle/bundle.go` (`bundleHelpText`), `src/go/rpk/pkg/out/in.go`
   (`ParsePartitionString`), `src/v/model/namespace.h`.
 
 ## Lines removed for lack of a failing baseline
 
-Checked on 2026-11-10 with 3 runs per arm.
+Checked on 2026-11-10 with 3 runs per arm, and rerun the same day (archive run `2026-11-10T20-41-56Z`).
 
 - "Don't collect a bundle for a Redpanda Cloud cluster; send the user to Support" as a "How to
-  work" line: its behavioral case `cloud-cluster-bundle-request` passed 3/3 in the baseline,
-  because `remote-bundle` prints that Admin API commands aren't supported on Cloud. The scope
+  work" line: its behavioral case `cloud-cluster-bundle-request` passed 3/3 in the baseline
+  (rerun: baseline 2/3, skill 3/3, installed 3/3; the baseline miss hedged between deployment
+  types), because `remote-bundle` prints that Admin API commands aren't supported on Cloud. The scope
   stays as a one-paragraph claim (see "Other claims"), backed by the fact case
   `dedicated-cluster-debug-bundle` (baseline 0/3, docs 0/3, thin skill 3/3, installed 3/3).
 - "Set `--logs-since` to cover the incident, since the default is yesterday": its case
-  `bundle-covers-older-incident` passed 3/3 in the baseline.
+  `bundle-covers-older-incident` passed 3/3 in the baseline (rerun: baseline 3/3, skill 3/3,
+  installed 3/3, after the case was fixed to accept hour-based `--logs-since` values).
 - "When triaging an Enterprise feature from a bundle, check `admin/license.json` first": its
-  case `bundle-leader-placement-regression` passed 3/3 in the baseline.
+  case `bundle-leader-placement-regression` passed 3/3 in the baseline (rerun: baseline 3/3,
+  skill 3/3, installed 3/3).
 - The full flag tables, the bundle file manifest, the remote-bundle lifecycle, and the
   per-feature Enterprise key reference (former `references/bundle.md`, `remotebundle.md`, and
   `enterprise-triage.md`) are facts and belong in the docs.
+
+## Corrections after the eval run
+
+Found by a premise audit on 2026-11-10, before the rerun.
+
+- Case `bundle-covers-older-incident` graded only day, week, and date values of `--logs-since`
+  as reaching the incident. It now also accepts hour values of a week or more (for example
+  `-200h`), which journalctl takes.
+- Case `bundle-leader-placement-regression` cited `bundle_linux.go` for `admin/license.json`.
+  The request is in `bundle/bundle_k8s_linux.go` (`saveClusterAdminAPICalls`), which
+  `bundle_linux.go` calls.
+- The `--partition` docs gap said the docs override copies the help example. The override fixes
+  the flag name but keeps the `_redpanda-internal` namespace.
+- The download layout gap now says the download is one ZIP that holds one ZIP per broker.
