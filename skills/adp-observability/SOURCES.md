@@ -62,7 +62,8 @@ passed every case 3/3.
 ## Lines removed for lack of a failing baseline
 
 The full skill taught these procedures. Each was tested by a behavioral case graded on the
-outcome, with mocks built from the published `rpk ai` help, and the baseline passed it:
+outcome, with mocks built from the published `rpk ai` help, and the baseline passed it. Rates are
+from the 2026-11-10 rerun against the thin skill (archive run `2026-11-10T20-27-48Z`):
 
 - "A grouped audit log row needs expanding: `--denied`, not `--outcome denied`, finds a partly
   denied call, `get` reads one member, and `--correlation-id` lists one row per resource." Case
@@ -70,7 +71,7 @@ outcome, with mocks built from the published `rpk ai` help, and the baseline pas
   `rpk ai auditlog list` and `get` help state all three rules.
 - "`transcript list --query` matches only the title or ID, so don't treat an empty result as proof
   a conversation does not exist; read the conversations instead." Case
-  `transcript-find-conversation-by-content`: baseline 2/3, skill 3/3, installed 3/3.
+  `transcript-find-conversation-by-content`: baseline 3/3, skill 3/3, installed 3/3.
 - "`--errors-only` and `--status error` read the conversation's own outcome; use
   `--tool-errors-only` (or `rpk ai trace list --errors`) for a failed tool call inside a completed
   conversation." Case `transcript-failed-tool-calls-in-completed-conversations`: baseline 3/3,
