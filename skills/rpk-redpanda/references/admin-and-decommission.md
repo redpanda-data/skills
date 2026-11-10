@@ -10,7 +10,7 @@ Admin API — target it with your rpk profile or
 > now hidden, deprecated aliases. Broker decommission/recommission moved to
 > `rpk cluster brokers`, per-node config printing to `rpk cluster config list
 > --node-id <ID>`, and log-level control to `rpk cluster loggers` — all in the
-> **rpk-cluster** skill (see its `brokers-maintenance.md`). The old spellings
+> **rpk-cluster** skill and the rpk cluster reference docs. The old spellings
 > still run (they forward to the new commands) and the mechanics below still
 > apply, but new automation should use the `rpk cluster ...` forms.
 > `rpk redpanda admin partitions list` is unaffected.

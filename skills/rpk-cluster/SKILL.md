@@ -1,542 +1,76 @@
 ---
 name: rpk-cluster
 description: >-
-  Operate a Redpanda cluster's health, brokers, configuration, and maintenance
-  from the CLI using the `rpk cluster` command group, the front-end to the Admin
-  API. Use when checking cluster health or metadata, decommissioning or
-  recommissioning brokers, getting or setting cluster config properties,
-  balancing or moving partitions, enabling maintenance mode, managing client
-  quotas, running self-tests, or managing the Enterprise license. Also covers
-  enabling Enterprise differentiators through cluster config: Continuous Data
-  Balancing, Tiered Storage, and Iceberg Topics. It also manages Shadow Linking
-  DR, Remote Read Replicas, Audit Logging, and Leadership Pinning. For
-  single-node process lifecycle (start/stop, tuning, redpanda.yaml), see
-  /redpanda:rpk-redpanda; for diagnostics bundles, see /redpanda:rpk-debug.
+  Operate a Redpanda cluster from the CLI with the `rpk cluster` command group,
+  and look up cluster commands and properties in the Redpanda docs. Use when
+  checking cluster health or metadata, decommissioning or recommissioning
+  brokers, getting, setting, importing, or resetting cluster config properties,
+  balancing, moving, or recovering partitions, enabling maintenance mode,
+  setting broker log levels, finalizing an upgrade, managing client quotas,
+  running self-tests, restoring or mounting topics from Tiered Storage, or
+  managing the Enterprise license and the cluster properties that turn on
+  Enterprise features. For single-node process lifecycle (start, stop, tuning,
+  redpanda.yaml), see /redpanda:rpk-redpanda; for diagnostics bundles, see
+  /redpanda:rpk-debug.
 ---
 
-# rpk cluster: Brokers, Config, Partitions & Maintenance
-
-`rpk cluster` is the CLI front-end to the Redpanda Admin API (default port
-9644). It lets you inspect and operate a running Redpanda cluster without
-writing raw HTTP calls. Every subcommand communicates with the Admin API unless
-noted otherwise (`rpk cluster info`, `rpk cluster logdirs`, and
-`rpk cluster quotas` use the Kafka protocol — they need the broker port
-(default 9092) and Kafka/SASL credentials, not the Admin API port 9644).
-
-The command group has these major subgroups: `health`, `info`, `logdirs`,
-`brokers`, `config`, `connections`, `loggers`, `maintenance`, `partitions`,
-`self-test`, `quotas`, `storage`, `txn`, `upgrade`, and `license`.
-
-`brokers`, `loggers`, and `upgrade` were added in Redpanda v26.2. Broker
-decommission/recommission now lives at `rpk cluster brokers`; the older
-`rpk redpanda admin brokers` commands still work but are hidden and deprecated
-(they forward to `rpk cluster brokers`).
-
-## Quickstart
-
-```bash
-# 1. Check cluster health (exit code 10 if unhealthy)
-rpk cluster health
-
-# 2. Inspect brokers, topics, and cluster metadata
-rpk cluster info
-
-# 3. List brokers with Admin API detail (cores, membership, liveness, version)
-rpk cluster info -b --detailed
-
-# 4. Get a single cluster config property
-rpk cluster config get log_retention_ms
-
-# 5. Set a cluster config property
-rpk cluster config set log_retention_ms=604800000
-
-# 6. Set a property with a negative value (use -- to avoid POSIX flag parsing)
-rpk cluster config set -- log_retention_ms -1
-
-# 7. Check whether any node needs a restart after a config change
-rpk cluster config status
-
-# 8. List partitions for a topic, showing leader and replica placement
-rpk cluster partitions list my-topic
-
-# 9. List ALL partitions in the cluster
-rpk cluster partitions list --all
-
-# 10. Trigger on-demand partition rebalancing
-rpk cluster partitions balance
-
-# 11. Check balancer status
-rpk cluster partitions balancer-status
-
-# 12. Move a partition's replicas to specific brokers
-rpk cluster partitions move my-topic -p 0:1,2,3
-
-# 13. Cancel all ongoing partition movements
-rpk cluster partitions move-cancel
-
-# 14. Enable maintenance mode on broker 1, waiting for drain to complete
-rpk cluster maintenance enable 1 --wait
-
-# 15. Check maintenance status across all brokers
-rpk cluster maintenance status
-
-# 16. Decommission broker 4
-rpk cluster brokers decommission 4
-# Monitor progress:
-rpk cluster brokers decommission-status 4
-
-# 17. Run a cluster self-test (disk + network + cloud)
-rpk cluster self-test start --no-confirm
-rpk cluster self-test status
-
-# 18. Describe log directory sizes (human-readable, by topic)
-rpk cluster logdirs describe -H --aggregate-into topic
-
-# 19. Add a producer byte-rate quota for a client ID
-rpk cluster quotas alter --add producer_byte_rate=180000 --name client-id=my-producer
-```
-
-## Cluster Health and Metadata
-
-### rpk cluster health
-
-Queries the Admin API for a health overview. A cluster is healthy when:
-- All nodes are responding
-- All partitions have leaders
-- The cluster controller is present
-
-```bash
-rpk cluster health            # one-shot check; exits 10 if unhealthy
-rpk cluster health --watch    # stream health changes
-rpk cluster health --exit-when-healthy  # block until healthy
-```
-
-The output includes: `is_healthy`, `unhealthy_reasons`, `controller_id`,
-`all_nodes`, `nodes_down`, `nodes_in_recovery_mode`,
-`leaderless_partitions` (count), `under_replicated_partitions` (count), and
-`high_disk_usage_nodes`.
-
-Flags: `-w/--watch`, `-e/--exit-when-healthy`, `--format json|yaml|text|wide`.
-Note: `--watch` and `--exit-when-healthy` are only available with `--format text`
-(the default). Combining them with `--format json`, `yaml`, or `wide` returns
-an error.
-
-### rpk cluster info
-
-Fetches Kafka-protocol metadata (cluster name, brokers, topics). Aliases:
-`rpk cluster status`, `rpk cluster metadata`.
-
-```bash
-rpk cluster info                   # all sections (cluster, brokers, topics)
-rpk cluster info -b --detailed     # brokers + Admin API extras (cores, liveness, disk)
-rpk cluster info -b --include-decommissioned  # include decommissioned node UUIDs
-rpk cluster info -t my-topic -d    # per-partition detail for one topic
-```
-
-Key flags: `-b/--print-brokers`, `-t/--print-topics`, `-d/--print-detailed-topics`,
-`-i/--print-internal-topics`, `--detailed`, `--include-decommissioned`.
-
-The BROKERS section marks the controller with `*`. With `--detailed`, adds
-CORES, MEMBERSHIP, IS-ALIVE, VERSION, and UUID columns, plus a DISK SPACE
-section showing free/total/used% per path per node.
-
-### rpk cluster logdirs describe
-
-Describes log directory sizes using the Kafka protocol.
-
-```bash
-rpk cluster logdirs describe                         # all brokers, all topics
-rpk cluster logdirs describe --topics my-topic -H    # human-readable sizes
-rpk cluster logdirs describe --aggregate-into broker # total per broker
-rpk cluster logdirs describe --aggregate-into topic  # total per topic
-rpk cluster logdirs describe -b 1                    # single broker
-rpk cluster logdirs describe --sort-by-size          # largest first
-```
-
-Aggregate options: `partition` (default), `broker`, `dir`, `topic`.
-
-### rpk cluster connections list
-
-Displays statistics about active and recently closed Kafka connections in the
-cluster — useful for finding which client applications are producing load.
-Notably available on Redpanda Cloud too (it maps to the Data Plane monitoring
-API there).
-
-```bash
-# All connections (default: subset of columns; --format=json for everything)
-rpk cluster connections list
-
-# Order by recent produce/fetch throughput or idle time
-rpk cluster connections list --order-by="recent_request_statistics.produce_bytes desc"
-rpk cluster connections list --order-by="recent_request_statistics.fetch_bytes desc"
-rpk cluster connections list --order-by="idle_duration desc"
-```
-
-Shorthand filters (e.g. `--client-id`, `--state`) plus raw expressions
-(`--filter-raw`, `--order-by`) are available — see `--help` for the full list;
-the expression syntax follows the Admin API's ListKafkaConnections endpoint.
-
-## Brokers
-
-`rpk cluster brokers` manages broker membership through the Admin API:
-`decommission`, `decommission-status`, and `recommission` (added in v26.2).
-There is no `rpk cluster brokers list` — list brokers with
-`rpk cluster info -b --detailed`. The older `rpk redpanda admin brokers`
-commands still work but are hidden and deprecated, forwarding here.
-
-```bash
-# List brokers (Admin API detail: cores, membership, liveness, version)
-rpk cluster info -b --detailed
-
-# Decommission a broker (removes from cluster, moves partitions to remaining nodes)
-rpk cluster brokers decommission 4
-
-# Monitor decommission progress
-rpk cluster brokers decommission-status 4      # progress table
-rpk cluster brokers decommission-status 4 -d   # includes bytes moved/remaining
-rpk cluster brokers decommission-status 4 -H   # human-readable sizes
-
-# Abort a decommission that is still in progress (once complete, cannot recommission)
-rpk cluster brokers recommission 4
-
-# Bypass the maintenance-mode/liveness pre-checks for a dead/unreachable broker
-rpk cluster brokers decommission 4 --skip-liveness-check
-```
-
-`--skip-liveness-check` is the canonical bypass flag; the older `--force`
-spelling is now a hidden, deprecated alias for it.
-
-See [brokers-maintenance.md](references/brokers-maintenance.md) for full
-decommission/recommission and maintenance-mode detail.
-
-## Cluster Configuration
-
-Cluster properties apply to all nodes and are separate from node (redpanda.yaml)
-properties. Changes propagate immediately.
-
-```bash
-# Get a single property value
-rpk cluster config get log_retention_ms
-
-# Set one property
-rpk cluster config set log_retention_ms=604800000
-
-# Set multiple properties (key=value notation required)
-rpk cluster config set iceberg_enabled=true iceberg_catalog_type=rest
-
-# Interactive edit (opens $EDITOR)
-rpk cluster config edit
-
-# List all available properties (use --filter for regex filtering)
-rpk cluster config list
-rpk cluster config list --filter="kafka.*"
-
-# Export current config to a file
-rpk cluster config export -f /tmp/cluster-config.yml
-
-# Import config from a file
-# (properties present in the schema but absent from the file are reset to
-#  default within the exported visibility scope; use --all on both export and
-#  import for full coverage — safest to import from a complete export)
-rpk cluster config import -f /tmp/cluster-config.yml
-
-# Validate a config file without applying it
-rpk cluster config lint -f /tmp/cluster-config.yml
-
-# Check config version and restart requirements per node
-rpk cluster config status
-
-# Force-reset: clears a property from the local node's config_cache.yaml so
-# redpanda treats it as default on next startup. Use ONLY when redpanda will
-# not start due to a bad config value, and ONLY while redpanda is STOPPED.
-# For a normal reset-to-default, use: rpk cluster config set log_retention_ms ""
-rpk cluster config force-reset log_retention_ms
-```
-
-See [config.md](references/config.md) for property categories, common keys,
-and the cluster-vs-node config distinction.
-
-## Partitions
-
-```bash
-# List partitions for specific topics
-rpk cluster partitions list my-topic other-topic
-
-# List ALL partitions in the cluster
-rpk cluster partitions list --all
-
-# Filter by partition ID
-rpk cluster partitions list my-topic --partition 0,1,2
-
-# Filter by broker ID (show only partitions with a replica on broker 2)
-rpk cluster partitions list my-topic --node-ids 2
-
-# Show only disabled partitions
-rpk cluster partitions list --all --disabled-only
-
-# Trigger on-demand balance
-rpk cluster partitions balance
-
-# Check balancer status (off/ready/starting/in_progress/stalled)
-rpk cluster partitions balancer-status
-
-# Move partition 0 of "my-topic" to brokers 1, 2, 3
-rpk cluster partitions move my-topic -p 0:1,2,3
-
-# Move partition 0 with explicit core assignment
-rpk cluster partitions move my-topic -p 0:1-0,2-0,3-0
-
-# Move using namespace-qualified topic name
-rpk cluster partitions move -p foo/0:1,2,3
-
-# Cancel all ongoing movements
-rpk cluster partitions move-cancel
-
-# Cancel movements only on broker 1
-rpk cluster partitions move-cancel --node 1
-
-# Check movement status
-rpk cluster partitions move-status
-
-# Transfer leadership for a partition (topic as positional arg, partition:target)
-rpk cluster partitions transfer-leadership my-topic --partition 0:2
-# Or using the fully-qualified form (no positional topic arg):
-rpk cluster partitions transfer-leadership --partition my-topic/0:2
-
-# Enable/disable a partition (emergency isolation of a corrupted partition)
-# Flag is --partitions (plural); accepts {namespace}/{topic}/[partitions...] or --all
-rpk cluster partitions enable  my-topic --partitions 0
-rpk cluster partitions disable my-topic --partitions 0
-# Disable all partitions of a topic at once:
-rpk cluster partitions disable my-topic --all
-
-# Unsafe recovery: requires --from-nodes listing permanently-lost broker IDs
-# Use ONLY as a last resort when instructed by Redpanda support
-rpk cluster partitions unsafe-recover --from-nodes 2,3
-# Dry run (prints plan without executing):
-rpk cluster partitions unsafe-recover --from-nodes 2,3 --dry
-```
-
-See [partitions.md](references/partitions.md) for balancer states, move
-syntax, and safe move workflows.
-
-## Maintenance Mode
-
-Maintenance mode drains raft leadership off a node so it can be safely
-restarted or upgraded with minimal disruption. Only one node may be in
-maintenance mode at a time.
-
-```bash
-rpk cluster maintenance enable  1           # put node 1 in maintenance
-rpk cluster maintenance enable  1 --wait    # wait until all leadership drained
-rpk cluster maintenance disable 1           # remove node 1 from maintenance
-rpk cluster maintenance status              # show status table for all nodes
-```
-
-Status table columns: NODE-ID, ENABLED, FINISHED, ERRORS, PARTITIONS,
-ELIGIBLE, TRANSFERRING, FAILED.
-
-See [brokers-maintenance.md](references/brokers-maintenance.md) for the
-rolling-upgrade playbook.
-
-## Broker Log Levels (`rpk cluster loggers`)
-
-Temporarily raise or lower a broker's per-logger log level through the Admin
-API — the standard way to capture debug/trace logs without a restart, and
-without the risk of leaving debug logging on permanently (overrides expire).
-Added in v26.2; it replaces the now-deprecated
-`rpk redpanda admin config log-level`.
-
-```bash
-# List the loggers available on a broker (defer to this, not a static list)
-rpk cluster loggers list
-rpk cluster loggers list --node-id 1        # query a specific broker
-
-# Raise one logger to debug on broker 1 for the default 300s
-rpk cluster loggers set storage --node-id 1
-
-# Several loggers at trace with a custom expiry; 0 = persist until shutdown
-rpk cluster loggers set raft rpc --node-id 1 -l trace -e 60
-
-# Every logger (the special logger "all")
-rpk cluster loggers set all --node-id 1 -l debug -e 120
-```
-
-`--node-id` is **required** for `set` (it targets one broker). Flags:
-`-l/--level` (`error|warn|info|debug|trace`, default `debug`),
-`-e/--expiry-seconds` (default `300`; `0` persists until shutdown). Unknown
-logger names are accepted (per-logger success/failure is printed), so rpk and
-redpanda can be upgraded independently. The logger set is broker-version
-specific — always discover it with `rpk cluster loggers list`.
-
-## Cluster Upgrade Finalization (`rpk cluster upgrade`)
-
-Redpanda gates new features behind a *logical cluster version* that advances
-only once every broker reports the new binary version. Normally this
-finalization is automatic. When the cluster config `features_auto_finalization`
-is `false`, finalization is **deferred** so you can soak-test on the new version
-and still downgrade; `rpk cluster upgrade` (added in v26.2) inspects and
-completes that deferred step through the Admin API.
-
-```bash
-# Show finalization state, active vs post-finalization logical version,
-# whether auto-finalization is enabled, and per-broker reported versions
-rpk cluster upgrade status
-
-# Commit the cluster to the version all brokers report (irreversible;
-# activates version-gated features and raises the downgrade floor)
-rpk cluster upgrade finalize
-rpk cluster upgrade finalize --no-confirm
-```
-
-`finalize` is **irreversible** — once finalized you can no longer downgrade to
-the previous version. It only runs when the cluster is *ready to finalize* (all
-brokers on the same new version and live) and refuses when
-`features_auto_finalization` is enabled (the cluster finalizes on its own then).
-`status` reports the lifecycle state (`finalized`, `ready to finalize`, or
-`upgrade in progress`).
-
-## Self-Test
-
-Benchmarks disk I/O and network throughput on cluster nodes using the Admin
-API. **Do not run on a production cluster under heavy load.**
-
-```bash
-# Start all tests (disk + network + cloud) — prompts for confirmation
-rpk cluster self-test start
-
-# Start without confirmation prompt
-rpk cluster self-test start --no-confirm
-
-# Run only disk tests
-rpk cluster self-test start --only-disk-test
-
-# Run only network tests
-rpk cluster self-test start --only-network-test
-
-# Run only cloud storage tests (requires cloud_storage_enabled=true)
-rpk cluster self-test start --only-cloud-test
-
-# Limit to specific nodes
-rpk cluster self-test start --participant-node-ids 1,2
-
-# Poll status (returns test ID + results once complete)
-rpk cluster self-test status
-
-# Stop a running test
-rpk cluster self-test stop
-```
-
-Default durations: disk 30 s, network 30 s. Disk test suite includes 512 KB
-sequential r/w throughput, 4 KB latency at varying io depths, and 16 KB tests.
-Network test is an 8 KB throughput test between all node pairs.
-
-See [health-and-selftest.md](references/health-and-selftest.md) for test
-descriptions and interpreting results.
-
-## Quotas
-
-Client quotas throttle produce and consume byte rates for Kafka clients,
-matched by client ID or client ID prefix.
-
-```bash
-# Add a consumer byte-rate quota for client ID "my-consumer"
-rpk cluster quotas alter --add consumer_byte_rate=200000 --name client-id=my-consumer
-
-# Add a producer quota matching a client ID prefix
-rpk cluster quotas alter --add producer_byte_rate=180000 --name client-id-prefix=batch-
-
-# Add a default quota for all client IDs (no --name)
-rpk cluster quotas alter --add producer_byte_rate=180000 --default client-id
-
-# Remove a quota
-rpk cluster quotas alter --delete producer_byte_rate --name client-id=my-consumer
-
-# Dry run (validate without applying)
-rpk cluster quotas alter --add consumer_byte_rate=200000 --name client-id=foo --dry
-
-# Describe existing quotas
-rpk cluster quotas describe
-
-# Import quotas from a YAML file (flag is --from, not -f)
-# --from also accepts an inline YAML/JSON string; use --no-confirm to skip prompt
-rpk cluster quotas import --from /tmp/quotas.yml
-```
-
-## Storage (Whole Cluster Restore & Mountable Topics)
-
-`rpk cluster storage` interacts with Tiered Storage at the cluster level: it
-recovers topics/cluster state from the object-storage (archival) bucket and
-mounts/unmounts topics between the cluster and Tiered Storage. Both Whole
-Cluster Restore and mountable topics are **Enterprise-licensed** capabilities
-and require Tiered Storage (`cloud_storage_enabled=true`).
-
-```bash
-# --- Whole Cluster Restore / topic recovery (alias: recovery) ---
-# Start restoring topics from the archival bucket (exits after starting)
-rpk cluster storage restore start
-# Wait for the restore to finish instead of returning immediately
-rpk cluster storage restore start --wait
-# Check restore progress after it has started
-rpk cluster storage restore status
-
-# --- Mountable topics (move topics in/out of the cluster via Tiered Storage) ---
-# List topics in object storage that can be mounted into this cluster
-rpk cluster storage list-mountable
-# Mount a topic from Tiered Storage into the cluster (optionally rename with --to)
-rpk cluster storage mount my-namespace/my-topic
-rpk cluster storage mount my-namespace/my-topic --to my-namespace/my-new-topic
-# Unmount: reject writes, flush to Tiered Storage, remove topic from the cluster
-rpk cluster storage unmount my-namespace/my-topic
-# List mount/unmount migrations (filter by planned|prepared|executed|finished)
-rpk cluster storage list-mount
-# Status of a mount/unmount migration by its migration ID
-rpk cluster storage status-mount 123
-# Cancel an in-progress mount/unmount migration by its migration ID
-rpk cluster storage cancel-mount 123
-```
-
-See [storage.md](references/storage.md) for the restore workflow, mount/unmount
-lifecycle, and migration states.
-
-## Enterprise Features
-
-Most Redpanda differentiators are gated behind an **Enterprise license** and
-turned on through cluster config (`rpk cluster config set`). New clusters
-(24.3+) ship with a 30-day trial; on expiration, enabling/modifying these
-features is restricted (the cluster keeps running without data loss).
-
-```bash
-# Check license + detect violations (enterprise features without a valid license)
-rpk cluster license info            # fields: Type, Expires, License Status, Violation
-rpk cluster license set --path /etc/redpanda/redpanda.license   # no restart needed
-
-# Enterprise feature gates (cluster config)
-rpk cluster config set partition_autobalancing_mode continuous  # Continuous Data Balancing
-rpk cluster config set core_balancing_continuous true           # Continuous core balancing
-rpk cluster config set cloud_storage_enabled true               # Tiered Storage (restart)
-rpk cluster config set iceberg_enabled true                     # Iceberg Topics (restart)
-rpk cluster config set enable_shadow_linking true               # Shadow Linking DR
-rpk cluster config set audit_enabled true                       # Audit Logging
-rpk cluster config set enable_schema_id_validation redpanda     # Schema ID Validation
-rpk cluster config set default_leaders_preference racks:rack1,rack2  # Leadership Pinning
-rpk cluster config set delete_topic_enable false                # Topic Deletion Control
-rpk cluster config set sasl_mechanisms "[SCRAM,GSSAPI,OAUTHBEARER]"  # Kerberos/OIDC
-rpk cluster config set http_authentication "[BASIC,OIDC]"       # OIDC on HTTP/Admin API
-```
-
-The 14 enterprise-flagged cluster properties, their nested sub-settings
-(`partition_autobalancing_*`, `iceberg_*`, `audit_*`, `cloud_storage_*`), the
-license-free fallback values, and disablement-for-compliance steps are
-documented in [enterprise-features.md](references/enterprise-features.md).
-RBAC/GBAC is managed via `rpk security role`, and FIPS via
-`rpk redpanda config set redpanda.fips_mode` (both noted in that reference).
-
-## Reference Directory
-
-- [enterprise-features.md](references/enterprise-features.md): Enterprise differentiators via cluster config + `rpk cluster license` — the 14 enterprise-flagged cluster properties with defaults/enterprise values, plus nested settings for Continuous Data Balancing, core balancing, Tiered Storage, Iceberg Topics, Shadow Linking, Remote Read Replicas, Audit Logging, Leadership Pinning, Schema ID Validation, Schema Registry authorization, Topic Deletion Control, and OIDC/OAUTHBEARER/Kerberos auth. Also notes Cloud Topics (cluster prerequisite `cloud_storage_enabled`; per-topic `redpanda.storage.mode=cloud`; `cloud_topics_enabled` is a non-enterprise property, deprecated and ignored from v26.2.1). License lifecycle and compliance-disable steps.
-- [config.md](references/config.md): `rpk cluster config` subcommands in depth — get/set/edit/list/import/export/lint/force-reset/status, common property keys, and the cluster-vs-node config distinction.
-- [storage.md](references/storage.md): `rpk cluster storage` subcommands — Whole Cluster Restore / topic recovery (`restore start`/`restore status`) and mountable topics (`mount`/`unmount`/`list-mountable`/`list-mount`/`status-mount`/`cancel-mount`), both Enterprise-licensed and Tiered-Storage-backed.
-- [partitions.md](references/partitions.md): `rpk cluster partitions` subcommands — list, balance, balancer-status, move (format syntax), move-cancel, move-status, enable/disable, and unsafe-recover.
-- [brokers-maintenance.md](references/brokers-maintenance.md): broker decommission/recommission/decommission-status (via `rpk cluster brokers`; the legacy `rpk redpanda admin brokers` path is hidden/deprecated) and `rpk cluster maintenance` (enable/disable/status) — lifecycle, rolling upgrade playbook, and interaction with replication.
-- [health-and-selftest.md](references/health-and-selftest.md): `rpk cluster health`, `rpk cluster info`, `rpk cluster logdirs describe`, `rpk cluster quotas`, and `rpk cluster self-test` — health fields, metadata sections, log-dir aggregation, quota types, and self-test benchmarks.
+# rpk cluster
+
+`rpk cluster` inspects and operates a running Redpanda cluster, mostly through
+the Admin API. This skill keeps only the product-specific procedure below. Look
+up everything else in the docs (last section).
+
+## How to work
+
+**Never import a file that holds only the properties you want to change.**
+`rpk cluster config import` treats the file as the whole configuration: every
+property that is set on the cluster and missing from the file goes back to its
+default, including authorization and SASL settings, and it does not ask first.
+For a few properties use `rpk cluster config set`. For bulk changes, export the
+current configuration, edit that export, and import it.
+
+**To reset a property on a running cluster, use `rpk cluster config set
+<property> ""`.** `rpk cluster config force-reset` only edits the local
+broker's configuration cache, for a broker that won't start, and only while
+Redpanda is stopped.
+
+**Get the user's go-ahead before an unsafe recovery or an upgrade
+finalization.** `rpk cluster partitions unsafe-recover` can lose data: run it
+with `--dry` first, show the plan, and ask. `rpk cluster upgrade finalize` is
+irreversible and removes the option to downgrade. A cluster that reports
+"ready to finalize" with auto-finalization off is waiting for that decision, so
+report it and ask instead of finalizing.
+
+**Ask before starting a self-test on a cluster that serves traffic.**
+`rpk cluster self-test start` runs disk and network benchmarks that load the
+brokers and can make a latency problem worse. Say so, and run it only after the
+user agrees or picks a quiet window.
+
+**Don't get past an rpk warning on your own.** When rpk prompts because a
+change may lose data or load the cluster, read the warning and tell the user.
+Don't add `--no-confirm` or pipe an answer into the prompt to skip it. For
+example, the warning on turning off `cloud_storage_enable_remote_write` names
+the property to use to pause uploads instead.
+
+## Use the docs for everything else
+
+Look up subcommands, flags, defaults, cluster properties, Enterprise license
+gates, and procedures in the Redpanda docs instead of from memory:
+
+- Follow `/redpanda:redpanda-docs`. Use `get_rpk_command` for one rpk command,
+  `get_config_property` for one cluster property and `list_config_properties`
+  to find a property's name, and `ask_redpanda_question` for everything else.
+- Most useful pages: the rpk cluster reference at
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-cluster/rpk-cluster/
+  (one page per subcommand), the cluster properties reference at
+  https://docs.redpanda.com/streaming/current/reference/properties/cluster-properties/,
+  and the object storage properties reference at
+  https://docs.redpanda.com/streaming/current/reference/properties/object-storage-properties/.
+  Swap `current` for the user's version.
+- For a Redpanda Cloud cluster, pass `platform: "cloud"`.
+
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the
+user to sign in through `/mcp` rather than answering from memory.
+
+`rpk cluster <subcommand> --help` on the installed rpk is the live check for
+flags in that version.
