@@ -30,6 +30,13 @@ restarts. So when brokers are down, say what restarting them would restore and
 what each forced step would cost, then ask the user whether the brokers can
 come back. A `--dry` run is fine without asking.
 
+**To stop partitions moving, take the balancer off `continuous` first, then
+cancel the moves.** With `partition_autobalancing_mode=continuous`, cancelling
+the current movements is not enough, because the balancer schedules new ones on
+its next round. Set the mode to `off` (or `node_add`), then run
+`rpk cluster partitions move-cancel`, and remind the user to set the mode back
+afterward.
+
 ## Use the docs for everything else
 
 Look up commands, flags, endpoints, metric names, properties, and
