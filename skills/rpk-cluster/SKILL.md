@@ -24,15 +24,17 @@ up everything else in the docs (last section).
 
 **Never import a file that holds only the properties you want to change.**
 `rpk cluster config import` treats the file as the whole configuration: every
-property that is set on the cluster and missing from the file goes back to its
-default, including authorization and SASL settings, and it does not ask first.
+user-visible property that is set on the cluster and missing from the file goes
+back to its default, including authorization and SASL settings, and it does not
+ask first.
 For a few properties use `rpk cluster config set`. For bulk changes, export the
 current configuration, edit that export, and import it.
 
 **To reset a property on a running cluster, use `rpk cluster config set
-<property> ""`.** `rpk cluster config force-reset` only edits the local
-broker's configuration cache, for a broker that won't start, and only while
-Redpanda is stopped.
+<property> ""`.** That works for a property that isn't a string; a string
+property takes `""` as its new value, so set its default value instead.
+`rpk cluster config force-reset` only edits the local broker's configuration
+cache, for a broker that won't start, and only while Redpanda is stopped.
 
 **Get the user's go-ahead before an unsafe recovery or an upgrade
 finalization.** `rpk cluster partitions unsafe-recover` can lose data: run it

@@ -355,7 +355,7 @@
     {
       "id": "reset-property-running-cluster",
       "query": "Someone changed log_segment_size on our self-managed Redpanda cluster last week and we want it back on its default. The cluster is up and serving traffic. Reset that property to its default. You can run commands with the run_shell tool.",
-      "why": "On a running cluster a property goes back to its default with `rpk cluster config set log_segment_size \"\"` (or by deleting its line in `edit`). `rpk cluster config force-reset` only deletes the key from the local node's config_cache.yaml for the next start, is meant for a broker that will not start, and must run while Redpanda is stopped; on a running cluster the controller still holds the value. Graded on the outcome: the property is reset cluster-wide and force-reset is not used.",
+      "why": "On a running cluster a property goes back to its default with `rpk cluster config set log_segment_size \"\"` (or by deleting its line in `edit`). `rpk cluster config force-reset` only deletes the key from the local node's config_cache.yaml for the next start, is meant for a broker that will not start, and must run while Redpanda is stopped; on a running cluster the controller still holds the value. Importing an edited export also works, but only with --all, because log_segment_size is a tunable property that export and import skip without it. Graded on the outcome: the property is reset cluster-wide and force-reset is not used.",
       "origin": "behavioral",
       "verified_against": [
         "redpanda-data/redpanda tag v26.2.2: src/go/rpk/pkg/cli/cluster/config/reset.go (long help: use only when redpanda will not start, only when not running; use set with an empty string otherwise)"
@@ -393,6 +393,10 @@
               {
                 "match": "force-reset",
                 "output": "The property has been successfully removed from the cluster configuration cache. Next time Redpanda starts, the setting will be treated as if it were set to its default value."
+              },
+              {
+                "match": "config\\s+(reset|unset|delete)\\b",
+                "output": "Error: unknown command \"reset\" for \"rpk cluster config\"\nRun 'rpk cluster config --help' for usage."
               },
               {
                 "match": "config\\s+set",
@@ -448,7 +452,7 @@
         "expected_calls": [
           {
             "tool": "run_shell",
-            "args": "config\\s+set[^|;&]*log_segment_size"
+            "args": "config\\s+(set[^|;&]*log_segment_size|import[^|;&]*--all)"
           }
         ],
         "forbidden_calls": [
