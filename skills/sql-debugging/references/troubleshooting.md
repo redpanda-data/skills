@@ -94,7 +94,7 @@ LIMIT 5;
 into planner work, a call to an external service, or waiting. A stage that waits
 on an external service points at that service, not the query. `EXPLAIN CONFIG`
 lists the planner options in effect for the session. Both forms are diagnostics, not a PostgreSQL query plan, and
-their output can change between releases. Syntax: `/redpanda:sql`.
+their output can change between releases. Syntax: https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/explain/.
 
 ### Step 4: Reduce the work the query does
 

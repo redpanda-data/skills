@@ -118,7 +118,7 @@ Redpanda catalog) is not supported.
 
 A **view** is not a catalog object: it stores a `SELECT` query in a SQL schema and
 is queried by name with no catalog prefix. A view can read the topic-backed tables
-described here; see `/redpanda:sql` for `CREATE VIEW` and `DROP VIEW`.
+described here; see https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/create-view/ and https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/drop-view/.
 
 ---
 
@@ -210,7 +210,8 @@ A *SQL: Manage* user can read every topic and create catalogs and tables. A
 for example
 `GRANT SELECT ON EXTERNAL SOURCE default_redpanda_catalog => 'orders' TO "alice@example.com";`.
 Creating a catalog or storage connection as a non-superuser needs `CREATE` on
-the schema. `GRANT` / `REVOKE` syntax: `/redpanda:sql`. Roles, the access
+the schema. `GRANT` / `REVOKE` syntax: https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/grant/ and
+https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/revoke/. Roles, the access
 model, and authentication: `/redpanda:sql-admin-api`.
 
 ---

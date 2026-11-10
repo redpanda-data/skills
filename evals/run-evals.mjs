@@ -30,7 +30,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { skillContext } from "./scripts/skill-context.mjs";
+import { pluginContext, skillContext } from "./scripts/skill-context.mjs";
 
 const EVAL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(EVAL_DIR, "..");
@@ -41,18 +41,32 @@ const RESULTS_DIR = path.join(EVAL_DIR, "results");
 // redpanda-docs skill, the docs server, and no instruction to look things up.
 // The other docs arms are told to look up first, which measures what the docs
 // contain rather than whether an agent would consult them.
-const ARMS = ["baseline", "skill", "docs", "both", "installed"];
+//
+// `connect-plugin` is `installed` with the redpanda-connect Claude Code plugin's
+// skills in place of the suite's own skill. It measures whether that plugin
+// covers what a Connect skill carries. The plugin lives in the connect repo, so
+// EVAL_CONNECT_PLUGIN_DIR must point at its plugin directory (the one holding
+// skills/). It runs only when named in --arms.
+const DEFAULT_ARMS = ["baseline", "skill", "docs", "both", "installed"];
+const ARMS = [...DEFAULT_ARMS, "connect-plugin"];
+const CONNECT_PLUGIN_DIR = process.env.EVAL_CONNECT_PLUGIN_DIR;
 const DOCS_MCP_URL = process.env.EVAL_DOCS_MCP_URL ?? "https://docs.redpanda.com/mcp";
 const DOCS_SERVER = "redpanda-docs";
-// The read tools only. submit_documentation_feedback writes to a real service,
-// so it is denied as well as left off the allow-list.
+// The read tools only. give_feedback writes to a real service, so it is denied
+// as well as left off the allow-list.
 const DOCS_TOOLS = [
   "ask_redpanda_question",
   "search_api_reference",
   "get_api_reference_content",
   "list_api_reference_pages",
+  "get_config_property",
+  "list_config_properties",
+  "get_connect_component",
+  "list_connect_components",
+  "get_rpk_command",
+  "list_rpk_commands",
 ].map((t) => `mcp__${DOCS_SERVER}__${t}`);
-const DOCS_DENIED = [`mcp__${DOCS_SERVER}__submit_documentation_feedback`];
+const DOCS_DENIED = [`mcp__${DOCS_SERVER}__give_feedback`];
 // Anonymous callers get a handful of tool calls a day per network address, which
 // one suite exhausts. A trusted client key is not metered, and attributes the
 // traffic to a named service rather than to a person.
@@ -82,7 +96,7 @@ function parseArgs(argv) {
   const opts = {
     suites: [],
     cases: [],
-    arms: ARMS,
+    arms: DEFAULT_ARMS,
     runs: 3,
     concurrency: 4,
     model: process.env.EVAL_MODEL ?? "claude-sonnet-5-5",
@@ -112,6 +126,7 @@ function parseArgs(argv) {
   }
   const bad = opts.arms.filter((a) => !ARMS.includes(a));
   if (bad.length) die(`unknown arm(s): ${bad.join(", ")}. Arms: ${ARMS.join(", ")}`);
+  if (opts.arms.includes("connect-plugin") && !CONNECT_PLUGIN_DIR) die("the connect-plugin arm needs EVAL_CONNECT_PLUGIN_DIR");
   if (!(opts.runs >= 1)) die("--runs must be at least 1");
   if (!(opts.concurrency >= 1)) die("--concurrency must be at least 1");
   return opts;
@@ -263,19 +278,21 @@ async function runSubject(suite, testCase, arm, model) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "skill-eval-"));
   try {
     const args = baseArgs(testCase.query, model);
-    const withSkill = arm === "skill" || arm === "both" || arm === "installed";
-    const withDocs = arm === "docs" || arm === "both" || arm === "installed";
+    const plugin = arm === "connect-plugin";
+    const withSkill = arm === "skill" || arm === "both" || arm === "installed" || plugin;
+    const withDocs = arm === "docs" || arm === "both" || arm === "installed" || plugin;
+    const asInstalled = arm === "installed" || plugin;
     const prompt = [];
     let skillText = "";
     if (withSkill) {
-      skillText = skillContext(REPO_ROOT, suite.skill);
+      skillText = plugin ? pluginContext(CONNECT_PLUGIN_DIR) : skillContext(REPO_ROOT, suite.skill);
       const shared = path.join(REPO_ROOT, "skills", "redpanda-docs");
-      if (arm === "installed" && suite.skill !== "redpanda-docs" && fs.existsSync(path.join(shared, "SKILL.md"))) {
+      if (asInstalled && suite.skill !== "redpanda-docs" && fs.existsSync(path.join(shared, "SKILL.md"))) {
         skillText += "\n\n---\n\n" + skillContext(REPO_ROOT, "redpanda-docs");
       }
       prompt.push(skillText);
     }
-    if (withDocs && arm !== "installed") prompt.push(DOCS_NUDGE);
+    if (withDocs && !asInstalled) prompt.push(DOCS_NUDGE);
     if (prompt.length) {
       // A file, not an argument: Linux caps one argv element at 128 KiB and
       // some skills with their references are close to that.
@@ -335,8 +352,9 @@ async function runSubject(suite, testCase, arm, model) {
     if (missing.length) throw new Error(`subject lacked tools its arm needs: ${missing.join(", ")}`);
     // The quota refusal comes back as an ordinary tool result, so the subject
     // answers from memory and says it could not check. Scored, that run would
-    // count general knowledge as "the docs".
-    if (run.toolResults.some((r) => r.body.includes("anonymous_quota_exhausted"))) {
+    // count general knowledge as "the docs". Only the real docs server counts: a
+    // behavioral case may mock the refusal on purpose.
+    if (run.toolResults.some((r) => r.name?.startsWith(`mcp__${DOCS_SERVER}__`) && r.body.includes("anonymous_quota_exhausted"))) {
       throw new Error("docs server refused: anonymous quota exhausted (set EVAL_DOCS_CLIENT_KEY)");
     }
     // An upstream failure or timeout on the docs server also comes back as an

@@ -236,8 +236,7 @@ What this means for a Dedicated cluster today:
   organization**, and it is not in the published Cloud API reference yet.
 - **TODO (needs human confirmation):** Redpanda documents dual listener mode only for BYOC on AWS;
   availability for Dedicated clusters is not documented — confirm with Redpanda Support before
-  planning a Dedicated cluster around it. The full rules and migration semantics are in the BYOC
-  skill: `/redpanda:cloud-byoc` → `references/clusters-and-agent.md`.
+  planning a Dedicated cluster around it, and ask Support for its rules and migration semantics.
 
 ## Operation Polling
 
@@ -378,7 +377,7 @@ decommissions the originals; the cluster keeps serving traffic and its endpoints
 though clients see connections restart as each broker is decommissioned. The self-service scaling
 path — changing `redpanda_node_count` or `throughput_tier` yourself and having the change start
 immediately — is offered on BYOC clusters in organizations on usage-based billing, not on
-Dedicated; see the `/redpanda:cloud-byoc` skill. If you manage the cluster with Terraform, update
+Dedicated; see https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/. If you manage the cluster with Terraform, update
 `throughput_tier` (and `redpanda_node_count`) in your configuration to match after a migration
 completes, or the next `terraform apply` reverts it.
 

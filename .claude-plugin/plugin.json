@@ -1,6 +1,6 @@
 {
   "name": "redpanda",
-  "description": "Agent Skills for Redpanda's five products — Streaming (Kafka-compatible engine), SQL, Connect (incl. CDC connectors), Cloud (Serverless, BYOC, Dedicated), and the Agentic Data Plane — plus the rpk CLI. Grounded in Redpanda source, docs, and APIs.",
+  "description": "Agent Skills for Redpanda's five products — Streaming (Kafka-compatible engine), SQL, Cloud (Serverless, BYOC, Dedicated), and the Agentic Data Plane — plus the rpk CLI. Grounded in Redpanda source, docs, and APIs.",
   "author": {
     "name": "Redpanda Data"
   },
@@ -12,8 +12,6 @@
     "kafka",
     "streaming",
     "rpk",
-    "redpanda-connect",
-    "cdc",
     "sql",
     "cloud",
     "byoc",
@@ -21,5 +19,6 @@
     "adp",
     "ai-gateway",
     "agentic"
-  ]
+  ],
+  "privacyPolicyUrl": "https://www.redpanda.com/legal/privacy-policy"
 }

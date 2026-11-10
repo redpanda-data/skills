@@ -136,7 +136,7 @@ The SQL endpoint requires TLS (`sslmode=require`). `dbname=oxla` is the database
 - Taking the Cloud role away revokes `CONNECT` and superuser status at the next sync, but does not drop the SQL user: its grants survive and apply again if the role is reassigned. Use `REVOKE` to remove them.
 - Every query reaches the topics through one internal SASL credential, so **Kafka ACLs do not gate query-time access. `GRANT` / `REVOKE` inside Redpanda SQL do.**
 
-Details: [access-and-authentication.md](references/access-and-authentication.md). GRANT/REVOKE syntax: `/redpanda:sql`.
+Details: [access-and-authentication.md](references/access-and-authentication.md). GRANT/REVOKE syntax: https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/grant/ and https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/revoke/.
 
 ## Getting help
 

@@ -61,7 +61,7 @@ If a `subject.name.strategy` is prefixed with `confluent.`, the strategy value m
 
 ### Configure validation on a topic (via rpk topic)
 
-Schema ID validation is applied through **topic** properties, so the commands live under `rpk topic` (see the `rpk-topic` skill), but they pair directly with the registry workflow:
+Schema ID validation is applied through **topic** properties, so the commands live under `rpk topic` (see https://docs.redpanda.com/streaming/current/reference/rpk/rpk-topic/rpk-topic-alter-config/), but they pair directly with the registry workflow:
 
 ```bash
 # Create a topic with value validation using RecordNameStrategy
