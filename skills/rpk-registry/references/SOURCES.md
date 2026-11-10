@@ -6,10 +6,8 @@ else. This file maps only the claims the skill still makes.
 
 The `rpk registry` command group is Go source under `src/go/rpk/pkg/cli/registry/`, and the
 broker-side Schema Registry it drives is under `src/v/pandaproxy/schema_registry/`. Both are
-cited at the public `redpanda-data/redpanda` tag `v26.2.2`; later releases live in the
-**private** repo `redpanda-data/streaming-enterprise`. Read it with `gh api` or the
-Redpanda-Github-Read connector; do not clone it. Verify against the current stable release
-tag, not `dev`. Paths below are relative to either repo.
+cited at the public `redpanda-data/redpanda` tag `v26.2.2`. Verify against the current stable
+release tag, not `dev`.
 
 ## How to work: line, source, eval case
 

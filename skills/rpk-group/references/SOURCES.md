@@ -4,11 +4,8 @@ The skill is thin: it keeps only the "How to work" line below, backed by a behav
 case in `evals/suites/rpk-group.eval.json`, and sends the agent to the docs for everything
 else. This file maps only the claims the skill still makes.
 
-The `rpk group` command group lives in the **private** repo
-`redpanda-data/streaming-enterprise`; the public repo `redpanda-data/redpanda` carries the same
-files at tag `v26.2.2`. Read the private repo with `gh api` or the Redpanda-Github-Read
-connector; do not clone it. Verify against the current stable release tag, not `dev`. Paths
-below are relative to either repo.
+Sources are the public `redpanda-data/redpanda` repo at tag `v26.2.2`. Verify against the
+current stable release tag, not `dev`.
 
 ## How to work: line, source, eval case
 
@@ -35,6 +32,14 @@ below are relative to either repo.
   (`cmd.MarkFlagsMutuallyExclusive("print-lag-per-topic", "print-commits")`, and the
   `lagPerTopic` branch returns before the commits are printed). Case
   `describe-commits-with-lag-per-topic`: baseline 0/3, docs 0/3, both 3/3, installed 3/3.
+- `rpk group delete`: the broker refuses to delete a group with a transaction in progress and
+  returns `NON_EMPTY_GROUP`, even when the group shows `Empty` with no members. The transaction
+  has to commit, abort, or time out first. The page
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-group/rpk-group-delete/ does not
+  mention transactions (checked 2026-11-10). Source: `src/v/kafka/server/group.cc` (`group::remove`
+  returns `non_empty_group` when `has_transactions_in_progress()`). Case
+  `delete-empty-group-open-transaction`: 0/3 in every arm, baseline included, once the case's
+  group name stopped hinting at a transaction.
 
 ## Drifted facts removed with the conversion
 

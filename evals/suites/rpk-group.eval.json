@@ -192,7 +192,7 @@
     },
     {
       "id": "delete-empty-group-open-transaction",
-      "query": "Group payments-txn shows state Empty with no members, but `rpk group delete payments-txn` reports NON_EMPTY_GROUP. Why would an empty group be refused?",
+      "query": "Group billing-workers shows state Empty with no members, but `rpk group delete billing-workers` reports NON_EMPTY_GROUP. Why would an empty group be refused?",
       "why": "Redpanda also refuses to delete a group that has transactional offset commits in progress (an open transaction that has not committed or aborted), returning NON_EMPTY_GROUP even when the group has no members, because tombstoning it would leave hanging transactions.",
       "origin": "targeted",
       "verified_against": [
