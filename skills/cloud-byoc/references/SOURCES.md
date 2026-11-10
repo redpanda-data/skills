@@ -16,9 +16,21 @@ Redpanda-Github-Read MCP connector; do not clone them.
 | How to work line | Source | Eval case |
 |---|---|---|
 | Create a BYOVNet cluster on Azure with Terraform alone: the BYOVNet module plus the Redpanda provider, which runs the agent bootstrap, with no Cloud API calls or `rpk cloud byoc azure apply` (verified 2026-10-27) | `redpanda-data/terraform-provider-redpanda` `redpanda/utils/byoc.go` (`RunByoc`, Azure preflight in `CheckCloudConfig`), `examples/byovpc/azure/main.tf`. Published: https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/byoc/azure/vnet-azure/ | `byovnet-azure-terraform-only` |
-| Send a change in network exposure (private-only to or from publicly reachable, and BYOVPC migrations to or from dual listener mode) to Redpanda Support; don't build a public path in the customer's account (verified 2026-10-31). Safety guardrail: the baseline passed its case 3/3 on 2026-10-31, and the line and case stay as a regression guard. | cloudv2 Control Plane API cluster update validation for connectivity changes | `private-to-public-goes-through-support` |
+| Send a change in network exposure (private-only to or from publicly reachable, and BYOVPC migrations to or from dual listener mode) to Redpanda Support; don't build a public path in the customer's account (verified 2026-10-31). Safety guardrail: the baseline passed its case 3/3 on 2026-10-31 and 1/3 on 2026-11-10, and the line and case stay as a regression guard. | cloudv2 `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (`validateConnectionsSemanticsForUpdate` refuses a change in public presence; `crossesDualPublic` lets only public-only to and from dual through) | `private-to-public-goes-through-support` |
 | Never pass `--cloud-api-token`; keep `RPK_CLOUD_SKIP_VERSION_CHECK` to developer testing, because it runs the installed plugin instead of the pinned version (verified 2026-10-31) | streaming-enterprise `src/go/rpk/pkg/cli/cloud/byoc/byoc.go`, `install.go` | `byoc-apply-script-no-dev-overrides` (grades the skip-check part; the rpk error already makes the baseline drop the token flag) |
 | Don't move production data to Tiered Storage v2: it is beta and not for production, and a topic's version is fixed at create time (verified 2026-10-31) | https://docs.redpanda.com/cloud-data-platform/manage/tiered-storage-versions/ | `tiered-storage-v2-not-for-production` |
+
+## Eval rates
+
+Rerun on 2026-11-10 against this `SKILL.md`, 3 runs per arm. Archive run folder:
+`2026-11-10T20-28-18-815Z`.
+
+| Eval case | baseline | skill | installed |
+|---|---|---|---|
+| `byovnet-azure-terraform-only` | 0/3 | 3/3 | 3/3 |
+| `private-to-public-goes-through-support` | 1/3 | 3/3 | 3/3 |
+| `byoc-apply-script-no-dev-overrides` | 0/3 | 3/3 | 3/3 |
+| `tiered-storage-v2-not-for-production` | 0/3 | 2/3 | 3/3 |
 
 ## Other claims in SKILL.md
 
@@ -34,18 +46,15 @@ Redpanda-Github-Read MCP connector; do not clone them.
 
 Found by the evals and handed to the docs team:
 
-- `custom_properties` integer and number values are sent as JSON strings (cloudv2
-  `cluster.proto`, comment on `cluster_configuration`).
-- A tags PATCH may echo stored reserved keys unchanged (cloudv2 `redpanda_service.go`,
-  `validateCloudTagKeysOnUpdate`); the published reserved-keys section says they are rejected.
 - `redpanda_cloud_provider_tags` is not backfilled and can be empty on older clusters while
   `cloud_provider_tags` carries `redpanda-managed` (cloudv2
-  `apps/public-api-go/internal/services/cluster/v1/mapper.go`); the API reference does not say so.
-- `rpk cloud byoc <provider> validate` runs without `--redpanda-id`, and
-  `RPK_CLOUD_SKIP_VERSION_CHECK` runs the installed plugin as is (streaming-enterprise
-  `src/go/rpk/pkg/cli/cloud/byoc/byoc.go`, `install.go`).
+  `apps/controlplane-api/internal/services/redpanda/redpanda_service.go`,
+  `syncRedpandaCloudProviderTags` keeps `redpanda-managed` only if the stored field already had
+  it); the API reference does not say so.
 
 ## Lines removed for lack of a failing baseline
+
+The removed line has no committed eval case, so it was not rerun on 2026-11-10.
 
 - "Confirm with the user before any change that deletes, scales, or reconfigures a cluster or
   its Network" was removed on 2026-10-30. Its behavioral case (a throttled cluster at its tier's
@@ -65,3 +74,16 @@ Found by the evals and handed to the docs team:
   cluster's current broker count, which is checked against the target tier. The thin skill does
   not carry it. The published scale-cluster page states the rule and its error-table row:
   https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/
+
+## Corrections after the eval run
+
+- 2026-11-10: three docs gaps listed here are no longer gaps, so they were removed. The
+  published docs now say that `custom_properties` integer and number values are sent as JSON
+  strings (https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/config-cluster/),
+  that a tags update may send the reserved tags back unchanged (the reserved tag keys section of
+  https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/byoc/aws/create-byoc-cluster-aws/),
+  and that `rpk cloud byoc <provider> validate` needs no `--redpanda-id` and
+  `RPK_CLOUD_SKIP_VERSION_CHECK` runs the installed plugin as is
+  (https://docs.redpanda.com/cloud-data-platform/reference/rpk/rpk-cloud/rpk-cloud-byoc/).
+- 2026-11-10: the `redpanda_cloud_provider_tags` gap cited `mapper.go`, which only copies the
+  field; the source that decides what the field holds is cited instead.
