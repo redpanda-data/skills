@@ -17,9 +17,9 @@ is the skill before this conversion; "thin" is this SKILL.md.
 
 | How to work line | Source | Eval case |
 |---|---|---|
-| Check developer mode before starting a broker that holds real data: with `redpanda.developer_mode: true` and no `--mode`, `rpk redpanda start` runs `dev-container` mode, which bypasses fsync; `--mode dev-container` saves `developer_mode: true` for later starts; run `rpk redpanda mode production` (or ask) first. Safety guardrail (data loss). Baseline 1/3; pre-thin skill 3/3, installed 2/3; thin skill 2/3, installed 3/3 (the failing run named the risk but started the broker before asking). | `src/go/rpk/pkg/cli/redpanda/start.go` (`DeveloperMode` with an empty `--mode` selects `dev-container`; `setContainerModeFlags` sets `--unsafe-bypass-fsync`; `y.Write` before launch), `src/go/rpk/pkg/config/config.go` (`setProdMode` sets `DeveloperMode = false`) | `start-broker-developer-mode-on` |
-| Drain a broker with `rpk cluster maintenance enable <id> --wait` before stopping Redpanda on it, and disable maintenance mode when it is back. Baseline 0/3; thin skill 3/3, installed 3/3 (rerun after a mock fix that showed the broker already in maintenance mode). On the earlier mock the pre-thin skill, which kept the line in a reference file, scored 1/3. | `src/go/rpk/pkg/cli/cluster/maintenance/enable.go` (drains leadership; `--wait`), https://docs.redpanda.com/streaming/current/manage/node-management/ | `reboot-broker-drain-first` |
-| Don't apply the autotuner (`rpk redpanda tune`, `start --tune`, `redpanda-tuner`) in Azure self-managed environments; other production preparation still applies. Baseline 0/3; pre-thin skill 3/3, installed 3/3; thin skill 3/3, installed 3/3. | https://docs.redpanda.com/streaming/current/reference/rpk/rpk-redpanda/rpk-redpanda-tune/ ("Do not use this command in Azure self-managed environments", checked 2026-11-10). Not in rpk's help text. | `azure-node-production-prep` |
+| Check developer mode before starting a broker that holds real data: with `redpanda.developer_mode: true` and no `--mode`, `rpk redpanda start` runs `dev-container` mode, which bypasses fsync; `--mode dev-container` saves `developer_mode: true` for later starts; run `rpk redpanda mode production` (or ask) first. Safety guardrail (data loss). Baseline 1/3; pre-thin skill 3/3, installed 2/3; thin skill 2/3, installed 3/3 (the failing run named the risk but started the broker before asking). Rerun 2026-11-10 after a case fix (archive run `2026-11-10T20-50-39Z`): baseline 0/3, thin skill 3/3, installed 3/3. | `src/go/rpk/pkg/cli/redpanda/start.go` (`DeveloperMode` with an empty `--mode` selects `dev-container`; `setContainerModeFlags` sets `--unsafe-bypass-fsync`; `y.Write` before launch), `src/go/rpk/pkg/config/config.go` (`setProdMode` sets `DeveloperMode = false`) | `start-broker-developer-mode-on` |
+| Drain a broker with `rpk cluster maintenance enable <id> --wait` before stopping Redpanda on it, and disable maintenance mode when it is back. Baseline 0/3; thin skill 3/3, installed 3/3 (rerun after a mock fix that showed the broker already in maintenance mode). On the earlier mock the pre-thin skill, which kept the line in a reference file, scored 1/3. Rerun 2026-11-10 (archive run `2026-11-10T20-42-45Z`): baseline 0/3, thin skill 3/3, installed 3/3. | `src/go/rpk/pkg/cli/cluster/maintenance/enable.go` (drains leadership; `--wait`), https://docs.redpanda.com/streaming/current/manage/node-management/ | `reboot-broker-drain-first` |
+| Don't apply the autotuner (`rpk redpanda tune`, `start --tune`, `redpanda-tuner`) in Azure self-managed environments; other production preparation still applies. Baseline 0/3; pre-thin skill 3/3, installed 3/3; thin skill 3/3, installed 3/3. Rerun 2026-11-10 (archive run `2026-11-10T20-42-45Z`): baseline 0/3, thin skill 3/3, installed 3/3. | https://docs.redpanda.com/streaming/current/reference/rpk/rpk-redpanda/rpk-redpanda-tune/ ("Do not use this command in Azure self-managed environments", checked 2026-11-10). Not in rpk's help text. | `azure-node-production-prep` |
 
 ## Other claims in SKILL.md
 
@@ -90,7 +90,8 @@ docs override (`docs-data/rpk-overrides.json`) hides them.
 - Decommission pre-checks (the remaining broker count must still cover the highest replication
   factor, plus rack, disk, and partition-density checks) were not kept. Case
   `decommission-shrink-three-brokers` (decommission one of three brokers whose topics use
-  replication factor 3) passed 3/3 in every arm, baseline included: without the skill, the agent
+  replication factor 3) passed 3/3 in every arm, baseline included (rerun `2026-11-10T20-42-45Z`: baseline 3/3,
+  skill 3/3, installed 3/3): without the skill, the agent
   checked the replication factor and stopped to ask. Decommission is in `/redpanda:rpk-cluster`.
 - The pre-thin skill's other procedural notes (provision order: bootstrap, production mode, tune,
   iotune, check, start; iotune once per hardware type; node config vs cluster config) are
@@ -100,3 +101,16 @@ docs override (`docs-data/rpk-overrides.json`) hides them.
   were found by the docs arms (`well-known-io-conflict` docs 2/3, installed 3/3;
   `decommission-dead-broker` docs 3/3; `mode-prod-tuner-set` docs 3/3;
   `tune-exit-status-unsupported` docs 3/3).
+
+## Corrections after the eval run
+
+Found by a premise audit and rerun on 2026-11-10.
+
+- Case `start-broker-developer-mode-on` passed an empty answer, because its invariant failed only
+  an answer that reported the broker as serving. It now also fails an answer that does not say
+  developer mode was on.
+- The same case's mock showed the service already running in development mode before any start,
+  although the user asks to start it, and answered a compound command that read `redpanda.yaml`
+  with the `systemctl` output, so agents could not read the file. The mock now starts with the
+  service stopped, answers file reads first, and shows `developer_mode: false` when a command
+  sets production mode and reads the file together. The rerun above is on the fixed case.
