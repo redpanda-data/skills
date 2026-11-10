@@ -36,12 +36,6 @@ availability zone is refused while SQL is enabled, don't disable and re-enable o
 the user that this deletes every catalog, table mapping, and grant, and leave the decision to them
 or to Redpanda Support.
 
-**On BYOVPC, list every field you set in `update_mask` by its full leaf path.** That includes
-`rpsql.enabled` and each SQL customer-managed resource, such as
-`customer_managed_resources.aws.rpsql_node_group_instance_profile.arn`. A grouped mask such as
-`customer_managed_resources` is ignored without an error: the operation completes and SQL stays
-disabled.
-
 **On AWS BYOVPC, detach the Glue policy from the SQL engine role before you disable SQL.** Check
 the policies attached to `redpanda-<cluster-id>-redpanda-oxla-cluster` and detach any Glue policy
 first. Redpanda deletes that role on disable, and AWS cannot delete a role that still has a policy
