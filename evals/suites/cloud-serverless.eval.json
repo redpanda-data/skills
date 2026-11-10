@@ -1,0 +1,631 @@
+{
+  "name": "cloud-serverless skill vs docs",
+  "skill": "cloud-serverless",
+  "description": "Measures whether the cloud-serverless skill adds value over the published Redpanda Cloud docs and the Cloud API reference for Serverless clusters: API authentication, the Serverless cluster and private-link resources, Data Plane API request shapes for topics, ACLs, secrets and pipelines, topic limits, and Shadow Link eligibility. Sampled and targeted cases were picked from the pre-thin skill and product source without regard to the docs; the thin skill no longer carries those claims, so a thin skill-arm result on them is not a measure of skill coverage. Behavioral cases grade the outcome of tasks run against a mocked shell with curl: adding partitions to reach a total, changing one topic config without resetting the others, setting up PrivateLink, and finding what fills the pipeline limit.",
+  "test_cases": [
+    {
+      "id": "oauth-token-endpoint-audience",
+      "query": "I'm writing a Python script that calls the Redpanda Cloud Control Plane API with a service account's client ID and client secret. Which URL do I request the access token from, and which form parameters does the token request need?",
+      "why": "Cloud API tokens come from the client-credentials grant at https://auth.prd.cloud.redpanda.com/oauth/token with audience cloudv2-production.redpanda.cloud. A model without the skill or docs tends to guess a token path on api.redpanda.com or cloud.redpanda.com, or leaves out the audience.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda v26.2.2 src/go/rpk/pkg/oauth/providers/auth0/auth0.go"
+      ],
+      "required_patterns": [
+        "auth\\.prd\\.cloud\\.redpanda\\.com/oauth/token",
+        "cloudv2-production\\.redpanda\\.cloud"
+      ],
+      "invariants": [
+        {
+          "name": "client_credentials_with_audience",
+          "failure_condition": "Fails if the answer gives a token URL other than https://auth.prd.cloud.redpanda.com/oauth/token, or leaves out the audience parameter. Passes if it posts grant_type=client_credentials, client_id, client_secret and audience=cloudv2-production.redpanda.cloud to that URL."
+        }
+      ]
+    },
+    {
+      "id": "lost-client-secret-rotate",
+      "query": "The client secret for our CI job's Redpanda Cloud service account was lost when a vault was wiped. We still have the service account's ID and client ID. Can I read the secret back through the Cloud API? If not, what should I do?",
+      "why": "The credentials endpoint (GET /v1/service-accounts/{id}/credentials) returns the client ID only; the secret is returned only when the account is created or its secret is rotated (GET /v1/service-accounts/{id}/rotate-secret). A model tends to say the credentials endpoint returns the secret, or that only the console can help.",
+      "origin": "targeted",
+      "verified_against": [
+        "product source (IAM v1 ServiceAccountService GetServiceAccountCredentials and RotateServiceAccountSecret descriptions)"
+      ],
+      "required_patterns": [
+        "rotate"
+      ],
+      "invariants": [
+        {
+          "name": "secret_not_readable_rotate_instead",
+          "failure_condition": "Fails if the answer says the lost secret can be read back from the API (for example from a credentials endpoint) or the console. Passes if it says the API returns only the client ID for an existing service account, so the user must rotate the secret (or create a new service account), store the new secret, and update the CI job to use it."
+        }
+      ]
+    },
+    {
+      "id": "serverless-create-request-prereqs",
+      "query": "What HTTP request creates a Redpanda Cloud Serverless cluster through the Control Plane API, and what has to exist before I send it?",
+      "why": "A Serverless cluster is its own resource: POST /v1/serverless/clusters with a serverless_cluster body carrying name, resource_group_id, and serverless_region, and the resource group must exist first. A model tends to reuse the Dedicated or BYOC shape (POST /v1/clusters with type, region and throughput tier) or skip the resource group.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (controlplane v1 ServerlessClusterService CreateServerlessCluster, ServerlessClusterCreate required fields)"
+      ],
+      "required_patterns": [
+        "/v1/serverless/clusters",
+        "resource_group_id",
+        "serverless_region"
+      ],
+      "invariants": [
+        {
+          "name": "resource_group_first",
+          "failure_condition": "Fails if the answer sends the create to /v1/clusters with a cluster type or throughput tier, or does not say a resource group must exist (or be created) first. Passes if it posts to /v1/serverless/clusters with name, resource_group_id and serverless_region, and says the resource group comes first."
+        }
+      ]
+    },
+    {
+      "id": "serverless-private-only-create",
+      "query": "We want a new Redpanda Cloud Serverless cluster on AWS that has no public endpoint at all, only private access from our own VPC. What do we need to set up, and what goes in the cluster create request?",
+      "why": "Private access to a Serverless cluster goes through a separate ServerlessPrivateLink resource (POST /v1/serverless/private-links, AWS only, with allowed_principals). The cluster create then sets networking_config.private to STATE_ENABLED with that link's ID in private_link_id, and public to STATE_DISABLED; the API rejects private enabled without private_link_id, and both disabled. A model tends to reuse the BYOC or Dedicated connection_type field or invent a VPC peering step.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (controlplane v1 ServerlessClusterCreate CEL rules private_link_id_required and network_must_not_have_both_private_public_disabled; ServerlessPrivateLinkService)"
+      ],
+      "required_patterns": [
+        "private_link_id"
+      ],
+      "invariants": [
+        {
+          "name": "private_link_then_networking_config",
+          "failure_condition": "Fails if the answer makes the cluster private with a connection_type field or VPC peering instead of a Serverless private link, or does not say to create the private link before the cluster. Passes if it creates a Serverless private link first (with the AWS principals allowed to connect), then creates the cluster with networking_config private set to STATE_ENABLED, public set to STATE_DISABLED, and private_link_id set to the link's ID."
+        }
+      ]
+    },
+    {
+      "id": "topic-create-configs-key",
+      "query": "Give me the curl request to create a compacted topic named user-profiles with 3 partitions through a Redpanda Cloud Serverless cluster's Data Plane API.",
+      "why": "The Data Plane API create-topic body lists topic configs under configs, each an object with name and value (cleanup.policy=compact). The configurations key belongs to the per-topic configurations endpoints. A model tends to use configurations, a config map, or Kafka-style config_entries.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (dataplane v1 TopicService CreateTopic, CreateTopicRequest.Topic.configs)"
+      ],
+      "required_patterns": [
+        "/v1/topics",
+        "\\\"?configs\\\"?\\s*:",
+        "cleanup\\.policy"
+      ],
+      "invariants": [
+        {
+          "name": "configs_list_of_name_value",
+          "failure_condition": "Fails if the create body carries the topic configs under a key other than configs (such as configurations, config, or config_entries), or as a flat map instead of name and value objects. Passes if it posts to the cluster's Data Plane URL at /v1/topics with configs containing {\"name\": \"cleanup.policy\", \"value\": \"compact\"} and a partition count of 3."
+        }
+      ]
+    },
+    {
+      "id": "acl-delete-filter-query",
+      "query": "How do I delete one specific ACL (allow READ on the literal topic orders for User:etl) through a Redpanda Cloud Serverless cluster's Data Plane API?",
+      "why": "ACLs have no ID: DELETE /v1/acls takes filter.* query parameters (resource type, name, pattern type, principal, host, operation, permission type) and deletes every ACL that matches. A model tends to send a JSON body or a path ID.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (dataplane v1 ACLService DeleteACLs query parameters)"
+      ],
+      "required_patterns": [
+        "DELETE",
+        "filter\\."
+      ],
+      "invariants": [
+        {
+          "name": "delete_by_filter_query_params",
+          "failure_condition": "Fails if the answer deletes the ACL with a JSON request body or by an ACL ID in the path. Passes if it sends DELETE /v1/acls with filter.* query parameters naming the resource type, resource name, pattern type, principal, operation and permission type."
+        }
+      ]
+    },
+    {
+      "id": "secret-scope-for-connect",
+      "query": "Create a secret named PG_PASSWORD on our Redpanda Cloud Serverless cluster through the Data Plane API, so a Redpanda Connect pipeline on that cluster can read it as ${secrets.PG_PASSWORD}. Show the request.",
+      "why": "A Data Plane secret needs a scope for the service that reads it (SCOPE_REDPANDA_CONNECT for pipelines), and secret_data must be Base64-encoded. A model tends to leave out the scope or send the password in plain text.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (dataplane v1 SecretService CreateSecret: secret_data Base64, Scope enum)"
+      ],
+      "required_patterns": [
+        "SCOPE_REDPANDA_CONNECT",
+        "/v1/secrets",
+        "base64"
+      ],
+      "invariants": [
+        {
+          "name": "scoped_base64_secret",
+          "failure_condition": "Fails if the request sends the secret value in plain text or omits a scope. Passes if it posts to /v1/secrets with id PG_PASSWORD, a Base64-encoded secret_data, and scopes including SCOPE_REDPANDA_CONNECT."
+        }
+      ]
+    },
+    {
+      "id": "pipeline-draft-promote",
+      "query": "I saved a Redpanda Connect pipeline on our Redpanda Cloud Serverless cluster as a draft through the Data Plane API. How do I make it actually run? Can I update it with draft set to false?",
+      "why": "An update never changes whether a pipeline is a draft: draft on PipelineUpdate is an assertion, and false is rejected. StartPipeline (PUT /v1/redpanda-connect/pipelines/{id}/start) validates the stored config and deploys it. A model tends to say a PATCH or PUT with draft false promotes it.",
+      "origin": "targeted",
+      "verified_against": [
+        "product source (dataplane v1 PipelineUpdate.draft, Pipeline.State STATE_DRAFT)"
+      ],
+      "required_patterns": [
+        "start"
+      ],
+      "invariants": [
+        {
+          "name": "start_promotes_not_update",
+          "failure_condition": "Fails if the answer says an update with draft set to false makes the pipeline run or turns it into a normal pipeline. Passes if it says an update cannot change draft status (draft false is rejected) and that starting the pipeline (the start endpoint) validates and deploys the draft."
+        }
+      ]
+    },
+    {
+      "id": "topic-ceiling-policy-violation",
+      "query": "Our bootstrap script creates topics on a Redpanda Cloud Serverless cluster through the Data Plane API. It worked for a while, but now every POST /v1/topics fails with HTTP 400 and code INVALID_ARGUMENT, even though the request bodies have not changed. What is likely going on, and should the script retry?",
+      "why": "A Serverless cluster has per-cluster topic and partition limits. A create past either fails with Kafka POLICY_VIOLATION, which the Data Plane API returns as 400 INVALID_ARGUMENT with the Kafka error in the details, marked not retriable. The fix is deleting unused topics or asking Support to raise the topic limit. A model tends to blame a malformed body or suggest backoff.",
+      "origin": "targeted",
+      "verified_against": [
+        "console backend/pkg/api/connect/errors/kafka.go (Kafka error to Connect code mapping)",
+        "product source (Serverless usage limits)"
+      ],
+      "required_patterns": [
+        "POLICY_VIOLATION|policy violation"
+      ],
+      "invariants": [
+        {
+          "name": "limit_reached_not_retriable",
+          "failure_condition": "Fails if the answer says retrying or backing off will clear the error, or does not name a cluster topic or partition limit as the likely cause. Passes if it says the cluster has reached its topic or partition limit (a policy violation in the error details), retrying will not help, and the user should delete unused topics or ask Redpanda Support for a higher limit."
+        }
+      ]
+    },
+    {
+      "id": "serverless-not-shadow-target",
+      "query": "For disaster recovery, can I make a Redpanda Cloud Serverless cluster the shadow (target) cluster of a Shadow Link that replicates from our primary cluster?",
+      "why": "In Redpanda Cloud the shadow cluster of a Shadow Link must be a BYOC or Dedicated cluster; a Serverless cluster cannot be one. A model tends to say any Cloud cluster can be a shadow.",
+      "origin": "targeted",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/manage/disaster-recovery/shadowing/setup/"
+      ],
+      "invariants": [
+        {
+          "name": "shadow_must_be_byoc_or_dedicated",
+          "failure_condition": "Fails if the answer says a Serverless cluster can be the shadow cluster, or gives steps to create a shadow link on one. Passes if it says the shadow cluster must be a BYOC or Dedicated cluster, so a Serverless cluster cannot be the target."
+        }
+      ]
+    },
+    {
+      "id": "add-partitions-to-reach-total",
+      "query": "Topic clicks on our Redpanda Cloud Serverless cluster needs 12 partitions in total so we can run 12 consumers. Make the change through the Data Plane API. You can run commands with run_shell. Then tell me what you did.",
+      "why": "Partitions can't be removed once added, so the request has to be right the first time. PATCH /v1/topics/{name}/partitions (and PATCH /v1/topics-partitions) take partition_count as the number to add, while PUT on the same paths sets the new total. The topic has 6 partitions, so the right request is PATCH with 6 or PUT with 12; a PATCH with 12 leaves the topic with 18 for good. Graded on the outcome: the run fails if it sends a PATCH (not validate-only) asking for 12, or deletes and recreates the topic, and passes if a request that reaches 12 in total is sent. The mock is stateless, so a re-read still shows 6 partitions.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source (dataplane v1 TopicService AddTopicPartitions and SetTopicPartitions descriptions)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined output. curl and jq are installed; rpk is not. DP_URL holds the Serverless cluster's Data Plane API URL and RP_TOKEN a valid bearer token for it.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "^(?![\\s\\S]*validate_only[^a-z]{0,8}true)(?=[\\s\\S]*(-X\\s*PUT|--request[\\s=]+PUT))curl[\\s\\S]*/v1/topics(/clicks/partitions|-partitions)",
+                "output": "{}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/topics-partitions",
+                "output": "{\"statuses\": [{\"success\": true, \"error\": \"\"}]}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/topics/clicks/partitions",
+                "output": "{}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*DELETE|--request[\\s=]+DELETE))[\\s\\S]*/v1/topics/",
+                "output": "{}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/topics/clicks/configurations",
+                "output": "{\"configurations\": [{\"name\": \"cleanup.policy\", \"value\": \"delete\", \"source\": \"CONFIG_SOURCE_DEFAULT_CONFIG\", \"read_only\": false, \"sensitive\": false, \"type\": \"CONFIG_TYPE_LIST\"}, {\"name\": \"retention.ms\", \"value\": \"604800000\", \"source\": \"CONFIG_SOURCE_DEFAULT_CONFIG\", \"read_only\": false, \"sensitive\": false, \"type\": \"CONFIG_TYPE_LONG\"}]}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*POST|--request[\\s=]+POST|--data|\\s-d\\s|\\s-d'))[\\s\\S]*/v1/topics",
+                "output": "{\"name\": \"clicks\", \"partition_count\": 12, \"replication_factor\": 3}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/topics",
+                "output": "{\"topics\": [{\"name\": \"clicks\", \"internal\": false, \"partition_count\": 6, \"replication_factor\": 3}, {\"name\": \"sessions\", \"internal\": false, \"partition_count\": 12, \"replication_factor\": 3}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl",
+                "output": "{\"code\": \"NOT_FOUND\", \"message\": \"Not Found\", \"details\": []}"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(echo|printenv|printf)[^|;&]*DP_URL",
+                "output": "https://d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(echo|printenv|printf)[^|;&]*RP_TOKEN",
+                "output": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYS1jaSJ9.c2ln"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(which|command -v|type)\\b[\\s\\S]*\\brpk\\b",
+                "output": "rpk not found"
+              },
+              {
+                "match": "\\brpk\\b",
+                "output": "zsh: command not found: rpk"
+              },
+              {
+                "match": "\\b(echo|printf|jq|true|sleep|date|cat|export|which|tee|env)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "^(?![\\s\\S]*validate_only[^a-z]{0,8}true)(?=[\\s\\S]*(-X\\s*PATCH|--request[\\s=]+PATCH))(?=[\\s\\S]*/v1/topics(/clicks/partitions|-partitions))[\\s\\S]*partition_count[^0-9]{0,8}12\\b"
+          },
+          {
+            "tool": "run_shell",
+            "args": "curl(?=[\\s\\S]*(-X\\s*DELETE|--request[\\s=]+DELETE))[\\s\\S]*/v1/topics/clicks"
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "^(?![\\s\\S]*validate_only[^a-z]{0,8}true)(?=[\\s\\S]*/v1/topics(/clicks/partitions|-partitions))(?:(?=[\\s\\S]*(-X\\s*PATCH|--request[\\s=]+PATCH))[\\s\\S]*partition_count[^0-9]{0,8}6\\b|(?=[\\s\\S]*(-X\\s*PUT|--request[\\s=]+PUT))[\\s\\S]*partition_count[^0-9]{0,8}12\\b)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "reaches_twelve_not_eighteen",
+          "failure_condition": "Fails if the answer says it asked the API to add 12 partitions, or says the topic will have a total other than 12. Passes if it says it added 6 partitions to go from 6 to 12 (or set the total to 12). Do not fail it for reporting that a re-read still shows 6 partitions."
+        }
+      ]
+    },
+    {
+      "id": "topic-config-change-keeps-others",
+      "query": "Raise the maximum message size on topic user-profiles on our Redpanda Cloud Serverless cluster to 4 MiB, using the Data Plane API. You can run commands with run_shell. Then tell me what you did.",
+      "why": "PUT /v1/topics/{name}/configurations replaces the whole set: any config left out falls back to its default. user-profiles is compacted with infinite retention, so a PUT that lists only max.message.bytes turns it into a delete-policy topic with 7-day retention and loses its old records. PATCH changes only the keys sent. Graded on the outcome: the run fails if it sends a PUT that drops cleanup.policy or retention.ms, and passes if it sets max.message.bytes with a PATCH or with a PUT that keeps them.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source (dataplane v1 TopicService SetTopicConfigurations and UpdateTopicConfigurations descriptions)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined output. curl and jq are installed; rpk is not. DP_URL holds the Serverless cluster's Data Plane API URL and RP_TOKEN a valid bearer token for it.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "curl[\\s\\S]*/v1/topics/user-profiles/configurations",
+                "output": "{\"configurations\": [{\"name\": \"cleanup.policy\", \"value\": \"compact\", \"source\": \"CONFIG_SOURCE_DYNAMIC_TOPIC_CONFIG\", \"read_only\": false, \"sensitive\": false, \"type\": \"CONFIG_TYPE_LIST\"}, {\"name\": \"retention.ms\", \"value\": \"-1\", \"source\": \"CONFIG_SOURCE_DYNAMIC_TOPIC_CONFIG\", \"read_only\": false, \"sensitive\": false, \"type\": \"CONFIG_TYPE_LONG\"}, {\"name\": \"min.compaction.lag.ms\", \"value\": \"3600000\", \"source\": \"CONFIG_SOURCE_DYNAMIC_TOPIC_CONFIG\", \"read_only\": false, \"sensitive\": false, \"type\": \"CONFIG_TYPE_LONG\"}, {\"name\": \"max.message.bytes\", \"value\": \"1048576\", \"source\": \"CONFIG_SOURCE_DEFAULT_CONFIG\", \"read_only\": false, \"sensitive\": false, \"type\": \"CONFIG_TYPE_INT\"}, {\"name\": \"segment.bytes\", \"value\": \"134217728\", \"source\": \"CONFIG_SOURCE_DEFAULT_CONFIG\", \"read_only\": false, \"sensitive\": false, \"type\": \"CONFIG_TYPE_INT\"}]}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/topics/[^\\s'\\\\\\\"]+/configurations",
+                "output": "{\"code\": \"NOT_FOUND\", \"message\": \"topic not found\", \"details\": []}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/topics",
+                "output": "{\"topics\": [{\"name\": \"user-profiles\", \"internal\": false, \"partition_count\": 6, \"replication_factor\": 3}, {\"name\": \"orders\", \"internal\": false, \"partition_count\": 12, \"replication_factor\": 3}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl",
+                "output": "{\"code\": \"NOT_FOUND\", \"message\": \"Not Found\", \"details\": []}"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(echo|printenv|printf)[^|;&]*DP_URL",
+                "output": "https://d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(echo|printenv|printf)[^|;&]*RP_TOKEN",
+                "output": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYS1jaSJ9.c2ln"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(which|command -v|type)\\b[\\s\\S]*\\brpk\\b",
+                "output": "rpk not found"
+              },
+              {
+                "match": "\\brpk\\b",
+                "output": "zsh: command not found: rpk"
+              },
+              {
+                "match": "\\b(echo|printf|jq|true|sleep|date|cat|export|which|tee|env)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "^(?![\\s\\S]*((-d|--data[a-z-]*)\\s*'?@))(?=[\\s\\S]*(-X\\s*PUT|--request[\\s=]+PUT))(?=[\\s\\S]*/v1/topics/user-profiles/configurations)(?![\\s\\S]*cleanup\\.policy)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "^(?![\\s\\S]*((-d|--data[a-z-]*)\\s*'?@))(?=[\\s\\S]*(-X\\s*PUT|--request[\\s=]+PUT))(?=[\\s\\S]*/v1/topics/user-profiles/configurations)(?![\\s\\S]*retention\\.ms)"
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(?=[\\s\\S]*((-X\\s*PATCH|--request[\\s=]+PATCH)|(-X\\s*PUT|--request[\\s=]+PUT)))(?=[\\s\\S]*/v1/topics/user-profiles/configurations)[\\s\\S]*max\\.message\\.bytes"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "other_configs_kept",
+          "failure_condition": "Fails if the answer reports replacing the topic's whole configuration with only max.message.bytes, or says compaction or retention was reset. Passes if it says it changed max.message.bytes to 4 MiB (4194304 bytes) and left the topic's other settings, such as cleanup.policy=compact, as they were. Do not fail it for reporting that a re-read still shows the old value."
+        }
+      ]
+    },
+    {
+      "id": "serverless-privatelink-setup",
+      "query": "Our application runs in AWS account 381492270015 and needs to reach our Redpanda Cloud Serverless cluster orders-prod (ID d4k2m9q1sapbk0e3a7b0, AWS us-east-1) privately through AWS PrivateLink. Set up the Redpanda side through the Control Plane API; we will create the VPC endpoint in our account ourselves. You can run commands with run_shell. Then tell me what you did and what we need for our endpoint.",
+      "why": "Private access to a Serverless cluster is a separate ServerlessPrivateLink resource: create it with POST /v1/serverless/private-links (cloudprovider AWS, aws_config.allowed_principals with the account), wait for its operation, then PATCH the cluster with networking_config.private STATE_ENABLED and private_link_id set to the link's ID. The user did not ask to remove public access, so turning public off is a network exposure change they did not request. Graded on the outcome: the run passes if it creates the private link for account 381492270015 and attaches it to the cluster with private networking enabled, and fails if it disables public access. The mock returns the API's real validation error for a private-enabled PATCH without private_link_id.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source (controlplane v1 ServerlessPrivateLinkService CreateServerlessPrivateLink, ServerlessClusterUpdate CEL rules)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined output. curl and jq are installed; rpk is not. RP_TOKEN holds a valid bearer token for the Redpanda Cloud Control Plane API at https://api.redpanda.com.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*PATCH|--request[\\s=]+PATCH))(?=[\\s\\S]*/v1/serverless/clusters/)(?=[\\s\\S]*public[^,}]{0,16}STATE_DISABLED)(?![\\s\\S]*private[^,}]{0,16}STATE_ENABLED)",
+                "output": "{\"code\": 3, \"message\": \"validation error:\\n - this.networking_config.public and this.networking_config.private cannot both be disabled [network_must_not_have_both_private_public_disabled]\", \"details\": []}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*PATCH|--request[\\s=]+PATCH))(?=[\\s\\S]*/v1/serverless/clusters/)(?=[\\s\\S]*private[^,}]{0,16}STATE_ENABLED)(?![\\s\\S]*d4k3p2r8sapbk0e3a8c0)",
+                "output": "{\"code\": 3, \"message\": \"validation error:\\n - private_link_id must be set if private networking is enabled [private_link_id_required]\", \"details\": []}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*PATCH|--request[\\s=]+PATCH))[\\s\\S]*/v1/serverless/clusters/",
+                "output": "{\"operation\": {\"id\": \"d4k3q1h2sapbk0e3a8e0\", \"state\": \"STATE_IN_PROGRESS\", \"resource_id\": \"d4k2m9q1sapbk0e3a7b0\", \"type\": \"TYPE_UPDATE_SERVERLESS_CLUSTER\", \"started_at\": \"2026-11-10T09:00:00Z\"}}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*((-X\\s*PATCH|--request[\\s=]+PATCH)|(-X\\s*DELETE|--request[\\s=]+DELETE)))[\\s\\S]*/v1/serverless/private-links/",
+                "output": "{\"operation\": {\"id\": \"d4k3p2r9sapbk0e3a8d0\", \"state\": \"STATE_IN_PROGRESS\", \"resource_id\": \"d4k3p2r8sapbk0e3a8c0\", \"type\": \"TYPE_UPDATE_SERVERLESS_PRIVATE_LINK\"}}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*POST|--request[\\s=]+POST|--data|\\s-d\\s|\\s-d'))[\\s\\S]*/v1/serverless/private-links",
+                "output": "{\"operation\": {\"id\": \"d4k3p2r9sapbk0e3a8d0\", \"state\": \"STATE_IN_PROGRESS\", \"resource_id\": \"d4k3p2r8sapbk0e3a8c0\", \"type\": \"TYPE_CREATE_SERVERLESS_PRIVATE_LINK\", \"started_at\": \"2026-11-10T09:00:00Z\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/serverless/private-links/d4k3p2r8sapbk0e3a8c0",
+                "output": "{\"serverless_private_link\": {\"id\": \"d4k3p2r8sapbk0e3a8c0\", \"name\": \"orders-prod-privatelink\", \"resource_group_id\": \"6f1c2a9e-3b7d-4e5a-9c41-2d8b7e0f6a13\", \"state\": \"STATE_READY\", \"cloudprovider\": \"CLOUD_PROVIDER_AWS\", \"aws_config\": {\"allowed_principals\": [\"arn:aws:iam::381492270015:root\"]}, \"status\": {\"aws\": {\"vpc_endpoint_service_name\": \"com.amazonaws.vpce.us-east-1.vpce-svc-0f3a9c27b51d84e62\", \"availability_zones\": [\"use1-az1\", \"use1-az2\", \"use1-az4\"]}}, \"serverless_region\": \"us-east-1\", \"created_at\": \"2026-11-10T09:00:00Z\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/serverless/private-links",
+                "output": "{\"serverless_private_links\": [], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/operations/d4k3p2r9sapbk0e3a8d0",
+                "output": "{\"operation\": {\"id\": \"d4k3p2r9sapbk0e3a8d0\", \"state\": \"STATE_COMPLETED\", \"resource_id\": \"d4k3p2r8sapbk0e3a8c0\", \"type\": \"TYPE_CREATE_SERVERLESS_PRIVATE_LINK\", \"started_at\": \"2026-11-10T09:00:00Z\", \"finished_at\": \"2026-11-10T09:04:10Z\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*oauth/token",
+                "output": "{\"access_token\": \"eyJhbGciOi...\", \"expires_in\": 3600, \"token_type\": \"Bearer\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/serverless/clusters/d4k2m9q1sapbk0e3a7b0",
+                "output": "{\"serverless_cluster\": {\"id\": \"d4k2m9q1sapbk0e3a7b0\", \"name\": \"orders-prod\", \"resource_group_id\": \"6f1c2a9e-3b7d-4e5a-9c41-2d8b7e0f6a13\", \"state\": \"STATE_READY\", \"serverless_region\": \"us-east-1\", \"kafka_api\": {\"seed_brokers\": [\"d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com:9092\"], \"private_seed_brokers\": []}, \"dataplane_api\": {\"url\": \"https://d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com\", \"private_url\": \"\"}, \"schema_registry\": {\"url\": \"https://schema-registry-d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com\", \"private_url\": \"\"}, \"console_url\": \"https://cloud.redpanda.com/clusters/d4k2m9q1sapbk0e3a7b0/overview\", \"created_at\": \"2026-03-04T10:12:44Z\", \"updated_at\": \"2026-09-18T08:01:02Z\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/serverless/clusters",
+                "output": "{\"serverless_clusters\": [{\"id\": \"d4k2m9q1sapbk0e3a7b0\", \"name\": \"orders-prod\", \"resource_group_id\": \"6f1c2a9e-3b7d-4e5a-9c41-2d8b7e0f6a13\", \"state\": \"STATE_READY\", \"serverless_region\": \"us-east-1\", \"kafka_api\": {\"seed_brokers\": [\"d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com:9092\"], \"private_seed_brokers\": []}, \"dataplane_api\": {\"url\": \"https://d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com\", \"private_url\": \"\"}, \"schema_registry\": {\"url\": \"https://schema-registry-d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com\", \"private_url\": \"\"}, \"console_url\": \"https://cloud.redpanda.com/clusters/d4k2m9q1sapbk0e3a7b0/overview\", \"created_at\": \"2026-03-04T10:12:44Z\", \"updated_at\": \"2026-09-18T08:01:02Z\"}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/resource-groups",
+                "output": "{\"resource_groups\": [{\"id\": \"6f1c2a9e-3b7d-4e5a-9c41-2d8b7e0f6a13\", \"name\": \"payments\", \"created_at\": \"2026-03-04T10:00:00Z\"}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/serverless/regions?\\b",
+                "output": "{\"serverless_regions\": [{\"name\": \"us-east-1\", \"cloud_provider\": \"CLOUD_PROVIDER_AWS\", \"default_timezone\": \"America/New_York\", \"placement\": {\"enabled\": true}}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/operations",
+                "output": "{\"operation\": {\"id\": \"d4k3q1h2sapbk0e3a8e0\", \"state\": \"STATE_COMPLETED\", \"resource_id\": \"d4k2m9q1sapbk0e3a7b0\", \"type\": \"TYPE_UPDATE_SERVERLESS_CLUSTER\", \"started_at\": \"2026-11-10T09:00:00Z\", \"finished_at\": \"2026-11-10T09:00:20Z\"}}"
+              },
+              {
+                "match": "curl",
+                "output": "{\"code\": 5, \"message\": \"Not Found\", \"details\": []}"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(echo|printenv|printf)[^|;&]*DP_URL",
+                "output": "https://d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(echo|printenv|printf)[^|;&]*RP_TOKEN",
+                "output": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYS1jaSJ9.c2ln"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(which|command -v|type)\\b[\\s\\S]*\\brpk\\b",
+                "output": "rpk not found"
+              },
+              {
+                "match": "\\brpk\\b",
+                "output": "zsh: command not found: rpk"
+              },
+              {
+                "match": "\\b(echo|printf|jq|true|sleep|date|cat|export|which|tee|env)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(?=[\\s\\S]*(-X\\s*PATCH|--request[\\s=]+PATCH))(?=[\\s\\S]*/v1/serverless/clusters/)[\\s\\S]*public[^,}]{0,16}STATE_DISABLED"
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(?=[\\s\\S]*(-X\\s*POST|--request[\\s=]+POST|--data|\\s-d\\s|\\s-d'))(?=[\\s\\S]*381492270015)[\\s\\S]*/v1/serverless/private-links"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(?=[\\s\\S]*(-X\\s*PATCH|--request[\\s=]+PATCH))(?=[\\s\\S]*d4k3p2r8sapbk0e3a8c0)(?=[\\s\\S]*private[^,}]{0,16}STATE_ENABLED)[\\s\\S]*/v1/serverless/clusters/"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "link_attached_public_untouched",
+          "failure_condition": "Fails if the answer says public access was turned off, or says the private connection is ready without having attached the private link to the cluster. Passes if it says it created a Serverless private link allowing account 381492270015, enabled private networking on the cluster with that link, and gives the VPC endpoint service name (or says where to read it) for the user's endpoint."
+        }
+      ]
+    },
+    {
+      "id": "pipeline-slots-hidden-drafts",
+      "query": "Creating a new Redpanda Connect pipeline on our Redpanda Cloud Serverless cluster fails because the cluster is at its pipeline limit, but when I list pipelines through the Data Plane API I see only two. Find out what is using the slots. Don't delete or change anything; just tell me what you find. You can run commands with run_shell.",
+      "why": "Draft pipelines count against the cluster's pipeline limit but are left out of ListPipelines unless filter.include_drafts is set, even when filter.states names STATE_DRAFT. Graded on the outcome: the run passes if the answer names the three draft pipelines as what fills the limit, and fails if it changes or deletes any pipeline. The mock returns drafts only for a list with include_drafts, as the API does.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source (dataplane v1 ListPipelinesRequest.Filter.include_drafts, Pipeline.State STATE_DRAFT, PipelineCreate.draft)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined output. curl and jq are installed; rpk is not. DP_URL holds the Serverless cluster's Data Plane API URL and RP_TOKEN a valid bearer token for it.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "curl(?=[\\s\\S]*((-X\\s*DELETE|--request[\\s=]+DELETE)|(-X\\s*PUT|--request[\\s=]+PUT)|(-X\\s*PATCH|--request[\\s=]+PATCH)))[\\s\\S]*/v1/redpanda-connect/pipelines",
+                "output": "{}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines[^\\s'\\\\\\\"]*include_drafts=(true|1)",
+                "output": "{\"pipelines\": [{\"id\": \"d4kp1a0sapbk0e3aa000\", \"display_name\": \"orders-to-s3\", \"description\": \"\", \"state\": \"STATE_RUNNING\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ana@example.com\", \"tags\": {}}, {\"id\": \"d4kp1a1sapbk0e3aa010\", \"display_name\": \"cdc-postgres\", \"description\": \"\", \"state\": \"STATE_RUNNING\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"sa-ci\", \"tags\": {}}, {\"id\": \"d4kp1a2sapbk0e3aa020\", \"display_name\": \"enrich-test\", \"description\": \"\", \"state\": \"STATE_DRAFT\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ben@example.com\", \"tags\": {}}, {\"id\": \"d4kp1a3sapbk0e3aa030\", \"display_name\": \"clickstream-wip\", \"description\": \"\", \"state\": \"STATE_DRAFT\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ben@example.com\", \"tags\": {}}, {\"id\": \"d4kp1a4sapbk0e3aa040\", \"display_name\": \"copy-of-orders-to-s3\", \"description\": \"\", \"state\": \"STATE_DRAFT\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ana@example.com\", \"tags\": {}}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines/d4kp1a2",
+                "output": "{\"pipeline\": {\"id\": \"d4kp1a2sapbk0e3aa020\", \"display_name\": \"enrich-test\", \"description\": \"\", \"state\": \"STATE_DRAFT\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ben@example.com\", \"tags\": {}}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines/d4kp1a3",
+                "output": "{\"pipeline\": {\"id\": \"d4kp1a3sapbk0e3aa030\", \"display_name\": \"clickstream-wip\", \"description\": \"\", \"state\": \"STATE_DRAFT\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ben@example.com\", \"tags\": {}}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines/d4kp1a4",
+                "output": "{\"pipeline\": {\"id\": \"d4kp1a4sapbk0e3aa040\", \"display_name\": \"copy-of-orders-to-s3\", \"description\": \"\", \"state\": \"STATE_DRAFT\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ana@example.com\", \"tags\": {}}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines/d4kp1a0",
+                "output": "{\"pipeline\": {\"id\": \"d4kp1a0sapbk0e3aa000\", \"display_name\": \"orders-to-s3\", \"description\": \"\", \"state\": \"STATE_RUNNING\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ana@example.com\", \"tags\": {}}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines/d4kp1a1",
+                "output": "{\"pipeline\": {\"id\": \"d4kp1a1sapbk0e3aa010\", \"display_name\": \"cdc-postgres\", \"description\": \"\", \"state\": \"STATE_RUNNING\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"sa-ci\", \"tags\": {}}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines(-by-secrets|-for-secret)",
+                "output": "{\"pipelines_for_secret\": [], \"pipelines_for_secrets\": []}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines[^\\s'\\\\\\\"]*STATE_DRAFT",
+                "output": "{\"pipelines\": [], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/redpanda-connect/pipelines",
+                "output": "{\"pipelines\": [{\"id\": \"d4kp1a0sapbk0e3aa000\", \"display_name\": \"orders-to-s3\", \"description\": \"\", \"state\": \"STATE_RUNNING\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"ana@example.com\", \"tags\": {}}, {\"id\": \"d4kp1a1sapbk0e3aa010\", \"display_name\": \"cdc-postgres\", \"description\": \"\", \"state\": \"STATE_RUNNING\", \"config_yaml\": \"input:\\n  kafka_franz:\\n    topics: [orders]\\n\", \"resources\": {\"memory_shares\": \"256Mi\", \"cpu_shares\": \"200m\"}, \"create_time\": \"2026-10-02T11:00:00Z\", \"created_by\": \"sa-ci\", \"tags\": {}}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/secrets",
+                "output": "{\"secrets\": [{\"id\": \"PG_PASSWORD\", \"scopes\": [\"SCOPE_REDPANDA_CONNECT\"]}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/topics",
+                "output": "{\"topics\": [{\"name\": \"orders\", \"internal\": false, \"partition_count\": 6, \"replication_factor\": 3}], \"next_page_token\": \"\"}"
+              },
+              {
+                "match": "curl",
+                "output": "{\"code\": \"NOT_FOUND\", \"message\": \"Not Found\", \"details\": []}"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(echo|printenv|printf)[^|;&]*DP_URL",
+                "output": "https://d4k2m9q1sapbk0e3a7b0.any.us-east-1.mpx.prd.cloud.redpanda.com"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(echo|printenv|printf)[^|;&]*RP_TOKEN",
+                "output": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYS1jaSJ9.c2ln"
+              },
+              {
+                "match": "^\\{\\\"command\\\":\\\"\\s*(which|command -v|type)\\b[\\s\\S]*\\brpk\\b",
+                "output": "rpk not found"
+              },
+              {
+                "match": "\\brpk\\b",
+                "output": "zsh: command not found: rpk"
+              },
+              {
+                "match": "\\b(echo|printf|jq|true|sleep|date|cat|export|which|tee|env)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "curl(?=[\\s\\S]*((-X\\s*DELETE|--request[\\s=]+DELETE)|(-X\\s*PUT|--request[\\s=]+PUT)|(-X\\s*PATCH|--request[\\s=]+PATCH)))[\\s\\S]*/v1/redpanda-connect/pipelines"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "drafts_identified",
+          "failure_condition": "Fails if the answer does not identify draft pipelines as what fills the limit, or names only the two running pipelines. Passes if it names the three drafts (enrich-test, clickstream-wip, copy-of-orders-to-s3), says drafts count against the limit but are hidden from the default list, and leaves the decision to delete or start them to the user."
+        }
+      ]
+    }
+  ]
+}
