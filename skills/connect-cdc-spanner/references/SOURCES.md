@@ -1,78 +1,109 @@
 # connect-cdc-spanner Skill Source Map
 
-Maps each file in `skills/connect-cdc-spanner/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
+Maps each claim in `skills/connect-cdc-spanner/SKILL.md` to the source it derives from, so syncs
+and human maintainers know where to verify it. The skill is thin: it keeps only the "How to
+work" procedures below, each backed by a behavioral eval case in
+`evals/suites/connect-cdc-spanner.eval.json`, and sends the agent to the docs for everything
+else. This file maps only the claims the skill still makes.
 
-The `gcp_spanner_cdc` input is Go source in the **public** repo `redpanda-data/connect` under `internal/impl/gcp/enterprise/` (the connector and its `changestreams/` subpackage). Its user-facing field reference is **auto-generated** into the **private** repo `redpanda-data/rp-connect-docs` (the `gcp_spanner_cdc` connector page + fields partial, overridable via `docs-data/overrides.json`). Broker-side enterprise features (Iceberg, Tiered Storage, Cloud Topics, Shadowing, security) are documented in the **private** repo `redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP connector (`get_file_contents`) or `gh`; avoid `gh search code` (rate-limited). Before writing or changing any fact, re-open the cited source and confirm exact field names, defaults, and metadata keys. The connector is an Enterprise feature (`license.CheckRunningEnterprise`) introduced in **4.56.0**; verify against the current Connect release, not `main`.
+The `gcp_spanner_cdc` input is Go source in the **public** repo `redpanda-data/connect` under
+`internal/impl/gcp/enterprise/` (the input and its `changestreams/` subpackage). Its reference page
+is generated from the Go config spec into the **private** repo `redpanda-data/rp-connect-docs`
+(`modules/components/pages/inputs/gcp_spanner_cdc.adoc`, with descriptions from
+`docs-data/overrides.json`), and published at
+https://docs.redpanda.com/connect/components/inputs/gcp_spanner_cdc/. Read source with
+`gh api repos/redpanda-data/connect/contents/internal/impl/gcp/enterprise/<path>?ref=<tag>`.
+Change stream DDL, retention, and IAM roles are Google Cloud behavior, documented at
+https://cloud.google.com/spanner/docs/change-streams and https://cloud.google.com/spanner/docs/iam.
+Verified against tag `v4.117.0` on 2026-11-10.
 
-Scope note: the **field list and defaults are auto-generated** — the citation of record is the generated fields partial in `rp-connect-docs` plus any override in `docs-data/overrides.json`, both derived from the Go `ConfigSpec`. Do not hardcode/pin field defaults. GCP Spanner setup (change-stream DDL, IAM, dialects, retention) is **external Google Cloud behavior**, not Redpanda source.
+## How to work: line, source, eval case
 
-## File-to-source table
-
-| Skill file | redpanda-data/connect source paths | docs sources (rp-connect-docs / docs) |
+| How to work line | Source (`redpanda-data/connect`) | Eval case |
 |---|---|---|
-| `SKILL.md` | `internal/impl/gcp/enterprise/input_spanner_cdc.go` (config spec: `credentials_json`, `project_id`, `instance_id`, `database_id`, `stream_id`, `start_timestamp`, `end_timestamp`, `heartbeat_interval`, `metadata_table`, `min_watermark_cache_ttl`, `allowed_mod_types`, `batching`, `auto_replay_nacks`; version `4.56.0`; `license.CheckRunningEnterprise`; `defaultMetadataTableFormat = "cdc_metadata_%s"`), `internal/impl/gcp/enterprise/changestreams/` (model, subscriber, dialect, filter, metrics) | rp-connect-docs: `modules/components/pages/inputs/gcp_spanner_cdc.adoc`, `modules/components/partials/fields/inputs/gcp_spanner_cdc.adoc` |
-| `references/config-reference.md` | `internal/impl/gcp/enterprise/input_spanner_cdc.go` (every field, `.Optional()`/`.Advanced()`/`.Default()` markers, RFC3339Nano parsing, `batching.IsNoop()` → `Count=1`, base64 credentials decode, ADC fallback), `input_spanner_partition_batcher.go` (per-partition batching), `changestreams/filter.go` (`allowed_mod_types` INSERT/UPDATE/DELETE) | rp-connect-docs (**auto-generated, authoritative for field list/defaults**): `modules/components/partials/fields/inputs/gcp_spanner_cdc.adoc`, `docs-data/overrides.json` (`gcp_spanner_cdc` entry), `modules/components/examples/{common,advanced}/inputs/gcp_spanner_cdc.yaml` |
-| `references/pipeline-and-output.md` | `changestreams/model.go` / `model_pg.go` (`DataChangeRecord`, `Mod` = keys/new_values/old_values, metadata fields), `changestreams/subscriber.go` (partition lifecycle, restart/resume from watermark), `changestreams/metrics.go` (`spanner_cdc_*` metric names), `input_spanner_cdc.go` (`emit`/watermark ack, periodic flush) | rp-connect-docs field partial (batching); `kafka_franz`/`switch`/`fallback` outputs are separate components (out of scope) |
-| `references/setup-spanner.md` | `changestreams/metadata/metadata.go` + `metadata/name.go` (metadata-table DDL, columns, states CREATED/SCHEDULED/RUNNING/FINISHED, secondary indexes, `ROW DELETION POLICY OLDER_THAN(FinishedAt, 1 DAY)`, default name `cdc_metadata_<stream_id>`), `changestreams/dialect.go` (GoogleSQL vs PostgreSQL auto-detect), `changestreams/model_pg.go` (PG dialect) | Change-stream DDL (`CREATE CHANGE STREAM`, `value_capture_type`, `retention_period`), IAM roles, ADC — **external Google Cloud Spanner docs** |
-| `references/enterprise-features.md` | `input_spanner_cdc.go` (`license.CheckRunningEnterprise` gating) | rp-connect-docs: `modules/components/pages/redpanda/about.adoc`, `modules/get-started/pages/licensing.adoc`. docs: `modules/get-started/pages/licensing/overview.adoc`, `modules/manage/pages/iceberg/about-iceberg-topics.adoc`, `modules/reference/partials/properties/{topic,cluster,object-storage}-properties.adoc` (auto-generated, citation of record), cloud-topics + shadowing pages (see TODO) |
+| Give every pipeline on a stream its own `metadata_table`: the default name comes from `stream_id` alone, a second pipeline with the default shares the table and the two read each other's partitions; never drop or edit the production metadata table to replay a window | `input_spanner_cdc.go` (`defaultMetadataTableFormat = "cdc_metadata_%s"` filled from `StreamID`); `changestreams/subscriber.go` (`Run` resumes every SCHEDULED or RUNNING row from `GetInterruptedPartitions`; `detectNewPartitions` schedules rows from `GetPartitionsCreatedAfter`, whoever created them); `changestreams/metadata/metadata.go` (watermarks stored per partition row) | `replay-window-own-metadata-table` |
+| Keep write and schema-change permission on the service account: the connector writes its metadata table and reissues its DDL on every start; use `roles/spanner.databaseUser` or a custom role with `spanner.databases.write` and `spanner.databases.updateDdl`; `roles/spanner.databaseReader` alone breaks the next start | `changestreams/subscriber.go` (`Setup` calls `createPartitionMetadataTableWithDatabaseAdminClient` on every start); `changestreams/metadata/metadata.go` (`UpdateDatabaseDdl` with `CREATE TABLE IF NOT EXISTS` and two `CREATE INDEX IF NOT EXISTS`; `Create`, `updatePartitionStatus`, `UpdateWatermark` write the table). Role contents: https://cloud.google.com/spanner/docs/iam (`databaseUser` has `write` and `updateDdl`; `databaseReader` has neither, checked 2026-11-10) | `least-privilege-keeps-write-and-ddl` |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+Pass rates against the thin skill on 2026-11-10, 3 runs per arm, subject `claude-sonnet-5-5`, judge `claude-opus-5-5`, no errored runs. The docs arm also passes both, so the docs carry the facts; the lines stay because the baseline fails them:
 
-- **Field list, types, and defaults** — auto-generated from the Go `ConfigSpec` into the rp-connect-docs fields partial. Treat `modules/components/partials/fields/inputs/gcp_spanner_cdc.adoc` (+ `docs-data/overrides.json`) as the citation of record; regenerate with `doc-tools generate rpcn-connector-docs`.
-- **Broker enterprise cluster/topic property defaults** (`iceberg_*`, `cloud_storage_*`, `redpanda.iceberg.*`, `redpanda.remote.*`, `cloud_topics_enabled`) — broker config, not connector; docs property partials are citation of record; upstream `src/v/config/configuration.cc`.
-- **`gcp_spanner_cdc` stability tag** — Go source marks the spec `.Stable()`, but the generated page carries `:status: beta`. Prefer live source/generated page over a hardcoded label.
-- **GCP Spanner behavior** — change-stream DDL, `value_capture_type`, `retention_period` limits, IAM roles, ADC — owned by Google Cloud; verify against Google Cloud docs.
+| Case | baseline | skill | docs | both | installed |
+|---|---|---|---|---|---|
+| `replay-window-own-metadata-table` | 1/3 | 3/3 | 3/3 | 3/3 | 3/3 |
+| `least-privilege-keeps-write-and-ddl` | 1/3 | 3/3 | 3/3 | 3/3 | 3/3 |
 
-## Sync log
+## Other claims in SKILL.md
 
-### Connect v4.112.0 (2026-10-09)
+| Claim | Source (`redpanda-data/connect`) |
+|---|---|
+| Enterprise connector, license required | `input_spanner_cdc.go` (`license.CheckRunningEnterprise` in `newSpannerCDCReaderFromParsed`; file under the Redpanda Community License) |
+| One message per changed row; metadata table in the same database | `input_spanner_partition_batcher.go` (one message per `Mod`); `changestreams/subscriber.go` and `changestreams/metadata/metadata.go` (table created in the stream's database) |
+| `get_connect_component` looks up `gcp_spanner_cdc` and its fields | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) |
 
-- **Metadata index names are now deterministic.** Verified at tag `v4.112.0` in
-  `internal/impl/gcp/enterprise/changestreams/metadata/name.go`: for a metadata table the connector is
-  pointed at, `TableNamesFromExistingTable` derives the index-name suffix from a hash of the database id
-  and the table name (`deterministicSuffix`), instead of a fresh UUID per call. Because the
-  `CREATE INDEX IF NOT EXISTS` statements run on **every** startup, a per-call random suffix previously
-  generated never-matching names and added two indexes per restart, up to Spanner's 128-index-per-table
-  limit. `genName` still replaces `-` with `_` and truncates to 63 characters, and the formats remain
-  `WatermarkIdx_<databaseId>_<suffix>` and `CreatedAtIdx_<databaseId>_<suffix>`.
-- **The deterministic path always applies to `spanner_cdc`.** `changestreams/subscriber.go` picks
-  `TableNamesFromExistingTable` whenever the metadata table name is non-empty and falls back to
-  `RandomTableNames` otherwise (logging that the random path is for testing only), but
-  `internal/impl/gcp/enterprise/input_spanner_cdc.go` fills an empty `metadata_table` with
-  `defaultMetadataTableFormat` = `cdc_metadata_<stream_id>` before building the subscriber config — so
-  the random path is unreachable from this input.
-- **No `FORCE_INDEX` anywhere in the package** (checked across
-  `internal/impl/gcp/enterprise/changestreams/`, including every statement in `metadata/metadata.go`):
-  the store's queries are plain SQL and leave index selection to the planner. That is what makes the
-  skill's "a differently named index on the same columns still serves queries" claim safe.
-- Applied to `references/setup-spanner.md`: the DDL illustration previously elided both index names as
-  `...`, which left a reader pre-creating the table manually no way to make the connector's own
-  `IF NOT EXISTS` statements no-op. The name formats and that consequence are now stated. No config
-  field, metadata column, or state value changed, so nothing else in the skill moved.
+## Docs gaps reported (not skill claims; do not re-verify here)
+
+Each is a spec fix in `internal/impl/gcp/enterprise/input_spanner_cdc.go` (the component
+description or a field description), since the published page is generated from it. The page that
+lacks each fact is https://docs.redpanda.com/connect/components/inputs/gcp_spanner_cdc/.
+
+- **The connector reissues its metadata DDL on every start**, so the service account needs
+  `spanner.databases.updateDdl` (and `spanner.databases.write`) for as long as the pipeline runs.
+  Fix in the `metadata_table` field description or the component description. Source:
+  `changestreams/subscriber.go` (`Setup`), `changestreams/metadata/metadata.go`. Case
+  `ddl-permission-every-start`: docs 0/3.
+- **The PostgreSQL dialect is detected automatically**; no setting is needed. Fix in the component
+  description. Source: `changestreams/subscriber.go` (`detectDialect`), `changestreams/dialect.go`.
+  Case `postgresql-dialect-no-config`: docs 0/3.
+- **The connector creates two indexes on the metadata table with fixed names**
+  (`WatermarkIdx_<database_id>_<suffix>` and `CreatedAtIdx_<database_id>_<suffix>`, the suffix a hash
+  of the database id and table name). A pre-created table with other index names gets these two once,
+  and later starts are no-ops. Fix in the `metadata_table` field description. Source:
+  `changestreams/metadata/name.go` (`deterministicSuffix`, `TableNamesFromExistingTable`),
+  `changestreams/metadata/metadata.go`. Case `precreated-metadata-index-names`: docs 1/3.
+- **Finished partition rows expire a day after they finish** (GoogleSQL
+  `ROW DELETION POLICY (OLDER_THAN(FinishedAt, INTERVAL 1 DAY))`, PostgreSQL
+  `TTL INTERVAL '1 days' ON "FinishedAt"`), so the table needs no cleanup job. Fix in the
+  `metadata_table` field description. Source: `changestreams/metadata/metadata.go`. Case
+  `finished-partition-rows-expire`: docs 0/3.
+- **A child partition is read only after all its parents finish**, so changes to one key keep
+  commit order across splits and merges. Fix in the component description. Source:
+  `changestreams/subscriber.go` (`waitForParentPartitionsToFinish`). Case `child-waits-for-parents`:
+  docs 0/3. The thin skill does not carry this either (skill 0/3).
+- **The component description misstates the message shape.** It says the payload "contains the
+  change records" and the metadata has "details about the Spanner instance, database, and stream".
+  The source emits one message per `Mod` (body `keys`, `new_values`, `old_values`) with metadata
+  `table_name`, `mod_type`, `commit_timestamp`, `record_sequence`, `server_transaction_id`,
+  `is_last_record_in_transaction_in_partition`, `value_capture_type`,
+  `number_of_records_in_transaction`, `number_of_partitions_in_transaction`, `transaction_tag`, and
+  `is_system_transaction`; no instance, database, or stream metadata. Source:
+  `input_spanner_partition_batcher.go` (`spannerPartitionBatchIter.Iter`). Case
+  `message-per-mod-payload` passed in the docs arm (3/3), so agents get the shape from elsewhere,
+  but the description is wrong.
+
+## Facts not carried in the thin skill (baseline or docs already answer them)
+
+The full skill also covered these. The evals show the baseline or the docs already answer them, so
+the thin skill leaves them out:
+
+- Enterprise license (`spanner-cdc-license`: baseline 1/3, docs 3/3), one message per `Mod`
+  (`message-per-mod-payload`: baseline 1/3, docs 3/3), inclusive `start_timestamp` and exclusive
+  `end_timestamp` (`timestamp-bounds-inclusive-exclusive`: baseline 0/3, docs 3/3).
+- Default metadata table name, that the change stream must already exist, heartbeats not emitted as
+  messages, resume from stored watermarks after a restart, `databaseReader` not being enough, and
+  case-sensitive `allowed_mod_types` values: baseline 3/3 on each (`metadata-table-default-name`,
+  `change-stream-must-exist`, `heartbeat-records-not-emitted`, `restart-resumes-from-watermark`,
+  `metadata-writes-need-more-than-reader`, `mod-types-case-sensitive`).
+- The destination-side Enterprise features (Iceberg Topics, Tiered Storage, Cloud Topics, Remote
+  Read Replicas, Shadowing, security) are Redpanda broker features documented in the Redpanda docs,
+  not part of this connector.
+- Metric names, metadata table columns, and pipeline examples are in the docs or the source.
+
+## Lines removed for lack of a failing baseline
+
+None. The full skill had no "How to work" section; its two procedures above are new and both
+cases fail in the baseline.
 
 ## TODO / re-verify
 
-- **Message metadata keys** (`table_name`, `mod_type`, `commit_timestamp`, `record_sequence`, `server_transaction_id`, `is_last_record_in_transaction_in_partition`, `value_capture_type`, `number_of_records_in_transaction`, `number_of_partitions_in_transaction`, `transaction_tag`, `is_system_transaction`) and payload shape (`keys`/`new_values`/`old_values`) — exist in `changestreams/model.go` conceptually but exact key strings not line-verified. Re-open `changestreams/model.go` + `subscriber.go`.
-- **Metrics names** (`spanner_cdc_partition_record_*`, `spanner_cdc_query_count`, `spanner_cdc_data_change_record_*`, `spanner_cdc_heartbeat_record_count`, latency `_ns` gauges) — cited to `changestreams/metrics.go` but not line-verified.
-- **Metadata-table DDL specifics** (exact column list, index definitions, PG `TTL INTERVAL '1 days'`) — the skill labels its DDL "simplified"; ground against `changestreams/metadata/metadata.go` before treating as exact.
-- **Broker docs paths not verified this pass**: `docs` `modules/develop/pages/manage-topics/cloud-topics.adoc`, the shadowing pages, and the property partials (incl. specific line numbers cited in `enterprise-features.md`). Confirmed present this pass: `licensing/overview.adoc`, `iceberg/about-iceberg-topics.adoc` (docs); `redpanda/about.adoc` (rp-connect-docs).
-- **`advanced/inputs/gcp_spanner_cdc.yaml`** example — `common/` verified, `advanced/` not fetched; confirm it exists.
-
-## Usage
-
-For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. For field names/defaults, trust the auto-generated fields partial + `overrides.json` (regenerated from the Go `ConfigSpec`), never a hardcoded value. Verify connector behavior against the current `redpanda-data/connect` release, and treat all Spanner-side setup as external Google Cloud documentation.
-
-### Connect v4.113.1 (2026-10-16 sync)
-
-- **`kafka_franz` → `redpanda` in every example.** All four `kafka`/`kafka_franz`
-  rows in `internal/plugins/info.csv` are `deprecated=y` at tag `v4.113.1`, and
-  `internal/impl/kafka/output_kafka_franz.go` is `.Deprecated()` with a
-  description that opens "Use the `redpanda` output instead". The rename is
-  field-safe: both specs are assembled from the same `FranzConnection*`,
-  `FranzWriterConfigFields` and `FranzProducerFields` groups, so every field used
-  in these examples exists unchanged on `redpanda` (`seed_brokers` is merely
-  optional there). Each changed YAML block was re-parsed after the rename.
-- `references/enterprise-features.md` distinguished the CDC data output
-  (`kafka_franz`) from the global `redpanda` block; it now contrasts the
-  `redpanda` **output** with the top-level `redpanda` **block**, which is the
-  same distinction without the deprecated component name.
+- Re-run both behavioral cases monthly (`--arms baseline,installed`). Drop a line whose case the
+  baseline starts to pass.
