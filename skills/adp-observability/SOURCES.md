@@ -1,54 +1,85 @@
 # ADP Observability Skill Source Map
 
-Maps each file in this skill to the sources its claims derive from, so future syncs
-and human maintainers know where to verify them.
+The skill is thin: it carries no "How to work" procedure, because no behavioral case survived the
+baseline (see below), and sends the agent to the docs for everything else. This file maps only the
+claims the skill still makes. Evals: `evals/suites/adp-observability.eval.json`.
 
 ## Scope
 
-Split from the `adp` skill on 2026-11-09. Covers traces, transcripts, the audit log and the
-other monitoring views. Verify CLI claims against the `rpk ai` help output (golden snapshot:
-`cloudv2` `apps/rpai/testdata/commands-snapshot.md`, or live `rpk ai --help`) and UI and
-behavior claims against the ADP product docs (`adp-docs`).
+Converted to a thin skill on 2026-11-10, after its evals. Traces, transcripts, the audit log and
+the other monitoring views are documented in the published Agentic Data Plane docs at
+https://docs.redpanda.com/agentic-data-plane/ (source: `adp-docs`, `modules/monitor/pages/`), and
+the `rpk ai` command reference is served by the Docs MCP (`get_rpk_command`, `list_rpk_commands`
+with `plugin: "ai"`) and published under
+https://docs.redpanda.com/agentic-data-plane/reference/rpk/rpk-ai/. The Docs MCP returns ADP pages
+for `ask_redpanda_question` with no `platform`, with `platform: "cloud"` and with
+`platform: "self-managed"` alike (checked 2026-11-10): ADP docs are platform-neutral and not
+versioned.
 
-## File-to-source table
+`cloudv2`, `adp-docs`, and `docs` are private: read them via the Redpanda-Github-Read MCP
+connector (`search_code`, `get_file_contents`, `list_commits`, `get_commit`), not by cloning.
+`adp/RELEASE_NOTES.md` in `cloudv2` is the ADP changelog and the sync routine's trigger. For a thin
+skill a changed fact is a docs gap, not a skill change.
 
-| Skill file | Sources |
-|---|---|
-| `skills/adp-observability/SKILL.md` | Summary of the reference file below; `cloudv2` `apps/rpai/testdata/commands-snapshot.md` (`auditlog`, `trace`, `spending`, `agent-network`) |
-| `skills/adp-observability/references/observability.md` | `cloudv2` `apps/rpai/internal/cmd/agent/` (transcript commands), `apps/rpai/internal/cmd/auditlog/` and `apps/rpai/testdata/commands-snapshot.md` (`auditlog`, `auditlog list`, `auditlog get` help); `cloudv2` `proto/public/cloud/redpanda/api/adp/v1alpha2/trace.proto` and `apps/adp-ui/src/components/traces/` (the Traces view); `adp-docs` `modules/monitor/pages/` (`traces.adoc`, `transcripts.adoc`, including the context-compaction markers, `audit-log.adoc`, `agent-network.adoc`, `monitor-agents.adoc`, `troubleshoot-ai-agents.adoc`), `modules/connect/pages/concepts.adoc` (context-window limits), `modules/monitor/partials/transcripts-ui-guide.adoc` (the tool-call dialog), `modules/get-started/pages/adp-quickstart.adoc`; `adp-docs` `modules/cli/pages/index.adoc` (the `rpk ai auditlog` command-group row), `adp-docs` `modules/control/pages/permissions-reference.adoc` (Trace permissions); `adp-docs` `modules/monitor/pages/transcripts.adoc` (the recorded-error list) and `modules/monitor/pages/agent-network.adoc` (the graph's scoping controls) |
+## How to work: line, source, eval case
 
-## Usage
+None. Every behavioral case passed in the baseline (see "Lines removed for lack of a failing
+baseline"). The skill's records are read-only, so no line qualifies as a safety guardrail.
 
-The `adp-skill-sync` routine (defined in `skills-sync-routine.md` at the repo root) and
-human maintainers use this map when re-verifying the skill. For each file being reviewed
-or updated, open the listed sources first and confirm that every claim still matches.
+## Other claims in SKILL.md
 
-Paths are relative to the named repository's root. `cloudv2`, `adp-docs`, and `docs` are
-private: read them via the Redpanda-Github-Read MCP connector (`search_code`,
-`get_file_contents`, `list_commits`, `get_commit`), not by cloning.
+| Claim | Source | Eval case |
+|---|---|---|
+| Traces, transcripts and the audit log are read with `rpk ai trace`, `rpk ai agent transcript` and `rpk ai auditlog` | `cloudv2` `apps/rpai/testdata/commands-snapshot.md`; Docs MCP `list_rpk_commands` with `plugin: "ai"` (checked 2026-11-10) | none |
+| Sign in and select an environment first, as `/redpanda:adp` describes | `skills/adp/SOURCES.md` | none |
+| `get_rpk_command` reads one `rpk ai` command and `list_rpk_commands` with `plugin: "ai"` finds one; ADP docs are not versioned | Live `tools/list` from `https://docs.redpanda.com/mcp` (checked 2026-11-10; see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| The ADP docs and the four monitor pages are at the linked URLs | https://docs.redpanda.com/agentic-data-plane/ (each URL returned 200 on 2026-11-10) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 
-**`adp/RELEASE_NOTES.md`** in `cloudv2` is the ADP changelog (one section per release).
-It is deliberately *not* copied into the skill: a changelog is volatile and would go stale
-every release. For the sync routine it is the **primary trigger**, because a diff to this
-file summarizes exactly the user-facing changes a sync should react to. It is also the
-check for whether a feature has shipped: do not document a CLI group or UI feature that
-the release notes and docs do not cover.
+## Eval results (2026-11-10)
 
-## Verification log
+Subject `claude-sonnet-5-5`, judge `claude-opus-5-5`, 3 runs per arm, run against the full skill
+before conversion. Fact cases: the docs arm passed 2/3 or better on every informative case but
+one (`transcript-get-tool-output-truncated`, docs 1/3, a docs gap below). The `installed` arm
+passed every case 3/3.
 
-Each reference file's `Source:` header names the sources its claims derive from. The dated
-verification history for every one of them — evidence dates, corrections, and the regression guards
-that keep a later pass from undoing an earlier one — lives here, so the headers stay short
-enough to keep the skill inside the reference-token budget CI enforces.
+## Docs gaps (not skill claims; do not re-verify here)
 
-### `references/observability.md`
+- **`rpk ai agent transcript get` truncates tool payloads in its readable view.** The `table` and
+  `wide` output cut each tool call's input and output to 500 characters; `-o json` and `-o yaml`
+  return the full payloads. Neither the published `rpk ai agent transcript get` reference page nor
+  the Transcripts page (https://docs.redpanda.com/agentic-data-plane/monitor/transcripts/) says
+  so. This is `rpk ai` help text, so fix it at source: the command's help in `cloudv2`
+  `apps/rpai/internal/cmd/agent/transcript.go`, which calls `truncate(..., 500)` in the readable
+  log. Eval case: `transcript-get-tool-output-truncated` (baseline 0/3, docs 1/3, both 3/3).
+- **`rpk ai agent transcript list --query` help on `cloudv2` `main` says it searches content.** The
+  flag help in `apps/rpai/internal/cmd/agent/transcript.go` reads "free-text search across
+  conversation titles and content", but the list query matches only the title or conversation ID
+  (`apps/adp-api/internal/storage/transcript/repository_oxla.go`, `buildListSQL`). The published
+  reference page already says "title or conversation ID", so this is a source help-text fix, not a
+  docs page change. Eval case: `transcript-find-conversation-by-content`.
 
-Sync 2026-11-09 (ADP v0.2.110): **`rpk ai agent transcript list --tool-errors-only`** and the UI's **Tools** → *Has tool errors* filter added, grounded in `adp-docs modules/monitor/pages/transcripts.adoc` (*Filter the list*) and `modules/monitor/partials/transcripts-ui-guide.adoc`, with the flag spelling and its `=false` form from `cloudv2 apps/rpai/internal/cmd/agent/transcript.go`. The durable points: the filter reads a per-conversation count of failed tool calls that is independent of `--errors-only` and `--status` (which read the conversation's own outcome), so a `completed` conversation holding a failed tool call matches this filter and no other; `=false` returns only conversations with none; and the count reads zero for a conversation last written before the field existed, until new activity republishes it, while `get` derives it from the conversation's own tool calls — so an older conversation's tool errors are visible on open but not through the list filter. `--end-user` added to the filter-flag list in the same pass (pre-existing, previously omitted). Condensed, no rule dropped: the audit-log **Outcome** table and the delegation field tour are prose, and the duplicated transcript-permission statement is kept once, in the Transcripts access warning, with the trailing Permissions section pointing at it.
+## Lines removed for lack of a failing baseline
 
-Evidence date: 2026-09-23. The grouped-call flow and the event detail pane re-verified 2026-09-28 against `adp-docs modules/monitor/pages/audit-log.adoc`. Sync 2026-10-05: the transcript context-compaction markers (Detailed view only, the proactive and reactive passes, dropped messages and pruned tool results, the seven request parts with before/after sizes, estimates rather than billed usage) verified against `adp-docs modules/monitor/pages/transcripts.adoc` (Context compaction), `modules/connect/pages/concepts.adoc` (context-window limits) and `modules/monitor/pages/troubleshoot-ai-agents.adoc`. Sync 2026-10-12: the `rpk ai auditlog` command group (aliases `audit-log`, `audit`; read-only `list` and `get`; the `--since` 24h default and `all`; the OR-within-a-flag / AND-across-flags filter algebra, `!` negation and `\,` escaping; `--denied` as `--outcome denied,partial`; the any-resource match on the resource, parent, `--policy` and `--status` flags; the `--group` four-value server limit; `--order-by` default `time desc`; `--fields`/`--fields all`; the `--limit` 50 default with the exit-0 cut-off and the stderr continuation flags; the self-audit `--operation '!ListAuditLogEntries'`; `--correlation-id` expansion to one row per resource, denials first and unbounded unless `--since` is set; `get` reading one event so its resources field is never filled; exit 3 on missing `dataplane_adp_auditlog_list`) verified against `cloudv2 apps/rpai/testdata/commands-snapshot.md` (`rpai auditlog`, `auditlog list`, `auditlog get` help sections, and the `auditlog` row of both root-help listings) at the current ADP release tag, and against `adp-docs modules/monitor/pages/audit-log.adoc` (the same-events framing, the self-audit tip, the shared permission, the `rpk ai upgrade` hint) and `modules/cli/pages/index.adoc` (the command-group row). The per-turn context chip (last-model-step prompt vs. the turn's input total, the known-window provider types, the omitted chip) verified against `adp-docs modules/monitor/pages/transcripts.adoc`; the tool-call dialog opening for every call and naming unrecorded payloads against `adp-docs modules/monitor/partials/transcripts-ui-guide.adoc`; the delegation row and the delegated-turn dialog (its own row instead of an ordinary tool call, the subagent name and Delegated badge, the collapsed delegating-call payload, the not-yet-available state, older conversations showing delegations as tool calls) against `adp-docs modules/monitor/pages/transcripts.adoc` (Delegations to a subagent), verified 2026-10-12. `--query` matching re-verified at adp/v0.2.86 (2026-10-15): cloudv2 `apps/adp-api/internal/storage/transcript/repository_oxla.go` `buildListSQL` and `repository_pg.go` match title or conversation_id only.
+The full skill taught these procedures. Each was tested by a behavioral case graded on the
+outcome, with mocks built from the published `rpk ai` help, and the baseline passed it:
 
-Sync 2026-10-19 (ADP v0.2.89): the Traces section grounded in `adp-docs modules/monitor/pages/traces.adoc` (list columns and optional-column defaults, trace status, cost and its partial-pricing asterisk, the status tab row, the five filter facets and the 20-value cap, timeline zoom, the summary pane, span kinds and per-kind tabs, offered tools, policy decisions, stand-in rows, restricted spans, dropped gateway upkeep, and the trace/transcript/audit-log comparison) and `modules/control/pages/permissions-reference.adoc` (Trace permissions), against `cloudv2 proto/public/cloud/redpanda/api/adp/v1alpha2/trace.proto` and `apps/adp-ui/src/components/traces/`. Traces is Preview — the published page carries the Preview attribute and the sidebar entry a Preview badge — so this file makes no GA claim. The view is named in the `v0.2.89` release section of `cloudv2 adp/RELEASE_NOTES.md`.
+- "A grouped audit log row needs expanding: `--denied`, not `--outcome denied`, finds a partly
+  denied call, `get` reads one member, and `--correlation-id` lists one row per resource." Case
+  `audit-grouped-partial-denial`: baseline 3/3, skill 3/3, installed 3/3. The published
+  `rpk ai auditlog list` and `get` help state all three rules.
+- "`transcript list --query` matches only the title or ID, so don't treat an empty result as proof
+  a conversation does not exist; read the conversations instead." Case
+  `transcript-find-conversation-by-content`: baseline 2/3, skill 3/3, installed 3/3.
+- "`--errors-only` and `--status error` read the conversation's own outcome; use
+  `--tool-errors-only` (or `rpk ai trace list --errors`) for a failed tool call inside a completed
+  conversation." Case `transcript-failed-tool-calls-in-completed-conversations`: baseline 3/3,
+  skill 3/3, installed 3/3.
 
-Sync 2026-10-26 (ADP v0.2.93): **Traces is no longer Preview.** The published page carries no Preview attribute and the sidebar entry no Preview badge, a documentation-team tier decision recorded on `adp-docs modules/monitor/pages/traces.adoc` (2026-10-21) and deployed with the release that moved Traces, the Agent network and the Audit log under an **Observability** sidebar group (named in the `v0.2.92` release section of `cloudv2 adp/RELEASE_NOTES.md`). Regression guard: do not re-add a Preview marker to Traces on a later sync. Also verified against `traces.adoc` at that release: the list's scroll loading and count line in place of page controls and the rows-per-page selector, the run-level error callout in the summary pane (the error code, or *Error* when none was recorded, over the message), and the per-kind placement of a failed span's error code and message (Messages for a model call, Input & output for a tool call or subagent hand-off, Gateway for a gateway span; an agent-run span's Overview carries none). The transcript **recorded-error list** (one record per failure so a retried step stays listed, the notice's sign-in and error counts, *Error details*, the *Sign-in request* / *Bedrock error* / *Recorded error* categories, the per-record message, tool-or-model-or-turn context and Technical details, the *Sign-in requested* title when every record is a sign-in one, and the seven-day / 1,000-record and lookup-failure limits) verified against `adp-docs modules/monitor/pages/transcripts.adoc` (Errors); it is named in the `v0.2.92` release section. The Agent network's scoping controls (*Search resources* across agents, subagents, providers, servers and tool names with the server-and-parent retention rule, *Filters* → *Related only*, the *Resources* visibility menu, the narrow-canvas *View options* button) and the agent and MCP server detail panels' *View traces* link verified against `modules/monitor/pages/agent-network.adoc`; the search and the subagent rendering are named in the `v0.2.93` release section. The model call's Tools tab groups (one per MCP server, **Subagents**, and *Not via gateway*, with subagents counted separately in the summary line) verified in review against `traces.adoc` (Tools offered to a model call), named in the `v0.2.92` release section; regression guard: do not fold subagents back into *Not via gateway*. The KPI figures stay whole-network: do not narrow conversations, tool calls, cost or tokens to the filtered graph.
-
-Sync 2026-11-02 (ADP v0.2.102): **traces, spend and the agent network are no longer UI-only.** `rpk ai trace` (`list`, `get`, `span list`/`span get`), `rpk ai spending` and `rpk ai agent-network` now read the same records, so the claim that those views have no `rpk ai` command was removed; only **Home** still has none. Regression guard: do not restore "the Traces view, the Home dashboard, and the Agent network view have no `rpk ai` command". The `trace list` rules — `--since` required and the window capped at 30 days, the OR-within/AND-across filter algebra, `--filter` **rejecting** a term that repeats a field a flag already set, `--status` and `--errors` being mutually exclusive, `--errors` covering a completed run that holds a failed tool call, `--limit` defaulting to 50 and capping at 1000 while paging internally (no `--page-size`/`--page-token`), and `get --fail-on-error` exiting 4 — are verified against `trace list --help` in `cloudv2 apps/rpai/testdata/commands-snapshot.md` and `adp-docs modules/cli/pages/index.adoc` ("Query traces, spending, and the agent network"), with the required `--since` corroborated on `modules/monitor/pages/traces.adoc`. `auditlog` gained `query` (entries plus the timeline and facets, for a bounded window). The agent network graph now nests the agents a node calls **directly**, not only its configured subagents, and names each in the legend (`v0.2.101`). Condensed in the same pass, no verified rule dropped: the question/surface table now points at the **Accountability** section that already drew the same distinction; the transcript-list flag table became prose keeping the `--query`-does-not-search-content trap and the `--status` synonyms; the `transcript get` output enumeration became its truncation trap; the audit-log field glossary, default-column list and one filter example were trimmed; and the grouped-call definition is stated once. The `-o wide` `user_id` TODO was resolved by removal: the column is no longer described, so nothing unverified is claimed.
+Removed with the reference file, as facts the docs cover (fact cases where `docs` passed 2/3 or
+better): trace status for a run that recovered from a failed tool call, the 20-value filter facet
+cap, restricted spans and the trace content permission, the Running and Incomplete statuses, the
+older-conversation gap in the tool-error count, the transcript error-record window, actor type
+Unknown, and the MCP handshake audit rule. Four fact cases were uninformative (baseline 3/3):
+context size versus input tokens, compaction sizes, Denied after an access permit, and the missing
+trace for a discovery-only MCP session.
