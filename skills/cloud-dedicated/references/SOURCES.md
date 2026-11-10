@@ -35,15 +35,6 @@ Eval results (3 runs per arm, 2026-11-10), as baseline / skill / installed, with
 
 Found by the evals (the skill arm passed and the docs arm mostly failed) and handed to the docs team:
 
-- **`update_mask` on UpdateCluster.** `PATCH /v1/clusters/{cluster.id}` needs a required
-  `update_mask` query parameter listing the changed field paths, and the body is the
-  `ClusterUpdate` object itself. Pages that lack it: the API reference operation page
-  https://docs.redpanda.com/api/doc/cloud-controlplane/operation/operation-clusterservice_updatecluster
-  (no `update_mask` parameter), and
-  https://docs.redpanda.com/cloud-data-platform/manage/api/cloud-dedicated-controlplane-api/
-  ("Update cluster configuration" example sends no `update_mask`). Source: cloudv2
-  `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`UpdateClusterRequest.update_mask`,
-  `buf.validate` required; HTTP rule `body: "cluster"`). Case: `cluster-patch-update-mask`.
 - **Shadow link Schema Registry API-mode credentials.** In
   `schema_registry_sync_options.shadow_schema_registry_api.auth_options`, only `basic` is
   accepted, and `basic.password` must reference a Data Plane secret as `${secrets.<SECRET_ID>}`;
@@ -99,3 +90,13 @@ The thin skill does not carry these claims; they are recorded so they are not re
   `validateDesiredScaling`), with no blanket Dedicated refusal. The published maintenance and
   scale-cluster pages describe a Dedicated tier change as a migration run by Redpanda Support;
   the thin skill defers to those pages.
+
+## Corrections after the eval run
+
+- `update_mask` on UpdateCluster is optional over REST. When the request leaves it out, the REST
+  gateway derives it from the request body (cloudv2
+  `proto/gen/go/redpanda/api/controlplane/v1/cluster.pb.gw.go`, `request_ClusterService_UpdateCluster_0`,
+  `runtime.FieldMaskFromRequestBody`), so the API reference omits it by design and the Dedicated
+  "Update cluster configuration" example works as published. This was first recorded as a docs gap; it
+  isn't one. An explicit mask matters only where a derived leaf path is rejected. Case
+  `cluster-patch-update-mask` was rewritten to accept either form and was not rerun.

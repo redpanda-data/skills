@@ -55,19 +55,18 @@
     {
       "id": "cluster-patch-update-mask",
       "query": "Show me the exact HTTP request to rename a Redpanda Cloud Dedicated cluster and change its maintenance window to Saturdays at 03:00 in a single Control Plane API call.",
-      "why": "UpdateCluster is PATCH /v1/clusters/{cluster.id} with a required update_mask query parameter listing the changed field paths (here name and maintenance_window_config), and the body is the ClusterUpdate object itself, not wrapped in a cluster key. The generated OpenAPI drops update_mask, so a model working from it omits the mask or puts it in the body. Sampled from the full skill at commit bb30173.",
+      "why": "UpdateCluster is PATCH /v1/clusters/{cluster.id}, and the body is the ClusterUpdate object itself, not wrapped in a cluster key. update_mask is optional over REST: the gateway derives it from the body when it is left out. A model that wraps the body in a cluster key, or puts the mask in the body, sends a request the API rejects or misreads. Sampled from the full skill at commit bb30173; corrected after the run (the first version required the mask).",
       "origin": "sampled",
       "verified_against": [
-        "product source (UpdateCluster HTTP rule body: cluster, required update_mask)"
+        "product source (UpdateCluster HTTP rule body: cluster; the REST gateway derives update_mask from the body when omitted)"
       ],
       "required_patterns": [
-        "update_mask",
         "PATCH"
       ],
       "invariants": [
         {
-          "name": "mask_in_query_body_unwrapped",
-          "failure_condition": "Fails if the request has no update_mask query parameter naming name and maintenance_window_config, puts update_mask in the JSON body, or wraps the fields in a top-level \"cluster\" object. Passes if it is a PATCH to /v1/clusters/<id>?update_mask=name,maintenance_window_config (in either order) with a body holding name and maintenance_window_config at the top level."
+          "name": "body_unwrapped_mask_optional",
+          "failure_condition": "Fails if the body wraps the fields in a top-level \"cluster\" object, puts update_mask in the JSON body, or names an update_mask that leaves out name or maintenance_window_config. Passes if it is a PATCH to /v1/clusters/<id> with name and maintenance_window_config at the top level of the body, with or without an update_mask query parameter naming both."
         }
       ]
     },
