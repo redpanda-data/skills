@@ -16,7 +16,7 @@ connector or `gh api`, and do not clone it. Verify against the current stable re
 
 | How to work line | Source | Eval case |
 |---|---|---|
-| A redeploy takes environment variables and compression only from `transform.yaml` and that deploy's flags, so values an earlier deploy set with `--var` or `--compression` are dropped with no error; read them with `rpk transform list --format json` and pass them again (verified 2026-11-10). Baseline 0/3, skill 3/3, both 3/3, installed 3/3, docs 0/3 on 2026-11-10. | `src/go/rpk/pkg/cli/transform/deploy.go` (`mergeProjectConfigs`: metadata built from `transform.yaml` plus this deploy's flags; compression defaults to `none`), `src/v/cluster/plugin_frontend.cc` (an update of an existing transform may change its environment), `src/go/rpk/pkg/cli/transform/list.go` (`environment` and `compression` in json and yaml output) | `redeploy-keeps-deployed-settings` |
+| A redeploy takes environment variables and compression only from `transform.yaml` and that deploy's flags, so values an earlier deploy set with `--var` or `--compression` are dropped with no error; read them with `rpk transform list --format json` and pass them again (verified 2026-11-10). Baseline 0/3, skill 3/3, both 3/3, installed 3/3, docs 0/3 on 2026-11-10. Rerun 2026-11-10 (archive run `2026-11-10T20-42-00Z`): baseline 0/3, skill 3/3, installed 3/3. | `src/go/rpk/pkg/cli/transform/deploy.go` (`mergeProjectConfigs`: metadata built from `transform.yaml` plus this deploy's flags; compression defaults to `none`), `src/v/cluster/plugin_frontend.cc` (an update of an existing transform may change its environment), `src/go/rpk/pkg/cli/transform/list.go` (`environment` and `compression` in json and yaml output) | `redeploy-keeps-deployed-settings` |
 
 ## Other claims in SKILL.md
 
@@ -68,12 +68,17 @@ rpk reference page, so none is an rpk help-text fix, and `docs-data/rpk-override
 - "To stop a transform for a while, pause it; don't delete it" was removed on 2026-11-10. Its
   case `stop-transform-temporarily` (stop a transform for two hours without losing records)
   passed 3/3 in the baseline once the mock answered compound commands fairly (a first run, with
-  a mock that hid the `rpk transform --help` listing, scored 1/3). It was not kept as a safety
-  guardrail: a delete drops committed offsets, but the input records stay and a redeploy with
+  a mock that hid the `rpk transform --help` listing, scored 1/3). A rerun on 2026-11-10
+  (archive run `2026-11-10T20-42-00Z`) scored baseline 0/3, skill 3/3, installed 3/3: each baseline run said
+  Redpanda cannot pause a transform and stopped to ask instead of pausing, while the thin skill,
+  without this line, ran `rpk transform --help`, found `pause`, and paused. The line stays out
+  because the thin skill passes without it, but the baseline result now varies between runs.
+  It was not kept as a safety guardrail: a delete drops committed offsets, but the input records stay and a redeploy with
   `--from-offset` can recover them, so it is not data loss or an irreversible change.
 - Reprocessing after a fix (delete, then redeploy with `--from-offset`, because `--from-offset`
   is honored only on a transform's first deploy) got no line. Case
-  `reprocess-existing-records-after-fix` passed 3/3 in the baseline; the `--from-offset` help
+  `reprocess-existing-records-after-fix` passed 3/3 in the baseline (rerun `2026-11-10T20-42-00Z`: baseline
+  3/3, skill 3/3, installed 3/3); the `--from-offset` help
   text and the Deploy page both state the rule.
 - The full skill's facts (command and flag tables, SDK templates, cluster properties, metrics,
   Enterprise features for transform topics, Cloud applicability) were dropped. Of the sampled
