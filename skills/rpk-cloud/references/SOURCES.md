@@ -72,12 +72,12 @@ Gaps on rpk reference pages are fixed in rpk's help text at source. Found by the
   `rpk cloud cluster select`, which overwrites the `rpk-cloud` profile" was not kept on
   2026-11-10. Its case `second-cloud-cluster-keeps-current-profile` (the user's production
   profile is `rpk-cloud` and holds SASL credentials; set up a staging cluster too) passed 3/3 in
-  the baseline: without the skill, the agent created a separately named profile. Skill 3/3,
-  installed 2/3 (the one miss did not say how to switch profiles).
+  the baseline: without the skill, the agent created a separately named profile. Rerun
+  2026-11-10 (archive run `2026-11-10T20-41-54Z`): baseline 3/3, skill 3/3, installed 3/3.
 - "Don't turn on MCP deletes yourself; tell the user to rerun `rpk cloud mcp install
   --allow-delete` and restart the client" was not kept on 2026-11-10. Its case
-  `mcp-delete-forbidden-dont-self-enable` passed 3/3 in the baseline (skill 3/3, installed 3/3):
-  the MCP server's own refusal tells the agent to hand the decision to the user. It was not kept
+  `mcp-delete-forbidden-dont-self-enable` passed 3/3 in the baseline (skill 3/3, installed 3/3;
+  rerun `2026-11-10T20-41-54Z`): the MCP server's own refusal tells the agent to hand the decision to the user. It was not kept
   as a safety guardrail: enabling deletes is a config change that makes later deletes possible,
   not itself data loss, an irreversible change, or a network exposure change.
 - Every fact in the pre-thin skill and its five reference files (login and auth, cluster select
