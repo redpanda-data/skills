@@ -21,8 +21,8 @@ source under `apps/rpai/internal/cmd/` instead.
 
 | How to work line | Source | Eval case |
 |---|---|---|
-| Put `enabled: true` in a trigger manifest you apply: a missing `enabled` means false, so the trigger is created or left paused, while `rpk ai trigger create` enables by default. Baseline 0/3, skill 3/3, installed 3/3 (docs 1/3, both 2/3) on 2026-11-10. | `cloudv2` `apps/rpai/internal/cmd/trigger/gitops.go` and `gitops_test.go` (`TestGitOpsTriggerApply_CreateThenReapplyIsUnchanged`: omitted enabled means false rather than the server's true default); `apps/rpai/internal/cmd/trigger/create.go` (`--enabled` default true) | `apply-daily-trigger-manifest` |
-| Build a GitOps manifest from `get -o yaml` before `apply`, because a field left out is cleared; check with `diff` first. Safety guardrail (an apply of a partial manifest wipes an agent's system prompt, MCP servers and tags): the baseline passed its case 3/3 on 2026-11-10, and the line and case stay as a regression guard. | `cloudv2` `apps/rpai/internal/cmd/agent/gitops.go` and the shared `apply` / `diff` help text ("A manifest is the COMPLETE desired state, so a field you omit is not left alone") | `agent-gitops-raise-iterations` |
+| Put `enabled: true` in a trigger manifest you apply: a missing `enabled` means false, so the trigger is created or left paused, while `rpk ai trigger create` enables by default. Baseline 0/3, skill 3/3, installed 3/3 on 2026-11-10 (archive run `2026-11-10T20-27-48Z`). | `cloudv2` `apps/rpai/internal/cmd/trigger/gitops.go` and `gitops_test.go` (`TestGitOpsTriggerApply_CreateThenReapplyIsUnchanged`: omitted enabled means false rather than the server's true default); `apps/rpai/internal/cmd/trigger/create.go` (`--enabled` default true) | `apply-daily-trigger-manifest` |
+| Build a GitOps manifest from `get -o yaml` before `apply`, because a field left out is cleared; check with `diff` first. Safety guardrail (an apply of a partial manifest that keeps the required model and provider wipes an agent's system prompt, MCP servers and tags; one that leaves those out is rejected): baseline 3/3, skill 3/3, installed 3/3 on 2026-11-10 (archive run `rerun-2026-11-10T20-43-47Z`, after the case fix below), and the line and case stay as a regression guard. | `cloudv2` `apps/rpai/internal/cmd/agent/gitops.go` and the shared `apply` / `diff` help text ("A manifest is the COMPLETE desired state, so a field you omit is not left alone") | `agent-gitops-raise-iterations` |
 
 ## Other claims in SKILL.md
 
@@ -60,16 +60,17 @@ Gaps in `rpk ai` help text, to fix at source in `cloudv2` `apps/rpai/`, not in t
 
 ## Lines removed for lack of a failing baseline
 
-All checked on 2026-11-10 against a mocked `rpk ai` shell, 3 runs per arm:
+All rerun on 2026-11-10 against a mocked `rpk ai` shell, 3 runs per arm (archive run `2026-11-10T20-27-48Z`):
 
 - "Pass `--enabled` when creating an MCP server with `rpk ai`, because the CLI creates it
-  disabled": case `register-remote-mcp-for-claude-code`, baseline 3/3. Without the skill, the
+  disabled": case `register-remote-mcp-for-claude-code`, baseline 3/3, skill 2/3, installed 2/2 (one run
+  errored). Without the skill, the
   agent saw the disabled server in the create output and enabled it.
 - "A new agent has no policy of its own; its creator's successful test says nothing about a
-  trigger-started run": case `scheduled-agent-has-access`, baseline 3/3. `rpk ai agent create`
+  trigger-started run": case `scheduled-agent-has-access`, baseline 3/3, skill 3/3, installed 3/3. `rpk ai agent create`
   prints the no-access notice, and the baseline bound a policy or told the user.
 - "Creating an LLM provider records prompts and completions unless you turn it off": case
-  `hr-provider-keep-no-content`, baseline 3/3 (and 3/3 in every other arm). On a request that
+  `hr-provider-keep-no-content`, baseline 3/3, skill 3/3, installed 3/3. On a request that
   said content must not be kept, the baseline passed both `--transcripts.record-*-messages=false`
   flags on create.
 - The remaining "Key patterns and gotchas" of the full skill (exit codes, cost units, secret
@@ -78,3 +79,16 @@ All checked on 2026-11-10 against a mocked `rpk ai` shell, 3 runs per arm:
   log scope, `connection`, Bedrock naming) were facts, not procedures, so they belong in the
   docs. The fact cases sampled from them found the docs cover most of them, except the gaps
   above.
+
+## Corrections after the eval run
+
+- 2026-11-10 re-verification: `agent-gitops-raise-iterations` failed the skill arm 1/3 and the
+  installed arm 1/3 on a grading error, not on the behavior. Its forbidden-call pattern counted a
+  read-back such as `grep -c "max_iterations: 150"` as writing a partial manifest, and the mock
+  answered `grep`, `diff` and `wc` with an error. The pattern now skips `grep` and `diff`, and the
+  mock answers those commands. The case's `why` also now says that a manifest leaving out the
+  required model or provider is rejected rather than applied (`cloudv2` `pkg/grpc/connect.go`
+  fieldmask-aware validation, `agent.proto` `ManagedAgentSpec`). The line's verdict is unchanged.
+- The `--ttl` help-text gap above still holds at source (`apps/rpai/internal/cmd/agent/credential.go`),
+  but the published `rpk ai agent credential create` reference page already gives the correct
+  behavior, so only the source help text needs the fix.
