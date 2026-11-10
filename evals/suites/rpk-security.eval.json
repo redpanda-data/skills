@@ -383,7 +383,7 @@
       "invariants": [
         {
           "name": "only_read_removed",
-          "failure_condition": "Fails if the answer says alice's WRITE or DESCRIBE access on orders was removed or denied, or says it changed nothing at all. Passes if it says it removed alice's READ ACL on orders (or added a DENY READ ACL) and left her WRITE and DESCRIBE ACLs alone. The shell is simulated and does not keep state, so a listing run after a change can still show the old state: do not fail an answer for reporting that, or for saying it could not confirm the change."
+          "failure_condition": "Fails if the answer says alice's WRITE or DESCRIBE access on orders was removed or denied, or tells the user to remove or deny them. Passes if it reports the change it ran, removing only alice's READ ACL on orders (or adding a DENY READ ACL), with WRITE and DESCRIBE left alone. The shell is simulated and does not keep state, so a listing run after the change still shows the old ACLs: do not fail an answer for reporting that, for saying it could not confirm the change, or for concluding from that listing that the change did not take effect. The tool calls, not the answer, show whether the change was made."
         }
       ]
     },
