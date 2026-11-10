@@ -1,0 +1,643 @@
+{
+  "name": "connect-cdc-oracle skill vs docs",
+  "skill": "connect-cdc-oracle",
+  "description": "Measures whether the connect-cdc-oracle skill adds value over general knowledge and the published Redpanda Connect docs for the oracledb_cdc input: snapshots and checkpoints, table selection, CDB/PDB setup, LogMiner tuning, metadata, and recovery from ORA-01291.",
+  "test_cases": [
+    {
+      "id": "snapshot-table-without-primary-key",
+      "query": "We want Redpanda Connect's oracledb_cdc input to snapshot existing rows and then stream changes, but several of our legacy Oracle tables have no primary key. Will the snapshot work for those tables, and is there any setting that would make it fail for them?",
+      "why": "A table without a snapshot_filters entry is read through one unordered full-table cursor and needs no primary key. Only a table with a snapshot_filters entry is paged by primary key, and one without a key then fails when its own snapshot starts. Models assume CDC snapshots always need a primary key.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/replication/snapshot.go (snapshotTable, snapshotTableFullScan, getTablePrimaryKeys)"
+      ],
+      "required_patterns": [
+        "snapshot_filters"
+      ],
+      "invariants": [
+        {
+          "name": "pk_only_for_filtered_tables",
+          "failure_condition": "Fails if the answer says every snapshotted table needs a primary key, or that tables without one cannot be snapshotted. Passes if it says tables without a primary key snapshot fine through a full table scan, and that giving such a table a snapshot_filters entry makes its snapshot fail because filtered tables are paged by primary key."
+        }
+      ]
+    },
+    {
+      "id": "added-table-no-snapshot-on-restart",
+      "query": "Our Redpanda Connect oracledb_cdc pipeline has run for months with snapshot_mode: snapshot_and_stream. I added a new table to include and restarted, but none of that table's existing rows came through, only changes made after the restart. Why?",
+      "why": "When a checkpoint SCN is stored, the input resumes from it and skips snapshotting whatever snapshot_mode says. Snapshotting runs only when no checkpoint is found. Models expect snapshot_and_stream to snapshot newly included tables.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (Connect: snapshot only when cachedSCN is invalid)"
+      ],
+      "invariants": [
+        {
+          "name": "stored_checkpoint_skips_snapshot",
+          "failure_condition": "Fails if the answer blames grants, supplemental logging, or the include pattern as the main cause, or says snapshot_and_stream snapshots newly added tables on restart. Passes if it says the stored checkpoint SCN makes the input resume streaming and skip the snapshot regardless of snapshot_mode."
+        }
+      ]
+    },
+    {
+      "id": "include-pattern-overmatch",
+      "query": "Our Redpanda Connect oracledb_cdc input lists include: [ \"SALES.ORDERS\" ], but the output topic also gets change events whose table_name is not ORDERS. Why, and what should the include entry be?",
+      "why": "include entries are regular expressions matched unanchored against OWNER.TABLE, so SALES.ORDERS also matches SALES.ORDERS_ARCHIVE and the dot matches any character. Anchor and escape the pattern.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/replication/stream.go (VerifyUserTables uses tableFilter.Matches on OWNER.TABLE)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/confx/regexp.go (RegexpFilter.Matches uses regexp.MatchString)"
+      ],
+      "invariants": [
+        {
+          "name": "unanchored_regex",
+          "failure_condition": "Fails if the answer says include is an exact table name or blames something other than pattern matching. Passes if it says include entries are unanchored regular expressions matched against SCHEMA.TABLE, and gives an anchored pattern such as ^SALES\\.ORDERS$."
+        }
+      ]
+    },
+    {
+      "id": "default-checkpoint-privileges",
+      "query": "Our Oracle DBA refuses to grant CREATE TABLE and CREATE PROCEDURE to the user that Redpanda Connect's oracledb_cdc input logs in as. Does the input need them, and can we run it without them?",
+      "why": "With no checkpoint_cache set, the input creates a checkpoint table and an upsert stored procedure in Oracle, so it needs CREATE TABLE and CREATE PROCEDURE. Setting checkpoint_cache to an external cache resource such as Redis removes the need.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (Permissions section; checkpoint_cache and checkpoint_cache_table_name descriptions)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/checkpoint_cache.go (createCacheTable, createUpsertStoredProc)"
+      ],
+      "required_patterns": [
+        "checkpoint_cache\\b"
+      ],
+      "invariants": [
+        {
+          "name": "external_cache_avoids_grants",
+          "failure_condition": "Fails if the answer says the privileges are always required, or that they are never needed. Passes if it says they are needed only for the default Oracle-based checkpoint table and stored procedure, and that setting checkpoint_cache to an external cache resource (for example Redis) avoids them."
+        }
+      ]
+    },
+    {
+      "id": "identify-rows-of-bulk-delete",
+      "query": "One bulk DELETE in Oracle comes out of Redpanda Connect's oracledb_cdc input as many messages that share the same scn and transaction_id. Which metadata fields identify each row change uniquely, so we can drop redelivered duplicates downstream?",
+      "why": "oracledb_cdc sets rs_id, ssn and row_seq on change messages. Rows of one array DML redo record share rs_id and ssn, and row_seq numbers them from 0. The key names are not guessable.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (Metadata section)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/batcher.go (Publish sets rs_id, ssn, row_seq)"
+      ],
+      "required_patterns": [
+        "rs_id",
+        "\\bssn\\b",
+        "row_seq"
+      ]
+    },
+    {
+      "id": "scale-capture-throughput",
+      "query": "Our Redpanda Connect oracledb_cdc pipeline falls further behind a busy Oracle database every day. The Connect host sits at 15% CPU, and moving it to a 32-core machine changed nothing. How do we raise the capture rate?",
+      "why": "Each oracledb_cdc pipeline mines redo through one LogMiner reader, so more cores do not help. To capture more, run several pipelines whose include patterns cover disjoint sets of tables, each with its own reader.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (Performance section)"
+      ],
+      "invariants": [
+        {
+          "name": "split_by_disjoint_tables",
+          "failure_condition": "Fails if the answer's main fix is more threads, more CPU, or more processor parallelism inside the one pipeline, or if it never recommends splitting the tables across several pipelines. Passes if it says one pipeline has a single LogMiner reader, and recommends running several pipelines whose include patterns cover disjoint sets of tables."
+        }
+      ]
+    },
+    {
+      "id": "transaction-cache-backend",
+      "query": "We want Redpanda Connect's oracledb_cdc input to buffer open transactions outside the process memory. Our platform team offers S3 and DynamoDB cache resources. Is either a good fit, and what should we use?",
+      "why": "logminer.transaction_cache takes a cache resource, but LogMiner processes events on one goroutine, so per-call latency cuts throughput, and backend timeouts restart the mining cycle from an earlier checkpoint and can redeliver events. Redis or Memcached are the recommended backends.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (logminer.transaction_cache description)"
+      ],
+      "required_patterns": [
+        "redis|memcached"
+      ],
+      "invariants": [
+        {
+          "name": "avoid_high_latency_backends",
+          "failure_condition": "Fails if the answer recommends S3 or DynamoDB for the transaction cache. Passes if it advises against them because per-call latency on the single mining goroutine slows capture (or timeouts cause restarts and duplicates), and recommends Redis or Memcached via logminer.transaction_cache."
+        }
+      ]
+    },
+    {
+      "id": "pdb-name-connection-service",
+      "query": "We set pdb_name: SALESPDB on Redpanda Connect's oracledb_cdc input and connect with oracle://c##rpcn:secret@db01:1521/salespdb.example.com. The input fails at startup. What is wrong?",
+      "why": "With pdb_name set, the input must connect through the CDB root service. Connected to a PDB service it fails with 'pdb_name is set but connected to container ... instead of CDB$ROOT'. Either connect to the root service or remove pdb_name.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/multitenancy.go (detectContainerContext)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (pdb_name description)"
+      ],
+      "invariants": [
+        {
+          "name": "connect_via_cdb_root",
+          "failure_condition": "Fails if the answer blames the C## user name, grants alone, or the URL format as the main cause. Passes if it says that with pdb_name set the connection string must point at the CDB root service (CDB$ROOT), not the PDB's own service, or else pdb_name must be removed."
+        }
+      ]
+    },
+    {
+      "id": "cdb-quiet-pdb-window-strategy",
+      "query": "Our Oracle CDB hosts several busy PDBs. Redpanda Connect's oracledb_cdc input watches a quiet one, and it keeps growing its mining window and churning through ranges with no changes for our PDB. Our logminer block sets scn_window_size: 50000 and max_scn_window_size: 400000. What should we change in that block?",
+      "why": "logminer.window_strategy: redo_volume sizes each cycle by redo volume instead of SCN movement, which suits a CDB whose shared SCN is advanced by other PDBs. Under redo_volume a non-default scn_window_size or max_scn_window_size is rejected at startup as having no effect, so those settings must be removed.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (window_strategy description; 'has no effect' validation)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/logminer/config.go (WindowStrategy)"
+      ],
+      "required_patterns": [
+        "redo_volume"
+      ],
+      "invariants": [
+        {
+          "name": "remove_scn_window_fields",
+          "failure_condition": "Fails if the answer keeps scn_window_size: 50000 or max_scn_window_size: 400000 alongside window_strategy: redo_volume, or never mentions window_strategy. Passes if it sets window_strategy: redo_volume and says the SCN window size fields must be removed (or left at their defaults) because the input rejects them under redo_volume."
+        }
+      ]
+    },
+    {
+      "id": "ora-04036-session-age",
+      "query": "Every few days Oracle kills the LogMiner session that Redpanda Connect's oracledb_cdc input opens, with ORA-04036 (PGA memory limit exceeded). Our redo logs switch only a few times a day. Is there a connector setting for this?",
+      "why": "A LogMiner session restarts only on a log switch by default, and a long-lived session can grow its PGA until ORA-04036. logminer.max_session_age forces a periodic restart.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (logminer.max_session_age description)"
+      ],
+      "required_patterns": [
+        "max_session_age"
+      ]
+    },
+    {
+      "id": "unfiltered-snapshot-row-order",
+      "query": "During the initial snapshot of Redpanda Connect's oracledb_cdc input, can our consumer rely on each table's read rows arriving in primary-key order?",
+      "why": "Tables without a snapshot_filters entry are read through one unordered SELECT * cursor, so their snapshot rows arrive in no guaranteed order. Only tables with a snapshot_filters entry are paged in primary-key order.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/replication/snapshot.go (snapshotTableFullScan, querySnapshotTable ORDER BY)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (snapshot_max_batch_size description)"
+      ],
+      "invariants": [
+        {
+          "name": "no_order_without_filter",
+          "failure_condition": "Fails if the answer says snapshot rows always arrive in primary-key order. Passes if it says rows of tables without a snapshot_filters entry arrive in no guaranteed order (full table scan), and at most notes that tables with a filter are paged in primary-key order."
+        }
+      ]
+    },
+    {
+      "id": "snapshot-row-scn-and-commit-ts",
+      "query": "For the rows that Redpanda Connect's oracledb_cdc input reads during its initial snapshot, what do the scn and commit_ts_ms metadata fields hold? Can we use them to order snapshot rows against each other?",
+      "why": "Snapshot rows carry the SCN captured at the start of the snapshot and Oracle's SYSTIMESTAMP at that moment, so every snapshot row has the same scn and commit_ts_ms. They cannot order snapshot rows.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (Metadata section)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/replication/snapshot.go (Prepare)"
+      ],
+      "invariants": [
+        {
+          "name": "same_value_for_all_snapshot_rows",
+          "failure_condition": "Fails if the answer says snapshot rows have no scn or commit_ts_ms, or that each row carries its own commit time or SCN. Passes if it says every snapshot row carries the same scn (captured at the snapshot start) and the same commit_ts_ms (Oracle's time when that SCN was taken), so they cannot order snapshot rows."
+        }
+      ]
+    },
+    {
+      "id": "schema-timestamp-units",
+      "query": "We feed the schema metadata from Redpanda Connect's oracledb_cdc input into schema_registry_encode. What time unit does that schema declare for Oracle DATE columns, and for TIMESTAMP(6) columns?",
+      "why": "The schema declares milliseconds for DATE and microseconds for every TIMESTAMP variant, so TIMESTAMP(6) is not truncated; precision above 6 still is.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/schema.go (oracleTimestampLogical)"
+      ],
+      "invariants": [
+        {
+          "name": "date_millis_timestamp_micros",
+          "failure_condition": "Fails if the answer gives the same unit for both types, or says TIMESTAMP(6) is declared in milliseconds or nanoseconds. Passes if it says DATE is declared in milliseconds and TIMESTAMP(6) in microseconds."
+        }
+      ]
+    },
+    {
+      "id": "license-required",
+      "query": "We are evaluating Redpanda Connect's oracledb_cdc input on a laptop with no license configured. Will the input start?",
+      "why": "oracledb_cdc is an enterprise component. Without a valid Redpanda Enterprise license that includes Connect, it fails at startup with a license error.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (license.CheckRunningEnterprise)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/license/shared_service.go (errEnterpriseLicenseRequired)"
+      ],
+      "invariants": [
+        {
+          "name": "needs_enterprise_license",
+          "failure_condition": "Fails if the answer says the input runs without a license. Passes if it says oracledb_cdc needs a valid Redpanda Enterprise license (a trial license is fine) and refuses to start without one."
+        }
+      ]
+    },
+    {
+      "id": "ora-01291-checkpoint-reset-with-snapshot",
+      "query": "Our Redpanda Connect oracledb_cdc pipeline stopped this morning and fails with ORA-01291 on every restart. Archived redo logs are kept for 7 days and the pipeline was down for under an hour. The topic feeds our ledger, so it must not miss changes. Get it streaming again. You can run SQL on the Oracle database as SYSDBA with run_sql, read the pipeline log with read_pipeline_logs, and read or replace the pipeline config with read_pipeline_config and write_pipeline_config (writing it restarts the pipeline).",
+      "why": "The database was flashed back and opened with RESETLOGS this morning (V$DATABASE_INCARNATION shows a new incarnation), so the stored checkpoint predates the new incarnation and can never be resumed. More retention does nothing. With the default Oracle-based checkpoint cache, the flashback rolled the checkpoint row back rather than clearing it, so it must be deleted explicitly, and snapshot_mode must be set to snapshot_and_stream in the same change, or every change since the checkpoint is lost. Graded on the outcome: the run fails if it clears the checkpoint (deletes the row or switches to a fresh checkpoint key) without also turning on snapshot_and_stream, or if it only changes retention or window settings; it passes if it clears the checkpoint and turns on snapshot_and_stream together, or proposes exactly that and asks the user to confirm.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/logminer/logminer.go (errCodeMissingLogFile message; GetLogsBySCNRange RESETLOGS join)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (Performance section, flashback paragraph)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/checkpoint_cache.go (cache table cache_key/cache_val)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_sql",
+            "description": "Run a SQL statement on the user's production Oracle database as SYSDBA and return SQL*Plus-style output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "sql": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "sql"
+              ]
+            },
+            "responses": [
+              {
+                "match": "^\\{\"sql\":\"\\s*delete\\s",
+                "output": "1 row deleted."
+              },
+              {
+                "match": "^\\{\"sql\":\"\\s*truncate\\s",
+                "output": "Table truncated."
+              },
+              {
+                "match": "^\\{\"sql\":\"\\s*(update|insert|merge)\\s",
+                "output": "1 row updated."
+              },
+              {
+                "match": "^\\{\"sql\":\"\\s*(alter|create|grant|drop|begin|exec|call)\\b",
+                "output": "Statement processed."
+              },
+              {
+                "match": "incarnation",
+                "output": "INCARNATION# RESETLOGS_CHANGE# RESETLOGS_TIME      STATUS\n------------ ---------------- ------------------- -------\n           1                1 2024-03-02 11:20:41 PARENT\n           2         88401177 2026-11-10 06:12:09 CURRENT\n\n2 rows selected."
+              },
+              {
+                "match": "cdc_checkpoint|cache_key|cache_val",
+                "output": "CACHE_KEY      CACHE_VAL\n-------------- ---------\noracledb_cdc   88412093\n\n1 row selected."
+              },
+              {
+                "match": "v\\$archived_log|archived_log",
+                "output": "  SEQUENCE# FIRST_CHANGE# NEXT_CHANGE# RESETLOGS_CHANGE# DELETED ST\n---------- ------------- ------------ ----------------- ------- --\n     41207      88398210     88401176                 1 NO      A\n         1      88401177     88402901          88401177 NO      A\n         2      88402901     88405544          88401177 NO      A\n\n3 rows selected."
+              },
+              {
+                "match": "flashback",
+                "output": "FLASHBACK_ON\n------------\nYES\n\n1 row selected."
+              },
+              {
+                "match": "rman_configuration|retention",
+                "output": "NAME                 VALUE\n-------------------- ---------------------------------\nRETENTION POLICY     TO RECOVERY WINDOW OF 7 DAYS\n\n1 row selected."
+              },
+              {
+                "match": "v\\$database|current_scn|log_mode|resetlogs",
+                "output": "NAME  LOG_MODE    CURRENT_SCN RESETLOGS_CHANGE# RESETLOGS_TIME      OPEN_MODE\n----- ----------- ----------- ----------------- ------------------- ----------\nORCL  ARCHIVELOG     88406380          88401177 2026-11-10 06:12:09 READ WRITE\n\n1 row selected."
+              },
+              {
+                "match": "v\\$log\\b|v\\$logfile",
+                "output": "    GROUP#  SEQUENCE#      BYTES STATUS   FIRST_CHANGE#\n---------- ---------- ---------- -------- -------------\n         1          3  524288000 CURRENT       88405544\n         2          2  524288000 INACTIVE      88402901\n\n2 rows selected."
+              },
+              {
+                "match": "select",
+                "output": "no rows selected"
+              },
+              {
+                "match": ".",
+                "output": "Statement processed."
+              }
+            ]
+          },
+          {
+            "name": "read_pipeline_logs",
+            "description": "Return the last lines of the Redpanda Connect pipeline's log.",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "2026-11-10T09:41:07Z INFO  Connected to Oracle container: ORCL\n2026-11-10T09:41:07Z INFO  Found user table 'LEDGER.ENTRIES'\n2026-11-10T09:41:07Z INFO  Found user table 'LEDGER.ACCOUNTS'\n2026-11-10T09:41:07Z INFO  Resuming from cached SCN value: 88412093\n2026-11-10T09:41:08Z ERROR preparing logs and starting session at position 88412093: ORA-01291: missing log file\n\nThis error indicates archived redo logs have been purged before LogMiner could process them.\nThis typically happens when processing takes longer than Oracle's log retention period.\n\nThis can also happen after a flashback and OPEN RESETLOGS on the source database: if this\nconnector's last checkpoint predates the new incarnation's RESETLOGS_CHANGE#, no log file —\nold or new incarnation — covers that gap. This is not a retention issue, and increasing\nretention (below) will not help; only option 3 applies in that case.\n\nTo fix this issue:\n1. Increase Oracle's archived log retention using RMAN:\n   CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;\n\n2. Improve processing performance:\n   - Reduce logminer.scn_window_size (current: 20000 SCN units) to process smaller windows per cycle\n   - Decrease logminer.backoff_interval (current: 5s)\n   - Increase input batching.count for better throughput\n   - Use faster output (e.g., drop: {} for benchmarking)\n\n3. Restart the connector from the current database SCN to skip missing logs:\n   - Delete the checkpoint cache entry at checkpoint_cache_key and restart. A flashback rolls\n     this row back rather than clearing it (with the default Oracle-based cache), so it will\n     still be present and must be deleted explicitly, or the connector resumes from the same\n     stale SCN and hits this error again.\n   - This loses events between the last checkpoint and the restart. To avoid that, delete the\n     checkpoint and set snapshot_mode to snapshot_and_stream at the same time — snapshot_mode\n     alone has no effect, since a checkpoint that is still present skips snapshotting entirely.\n2026-11-10T09:41:13Z INFO  Restarting input after error\n"
+              }
+            ]
+          },
+          {
+            "name": "read_pipeline_config",
+            "description": "Return the current Redpanda Connect pipeline config (pipeline.yaml).",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "input:\n  oracledb_cdc:\n    connection_string: \"${ORACLE_DSN}\"\n    snapshot_mode: none\n    include:\n      - ^LEDGER\\.ENTRIES$\n      - ^LEDGER\\.ACCOUNTS$\n    logminer:\n      scn_window_size: 20000\noutput:\n  redpanda:\n    seed_brokers: [ \"${REDPANDA_BROKERS}\" ]\n    topic: ledger-cdc\n"
+              }
+            ]
+          },
+          {
+            "name": "write_pipeline_config",
+            "description": "Replace pipeline.yaml with the given YAML and restart the pipeline. Returns the restart result.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "yaml": {
+                  "type": "string",
+                  "description": "The full pipeline YAML."
+                }
+              },
+              "required": [
+                "yaml"
+              ]
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "pipeline restarted"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "clear_checkpoint_with_snapshot",
+          "failure_condition": "Fails if the run clears the stored checkpoint (deletes or truncates the checkpoint row, or switches checkpoint_cache_key or the checkpoint table to a fresh one) without also setting snapshot_mode: snapshot_and_stream in the same change; or if its fix is only more log retention, a smaller window, or other tuning while the stale checkpoint stays in place; or if it tells the user that setting snapshot_mode alone will re-snapshot. Passes if it identifies the flashback/RESETLOGS (new incarnation) as the cause, and either does both (clears the checkpoint and writes a config with snapshot_mode: snapshot_and_stream) or proposes exactly that pair and asks the user to confirm before acting."
+        }
+      ]
+    },
+    {
+      "id": "no-user-tables-common-user-owner",
+      "query": "Our new Redpanda Connect oracledb_cdc pipeline won't start; the log says it found no user tables. The tables exist and have rows. Find the cause and tell me what we need to change. You can run SQL on the Oracle database as SYSDBA with run_sql, read the pipeline log with read_pipeline_logs, and read or replace the pipeline config with read_pipeline_config and write_pipeline_config (writing it restarts the pipeline).",
+      "why": "The tables are owned by the common user C##SALES. The input's table discovery skips every owner matching C##%, so no include pattern, grant, or escaping can make it capture them; the tables have to live in a local (non-C##) schema inside the PDB. Graded on the outcome: the run passes if it identifies the C## owner exclusion and says the tables must be owned by a local PDB user; it fails if it says a grant, regex escaping, or another config change makes these tables capturable.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/replication/stream.go (VerifyUserTables: OWNER NOT LIKE 'C##%')"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_sql",
+            "description": "Run a SQL statement on the user's Oracle database as SYSDBA, connected to CDB$ROOT, and return SQL*Plus-style output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "sql": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "sql"
+              ]
+            },
+            "responses": [
+              {
+                "match": "^\\{\"sql\":\"\\s*(alter\\s+session)",
+                "output": "Session altered."
+              },
+              {
+                "match": "^\\{\"sql\":\"\\s*(alter|create|grant|drop|begin|exec|call|insert|update|delete)\\b",
+                "output": "Statement processed."
+              },
+              {
+                "match": "con_name|sys_context",
+                "output": "CON_NAME\n--------\nCDB$ROOT\n\n1 row selected."
+              },
+              {
+                "match": "v\\$pdbs|dba_pdbs|cdb_pdbs",
+                "output": "    CON_ID NAME       OPEN_MODE\n---------- ---------- ----------\n         3 SALESPDB   READ WRITE\n\n1 row selected."
+              },
+              {
+                "match": "log_group",
+                "output": "OWNER     TABLE_NAME   LOG_GROUP_NAME         LOG_GROUP_TYPE\n--------- ------------ ---------------------- ---------------------\nC##SALES  ORDERS       SYS_C0012231           ALL COLUMN LOGGING\nC##SALES  ORDER_LINES  SYS_C0012232           ALL COLUMN LOGGING\n\n2 rows selected."
+              },
+              {
+                "match": "tab_privs|sys_privs|role_privs|session_privs",
+                "output": "GRANTEE  PRIVILEGE                 TABLE_NAME\n-------- ------------------------- ------------\nC##RPCN  SELECT                    ORDERS\nC##RPCN  SELECT                    ORDER_LINES\nC##RPCN  LOGMINING\nC##RPCN  SET CONTAINER\nC##RPCN  SELECT ANY TRANSACTION\nC##RPCN  CREATE SESSION\n\n6 rows selected."
+              },
+              {
+                "match": "supplemental_log|v\\$database",
+                "output": "NAME     CDB LOG_MODE   SUPPLEMENTAL_LOG_DATA_MIN\n-------- --- ---------- -------------------------\nORCLCDB  YES ARCHIVELOG YES\n\n1 row selected."
+              },
+              {
+                "match": "(all|dba|cdb)_(tables|objects|users)|table_name|owner",
+                "output": "CON_ID OWNER     TABLE_NAME   COMMON\n------ --------- ------------ ------\n     3 C##SALES  ORDERS       YES\n     3 C##SALES  ORDER_LINES  YES\n\n2 rows selected."
+              },
+              {
+                "match": "count\\(",
+                "output": "  COUNT(*)\n----------\n   1842207\n\n1 row selected."
+              },
+              {
+                "match": "select",
+                "output": "no rows selected"
+              },
+              {
+                "match": ".",
+                "output": "Statement processed."
+              }
+            ]
+          },
+          {
+            "name": "read_pipeline_logs",
+            "description": "Return the last lines of the Redpanda Connect pipeline's log.",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "2026-11-10T10:02:11Z INFO  Connected to Oracle container: CDB$ROOT\n2026-11-10T10:02:11Z INFO  CDB-mode: will use ALTER SESSION SET CONTAINER = SALESPDB for catalog queries\n2026-11-10T10:02:12Z ERROR Failed to connect to oracledb_cdc: verifying user defined tables: no user tables found for given include and exclude filters\n2026-11-10T10:02:17Z INFO  Retrying connection\n"
+              }
+            ]
+          },
+          {
+            "name": "read_pipeline_config",
+            "description": "Return the current Redpanda Connect pipeline config (pipeline.yaml).",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "input:\n  oracledb_cdc:\n    connection_string: \"oracle://c##rpcn:${ORACLE_PASSWORD}@db01:1521/ORCLCDB\"\n    pdb_name: SALESPDB\n    snapshot_mode: snapshot_and_stream\n    include:\n      - ^C##SALES\\.ORDERS$\n      - ^C##SALES\\.ORDER_LINES$\noutput:\n  redpanda:\n    seed_brokers: [ \"${REDPANDA_BROKERS}\" ]\n    topic: sales-cdc\n"
+              }
+            ]
+          },
+          {
+            "name": "write_pipeline_config",
+            "description": "Replace pipeline.yaml with the given YAML and restart the pipeline. Returns the restart result.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "yaml": {
+                  "type": "string",
+                  "description": "The full pipeline YAML."
+                }
+              },
+              "required": [
+                "yaml"
+              ]
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "pipeline restarted; oracledb_cdc failed to connect: verifying user defined tables: no user tables found for given include and exclude filters"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "common_user_tables_excluded",
+          "failure_condition": "Fails if the answer's fix is a grant, a change to regex escaping or case in include, switching pdb_name or the connection service, or any other config change presented as making the C##SALES tables capturable; or if it never identifies that the owner is a common (C##) user. Passes if it says the input skips tables owned by C## common users, and that the tables must be moved to (or owned by) a local, non-C## schema inside SALESPDB, with include updated to match."
+        }
+      ]
+    },
+    {
+      "id": "late-transactions-prefetch-precedence",
+      "query": "Big nightly batch transactions on our Oracle database reach Redpanda 10 to 20 minutes after they commit, while Oracle, the network, and the Connect host all look idle. Last week I raised prefetch_rows to 5000 in our Redpanda Connect oracledb_cdc config and nothing changed. Fix it. You can read the pipeline log with read_pipeline_logs and read or replace the pipeline config with read_pipeline_config and write_pipeline_config (writing it restarts the pipeline).",
+      "why": "A PREFETCH_ROWS query parameter on connection_string takes precedence over the prefetch_rows field, matched case-insensitively. Here the connection string carries PREFETCH_ROWS=25, so the 5000 never applied. The fix is to drop the parameter (or raise it). Graded on the outcome: the run fails if it writes a config that still has PREFETCH_ROWS=25 in the connection string, or never addresses the parameter; it passes if it removes or raises the parameter, by writing the config or by telling the user to.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/config.go (parsePrefetchRowsConfig: strings.EqualFold on PREFETCH_ROWS)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (prefetch_rows description)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "read_pipeline_logs",
+            "description": "Return the last lines of the Redpanda Connect pipeline's log.",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "2026-11-10T02:14:31Z INFO  Using PREFETCH_ROWS from connection_string; prefetch_rows field is ignored\n2026-11-10T02:14:31Z INFO  Resuming from cached SCN value: 55120933\n2026-11-10T02:41:02Z INFO  Caught up to current SCN\n"
+              }
+            ]
+          },
+          {
+            "name": "read_pipeline_config",
+            "description": "Return the current Redpanda Connect pipeline config (pipeline.yaml).",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "input:\n  oracledb_cdc:\n    connection_string: \"oracle://rpcn:${ORACLE_PASSWORD}@db-prod.internal:1521/ORCLPDB1?PREFETCH_ROWS=25&TIMEOUT=60\"\n    prefetch_rows: 5000\n    include:\n      - ^BILLING\\..*\n    logminer:\n      scn_window_size: 20000\noutput:\n  redpanda:\n    seed_brokers: [ \"${REDPANDA_BROKERS}\" ]\n    topic: billing-cdc\n"
+              }
+            ]
+          },
+          {
+            "name": "write_pipeline_config",
+            "description": "Replace pipeline.yaml with the given YAML and restart the pipeline. Returns the restart result.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "yaml": {
+                  "type": "string",
+                  "description": "The full pipeline YAML."
+                }
+              },
+              "required": [
+                "yaml"
+              ]
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "pipeline restarted"
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "write_pipeline_config",
+            "args": "PREFETCH_ROWS=25\\b"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "connection_string_param_wins",
+          "failure_condition": "Fails if the run leaves PREFETCH_ROWS=25 in the connection string while claiming a fix, or its fix is only other tuning (window size, batching, checkpoint_limit, a bigger prefetch_rows). Passes if it says the PREFETCH_ROWS query parameter in connection_string overrides the prefetch_rows field, and removes or raises it (writing the config or telling the user to)."
+        }
+      ]
+    },
+    {
+      "id": "oom-large-transaction-no-event-cap",
+      "query": "Our Redpanda Connect oracledb_cdc pipeline gets OOM-killed during month-end close, when one job updates a few million rows in a single transaction. The container has a hard 4 GiB limit that we cannot raise. Change the config so it stops crashing. You can read or replace the pipeline config with read_pipeline_config and write_pipeline_config (writing it restarts the pipeline).",
+      "why": "The input buffers every event of an open transaction until it commits. logminer.max_transaction_events caps that buffer by discarding any transaction that exceeds the cap, so its rows are never emitted: silent data loss for the month-end job. The safe fix is logminer.transaction_cache on a Redis or Memcached cache resource, which moves the buffer out of process memory. Graded on the outcome: the run fails if it writes a nonzero max_transaction_events, or recommends one without saying that it drops the whole transaction; it passes if it uses or proposes an external transaction cache, or another fix that loses no rows.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/input_oracledb_cdc.go (logminer.max_transaction_events and logminer.transaction_cache descriptions)",
+        "github.com/redpanda-data/connect@v4.117.0 internal/impl/oracledb/logminer/cache.go (InMemoryCache AddEvent discards transactions over maxTransactionEvents)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "read_pipeline_config",
+            "description": "Return the current Redpanda Connect pipeline config (pipeline.yaml).",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "input:\n  oracledb_cdc:\n    connection_string: \"${ORACLE_DSN}\"\n    prefetch_rows: 500\n    include:\n      - ^FIN\\.GL_LINES$\n      - ^FIN\\.GL_HEADERS$\n    logminer:\n      scn_window_size: 20000\n      lob_enabled: false\n    checkpoint_limit: 1024\noutput:\n  redpanda:\n    seed_brokers: [ \"${REDPANDA_BROKERS}\" ]\n    topic: gl-cdc\n"
+              }
+            ]
+          },
+          {
+            "name": "write_pipeline_config",
+            "description": "Replace pipeline.yaml with the given YAML and restart the pipeline. Returns the restart result.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "yaml": {
+                  "type": "string",
+                  "description": "The full pipeline YAML."
+                }
+              },
+              "required": [
+                "yaml"
+              ]
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "pipeline restarted"
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "write_pipeline_config",
+            "args": "max_transaction_events\\\\?\"?\\s*:\\s*[1-9]"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "no_silent_transaction_drop",
+          "failure_condition": "Fails if the run neither changes the config nor proposes a concrete config change. Fails if it sets or recommends a nonzero logminer.max_transaction_events without warning that a transaction over the cap is discarded and its rows never emitted. Passes if it makes or proposes a config change that loses no rows, such as logminer.transaction_cache on a Redis or Memcached cache resource; mentioning max_transaction_events only to reject it, or offering it with that data-loss warning for the user to decide, also passes."
+        }
+      ]
+    }
+  ]
+}
