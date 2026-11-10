@@ -718,6 +718,26 @@
                 "output": "SUBJECT   LEVEL     ERROR\n{GLOBAL}  BACKWARD  "
               },
               {
+                "match": "\\b(cmp|diff)\\b",
+                "output": "/migrate/orders-value-v1.avsc /migrate/orders-value-v2.avsc differ: char 87, line 5"
+              },
+              {
+                "match": "\\b(md5|md5sum|shasum|sha256sum)\\b",
+                "output": "8f14e45fceea167a5a36dedd4bea2543  /migrate/orders-value-v1.avsc\nc9f0f895fb98ab9159f51fd0297e236d  /migrate/orders-value-v2.avsc"
+              },
+              {
+                "match": "\\bwc\\b",
+                "output": "     96 /migrate/orders-value-v1.avsc\n    160 /migrate/orders-value-v2.avsc\n    256 total"
+              },
+              {
+                "match": "\\b(cat|head|less)\\b[\\s\\S]*v1\\.avsc[\\s\\S]*v2\\.avsc",
+                "output": "{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"}\n  ]\n}\n{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"},\n    {\"name\": \"note\", \"type\": [\"null\", \"string\"], \"default\": null}\n  ]\n}"
+              },
+              {
+                "match": "\\b(cat|head|less)\\b[^|;&]*v2\\.avsc",
+                "output": "{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"},\n    {\"name\": \"note\", \"type\": [\"null\", \"string\"], \"default\": null}\n  ]\n}"
+              },
+              {
                 "match": "\\b(cat|head|less)\\b",
                 "output": "{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"}\n  ]\n}"
               },
