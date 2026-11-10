@@ -1,0 +1,758 @@
+{
+  "name": "streaming skill vs docs",
+  "skill": "streaming",
+  "description": "Measures whether the streaming skill adds value over the published Redpanda Streaming docs. Fact cases are sampled at even intervals through the full streaming skill at commit bb30173, before it was converted to the thin format (transactions, storage modes, Tiered Storage, enterprise features, Iceberg, Cloud Topics, Shadow Linking, client compatibility, Continuous Data Balancing), plus targeted cases for claims expected to be missing from the docs. Each was verified against the public redpanda repo at v26.2.2 without checking the docs first. Behavioral cases grade the outcome of tasks run against a mocked rpk where a wrong step has real consequences: deleting a Tiered Storage topic whose archive must stay, enabling Iceberg on a second cluster that shares a catalog, updating a shadow link, and stopping partition movement for maintenance. The shadow link case is kept as data: no baseline run wrote a partial configuration, so it backs no skill line.",
+  "test_cases": [
+    {
+      "id": "kafka4-transactions-v2-fallback",
+      "query": "We're moving our Java transactional producers to the Kafka 4.x client, which uses the newer transaction protocol from KIP-890 when the broker supports it. Will those producers work against Redpanda, and do we have to change any client settings for transactions?",
+      "why": "Redpanda does not implement the server side of KIP-890 (Transactions V2): its EndTxn and AddPartitionsToTxn handlers stop at version 3, below the versions V2 needs. Kafka 4.x clients detect that and fall back to the original transaction protocol on their own, so no client change is needed.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/kafka/server/handlers/end_txn.h (single_stage_handler<end_txn_api, 0, 3>)",
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/kafka/server/handlers/add_partitions_to_txn.h (versions 0 to 3)"
+      ],
+      "invariants": [
+        {
+          "name": "v2_not_supported_falls_back",
+          "failure_condition": "FAILS if the answer says Redpanda supports the KIP-890 (Transactions V2) protocol, says the producers will not work, or says a client setting must be changed for them to work. PASSES if it says Redpanda does not implement the server side of KIP-890 and the Kafka 4.x client falls back to the original transaction protocol automatically, so the producers work without configuration changes."
+        }
+      ]
+    },
+    {
+      "id": "storage-mode-tiered-to-cloud",
+      "query": "I have an existing Tiered Storage topic clickstream on my self-managed Redpanda cluster (its redpanda.storage.mode is tiered). Can I turn it into a Cloud Topic in place by altering its storage mode, and if not, what are my options?",
+      "why": "Redpanda permits only a few storage mode changes on an existing topic: local to tiered, tiered to local, and unset to local or tiered. A change from tiered to cloud is rejected with \"this transition is not permitted\". The cloud mode can only be chosen when a topic is created, so the data has to move to a new Cloud Topic.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/kafka/server/handlers/configs/config_utils.h (is_storage_mode_transition_permitted, storage_mode_validator)"
+      ],
+      "invariants": [
+        {
+          "name": "transition_rejected_new_topic",
+          "failure_condition": "FAILS if the answer says the topic can be switched to cloud mode in place, or that the change is accepted but only applies to new data. PASSES if it says Redpanda rejects changing an existing topic's storage mode from tiered to cloud, and that the way forward is to create a new topic with the cloud storage mode and move or re-produce the data into it."
+        }
+      ]
+    },
+    {
+      "id": "local-log-eviction-exempt-topic",
+      "query": "On our self-managed Redpanda cluster with Tiered Storage, one compacted topic, customer-profiles, must always keep its full log on the brokers' local disks, never trimmed by local retention or by disk space management, so a service can replay it quickly at startup. Is there a cluster setting for that, and does a change take effect right away?",
+      "why": "The cluster property log_eviction_exempt_topics lists topics whose local log is exempt from every form of data deletion (retention, local retention under Tiered Storage, and disk space management). It defaults to the Schema Registry topic _schemas, so that entry should stay in the list, and a change needs a broker restart.",
+      "origin": "targeted",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/config/configuration.cc (log_eviction_exempt_topics: needs_restart yes, default schema registry topic)"
+      ],
+      "required_patterns": [
+        "log_eviction_exempt_topics"
+      ],
+      "invariants": [
+        {
+          "name": "restart_needed",
+          "failure_condition": "FAILS if the answer does not name log_eviction_exempt_topics, or says the change takes effect without a restart. PASSES if it names log_eviction_exempt_topics as the cluster property for the exemption and says the brokers must be restarted for a change to apply. Mentioning that _schemas is in the list by default and should be kept is a plus, not required."
+        }
+      ]
+    },
+    {
+      "id": "schema-id-validation-mode-values",
+      "query": "I want Redpanda to check that records on some topics carry a schema ID registered in Schema Registry. `rpk cluster config set enable_schema_id_validation true` was rejected. What values does that property accept, and which one do I need if our topics already use the Confluent-style confluent.value.schema.validation topic properties?",
+      "why": "enable_schema_id_validation is an enum, not a boolean: none (the default, disabled), redpanda (only the redpanda.* topic properties are accepted), or compat (both the Redpanda and the Confluent-compatible topic properties are accepted). Topics configured with confluent.* properties need compat.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/config/configuration.cc (enable_schema_id_validation: none, redpanda, compat)"
+      ],
+      "required_patterns": [
+        "\\bcompat\\b"
+      ],
+      "invariants": [
+        {
+          "name": "enum_and_compat",
+          "failure_condition": "FAILS if the answer says the property is a boolean, leaves out any of the values none, redpanda and compat, or recommends a value other than compat for topics that use the confluent.* properties. PASSES if it lists none, redpanda and compat as the accepted values and says compat is the one that accepts the Confluent-compatible topic properties."
+        }
+      ]
+    },
+    {
+      "id": "iceberg-invalid-records-dlq-table",
+      "query": "Some records produced to our Iceberg-enabled Redpanda topic orders don't match its registered schema. With default settings, what does Redpanda do with those records, and what is the name of the Iceberg table I should query to find them?",
+      "why": "The default invalid record action is dlq_table: records that cannot be translated go to a dead-letter table named after the topic plus the iceberg_dlq_table_suffix, which defaults to ~dlq, so the table is orders~dlq.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/config/configuration.cc (iceberg_invalid_record_action default dlq_table; iceberg_dlq_table_suffix default ~dlq)"
+      ],
+      "required_patterns": [
+        "orders~dlq"
+      ],
+      "invariants": [
+        {
+          "name": "dlq_by_default",
+          "failure_condition": "FAILS if the answer says invalid records are dropped by default, block translation, or are rejected at produce time. PASSES if it says that by default they are written to a dead-letter-queue Iceberg table named orders~dlq."
+        }
+      ]
+    },
+    {
+      "id": "cloud-topics-no-separate-switch",
+      "query": "Object storage is already set up on my self-managed Redpanda cluster and cloud_storage_enabled is true. Before I create my first Cloud Topic, do I need to set cloud_topics_enabled=true and restart the brokers?",
+      "why": "cloud_topics_enabled is a deprecated property in current releases and is ignored. With object storage enabled, a Cloud Topic is created directly with redpanda.storage.mode=cloud. Older material says the switch and a restart are required.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/config/configuration.h (deprecated_property cloud_topics_enabled)",
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/config/configuration.cc (default_redpanda_storage_mode: cloud for object-only storage)"
+      ],
+      "invariants": [
+        {
+          "name": "no_switch_needed",
+          "failure_condition": "FAILS if the answer says current Redpanda requires cloud_topics_enabled=true or a restart before creating a Cloud Topic. PASSES if it says cloud_topics_enabled is deprecated or ignored in current releases, so no switch or restart is needed, and that the topic is created with redpanda.storage.mode=cloud. Noting that older releases needed the switch is fine."
+        }
+      ]
+    },
+    {
+      "id": "delete-tiered-topic-keep-archive",
+      "query": "We're retiring the topic audit-2024 on our self-managed Redpanda cluster. Compliance requires that its archived data in our S3 bucket stays there for seven years, but the topic itself can go. Delete the topic. You can run commands with the run_shell tool.",
+      "why": "Deleting a topic with Tiered Storage also deletes its objects in object storage while the topic property redpanda.remote.delete is true, which is the default. To keep the archive, set redpanda.remote.delete=false on the topic before deleting it. In Apache Kafka, deleting a topic never touches an external archive, so a model that carries that over deletes the compliance data. Graded on the outcome: the agent turns remote delete off for the topic, and the answer says it did so before any delete. Mocks are stateless, so a describe after the change still shows remote delete on; an agent that stops to report that is not failed for it.",
+      "origin": "behavioral",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/storage/ntp_config.h (default_remote_delete = true)",
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/kafka/server/handlers/topics/types.cc (redpanda.remote.delete falls back to default_remote_delete)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster (Kafka API and Admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "topic\\s+delete[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Delete topics.\n\nThis command deletes all requested topics, printing the success or fail status\nper topic.\n\nThe --regex flag (-r) opts into parsing the input topics as regular expressions\nand deleting any non-internal topic that matches any of expressions. The input\nexpressions are wrapped with ^ and $ so that the expression must match the\nwhole topic name (which also prevents accidental delete-everything mistakes).\n\nUsage:\n  rpk topic delete [TOPICS...] [flags]\n\nFlags:\n      --format string   Output format: json,yaml,text,wide,help (default \"text\")\n  -h, --help            Help for delete\n  -r, --regex           Parse topics as regex; delete any topic that matches any input topic expression"
+              },
+              {
+                "match": "alter-config[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Set, delete, add, and remove key/value configs for a topic.\n\nUsage:\n  rpk topic alter-config [TOPICS...] --set key=value --delete key2,key3 [flags]\n\nFlags:\n      --append stringArray     key=value; Value to append to a list-of-values key (repeatable)\n  -d, --delete stringArray     Key to delete (repeatable)\n      --dry                    Dry run: validate the alter request, but do not apply\n  -r, --regex                  Parse arguments as regex; alter any topic that matches any input topic expression\n      --set stringArray        key=value; Pair to set (repeatable)\n      --subtract stringArray   key=value; Value to remove from list-of-values keys (repeatable)"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk topic [command]\n\nAvailable Commands:\n  add-partitions, alter-config, analyze, consume, create, delete, describe, describe-storage, list, produce, trim-prefix\n\nUse \"rpk topic [command] --help\" for more information about a command."
+              },
+              {
+                "match": "alter-config",
+                "output": "TOPIC       STATUS\naudit-2024  OK"
+              },
+              {
+                "match": "topic\\s+delete",
+                "output": "TOPIC       STATUS\naudit-2024  OK"
+              },
+              {
+                "match": "describe-storage",
+                "output": "SUMMARY\n=======\nNAME                audit-2024\nCLOUD-STORAGE-MODE  full\n\nSIZE\n====\nPARTITION  CLOUD-BYTES   LOCAL-BYTES  TOTAL-BYTES\n0          88142090240  1073741824   89215832064\n1          88140011520  1073741824   89213753344\n... (10 more partitions)"
+              },
+              {
+                "match": "topic\\s+(describe|info)",
+                "output": "SUMMARY\n=======\nNAME        audit-2024\nPARTITIONS  12\nREPLICAS    3\n\nCONFIGS\n=======\nKEY                           VALUE          SOURCE\ncleanup.policy                delete         DEFAULT_CONFIG\ncompression.type              producer       DEFAULT_CONFIG\nredpanda.remote.delete        true           DEFAULT_CONFIG\nredpanda.remote.read          true           DEFAULT_CONFIG\nredpanda.remote.write         true           DEFAULT_CONFIG\nredpanda.storage.mode         tiered         DYNAMIC_TOPIC_CONFIG\nretention.bytes               -1             DEFAULT_CONFIG\nretention.local.target.ms     86400000       DEFAULT_CONFIG\nretention.ms                  -1             DYNAMIC_TOPIC_CONFIG\nsegment.bytes                 1073741824     DEFAULT_CONFIG"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME        PARTITIONS  REPLICAS\naudit-2024  12          3\naudit-2025  12          3\norders      24          3"
+              },
+              {
+                "match": "topic\\s+consume",
+                "output": "{\"topic\":\"audit-2024\",\"value\":\"{\\\"actor\\\":\\\"u-118\\\",\\\"action\\\":\\\"login\\\"}\",\"partition\":0,\"offset\":0}"
+              },
+              {
+                "match": "group\\s+(list|describe)",
+                "output": "BROKER  GROUP          STATE\n0       audit-indexer  Empty"
+              },
+              {
+                "match": "cluster\\s+config\\s+(get|export|list)[^|;&]*cloud_storage_bucket",
+                "output": "acme-redpanda-archive"
+              },
+              {
+                "match": "cluster\\s+config\\s+(get|export|list)[^|;&]*cloud_storage_enabled",
+                "output": "true"
+              },
+              {
+                "match": "cluster\\s+config\\s+(get|export|list)",
+                "output": "cloud_storage_enabled: true\ncloud_storage_bucket: acme-redpanda-archive\ncloud_storage_region: us-east-1\ndefault_redpanda_storage_mode: tiered\ndelete_topic_enable: true"
+              },
+              {
+                "match": "\\baws\\s+s3",
+                "output": "                           PRE 4a1c2f0e/\n                           PRE 9b77d3aa/\n                           PRE c01e8f52/"
+              },
+              {
+                "match": "license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      example-corp\nType:              enterprise\nExpires:           Sep 30 2027\nLicense violation: false"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER\n=======\nredpanda.4c1f\n\nBROKERS\n=======\nID    HOST         PORT\n0*    10.0.1.11    9092\n1     10.0.1.12    9092\n2     10.0.1.13    9092"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "alter-config(?=[^|;&]*audit-2024)[^|;&]*redpanda\\.remote\\.delete[=\\s]+['\\\\\"]?false"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "archive_kept_and_said_so",
+          "failure_condition": "FAILS if the answer says the topic was deleted before redpanda.remote.delete was turned off, says the S3 objects survive a topic delete without that change, or deletes nothing and gives no reason. PASSES if it set redpanda.remote.delete=false on audit-2024 and then deleted the topic, telling the user the bucket objects are kept; or if it set it, and stopped before deleting only to confirm the change took effect (for example because a re-read still showed true), saying why."
+        }
+      ]
+    },
+    {
+      "id": "shadow-link-msk-iam-source",
+      "query": "Can I use a Redpanda shadow link to continuously replicate topics from our Amazon MSK cluster into Redpanda while we migrate? Our MSK clients authenticate with IAM.",
+      "why": "A shadow link can pull from any Kafka API-compatible source, including MSK, but its client authenticates only with SASL/PLAIN or SASL/SCRAM (SHA-256 or SHA-512), plus optional TLS. MSK IAM authentication is not supported, so SASL/SCRAM has to be enabled on the MSK cluster for the link.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/proto/redpanda/core/admin/v2/shadow_link.proto (AuthenticationConfiguration oneof: scram_configuration, plain_configuration)",
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/go/rpk/pkg/cli/shadow/types.go (ScramMechanism SCRAM-SHA-256, SCRAM-SHA-512)"
+      ],
+      "invariants": [
+        {
+          "name": "source_ok_iam_not",
+          "failure_condition": "FAILS if the answer says a shadow link cannot use a non-Redpanda source such as MSK, or says it can authenticate with MSK IAM. PASSES if it says MSK can be a shadow link source but IAM authentication is not supported, and that SASL/SCRAM (or SASL/PLAIN) must be enabled on MSK for the link to connect."
+        }
+      ]
+    },
+    {
+      "id": "shadow-link-roles-not-synced",
+      "query": "Our Redpanda shadow link copies topics, consumer group offsets and ACLs from the source Redpanda cluster without trouble, but none of the source cluster's RBAC roles appear on the shadow cluster. We never changed any role settings in the link configuration. Why, and what do we change?",
+      "why": "Role sync in a shadow link is opt-in: role_sync_options.role_name_filters defaults to empty, and no roles are synced until at least one INCLUDE filter is added. ACL sync, by contrast, copies everything by default.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/proto/redpanda/core/admin/v2/shadow_link.proto (RoleSyncOptions.role_name_filters: defaults to empty, no roles synced until an include filter is added)"
+      ],
+      "required_patterns": [
+        "role_name_filters"
+      ],
+      "invariants": [
+        {
+          "name": "opt_in_filter",
+          "failure_condition": "FAILS if the answer says roles are synced by default and blames something else as the main cause, or says shadow links cannot sync roles. PASSES if it says role syncing is opt-in, so with no role name filter no roles are synced, and tells the user to add an INCLUDE entry under role_sync_options.role_name_filters."
+        }
+      ]
+    },
+    {
+      "id": "scram-one-mechanism-per-user",
+      "query": "In Apache Kafka we give each service account both a SCRAM-SHA-256 and a SCRAM-SHA-512 credential, so clients configured with either mechanism can log in. Can I set up a Redpanda user the same way?",
+      "why": "Redpanda's credential store keeps one SCRAM credential per user name, so a user has either SCRAM-SHA-256 or SCRAM-SHA-512, not both. Kafka allows one credential per mechanism.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/security/credential_store.h (node_hash_map<credential_user, std::variant<scram_credential>>)"
+      ],
+      "invariants": [
+        {
+          "name": "one_mechanism",
+          "failure_condition": "FAILS if the answer says a Redpanda user can hold both a SCRAM-SHA-256 and a SCRAM-SHA-512 credential at once. PASSES if it says a Redpanda user has a single SCRAM mechanism, so the clients must agree on one mechanism or use two separate users."
+        }
+      ]
+    },
+    {
+      "id": "iceberg-second-cluster-shared-catalog",
+      "query": "We run two self-managed Redpanda clusters, prod-east and prod-west. prod-east already streams several of its topics, including its own orders topic, into our AWS Glue catalog as Iceberg tables. Your rpk profile points at prod-west. Turn on Iceberg for prod-west's orders topic so analysts can query it from Glue too, using the same Glue catalog settings prod-west already has. Get it done end to end; I won't be around to answer questions. You can run commands with the run_shell tool.",
+      "why": "Redpanda names each Iceberg table <namespace>.<topic>, and the namespace comes from the cluster property iceberg_default_catalog_namespace, which defaults to redpanda on every cluster. Two clusters writing to one catalog with the default namespace both write the table redpanda.orders. The namespace must be set before Iceberg is enabled and must not change afterward (changing it loses track of existing tables), so it has to be set on prod-west now. Graded on the outcome: prod-west's namespace is set to a value other than redpanda.",
+      "origin": "behavioral",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/config/configuration.cc (iceberg_default_catalog_namespace: default [redpanda], must be configured before enabling Iceberg and not changed afterward, needs restart; iceberg_enabled needs restart)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster (Kafka API and Admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk cluster config [command]\n\nAvailable Commands:\n  edit, export, force-reset, get, import, lint, list, set, status\n\nUse \"rpk cluster config [command] --help\" for more information about a command."
+              },
+              {
+                "match": "cluster\\s+config\\s+(set|import|edit)",
+                "output": "Successfully updated configuration. New configuration version is 57."
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*iceberg_default_catalog_namespace",
+                "output": "- redpanda"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*iceberg_enabled",
+                "output": "false"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*iceberg_catalog_type",
+                "output": "rest"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*iceberg_rest_catalog_endpoint",
+                "output": "https://glue.us-east-1.amazonaws.com/iceberg"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*iceberg_rest_catalog_authentication_mode",
+                "output": "aws_sigv4"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*cloud_storage_enabled",
+                "output": "true"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*iceberg_",
+                "output": "null"
+              },
+              {
+                "match": "cluster\\s+config\\s+(export|list)",
+                "output": "iceberg_enabled: false\niceberg_catalog_type: rest\niceberg_rest_catalog_endpoint: https://glue.us-east-1.amazonaws.com/iceberg\niceberg_rest_catalog_authentication_mode: aws_sigv4\niceberg_rest_catalog_aws_region: us-east-1\niceberg_default_catalog_namespace: [redpanda]\niceberg_delete: true\niceberg_invalid_record_action: dlq_table\niceberg_target_lag_ms: 60000\ncloud_storage_enabled: true\ndefault_redpanda_storage_mode: tiered"
+              },
+              {
+                "match": "cluster\\s+config\\s+status",
+                "output": "NODE  CONFIG-VERSION  NEEDS-RESTART  INVALID  UNKNOWN\n0     57              true           []       []\n1     57              true           []       []\n2     57              true           []       []"
+              },
+              {
+                "match": "cluster\\s+config\\s+get",
+                "output": "null"
+              },
+              {
+                "match": "(redpanda\\s+(stop|start|restart)|systemctl\\s+restart|rolling|maintenance)",
+                "output": "Restart completed on node-0, node-1, node-2."
+              },
+              {
+                "match": "alter-config",
+                "output": "TOPIC   STATUS\norders  OK"
+              },
+              {
+                "match": "topic\\s+(describe|info)",
+                "output": "SUMMARY\n=======\nNAME        orders\nPARTITIONS  24\nREPLICAS    3\n\nCONFIGS\n=======\nKEY                       VALUE      SOURCE\ncleanup.policy            delete     DEFAULT_CONFIG\nredpanda.iceberg.mode     disabled   DEFAULT_CONFIG\nredpanda.storage.mode     tiered     DEFAULT_CONFIG\nretention.ms              604800000  DEFAULT_CONFIG"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME      PARTITIONS  REPLICAS\norders    24          3\npayments  12          3"
+              },
+              {
+                "match": "registry\\s+(subject|schema)",
+                "output": "SUBJECT\norders-value"
+              },
+              {
+                "match": "license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      example-corp\nType:              enterprise\nExpires:           Sep 30 2027\nLicense violation: false"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER\n=======\nprod-west\n\nBROKERS\n=======\nID    HOST         PORT\n0*    10.2.1.11    9092\n1     10.2.1.12    9092\n2     10.2.1.13    9092"
+              },
+              {
+                "match": "\\baws\\s+glue",
+                "output": "{\n  \"DatabaseList\": [\n    { \"Name\": \"redpanda\" }\n  ]\n}"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "cluster\\s+config\\s+(set|import|edit)[^|;&]*iceberg_default_catalog_namespace(?![\\s=:'\\\\\"\\[]*redpanda\\b)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "namespace_changed_before_tables",
+          "failure_condition": "FAILS if the answer leaves prod-west on the default redpanda namespace, or says the two clusters' orders tables cannot collide. PASSES if it set iceberg_default_catalog_namespace on prod-west to a namespace other than redpanda (before or together with enabling Iceberg) and said why: both clusters would otherwise write the same redpanda.orders table in the shared catalog."
+        }
+      ]
+    },
+    {
+      "id": "shadow-update-file-password",
+      "query": "I'm scripting changes to a Redpanda shadow link with `rpk shadow update production-dr --config-file link.yaml`, and I don't want the source cluster's SASL password in that file. What do I put in the password field so the link keeps the password it already has?",
+      "why": "With --config-file, rpk rejects a file whose password is the <redacted> placeholder that the editor flow shows. Leaving the password empty, with the username still set, keeps the stored password. The help text describes only the editor's placeholder.",
+      "origin": "targeted",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/go/rpk/pkg/cli/shadow/update.go (updatedConfigFromFile: placeholder rejected, \"leave it empty to keep the existing one\")"
+      ],
+      "invariants": [
+        {
+          "name": "empty_not_placeholder",
+          "failure_condition": "FAILS if the answer tells the user to put <redacted> in the file, says the password must be in the file, or says it cannot tell. PASSES if it says to leave the password empty or omit it (keeping the username) so the existing password is kept, and that the <redacted> placeholder is rejected in a config file."
+        }
+      ]
+    },
+    {
+      "id": "shadow-topic-alter-rejected",
+      "query": "On our Redpanda DR cluster I ran `rpk topic alter-config orders --set retention.ms=1209600000` on a topic that a shadow link replicates from production, and it failed with POLICY_VIOLATION. Why, and how can the DR copy end up with two weeks of retention?",
+      "why": "The Kafka API refuses to alter a topic that belongs to an active shadow link (\"Topic cannot be altered because it belongs to an active shadow link\"), so the shadow topic's configuration cannot be changed on the shadow cluster while the link is active. The setting has to come from the source (topic properties sync from the source) or be changed after failover.",
+      "origin": "targeted",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/kafka/server/handlers/incremental_alter_configs.cc (policy_violation when !ctx.is_topic_mutable)",
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/kafka/server/request_context.h (is_topic_mutable: cluster_link_frontend().is_topic_mutable_for_kafka_api)"
+      ],
+      "invariants": [
+        {
+          "name": "shadow_topic_immutable",
+          "failure_condition": "FAILS if the answer blames ACLs, a wrong value, or a retention limit as the main cause, or tells the user to retry the same alter on the shadow cluster with other flags. PASSES if it says the topic cannot be altered because it belongs to an active shadow link, and offers a way that does not alter the shadow topic directly, such as changing retention on the source topic so it syncs, or changing it after failover."
+        }
+      ]
+    },
+    {
+      "id": "down-broker-not-decommissioned",
+      "query": "Continuous Data Balancing is on in our Redpanda cluster, and one broker has been down for an hour after a hardware fault. Has Redpanda permanently removed that broker from the cluster, or can it rejoin once we fix it? What decides that?",
+      "why": "After partition_autobalancing_node_availability_timeout_sec (15 minutes by default) the balancer moves replicas off an unavailable broker, but the broker stays a member and can rejoin. Redpanda decommissions it permanently only when partition_autobalancing_node_autodecommission_timeout_sec is set, and that property is unset by default.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/config/configuration.cc (partition_autobalancing_node_availability_timeout_sec default 15min; partition_autobalancing_node_autodecommission_timeout_sec default nullopt)"
+      ],
+      "required_patterns": [
+        "autodecommission"
+      ],
+      "invariants": [
+        {
+          "name": "rejoin_unless_autodecommission",
+          "failure_condition": "FAILS if the answer says the broker has been decommissioned or removed by default, or does not name the autodecommission timeout property as what decides permanent removal. PASSES if it says the balancer has moved the broker's replicas elsewhere but the broker can rejoin, and that permanent removal happens only when partition_autobalancing_node_autodecommission_timeout_sec is set, which it is not by default."
+        }
+      ]
+    },
+    {
+      "id": "shadow-link-update-full-config",
+      "query": "Our shadow link production-dr, set up on our DR Redpanda cluster, should also shadow every topic whose name starts with payments-. Update the link to do that. You can run commands with the run_shell tool and write files with the write_file tool.",
+      "why": "rpk shadow update submits a whole shadow link configuration in both its modes, and a --config-file is applied as is: every section or field the file leaves out is reset to its default. A file that holds only the new topic filter would drop the existing topic filters, the consumer offset and ACL sync settings, and the source connection settings, so the agent has to start from the link's full current configuration (rpk shadow describe --format yaml, or every section of it) and add the filter there. Graded on the outcome: the agent runs rpk shadow update on the link (from a file, or through an editor command, which is seeded with the current configuration), and no file the agent writes carries the topic sync section without the other sections and the existing filters.",
+      "origin": "behavioral",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/go/rpk/pkg/cli/shadow/update.go (both modes replace the entire configuration; omitted fields reset to defaults)",
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/go/rpk/pkg/cli/shadow/describe.go (--format yaml prints the full configuration)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed DR Redpanda cluster (the shadow cluster) (Kafka API and Admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "shadow\\s+update[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Updates a Shadow Link.\n\nBy default, this command opens your default editor with the current Shadow\nLink configuration. Update the fields you want to change, save the file, and\nclose the editor.\n\nAlternatively, use the '--config-file' flag to apply a configuration file\ndirectly without opening an editor, which is useful for scripted workflows.\n\nIn both modes the submitted configuration replaces the entire Shadow Link\nconfiguration: any field omitted is reset to its default value. The modes\ndiffer only in where the configuration comes from; the editor is seeded with\nthe current configuration, while a configuration file is applied as-is. The\nname in the configuration file must match LINK_NAME.\n\nSet passwords appear in the editor as the placeholder '<redacted>'; leave the\nplaceholder untouched to keep the existing password, or replace it to set a\nnew one.\n\nYou cannot change the Shadow Link name. If you need to rename a Shadow Link,\ndelete it and create a new one with the desired name.\n\nUsage:\n  rpk shadow update [LINK_NAME] [flags]\n\nFlags:\n  -c, --config-file string   Path to a configuration file that replaces\n                             the entire Shadow Link configuration; use\n                             --help for details\n  -h, --help                 Help for update"
+              },
+              {
+                "match": "shadow\\s+describe[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Describe a Redpanda Shadow Link.\n\nThis command shows the Shadow Link configuration, including connection settings,\nsynchronization options, and filters. Use the flags to display specific sections\nor all sections of the configuration.\n\nBy default, the command displays the overview and client configuration sections.\nUse the flags to display additional sections such as topic synchronization,\nconsumer offset synchronization, and security synchronization settings.\n\nUsing the --format flag with JSON or YAML will output the full configuration in\nthe specified format, ignoring section flags.\n\nUsage:\n  rpk shadow describe [LINK_NAME] [flags]\n\nFlags:\n      --format string    Output format (json,yaml,text,wide,help) (default \"text\")\n  -h, --help             Help for describe\n  -a, --print-all        Print all sections\n  -c, --print-client     Print the client configuration section\n  -r, --print-consumer   Print the detailed consumer offset configuration section\n  -o, --print-overview   Print the overview section\n  -y, --print-registry   Print the detailed schema registry configuration section\n      --print-role       Print the detailed role sync configuration section\n  -s, --print-security   Print the detailed security configuration section\n  -t, --print-topic      Print the detailed topic configuration section"
+              },
+              {
+                "match": "shadow\\s+config\\s+generate[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Generate a configuration file for creating a Shadow Link.\n\nUsage:\n  rpk shadow config generate [flags]\n\nFlags:\n  -o, --output string     File path where the configuration file will be saved\n      --print-template    Generate a configuration template with field documentation"
+              },
+              {
+                "match": "shadow[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage Redpanda Shadow Links.\n\nUsage:\n  rpk shadow [command]\n\nAvailable Commands:\n  config      Manage Shadow Link configuration files\n  create      Create a Redpanda Shadow Link\n  delete      Delete a Redpanda Shadow Link\n  describe    Describe a Redpanda Shadow Link\n  failover    Failover a Redpanda Shadow Link\n  list        List Redpanda Shadow Links\n  status      Get the status of a Redpanda Shadow Link\n  update      Updates a Shadow Link\n\nUse \"rpk shadow [command] --help\" for more information about a command."
+              },
+              {
+                "match": "shadow\\s+describe[^|;&]*\\s>{1,2}\\s*[^&\\s]",
+                "output": ""
+              },
+              {
+                "match": "shadow\\s+describe[^|;&]*--format[\\s=]+['\\\\\"]?(yaml|json)",
+                "output": "name: production-dr\nid: 8f1d0c2a-5b8e-4e4a-9d61-2b7f3c9a1e44\nstate: ACTIVE\ncreated_at: 2026-08-14T09:21:07Z\nupdated_at: 2026-10-02T16:40:55Z\nclient_options:\n  client_id: production-dr\n  bootstrap_servers:\n  - prod-1.example.com:9092\n  - prod-2.example.com:9092\n  - prod-3.example.com:9092\n  tls_settings:\n    enabled: true\n    tls_file_settings:\n      ca_path: /etc/redpanda/certs/prod-ca.crt\n  authentication_configuration:\n    username: shadow-replicator\n    mechanism: SCRAM-SHA-512\n    password_set: true\n  metadata_max_age_ms: 10000\n  connection_timeout_ms: 1000\n  retry_backoff_ms: 100\n  fetch_wait_max_ms: 500\n  fetch_min_bytes: 5242880\n  fetch_max_bytes: 20971520\n  fetch_partition_max_bytes: 1048576\ntopic_metadata_sync_options:\n  interval: 30s\n  paused: false\n  start_offset: earliest\n  auto_create_shadow_topic_filters:\n  - pattern_type: PREFIX\n    filter_type: INCLUDE\n    name: orders-\n  - pattern_type: PREFIX\n    filter_type: INCLUDE\n    name: inventory-\n  synced_shadow_topic_properties:\n  - segment.ms\nconsumer_offset_sync_options:\n  interval: 30s\n  paused: false\n  group_filters:\n  - pattern_type: LITERAL\n    filter_type: INCLUDE\n    name: '*'\nsecurity_sync_options:\n  interval: 30s\n  paused: false\n  acl_filters:\n  - resource_filter:\n      resource_type: TOPIC\n      pattern_type: PREFIXED\n      name: orders-\n    access_filter:\n      principal: User:order-service\n      operation: ANY\n      permission_type: ALLOW\n      host: '*'\nschema_registry_sync_options:\n  shadowing_mode: shadow_schema_registry_topic\nrole_sync_options:\n  interval: 30s\n  paused: false"
+              },
+              {
+                "match": "shadow\\s+describe[^|;&]*(\\s-a\\b|--print-all)",
+                "output": "OVERVIEW\n========\nNAME        production-dr\nSTATE       ACTIVE\n\nclient_options:\n  client_id: production-dr\n  bootstrap_servers:\n  - prod-1.example.com:9092\n  - prod-2.example.com:9092\n  - prod-3.example.com:9092\n  tls_settings:\n    enabled: true\n    tls_file_settings:\n      ca_path: /etc/redpanda/certs/prod-ca.crt\n  authentication_configuration:\n    username: shadow-replicator\n    mechanism: SCRAM-SHA-512\n    password_set: true\n  metadata_max_age_ms: 10000\n  connection_timeout_ms: 1000\n  retry_backoff_ms: 100\n  fetch_wait_max_ms: 500\n  fetch_min_bytes: 5242880\n  fetch_max_bytes: 20971520\n  fetch_partition_max_bytes: 1048576\ntopic_metadata_sync_options:\n  interval: 30s\n  paused: false\n  start_offset: earliest\n  auto_create_shadow_topic_filters:\n  - pattern_type: PREFIX\n    filter_type: INCLUDE\n    name: orders-\n  - pattern_type: PREFIX\n    filter_type: INCLUDE\n    name: inventory-\n  synced_shadow_topic_properties:\n  - segment.ms\nconsumer_offset_sync_options:\n  interval: 30s\n  paused: false\n  group_filters:\n  - pattern_type: LITERAL\n    filter_type: INCLUDE\n    name: '*'\nsecurity_sync_options:\n  interval: 30s\n  paused: false\n  acl_filters:\n  - resource_filter:\n      resource_type: TOPIC\n      pattern_type: PREFIXED\n      name: orders-\n    access_filter:\n      principal: User:order-service\n      operation: ANY\n      permission_type: ALLOW\n      host: '*'\nschema_registry_sync_options:\n  shadowing_mode: shadow_schema_registry_topic\nrole_sync_options:\n  interval: 30s\n  paused: false"
+              },
+              {
+                "match": "shadow\\s+describe",
+                "output": "OVERVIEW\n========\nNAME        production-dr\nID          8f1d0c2a-5b8e-4e4a-9d61-2b7f3c9a1e44\nSTATE       ACTIVE\nCREATED-AT  2026-08-14T09:21:07Z\nUPDATED-AT  2026-10-02T16:40:55Z\n\nCLIENT\n======\nBOOTSTRAP-SERVERS  prod-1.example.com:9092,prod-2.example.com:9092,prod-3.example.com:9092\nCLIENT-ID          production-dr\nTLS-ENABLED        true\nSASL-USERNAME      shadow-replicator\nSASL-MECHANISM     SCRAM-SHA-512\nPASSWORD-SET       true\nMETADATA-MAX-AGE   10000\nCONNECTION-TIMEOUT 1000"
+              },
+              {
+                "match": "shadow\\s+update[^|;&]*(\\s-c\\b|--config-file)",
+                "output": "Successfully updated shadow link \"production-dr\"."
+              },
+              {
+                "match": "(EDITOR|VISUAL)=[^|;&]*shadow\\s+update",
+                "output": "Successfully updated shadow link \"production-dr\"."
+              },
+              {
+                "match": "shadow\\s+update",
+                "output": "unable to edit Shadow Link configuration: unable to launch editor \"vi\": no terminal attached"
+              },
+              {
+                "match": "shadow\\s+(list|ls)",
+                "output": "NAME           ID                                    STATE\nproduction-dr  8f1d0c2a-5b8e-4e4a-9d61-2b7f3c9a1e44  ACTIVE"
+              },
+              {
+                "match": "shadow\\s+status",
+                "output": "OVERVIEW\n========\nNAME   production-dr\nSTATE  ACTIVE\n\nTASKS\n=====\nNAME                       STATE\nSource Topic Sync          ACTIVE\nConsumer Group Shadowing   ACTIVE\nSecurity Migrator          ACTIVE\nSchema Registry Sync       ACTIVE\n\nTOPICS\n======\nNAME              STATE   LAG\norders-v1         ACTIVE  12\ninventory-events  ACTIVE  3"
+              },
+              {
+                "match": "shadow\\s+config\\s+generate",
+                "output": "Shadow Link configuration file written to shadow-config.yaml"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME              PARTITIONS  REPLICAS\norders-v1         12          3\ninventory-events  6           3"
+              },
+              {
+                "match": "<<|\\btee\\b",
+                "output": ""
+              },
+              {
+                "match": "\\b(cat|head|less)\\b[^|;&]*\\.ya?ml",
+                "output": "name: production-dr\nid: 8f1d0c2a-5b8e-4e4a-9d61-2b7f3c9a1e44\nstate: ACTIVE\ncreated_at: 2026-08-14T09:21:07Z\nupdated_at: 2026-10-02T16:40:55Z\nclient_options:\n  client_id: production-dr\n  bootstrap_servers:\n  - prod-1.example.com:9092\n  - prod-2.example.com:9092\n  - prod-3.example.com:9092\n  tls_settings:\n    enabled: true\n    tls_file_settings:\n      ca_path: /etc/redpanda/certs/prod-ca.crt\n  authentication_configuration:\n    username: shadow-replicator\n    mechanism: SCRAM-SHA-512\n    password_set: true\n  metadata_max_age_ms: 10000\n  connection_timeout_ms: 1000\n  retry_backoff_ms: 100\n  fetch_wait_max_ms: 500\n  fetch_min_bytes: 5242880\n  fetch_max_bytes: 20971520\n  fetch_partition_max_bytes: 1048576\ntopic_metadata_sync_options:\n  interval: 30s\n  paused: false\n  start_offset: earliest\n  auto_create_shadow_topic_filters:\n  - pattern_type: PREFIX\n    filter_type: INCLUDE\n    name: orders-\n  - pattern_type: PREFIX\n    filter_type: INCLUDE\n    name: inventory-\n  synced_shadow_topic_properties:\n  - segment.ms\nconsumer_offset_sync_options:\n  interval: 30s\n  paused: false\n  group_filters:\n  - pattern_type: LITERAL\n    filter_type: INCLUDE\n    name: '*'\nsecurity_sync_options:\n  interval: 30s\n  paused: false\n  acl_filters:\n  - resource_filter:\n      resource_type: TOPIC\n      pattern_type: PREFIXED\n      name: orders-\n    access_filter:\n      principal: User:order-service\n      operation: ANY\n      permission_type: ALLOW\n      host: '*'\nschema_registry_sync_options:\n  shadowing_mode: shadow_schema_registry_topic\nrole_sync_options:\n  interval: 30s\n  paused: false"
+              },
+              {
+                "match": "\\b(yq|sed|awk|python3?|cp|mv|tee|diff)\\b",
+                "output": ""
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "production-dr.yaml"
+              },
+              {
+                "match": "license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      example-corp\nType:              enterprise\nExpires:           Sep 30 2027\nLicense violation: false"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          },
+          {
+            "name": "write_file",
+            "description": "Write a text file on the user's workstation, replacing it if it exists. Returns the number of bytes written.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "File path to write"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Full file contents"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ]
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "wrote file"
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "shadow\\s+update(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*production-dr"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "write_file",
+            "args": "^(?=.*topic_metadata_sync_options:)(?!(?=.*consumer_offset_sync_options)(?=.*security_sync_options)(?=.*orders-)(?=.*inventory-)(?=.*bootstrap_servers))"
+          },
+          {
+            "tool": "run_shell",
+            "args": "^(?=.*(<<|\\b(echo|printf)\\b))(?=.*topic_metadata_sync_options:)(?!(?=.*consumer_offset_sync_options)(?=.*security_sync_options)(?=.*orders-)(?=.*inventory-)(?=.*bootstrap_servers))"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "full_config_kept",
+          "failure_condition": "FAILS if the answer says it applied a configuration that holds only the new payments- filter, or tells the user other sections are kept when omitted. PASSES if it built the update from the link's full current configuration, adding a payments- INCLUDE prefix filter alongside the existing topic filters, and applied it with rpk shadow update (a --config-file, or a scripted editor seeded with the current configuration)."
+        }
+      ]
+    },
+    {
+      "id": "stop-partition-balancing-for-maintenance",
+      "query": "We're about to do disk maintenance on broker 2 of our self-managed Redpanda cluster, and until we're done Redpanda must not move any partitions between brokers. Make that happen. You can run commands with the run_shell tool.",
+      "why": "With partition_autobalancing_mode=continuous, the balancer schedules new moves on its next tick, so cancelling the current moves with rpk cluster partitions move-cancel does not stop partitions moving: the balancer reschedules them. The balancing mode has to come off continuous (off, or node_add) and the in-flight moves have to be cancelled. Graded on the outcome: the agent changes the balancing mode away from continuous and cancels the in-flight movements. Mocks are stateless, so a re-read after the change still shows continuous; that is not held against the agent.",
+      "origin": "behavioral",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/v/config/configuration.cc (partition_autobalancing_mode: node_add, continuous, off)",
+        "https://github.com/redpanda-data/redpanda/blob/v26.2.2/src/go/rpk/pkg/cli/cluster/partitions/cancel.go (cancels in-progress movements; prompts unless --no-confirm)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster (Kafka API and Admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "(move|movement|alter)-cancel[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Cancel ongoing partition movements.\n\nBy default, this command cancels all the partition movements in the cluster.\nTo ensure that you do not accidentally cancel all partition movements, this\ncommand prompts users for confirmation before issuing the cancellation request.\nYou can use \"--no-confirm\" to disable the confirmation prompt:\n\n    rpk cluster partitions move-cancel --no-confirm\n\nIf \"--node\" is set, this command will only stop the partition movements\noccurring in the specified node:\n\n    rpk cluster partitions move-cancel --node 1\n\nUsage:\n  rpk cluster partitions move-cancel [flags]\n\nFlags:\n  -h, --help         Help for move-cancel\n      --no-confirm   Disable confirmation prompt\n      --node int     ID of a specific node on which to cancel ongoing\n                     partition movements (default -1)"
+              },
+              {
+                "match": "balancer-status[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Queries cluster for partition balancer status:\n\nIf continuous partition balancing is enabled, redpanda will continuously\nreassign partitions from both unavailable nodes and from nodes using more disk\nspace than the configured limit.\n\nUse this command to monitor the partition balancer status and\nthe partition distribution across brokers in the cluster.\n\nBALANCER STATUS\n\n    off:          The balancer is disabled.\n    ready:        The balancer is active but there is nothing to do.\n    starting:     The balancer is starting but has not run yet.\n    in_progress:  The balancer is active and is in the process of scheduling\n                  partition movements.\n    stalled:      Violations have been detected and the balancer cannot correct\n                  them.\n\nUsage:\n  rpk cluster partitions balancer-status [flags]"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk cluster partitions [command]\n\nAvailable Commands:\n  balance, balancer-status, disable, enable, list, move, move-cancel, move-status, transfer-leadership, unsafe-recover\n\nUse \"rpk cluster partitions [command] --help\" for more information about a command."
+              },
+              {
+                "match": "cluster\\s+config\\s+(set|import|edit)",
+                "output": "Successfully updated configuration. New configuration version is 88."
+              },
+              {
+                "match": "(move|movement|alter)-cancel[^|;&]*--no-confirm|(\\byes\\b|echo\\s+['\\\\\"]*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*(move|movement|alter)-cancel",
+                "output": "Successfully cancelled partition movements.\n\nNAMESPACE  TOPIC     PARTITION  RESULT\nkafka      orders    7          Success\nkafka      orders    11         Success\nkafka      payments  2          Success\n... (11 more partitions)"
+              },
+              {
+                "match": "(move|movement|alter)-cancel",
+                "output": "? Confirm cancellation of all partition movements in the cluster? (y/N)\nunable to confirm: EOF"
+              },
+              {
+                "match": "balancer-status",
+                "output": "Status:                       in_progress\nSeconds Since Last Tick:      4\nCurrent Reassignments Count:  14\nUnavailable Nodes:            []\nOver Disk Limit Nodes:        []"
+              },
+              {
+                "match": "move-status",
+                "output": "PARTITION MOVEMENTS\n===================\nNAMESPACE-TOPIC  PARTITION  MOVING-FROM  MOVING-TO  COMPLETION-%  PARTITION-SIZE\nkafka/orders     7          [0 1 2]      [0 1 3]    41            8589934592\nkafka/orders     11         [1 2 3]      [0 1 3]    12            8589934592\n... (12 more)"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*partition_autobalancing_mode",
+                "output": "continuous"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*partition_autobalancing",
+                "output": "900"
+              },
+              {
+                "match": "cluster\\s+config\\s+(export|list)",
+                "output": "partition_autobalancing_mode: continuous\npartition_autobalancing_node_availability_timeout_sec: 900\npartition_autobalancing_max_disk_usage_percent: 80\nenable_rack_awareness: true"
+              },
+              {
+                "match": "cluster\\s+config\\s+status",
+                "output": "NODE  CONFIG-VERSION  NEEDS-RESTART  INVALID  UNKNOWN\n0     88              false          []       []\n1     88              false          []       []\n2     88              false          []       []\n3     88              false          []       []"
+              },
+              {
+                "match": "cluster\\s+config\\s+get",
+                "output": "null"
+              },
+              {
+                "match": "cluster\\s+maintenance\\s+status",
+                "output": "NODE-ID  ENABLED  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED\n0        false    -         -       -           -         -             -\n1        false    -         -       -           -         -             -\n2        false    -         -       -           -         -             -\n3        false    -         -       -           -         -             -"
+              },
+              {
+                "match": "cluster\\s+maintenance\\s+(enable|disable)",
+                "output": "Successfully enabled maintenance mode for node 2. Check the status with 'rpk cluster maintenance status'."
+              },
+              {
+                "match": "cluster\\s+partitions\\s+(disable|enable)",
+                "output": "Successfully updated partitions."
+              },
+              {
+                "match": "cluster\\s+partitions\\s+(list|ls)",
+                "output": "NAMESPACE  TOPIC     PARTITION  LEADER-ID  REPLICA-IDS  DISABLED\nkafka      orders    7          0          [0 1 2]      false\nkafka      orders    11         1          [1 2 3]      false"
+              },
+              {
+                "match": "cluster\\s+(health|info|metadata)",
+                "output": "CLUSTER HEALTH OVERVIEW\n=======================\nHealthy:                          true\nNodes down:                       []\nLeaderless partitions (0):        []\nUnder-replicated partitions (0):  []"
+              },
+              {
+                "match": "broker\\s+(list|ls)|redpanda\\s+admin\\s+brokers",
+                "output": "ID  HOST       PORT  RACK  CORES  MEMBERSHIP  IS-ALIVE  VERSION\n0   10.0.1.11  9092  a     8      active      true      26.2.5\n1   10.0.1.12  9092  b     8      active      true      26.2.5\n2   10.0.1.13  9092  c     8      active      true      26.2.5\n3   10.0.1.14  9092  a     8      active      true      26.2.5"
+              },
+              {
+                "match": "license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      example-corp\nType:              enterprise\nExpires:           Sep 30 2027\nLicense violation: false"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "cluster\\s+config\\s+set[^|;&]*partition_autobalancing_mode[\\s=]+['\\\\\"]?(off|node_add)\\b"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(move|movement|alter)-cancel(?![^|;&]*((?-i:-h)\\b|--help))"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "balancer_off_and_moves_cancelled",
+          "failure_condition": "FAILS if the answer says cancelling the movements alone stops partitions moving while the mode stays continuous, or says partition movement is stopped without having changed the balancing mode. PASSES if it set partition_autobalancing_mode away from continuous (to off or node_add) and cancelled, or tried to cancel, the in-flight movements. The tool outputs are canned: a later read that still shows the old mode or old moves is not the agent's fault, and an answer that honestly reports such a read and asks the user to check still passes."
+        }
+      ]
+    }
+  ]
+}
