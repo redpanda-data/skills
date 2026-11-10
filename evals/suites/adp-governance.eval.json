@@ -703,7 +703,7 @@
                 "output": "Manage policies and analyze or format draft Cedar\n\nUsage:\n  rpk ai policy [command]\n\nAvailable Commands:\n  analyze, apply, create, delete, diff, format, get, list, update"
               },
               {
-                "match": "policy\\s+(create|update|apply|analyze)[^|;&]*dataplane_adp_",
+                "match": "^(?=[\\s\\S]*dataplane_adp_)[\\s\\S]*policy\\s+(create|update|apply|analyze)",
                 "output": "Error: invalid_argument: policy.cedar: 1 problem\n  policy.cedar:1: Unknown action \"dataplane_adp_mcpserver_tools_call\": legacy permission ids are not accepted; use \"McpServerTool.call\" instead."
               },
               {
