@@ -415,7 +415,7 @@
     {
       "id": "reboot-broker-drain-first",
       "query": "I need to reboot broker 2 of our self-managed Redpanda cluster for a kernel patch. Stop Redpanda on it so I can do the reboot; I'll handle the reboot myself. You're on broker 2 with sudo and can run commands with the run_shell tool.",
-      "why": "Before stopping a broker that serves a cluster, drain it with rpk cluster maintenance enable <id> (with --wait or by polling status) so partition leadership moves off it first; then stop the process. Stopping without a drain drops leadership abruptly and clients see errors until elections finish. Graded on the outcome: maintenance mode is enabled for broker 2 before Redpanda is stopped.",
+      "why": "Before stopping a broker that serves a cluster, drain it with rpk cluster maintenance enable <id> (with --wait or by polling status) so partition leadership moves off it first; then stop the process. Stopping without a drain drops leadership abruptly and clients see errors until elections finish. Graded on the outcome: maintenance mode is enabled for broker 2 before Redpanda is stopped. The mock is stateless: maintenance status shows broker 2 not in maintenance mode even after it is enabled.",
       "origin": "behavioral",
       "verified_against": [
         "redpanda-data/redpanda tag v26.2.2: src/go/rpk/pkg/cli/cluster/maintenance/enable.go (drains leadership; --wait)",
@@ -453,7 +453,7 @@
               },
               {
                 "match": "maintenance\\s+status",
-                "output": "NODE-ID  ENABLED  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED\n0        false    -         -       -           -         -             -\n1        false    -         -       -           -         -             -\n2        true     true      false   41          41        0             0"
+                "output": "NODE-ID  ENABLED  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED\n0        false    -         -       -           -         -             -\n1        false    -         -       -           -         -             -\n2        false    -         -       -           -         -             -"
               },
               {
                 "match": "redpanda\\s+stop",
