@@ -30,7 +30,7 @@ baseline"). The skill's records are read-only, so no line qualifies as a safety 
 
 | Claim | Source | Eval case |
 |---|---|---|
-| Traces, transcripts and the audit log are read with `rpk ai trace`, `rpk ai agent transcript` and `rpk ai auditlog` | `cloudv2` `apps/rpai/testdata/commands-snapshot.md`; Docs MCP `list_rpk_commands` with `plugin: "ai"` (checked 2026-11-10) | none |
+| Traces, transcripts and the audit log are read with `rpk ai trace`, `rpk ai agent transcript` and `rpk ai auditlog` | `cloudv2` `apps/rpai/internal/cmd/` (`trace`, `agent/transcript.go`, `auditlog`); Docs MCP `list_rpk_commands` with `plugin: "ai"` (checked 2026-11-10) | none |
 | Sign in and select an environment first, as `/redpanda:adp` describes | `skills/adp/SOURCES.md` | none |
 | `get_rpk_command` reads one `rpk ai` command and `list_rpk_commands` with `plugin: "ai"` finds one; ADP docs are not versioned | Live `tools/list` from `https://docs.redpanda.com/mcp` (checked 2026-11-10; see `skills/redpanda-docs/references/SOURCES.md`) | none |
 | The ADP docs and the four monitor pages are at the linked URLs | https://docs.redpanda.com/agentic-data-plane/ (each URL returned 200 on 2026-11-10) | none |
