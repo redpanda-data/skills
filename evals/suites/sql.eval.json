@@ -284,19 +284,19 @@
                 "output": " database_name | schema_name | table_name | catalog_name\n---------------+-------------+------------+--------------\n(0 rows)"
               },
               {
-                "match": "DESCRIBE\\s+(TABLE\\s+)?default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b",
+                "match": "DESCRIBE\\s+(TABLE\\s+)?default_redpanda_catalog\\\\?\"?\\s*(=>|⇒)\\s*\\\\?\"?orders\\b",
                 "output": "      database_name       | table_name |    name    |   type    | nullable\n--------------------------+------------+------------+-----------+----------\n default_redpanda_catalog | orders     | order_id   | TEXT      | f\n default_redpanda_catalog | orders     | customer   | TEXT      | f\n default_redpanda_catalog | orders     | status     | TEXT      | f\n default_redpanda_catalog | orders     | amount     | DOUBLE    | f\n default_redpanda_catalog | orders     | created_at | TIMESTAMP | f\n(5 rows)"
               },
               {
-                "match": "default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b[\\s\\S]*GROUP\\s+BY",
+                "match": "default_redpanda_catalog\\\\?\"?\\s*(=>|⇒)\\s*\\\\?\"?orders\\b[\\s\\S]*GROUP\\s+BY",
                 "output": "  status   | count\n-----------+-------\n completed | 18342\n pending   |  2210\n shipped   |  6031\n cancelled |   487\n(4 rows)"
               },
               {
-                "match": "COUNT[\\s\\S]*default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b|default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b[\\s\\S]*COUNT",
+                "match": "COUNT[\\s\\S]*default_redpanda_catalog\\\\?\"?\\s*(=>|⇒)\\s*\\\\?\"?orders\\b|default_redpanda_catalog\\\\?\"?\\s*(=>|⇒)\\s*\\\\?\"?orders\\b[\\s\\S]*COUNT",
                 "output": " count\n-------\n 27070\n(1 row)"
               },
               {
-                "match": "default_redpanda_catalog\\s*(=>|⇒)\\s*\\\\?\"?orders\\b",
+                "match": "default_redpanda_catalog\\\\?\"?\\s*(=>|⇒)\\s*\\\\?\"?orders\\b",
                 "output": " order_id | customer | status    | amount | created_at\n----------+----------+-----------+--------+----------------------------\n o-100231 | acme     | completed | 129.50 | 2026-10-20 08:14:02.118000\n(1 row)"
               },
               {
@@ -716,7 +716,7 @@
       "invariants": [
         {
           "name": "removes_only_orders_internal",
-          "failure_condition": "Fails if the answer does not identify the stored orders_* wildcard grant as the source of bob's access to orders_internal; or reports that it removed access by revoking orders_internal alone, by a deny or exclusion, or by revoking all of bob's grants on the catalog; or leaves bob, by what it reports doing, without SELECT on orders_eu, orders_us, or payments, for example by revoking orders_* without granting the other two topics. Passes if it reports revoking the orders_* grant and granting SELECT on orders_eu and orders_us (by name or with narrower patterns that do not match orders_internal) while leaving payments alone, in either order and even after a first attempt that errored and changed nothing. Also passes if every change it attempted errored or it attempted none, and it stops to confirm, as long as it says the orders_* wildcard must be revoked whole and gives the REVOKE and the GRANT statements for orders_eu and orders_us that it would run. Statements it reports as returning an error count as not done. Do not fail an answer for saying that a later read of the grants view did not show the change."
+          "failure_condition": "Fails if the answer does not identify the stored orders_* wildcard grant as the source of bob's access to orders_internal; or reports that it removed access by revoking orders_internal alone, by a deny or exclusion, or by revoking all of bob's grants on the catalog; or leaves bob, by what it reports doing, without SELECT on orders_eu, orders_us, or payments, for example by revoking orders_* without granting the other two topics. Passes if it reports revoking the orders_* grant and granting SELECT on orders_eu and orders_us (by name or with narrower patterns that do not match orders_internal) while leaving payments alone, with the orders_* REVOKE before the GRANTs, even after a first attempt that errored and changed nothing. Revoking orders_* also removes any stored grant it covers, so a grant on orders_eu or orders_us made before that REVOKE counts only if it is made again after it. Also passes if every change it attempted errored or it attempted none, and it stops to confirm, as long as it says the orders_* wildcard must be revoked whole and gives the REVOKE and then the GRANT statements for orders_eu and orders_us that it would run. Statements it reports as returning an error count as not done. Do not fail an answer for saying that a later read of the grants view did not show the change."
         }
       ]
     },
@@ -863,7 +863,7 @@
     {
       "id": "acl-locked-user-still-has-wildcard-sql-grant",
       "query": "Security asked me to make sure analyst@example.com can read only the public_events topic on our Redpanda Cloud cluster. I've already set Kafka ACLs so that principal can only read public_events. They also query through Redpanda SQL (they have the SQL: Access role). Check that they really can't read anything else and fix whatever isn't locked down. You can run rpk against the cluster with run_rpk and run statements on the SQL endpoint as a SQL superuser with run_sql.",
-      "why": "Redpanda SQL reads topics through the catalog's own credential, not the querying user's Kafka principal, so Kafka ACLs do not limit what a user reads through SQL; GRANT and REVOKE on the external source are the boundary. Here the ACLs are correct but a stored '*' SQL grant lets the user read every topic in the catalog. The case grades the outcome: the agent finds the wildcard in information_schema.role_external_relation_grants and replaces it with a grant on public_events, or lays that out for confirmation. In the recorded runs the baseline knew the ACLs do not apply to SQL, but searched PostgreSQL privilege views, never found the stored grant, and tried REVOKE on the topics as plain tables.",
+      "why": "Redpanda SQL reads topics through the catalog's own credential, not the querying user's Kafka principal, so Kafka ACLs do not limit what a user reads through SQL; GRANT and REVOKE on the external source are the boundary. Here the ACLs are correct but a stored catalog-wide SQL grant (pattern '*') lets the user read every topic in the catalog. A catalog-wide grant is listed only in information_schema.role_table_grants, with table_name set to the catalog name, not in role_external_relation_grants. The case grades the outcome: the agent finds the catalog-wide grant and replaces it with a grant on public_events, or lays that out for confirmation. In the recorded runs the baseline knew the ACLs do not apply to SQL, but searched PostgreSQL privilege views, never found the stored grant, and tried REVOKE on the topics as plain tables.",
       "origin": "behavioral",
       "verified_against": [
         "product source"
@@ -925,12 +925,12 @@
             },
             "responses": [
               {
-                "match": "role_external_relation_grants",
-                "output": " grantee             |       source_name        | relation_pattern | privilege_type\n---------------------+--------------------------+------------------+----------------\n analyst@example.com | default_redpanda_catalog | *                | SELECT\n(1 row)"
+                "match": "role_table_grants|table_privileges",
+                "output": "       grantee       |        table_name        | privilege_type\n---------------------+--------------------------+----------------\n analyst@example.com | default_redpanda_catalog | SELECT\n(1 row)"
               },
               {
-                "match": "role_table_grants|table_privileges",
-                "output": " grantee | table_name | privilege_type\n---------+------------+----------------\n(0 rows)"
+                "match": "role_external_relation_grants",
+                "output": " grantee | source_name | relation_pattern | privilege_type\n---------+-------------+------------------+----------------\n(0 rows)"
               },
               {
                 "match": "SHOW\\s+(REDPANDA|KAFKA)\\s+TABLES|SHOW\\s+TABLES\\s+FROM",
@@ -966,7 +966,7 @@
               },
               {
                 "match": "role_usage_grants",
-                "output": "      grantee      | object_schema | object_name | object_type | privilege_type\n-------------------+---------------+-------------+-------------+----------------\n bob@example.com   | oxla          | public      | SCHEMA      | USAGE\n(1 row)"
+                "output": "      grantee      | object_schema | object_name | object_type | privilege_type\n-------------------+---------------+-------------+-------------+----------------\n analyst@example.com | oxla        | public      | SCHEMA      | USAGE\n(1 row)"
               },
               {
                 "match": "SHOW\\s+TABLES",
@@ -1039,7 +1039,7 @@
       "invariants": [
         {
           "name": "sql_grants_are_the_boundary",
-          "failure_condition": "Fails if the answer says or implies that the Kafka ACLs restrict what analyst@example.com reads through Redpanda SQL, or reports the user as locked down without having found the stored '*' SQL grant, or leaves the '*' grant in place by what it reports doing without saying it must be revoked. Passes if it says SQL reads are not limited by Kafka ACLs, identifies the stored '*' wildcard grant on default_redpanda_catalog as letting the user read every topic through SQL, and either reports revoking it and granting SELECT on public_events only, or stops to confirm and gives those REVOKE and GRANT statements. Statements it reports as returning an error count as not done."
+          "failure_condition": "Fails if the answer says or implies that the Kafka ACLs restrict what analyst@example.com reads through Redpanda SQL, or reports the user as locked down without having found the stored catalog-wide SQL grant, or leaves that grant in place by what it reports doing without saying it must be revoked. Passes if it says SQL reads are not limited by Kafka ACLs, identifies the stored catalog-wide grant on default_redpanda_catalog (shown in role_table_grants, equivalent to the pattern '*') as letting the user read every topic through SQL, and either reports revoking it and granting SELECT on public_events only, or stops to confirm and gives those REVOKE and GRANT statements. Statements it reports as returning an error count as not done. A REVOKE it reports as returning REVOKE counts as done, even if the answer doubts it because a later read of the grants views still listed the grant: the mocked views do not change."
         }
       ]
     }
