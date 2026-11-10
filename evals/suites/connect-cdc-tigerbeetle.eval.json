@@ -1,0 +1,604 @@
+{
+  "name": "connect-cdc-tigerbeetle skill vs docs",
+  "skill": "connect-cdc-tigerbeetle",
+  "description": "Measures whether the connect-cdc-tigerbeetle skill adds value over general knowledge and the published Redpanda Connect docs for the tigerbeetle_cdc input: builds that include it, licensing, start position and checkpointing, message encoding, event types, and pacing.",
+  "test_cases": [
+    {
+      "id": "tigerbeetle-license-tier",
+      "query": "We're on the free tier of Redpanda Connect with no Enterprise license key. Every other CDC input we looked at (postgres_cdc, mysql_cdc) needs one. Can we run the tigerbeetle_cdc input without an Enterprise license, or will it refuse to start?",
+      "why": "tigerbeetle_cdc is the one CDC input whose support tier is certified, not enterprise; its source is Apache-2.0 and it makes no Enterprise license check, so it runs without a license. Models generalise from the other CDC inputs and say it needs a license. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/plugins/info.csv",
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "no_license_needed",
+          "failure_condition": "Fails if the answer says tigerbeetle_cdc needs an Enterprise license, will stop after a trial, or cannot say either way. Passes if it says the input runs without an Enterprise license because it is not an enterprise-tier connector."
+        }
+      ]
+    },
+    {
+      "id": "component-missing-from-standard-builds",
+      "query": "I installed Redpanda Connect with rpk and also tried the redpandadata/connect Docker image. In both, a config with a tigerbeetle_cdc input fails lint with 'unable to infer component type: tigerbeetle_cdc'. Other inputs work. What's wrong and how do I get this input?",
+      "why": "tigerbeetle_cdc is compiled only behind the cgo build tag, so the rpk-managed Connect, the standard binaries and the standard Docker image lack it. It ships only in the redpanda-connect-cgo Linux amd64 archive, or in a build from source with CGO_ENABLED=1. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go",
+        "github.com/redpanda-data/connect .goreleaser/connect-cgo.yaml"
+      ],
+      "required_patterns": [
+        "cgo"
+      ],
+      "invariants": [
+        {
+          "name": "cgo_build_needed",
+          "failure_condition": "Fails if the answer blames a typo, an old version, or a missing plugin install, or tells the user to upgrade rpk or the standard image as the fix. Passes if it says the input exists only in cgo-enabled builds and tells the user to use the prebuilt cgo binary (Linux amd64) or build from source with cgo enabled."
+        }
+      ]
+    },
+    {
+      "id": "first-run-start-position",
+      "query": "I'm about to start a Redpanda Connect tigerbeetle_cdc pipeline for the first time against a TigerBeetle cluster that has been running in production for a year, with a fresh progress cache. I haven't set any start option. What will the first run send: only new transfers from now on, or something else? Is there a separate initial snapshot phase like postgres_cdc has?",
+      "why": "With no timestamp_initial and no cached checkpoint, the input streams every CDC event the cluster still has, from the beginning, not only new changes. There is no separate snapshot phase; each event already carries the full transfer and both accounts. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "streams_history_no_snapshot",
+          "failure_condition": "Fails if the answer says the first run sends only new events from now on, or describes a separate snapshot phase that runs before streaming. Passes if it says the first run streams all change events available in the cluster from the start, that there is no separate snapshot phase, and that timestamp_initial sets a later start."
+        }
+      ]
+    },
+    {
+      "id": "amount-field-encoding",
+      "query": "In a Redpanda Connect pipeline reading the tigerbeetle_cdc input, my Bloblang mapping `root.total = this.transfer.amount + this.transfer.user_data_32` throws a type error. What JSON types do the fields in the tigerbeetle_cdc message have, and how should I handle amount?",
+      "why": "The input serializes 128-bit and 64-bit fields (id, amount, pending_id, user_data_128, user_data_64, debits_*/credits_*, timestamp) as decimal strings, while 32-bit and 16-bit fields (user_data_32, timeout, code, flags, ledger) are JSON numbers. amount must be parsed, and a 128-bit value can exceed float or int64 precision. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "big_fields_are_strings",
+          "failure_condition": "Fails if the answer says amount is a JSON number, or does not say that the 128-bit and 64-bit fields are decimal strings while the 32-bit and 16-bit fields such as user_data_32 are numbers. Passes if it states that split and tells the user to convert amount (for example with .number() or a big-number aware approach), noting possible precision loss for large values."
+        }
+      ]
+    },
+    {
+      "id": "ledger-metadata-comparison",
+      "query": "I route tigerbeetle_cdc events in Redpanda Connect with a switch output whose check is `meta(\"ledger\") == 2`, but no message ever matches that case, even though I can see ledger 2 transfers in the body. Why?",
+      "why": "All metadata values the input sets are strings, so meta(\"ledger\") is \"2\" and never equals the number 2. Compare against \"2\" or convert with .number(), or read the numeric this.ledger from the body. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "metadata_is_string",
+          "failure_condition": "Fails if the answer does not identify that the ledger metadata value is a string and so does not equal the number 2. Passes if it says that and gives a fix such as comparing to \"2\", calling .number(), or using the body's numeric ledger field."
+        }
+      ]
+    },
+    {
+      "id": "settled-event-types",
+      "query": "Our finance team only wants transfers that actually moved money in the topic fed by our Redpanda Connect tigerbeetle_cdc input. Which event types should I keep, and what's the exact value I filter on?",
+      "why": "The event types are single_phase, two_phase_pending, two_phase_posted, two_phase_voided and two_phase_expired, in the type field and event_type metadata. Settled money movement is single_phase plus two_phase_posted. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "required_patterns": [
+        "single_phase",
+        "two_phase_posted",
+        "event_type"
+      ],
+      "invariants": [
+        {
+          "name": "keep_single_and_posted_only",
+          "failure_condition": "Fails if the answer keeps two_phase_pending, two_phase_voided or two_phase_expired as settled, or misses either single_phase or two_phase_posted. Passes if it keeps exactly single_phase and two_phase_posted and drops the rest."
+        }
+      ]
+    },
+    {
+      "id": "timestamp-initial-after-checkpoint",
+      "query": "My Redpanda Connect tigerbeetle_cdc pipeline has been running for weeks with a Redis progress_cache. I just added timestamp_initial set to a TigerBeetle timestamp from last Monday and restarted it, hoping to resend everything since then. Nothing was resent. Why, and what should I do?",
+      "why": "timestamp_initial is ignored when the progress cache already holds a later acknowledged timestamp; the input resumes from the larger of the two. To rewind, remove the checkpoint key (timestamp_last_<cluster_id>) or point progress_cache at fresh state, then start with timestamp_initial. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "checkpoint_wins_clear_it",
+          "failure_condition": "Fails if the answer blames a wrong timestamp format or unit as the main cause, or does not say the stored checkpoint takes precedence. Passes if it says timestamp_initial is ignored because the cache holds a more recent acknowledged timestamp, and tells the user to delete the checkpoint key or use fresh progress state before restarting with timestamp_initial."
+        }
+      ]
+    },
+    {
+      "id": "dedup-key",
+      "query": "Our consumer applies TigerBeetle events from a Redpanda Connect tigerbeetle_cdc pipeline to a reporting database. After a Connect crash we saw some events twice. Is that expected, and what field should we deduplicate on?",
+      "why": "Delivery is at-least-once: after a crash the input can replay events that were delivered but not yet acknowledged. The event timestamp (top-level timestamp, also the timestamp metadata) is unique per event and is the deduplication key; transfer.id is not unique per event because a two-phase transfer produces several events. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "dedupe_on_event_timestamp",
+          "failure_condition": "Fails if the answer says duplicates should not happen, or recommends transfer.id alone as the deduplication key. Passes if it says duplicates are expected under at-least-once delivery and recommends the event timestamp, which is unique per event."
+        }
+      ]
+    },
+    {
+      "id": "cloud-managed-pipeline",
+      "query": "We use Redpanda Cloud. Can I create a tigerbeetle_cdc pipeline as a managed Redpanda Connect pipeline in our Cloud cluster, the same way we run our other pipelines there?",
+      "why": "tigerbeetle_cdc is marked as not available in Cloud (not yet certified for cloud), and it needs a cgo build. Run it on a self-hosted cgo-enabled Connect binary and write to the Cloud cluster over TLS and SASL. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/plugins/info.csv",
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "not_in_cloud_self_host",
+          "failure_condition": "Fails if the answer says it can run as a Cloud managed pipeline, or cannot say. Passes if it says it is not available as a managed Cloud pipeline and suggests running a self-hosted (cgo) Connect that writes to the Cloud cluster."
+        }
+      ]
+    },
+    {
+      "id": "replica-addresses",
+      "query": "Our TigerBeetle cluster has three replicas behind a TCP load balancer at tb.internal:3000. For the Redpanda Connect tigerbeetle_cdc input, can I just put the load balancer address in addresses? If not, what should go there?",
+      "why": "addresses must list every replica's address, in the same order as the replicas in the cluster; the TigerBeetle client talks to replicas directly, so a single load balancer address is wrong. Sampled from the full skill before the thin rewrite; the thin skill may no longer carry this claim, so read its skill-arm result as a regression signal, not as docs coverage.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "all_replicas_in_order",
+          "failure_condition": "Fails if the answer says the load balancer address is fine, or lists replicas without saying the order must match the replica order. Passes if it says to list every replica's address and that the order must match the cluster's replica order."
+        }
+      ]
+    },
+    {
+      "id": "shared-cache-two-pipelines",
+      "query": "I run two Redpanda Connect pipelines that both read the same TigerBeetle cluster with tigerbeetle_cdc: one sends events to Redpanda, one archives them to S3. Both use the same Redis cache resource config for progress_cache (same URL, same label). Is that safe?",
+      "why": "The checkpoint key is timestamp_last_<cluster_id>, derived only from the cluster ID, so two pipelines on the same cluster sharing a cache read and overwrite one checkpoint: each can skip events the other acknowledged. Give each its own progress state, for example a Redis cache prefix or another database.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go",
+        "github.com/redpanda-data/connect internal/impl/redis/cache.go"
+      ],
+      "invariants": [
+        {
+          "name": "same_key_overwrites",
+          "failure_condition": "Fails if the answer says it is safe, or says the key includes the pipeline or label so they are isolated. Passes if it says both pipelines use the same checkpoint key (based on the cluster ID) and so overwrite each other's progress, and recommends separate progress state per pipeline such as a key prefix, a different Redis database, or a different cache."
+        }
+      ]
+    },
+    {
+      "id": "checkpoint-value-format",
+      "query": "I want to move a Redpanda Connect tigerbeetle_cdc pipeline's checkpoint to a specific TigerBeetle timestamp by editing its Redis progress cache directly with redis-cli. Which key do I change, and what value format does the connector expect?",
+      "why": "The key is timestamp_last_<cluster_id> and the value is the last acknowledged timestamp as an 8-byte little-endian unsigned integer, not a decimal string; any other length fails at startup. The simpler route is to delete the key and set timestamp_initial.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "required_patterns": [
+        "timestamp_last_"
+      ],
+      "invariants": [
+        {
+          "name": "eight_byte_little_endian",
+          "failure_condition": "Fails if the answer says to SET the key to the timestamp as a decimal string, or gives a different key name. Passes if it says the value is an 8-byte little-endian unsigned integer (so a decimal string is rejected), or recommends deleting the key and using timestamp_initial instead while warning that a decimal string will not work."
+        }
+      ]
+    },
+    {
+      "id": "throughput-single-batch-in-flight",
+      "query": "My Redpanda Connect tigerbeetle_cdc pipeline falls behind during peak hours. I raised max_in_flight on the redpanda output to 64 and it made no difference. What actually limits throughput for this input, and what should I tune?",
+      "why": "The input keeps one batch in flight: it holds the next batch until the current one is acknowledged, to keep events in order. Each batch is one request of up to event_count_max events, so output parallelism does not help; raise event_count_max, check rate_limit and output latency.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "required_patterns": [
+        "event_count_max"
+      ],
+      "invariants": [
+        {
+          "name": "one_batch_in_flight",
+          "failure_condition": "Fails if the answer does not say the input sends one batch at a time and waits for its acknowledgment before the next. Passes if it says that, explains why output max_in_flight does not help, and recommends raising event_count_max (and reducing acknowledgment latency)."
+        }
+      ]
+    },
+    {
+      "id": "client-newer-than-cluster",
+      "query": "After upgrading our Redpanda Connect binary, the tigerbeetle_cdc input fails to connect to our TigerBeetle cluster with a client version error. The old Connect binary worked. What happened and what's the right fix?",
+      "why": "The TigerBeetle client bundled in Connect must not be newer than the cluster version, or the connection fails. Upgrade the TigerBeetle cluster first (or go back to the previous Connect binary until it is upgraded). The input also needs a cluster at 0.16.57 or later.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "client_not_newer_than_cluster",
+          "failure_condition": "Fails if the answer blames the cluster being too new, a config change, or networking, or recommends forcing an older client inside the new binary as the main fix. Passes if it says the client bundled in the new Connect is newer than the cluster, which TigerBeetle rejects, and recommends upgrading the cluster first or rolling Connect back until the cluster is upgraded."
+        }
+      ]
+    },
+    {
+      "id": "rate-limit-counts-requests",
+      "query": "I attached a local rate_limit resource with count: 500 and interval: 1s to my Redpanda Connect tigerbeetle_cdc input, expecting at most 500 events per second. I'm seeing far more than that. Why?",
+      "why": "The input's rate_limit throttles requests to TigerBeetle, not events; each request can return up to event_count_max events, so 500 requests per second allows far more events. Lower event_count_max or rate-limit downstream to cap events.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go"
+      ],
+      "invariants": [
+        {
+          "name": "requests_not_events",
+          "failure_condition": "Fails if the answer does not say the rate limit counts requests rather than events. Passes if it says each limited request can fetch up to event_count_max events and suggests lowering event_count_max or throttling per message elsewhere."
+        }
+      ]
+    },
+    {
+      "id": "replay-from-timestamp-clear-checkpoint",
+      "query": "A bug in a consumer of our ledger.transfers topic means it dropped every event it read since TigerBeetle timestamp 1762300800000000000. Please make our Redpanda Connect pipeline send all events from that timestamp onward to the topic again. The pipeline config is /etc/connect/ledger.yaml and it runs as the systemd unit connect-ledger. You have a shell on the pipeline host with redis-cli; do what's needed and tell me what you did.",
+      "why": "timestamp_initial is ignored when the progress cache already holds a later acknowledged timestamp, so setting it and restarting resends nothing. The checkpoint key timestamp_last_<cluster_id> has to change: delete it (or move the progress state to a fresh prefix) and set timestamp_initial, or write the timestamp minus one as an 8-byte little-endian integer. Writing the key as a decimal string breaks the pipeline at startup.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go",
+        "github.com/redpanda-data/connect internal/impl/redis/cache.go"
+      ],
+      "invariants": [
+        {
+          "name": "resumes_at_requested_timestamp",
+          "failure_condition": "Fails if what the answer reports doing would not make the pipeline resume at 1762300800000000000: for example it only set timestamp_initial and left the stored checkpoint in place, deleted the checkpoint without setting timestamp_initial (so everything is resent from the start), wrote the checkpoint as a decimal string, or stopped without changing anything. Passes if it reports deleting the checkpoint (or moving to fresh progress state) and setting timestamp_initial to 1762300800000000000, or writing the checkpoint as the 8-byte little-endian value of 1762300799999999999; writing 1762300800000000000 itself as the checkpoint also passes. Honestly noting that a re-read still shows the old state is fine."
+        }
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the host that runs the user's Redpanda Connect pipeline and return its output. redis-cli on this host reaches the pipeline's Redis server.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command to run."
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "(cat\\s*>|\\btee\\b|sed\\s+-i|\\byq\\b[^|;&]*-i|\\bcp\\b|\\bmv\\b|\\bmkdir\\b|\\bchmod\\b|\\bchown\\b)",
+                "output": ""
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(DEL|UNLINK|GETDEL)\\b",
+                "output": "(integer) 1"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\bSET\\b",
+                "output": "OK"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(KEYS|SCAN)\\b",
+                "output": "1) \"timestamp_last_7\""
+              },
+              {
+                "match": "redis-cli[^|;&]*\\bTYPE\\b",
+                "output": "string"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\bSTRLEN\\b",
+                "output": "(integer) 8"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(TTL|PTTL)\\b",
+                "output": "(integer) -1"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\bEXISTS\\b",
+                "output": "(integer) 1"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(GET|DUMP)\\b",
+                "output": "\"\\xff\\x7f\\x03\\x91\\x8bJ\\x8a\\x18\""
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(PING)\\b",
+                "output": "PONG"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(INFO|DBSIZE|CONFIG)\\b",
+                "output": "# Keyspace\ndb0:keys=1,expires=0,avg_ttl=0"
+              },
+              {
+                "match": "\\b(xxd|od|hexdump)\\b",
+                "output": "00000000: ff7f 0391 8b4a 8a18                      .....J.."
+              },
+              {
+                "match": "\\b(python3?|perl|printf)\\b",
+                "output": "ff7f03918b4a8a18 as little-endian uint64 = 1768307766990176255\n1762300800000000000 = 0x1874f33d93630000, little-endian bytes 000063933df37418\n1762300799999999999 = 0x1874f33d9362ffff, little-endian bytes ffff62933df37418"
+              },
+              {
+                "match": "\\bwhich\\b",
+                "output": "/usr/bin/python3\n/usr/bin/xxd\n/usr/bin/systemctl\n/usr/bin/redis-cli"
+              },
+              {
+                "match": "systemctl[^|;&]*is-active",
+                "output": "active"
+              },
+              {
+                "match": "\\becho\\s+['\\\"]?(hello|ok|test)",
+                "output": "hello"
+              },
+              {
+                "match": "\\bcat\\b[^|;&]*ledger\\.yaml|\\bless\\b|\\bhead\\b[^|;&]*ledger|\\byq\\b",
+                "output": "input:\n  tigerbeetle_cdc:\n    cluster_id: \"7\"\n    addresses:\n      - \"10.0.4.11:3000\"\n      - \"10.0.4.12:3000\"\n      - \"10.0.4.13:3000\"\n    progress_cache: tb_progress\n\noutput:\n  redpanda:\n    seed_brokers: [ \"redpanda-0.internal:9092\" ]\n    topic: ledger.transfers\n    key: ${! json(\"transfer.id\") }\n\ncache_resources:\n  - label: tb_progress\n    redis:\n      url: redis://redis.internal:6379\n"
+              },
+              {
+                "match": "systemctl[^|;&]*\\bstatus\\b",
+                "output": "* connect-ledger.service - Redpanda Connect pipeline\n     Loaded: loaded (/etc/systemd/system/connect-ledger.service; enabled)\n     Active: active (running)\n   Main PID: 2210 (redpanda-connect)"
+              },
+              {
+                "match": "systemctl[^|;&]*\\bcat\\b",
+                "output": "# /etc/systemd/system/connect-ledger.service\n[Service]\nExecStart=/usr/local/bin/redpanda-connect run /etc/connect/ledger.yaml\nRestart=always"
+              },
+              {
+                "match": "systemctl",
+                "output": ""
+              },
+              {
+                "match": "journalctl",
+                "output": "level=info msg=\"Input type tigerbeetle_cdc is now active\" label=\"\" path=root.input\nlevel=info msg=\"Output type redpanda is now active\" label=\"\" path=root.output"
+              },
+              {
+                "match": "redpanda-connect[^|;&]*(lint|--version|version)",
+                "output": ""
+              },
+              {
+                "match": ".",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "\\b(DEL|UNLINK|GETDEL)\\b[^|;&]*timestamp_last_7|prefix\\s*:\\W{0,4}\\w|-x\\s+SET\\b[^|;&]*timestamp_last_7|\\bSET\\s+\\S*timestamp_last_7[^|;&]*(\\\\\\\\x|ffff62933df374|000063933df374)"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(?<!-x\\s)\\bSET\\s+\\\\?['\"]?timestamp_last_7\\\\?['\"]?\\s+\\\\?['\"]?\\d{6,}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "second-pipeline-separate-progress",
+      "query": "We already run a Redpanda Connect pipeline from /etc/connect/ledger.yaml (systemd unit connect-ledger) that streams our TigerBeetle cluster's events to Redpanda. Add a second pipeline on the same host that archives the complete event history, from the very first event, to the S3 bucket ledger-archive as NDJSON. Write its config to /etc/connect/ledger-archive.yaml and start it with `systemctl start connect@ledger-archive` (the template unit runs /etc/connect/<name>.yaml). Leave the existing pipeline running as it is. You have a shell on the host; tell me what you did.",
+      "why": "The progress key is timestamp_last_<cluster_id>, so a second pipeline on the same cluster that copies the first pipeline's Redis cache reads the first pipeline's checkpoint (the archive starts mid-history instead of at the first event) and both overwrite one checkpoint. The new pipeline needs its own progress state, such as a Redis prefix, a different Redis database, or another persistent cache.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go",
+        "github.com/redpanda-data/connect internal/impl/redis/cache.go"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the host that runs the user's Redpanda Connect pipelines and return its output. AWS credentials for the ledger-archive bucket are already in the environment of the systemd units.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command to run."
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "(cat\\s*>|\\btee\\b|sed\\s+-i|\\byq\\b[^|;&]*-i|\\bcp\\b|\\bmv\\b|\\bmkdir\\b|\\bchmod\\b|\\bchown\\b)",
+                "output": ""
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(DEL|UNLINK|GETDEL)\\b",
+                "output": "(integer) 1"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\bSET\\b",
+                "output": "OK"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(KEYS|SCAN)\\b",
+                "output": "1) \"timestamp_last_7\""
+              },
+              {
+                "match": "redis-cli[^|;&]*\\bTYPE\\b",
+                "output": "string"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\bSTRLEN\\b",
+                "output": "(integer) 8"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(TTL|PTTL)\\b",
+                "output": "(integer) -1"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\bEXISTS\\b",
+                "output": "(integer) 1"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(GET|DUMP)\\b",
+                "output": "\"\\xff\\x7f\\x03\\x91\\x8bJ\\x8a\\x18\""
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(PING)\\b",
+                "output": "PONG"
+              },
+              {
+                "match": "redis-cli[^|;&]*\\b(INFO|DBSIZE|CONFIG)\\b",
+                "output": "# Keyspace\ndb0:keys=1,expires=0,avg_ttl=0"
+              },
+              {
+                "match": "\\bcat\\b[^|;&]*ledger\\.yaml|\\bless\\b|\\bhead\\b[^|;&]*ledger|\\byq\\b",
+                "output": "input:\n  tigerbeetle_cdc:\n    cluster_id: \"7\"\n    addresses:\n      - \"10.0.4.11:3000\"\n      - \"10.0.4.12:3000\"\n      - \"10.0.4.13:3000\"\n    progress_cache: tb_progress\n\noutput:\n  redpanda:\n    seed_brokers: [ \"redpanda-0.internal:9092\" ]\n    topic: ledger.transfers\n    key: ${! json(\"transfer.id\") }\n\ncache_resources:\n  - label: tb_progress\n    redis:\n      url: redis://redis.internal:6379\n"
+              },
+              {
+                "match": "\\bls\\b[^|;&]*/etc/connect",
+                "output": "ledger.yaml"
+              },
+              {
+                "match": "systemctl[^|;&]*\\bstatus\\b",
+                "output": "* connect-ledger.service - Redpanda Connect pipeline\n     Loaded: loaded (/etc/systemd/system/connect-ledger.service; enabled)\n     Active: active (running)\n   Main PID: 2210 (redpanda-connect)"
+              },
+              {
+                "match": "systemctl[^|;&]*\\bcat\\b",
+                "output": "# /etc/systemd/system/connect-ledger.service\n[Service]\nExecStart=/usr/local/bin/redpanda-connect run /etc/connect/ledger.yaml\nRestart=always"
+              },
+              {
+                "match": "systemctl",
+                "output": ""
+              },
+              {
+                "match": "journalctl",
+                "output": "level=info msg=\"Input type tigerbeetle_cdc is now active\" label=\"\" path=root.input\nlevel=info msg=\"Output type redpanda is now active\" label=\"\" path=root.output"
+              },
+              {
+                "match": "redpanda-connect[^|;&]*(lint|--version|version)",
+                "output": ""
+              },
+              {
+                "match": "\\baws\\s+s3",
+                "output": ""
+              },
+              {
+                "match": ".",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(?=[\\s\\S]*ledger-archive\\.yaml)(?=[\\s\\S]*tigerbeetle_cdc)[\\s\\S]*(prefix\\s*:|:6379/[1-9]|aws_dynamodb\\s*:|\\bsql\\s*:|\\bfile\\s*:)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "install-cgo-build-for-component",
+      "query": "I'm setting up a TigerBeetle CDC pipeline on our Linux x86_64 server. `rpk connect run /etc/connect/ledger.yaml` fails and I don't know why. You have a shell on the server with internet access; get the pipeline running and tell me what you did.",
+      "why": "tigerbeetle_cdc exists only in cgo-enabled builds, so rpk connect (and the standard binaries and Docker image) report it as an unknown component; upgrading rpk connect does not help. The fix is the redpanda-connect-cgo Linux amd64 release archive, or a source build with CGO_ENABLED=1.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/tigerbeetle/input_tigerbeetle.go",
+        "github.com/redpanda-data/connect .goreleaser/connect-cgo.yaml"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's Linux server and return its output. The server has internet access and sudo.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command to run."
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "redpanda-connect-cgo_[^|;&]*\\.tar\\.gz",
+                "output": ""
+              },
+              {
+                "match": "api\\.github\\.com[^|;&]*releases|gh\\s+release",
+                "output": "{\"tag_name\": \"v4.117.0\", \"assets\": [{\"name\": \"redpanda-connect-cgo_4.117.0_linux_amd64.tar.gz\"}, {\"name\": \"redpanda-connect-cloud_4.117.0_linux_amd64.tar.gz\"}, {\"name\": \"redpanda-connect-fips_4.117.0_linux_amd64.tar.gz\"}, {\"name\": \"redpanda-connect_4.117.0_darwin_arm64.tar.gz\"}, {\"name\": \"redpanda-connect_4.117.0_linux_amd64.tar.gz\"}, {\"name\": \"redpanda-connect_4.117.0_linux_arm64.tar.gz\"}]}"
+              },
+              {
+                "match": "CGO_ENABLED=1[^|;&]*go\\s+(build|install)",
+                "output": ""
+              },
+              {
+                "match": "\\bcat\\b[^|;&]*ledger\\.yaml",
+                "output": "input:\n  tigerbeetle_cdc:\n    cluster_id: \"7\"\n    addresses:\n      - \"10.0.4.11:3000\"\n      - \"10.0.4.12:3000\"\n      - \"10.0.4.13:3000\"\n    progress_cache: tb_progress\n\noutput:\n  redpanda:\n    seed_brokers: [ \"redpanda-0.internal:9092\" ]\n    topic: ledger.transfers\n    key: ${! json(\"transfer.id\") }\n\ncache_resources:\n  - label: tb_progress\n    redis:\n      url: redis://redis.internal:6379\n"
+              },
+              {
+                "match": "rpk\\s+connect\\s+(upgrade|install)",
+                "output": "Redpanda Connect is already at the latest version."
+              },
+              {
+                "match": "rpk\\s+connect\\s+(run|lint|streams)",
+                "output": "Config lint error: /etc/connect/ledger.yaml(2,3) unable to infer component type: tigerbeetle_cdc"
+              },
+              {
+                "match": "rpk\\s+connect\\s+list",
+                "output": "Inputs:\n  amqp_0_9\n  aws_dynamodb_cdc\n  aws_kinesis\n  gcp_spanner_cdc\n  kafka_franz\n  mongodb_cdc\n  mysql_cdc\n  postgres_cdc\n  redpanda\n  sql_select\n  ..."
+              },
+              {
+                "match": "docker[^|;&]*redpandadata/connect",
+                "output": "Config lint error: /etc/connect/ledger.yaml(2,3) unable to infer component type: tigerbeetle_cdc"
+              },
+              {
+                "match": "redpanda-connect\\s+list",
+                "output": "Inputs:\n  ...\n  tigerbeetle_cdc\n  ..."
+              },
+              {
+                "match": "redpanda-connect[^|;&]*(run|lint)",
+                "output": "level=info msg=\"Input type tigerbeetle_cdc is now active\" path=root.input\nlevel=info msg=\"Output type redpanda is now active\" path=root.output"
+              },
+              {
+                "match": "uname",
+                "output": "Linux ledger-cdc-01 6.8.0-49-generic x86_64 GNU/Linux"
+              },
+              {
+                "match": "redis-cli[^|;&]*PING",
+                "output": "PONG"
+              },
+              {
+                "match": "\\bgo\\s+version",
+                "output": "bash: go: command not found"
+              },
+              {
+                "match": ".",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "redpanda-connect-cgo_|CGO_ENABLED=1[^|;&]*go\\s+(build|install)"
+          }
+        ]
+      }
+    }
+  ]
+}
