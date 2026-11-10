@@ -1,50 +1,65 @@
 # rpk-security Skill Source Map
 
-Maps each file in `skills/rpk-security/` to the source paths it derives from, so future
-syncs and human maintainers know exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" procedure below, backed by behavioral eval
+cases in `evals/suites/rpk-security.eval.json`, and sends the agent to the docs for everything
+else. This file maps only the claims the skill still makes.
 
-The `rpk security` command group is Go source in the **public** repo
-`redpanda-data/redpanda` under `src/go/rpk/pkg/cli/security/` (subcommands `user`, `acl`,
-`role`, `secret`); the deprecated `rpk acl` alias lives at `src/go/rpk/pkg/cli/acl/`.
-Broker-side authentication/authorization (SASL, ACLs, OIDC, Kerberos, mTLS, roles, audit,
-license) is under `src/v/security/` and `src/v/kafka/server/handlers/`; cluster config keys
-are defined in `src/v/config/configuration.cc` (rpk only passes them through). The
-user-facing reference is auto-generated in the **private** repo `redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP connector (`search_code`,
-`get_file_contents`), or `gh api .../contents/<path>` for verification; do not guess.
-Before writing or changing any fact, re-open the cited source and confirm exact command
-paths, flag names, and config keys. `rpk` is versioned: verify against the **current stable
-release tag**, not `dev`/`main`.
+The `rpk security` command group is Go source under `src/go/rpk/pkg/cli/security/`. The rows
+below were checked against the public `redpanda-data/redpanda` repo at tag `v26.2.2`; paths are
+relative to that repo. Verify against the current stable release tag, not `dev`.
 
-## File-to-source table
+## How to work: line, source, eval case
 
-| Skill file | redpanda source paths | docs sources |
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `src/go/rpk/pkg/cli/security/security.go`, and the subcommand dirs `security/user/`, `security/acl/`, `security/role/`, `security/secret/` (all under `src/go/rpk/pkg/cli/`); `src/go/rpk/pkg/cli/acl/acl.go` (deprecated alias); `src/go/rpk/pkg/cli/cluster/license/` (`info.go`, `set.go`, `license.go`); `src/go/rpk/pkg/cli/generate/license.go`; broker gates in `src/v/config/configuration.cc`; broker auth in `src/v/security/` | `modules/reference/pages/rpk/rpk-security/` (index `rpk-security.adoc`), `modules/manage/pages/security/` (`authentication.adoc`, `authorization/`, `fips-compliance.adoc`), `modules/manage/pages/security/audit-logging.adoc` |
-| `references/users.md` | `src/go/rpk/pkg/cli/security/user/` (`user.go`, `create.go`, `list.go`, `delete.go`, `update.go`); broker SCRAM: `src/v/security/scram_authenticator.cc`, `scram_algorithm.cc`, `scram_credential.h`; Kafka SCRAM handlers `src/v/kafka/server/handlers/{alter,describe}_user_scram_credentials.{cc,h}`; `enable_sasl`/`kafka_enable_authorization`/`superusers` in `src/v/config/configuration.cc` | `modules/reference/pages/rpk/rpk-security/rpk-security-user*.adoc` (`-create`, `-list`, `-delete`, `-update`, `rpk-security-user.adoc`), `modules/manage/pages/security/authentication.adoc` |
-| `references/acls.md` | `src/go/rpk/pkg/cli/security/acl/` (`acl.go`, `common.go`, `create.go`, `list.go`, `delete.go`); `src/go/rpk/pkg/cli/acl/acl.go` (deprecated flags/alias); broker ACL model: `src/v/security/acl.{cc,h}`, `acl_entry_set.h`, `acl_store.h`, `authorizer.{cc,h}`; Kafka ACL handlers `src/v/kafka/server/handlers/{create,delete,describe}_acls.{cc,h}` | `modules/reference/pages/rpk/rpk-security/rpk-security-acl*.adoc` (`-create`, `-list`, `-delete`, `rpk-security-acl.adoc`), `modules/manage/pages/security/authorization/acl.adoc` |
-| `references/roles.md` | `src/go/rpk/pkg/cli/security/role/` (`role.go`, `create.go`, `list.go`, `describe.go`, `delete.go`, `assign.go`, `unassign.go`); broker RBAC: `src/v/security/role.{cc,h}`, `role_store.h`, handler `src/v/kafka/server/handlers/describe_redpanda_roles.{cc,h}`; secrets: `src/go/rpk/pkg/cli/security/secret/` (`secret.go`, `create.go`, `list.go`, `update.go`, `delete.go`) — Cloud Dataplane API, no broker source | `modules/reference/pages/rpk/rpk-security/rpk-security-role*.adoc` (`-create`, `-list`, `-describe`, `-delete`, `-assign`, `-unassign`, `rpk-security-role.adoc`), `modules/manage/pages/security/authorization/rbac.adoc`, `gbac.adoc`. **No generated `rpk security secret` docs page** (cloud-only) |
-| `references/authentication.md` | broker authenticators in `src/v/security/`: `scram_authenticator.cc`, `plain_authenticator.cc`, `oidc_authenticator.cc`, `oidc_service.cc`, `oidc_principal_mapping_applicator.cc`, `jwt.cc`, `gssapi_authenticator.cc`, `gssapi_principal_mapper.cc`, `gssapi_rule.cc`, `krb5.cc`, `mtls.cc`, `mtls_rule.cc`, `request_auth.cc`; Kafka SASL handlers `src/v/kafka/server/handlers/sasl_handshake.h`, `sasl_authenticate.h`; `sasl_mechanisms`/`oidc_*`/`sasl_kerberos_*`/`kafka_mtls_principal_mapping_rules`/`http_authentication`/`enable_sasl`/`admin_api_require_auth` keys in `src/v/config/configuration.cc`; rpk-side `-X sasl.*` in `src/go/rpk/pkg/config/params.go` | `modules/manage/pages/security/authentication.adoc`, `modules/manage/pages/security/authorization/gbac.adoc` |
-| `references/enterprise-security.md` | license CLI `src/go/rpk/pkg/cli/cluster/license/` + `src/go/rpk/pkg/cli/generate/license.go`; broker license `src/v/security/license.{cc,h}`, audit `src/v/security/audit/`; enterprise gates (`audit_*`, `enable_schema_id_validation`, `schema_registry_enable_authorization`, `oidc_group_claim_path`, `nested_group_behavior`, `fips_mode`, `openssl_*`) in `src/v/config/configuration.cc`; topic config via `src/go/rpk/pkg/cli/topic/` (`create.go`, `config.go`) | `modules/manage/pages/security/audit-logging.adoc`, `modules/manage/pages/schema-reg/schema-id-validation.adoc`, `modules/manage/pages/security/fips-compliance.adoc`, `modules/manage/pages/security/authorization/gbac.adoc`, `rbac.adoc`, `modules/reference/pages/rpk/rpk-cluster/rpk-cluster-license*.adoc`, `modules/reference/pages/rpk/rpk-generate/rpk-generate-license.adoc`, `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc` |
+| Ask which SCRAM mechanism a user's clients use before changing its password: `rpk security user update` sets the mechanism along with the password, rpk has no command that shows the current mechanism, and a wrong mechanism breaks the clients (verified 2026-11-10). On 2026-11-10 the baseline passed its case 3/6 (2/3 and 1/3 in two runs) and ran the update with the default mechanism otherwise; the thin skill passed 3/3 and installed 3/3. The full skill, whose examples passed `--mechanism scram-sha-256`, passed 0/3. | `src/go/rpk/pkg/cli/security/user/update.go` (`MarkFlagRequired("new-password")`, `MarkFlagRequired("mechanism")`), `src/go/rpk/pkg/cli/security/user/list.go` (`Username` column only), `src/go/rpk/pkg/cli/security/user/` (subcommands create, delete, list, update), `src/v/security/credential_store.h` (one `scram_credential` per user) | `rotate-password-keeps-mechanism` |
+| Never update a Cloud secret with a value you made up: `rpk security secret update` overwrites the value and the scope list, and rpk can't read a value back (verified 2026-11-10). Safety guardrail (data loss): the baseline passed its case 6/6 on 2026-11-10 (two runs of 3), and the line and case stay as a regression guard. The thin skill passed 3/3 and installed 3/3. | `src/go/rpk/pkg/cli/security/secret/update.go` (`MarkFlagRequired` on `name`, `value`, `scopes`; "Updating a secret will overwrite its scopes"), `src/go/rpk/pkg/cli/security/secret/list.go` (`NAME`, `SCOPES` columns only) | `secret-scope-change-needs-value` |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-- `rpk security <cmd> --help` and `rpk security acl --help-operations` — the live flag set and the full operation→Kafka-request mapping table; the skill reproduces only a subset.
-- Auto-generated SASL user password (30 chars) from `rpk security user create` — runtime-generated, printed once.
-- `rpk generate license --apply` trial license / generated license string — runtime state.
-- `rpk cluster license info` output (Organization, Type, Expires, `license violation`) — runtime cluster state.
-- `rpk security secret` behavior — Cloud Dataplane API passthrough; no broker source and no generated docs page. Confirm against a live cloud cluster / the Dataplane API, not `redpanda-data/redpanda`.
+| Claim | Source | Eval case |
+|---|---|---|
+| `get_rpk_command` looks up one rpk command and `get_config_property` one property | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| For a Redpanda Cloud cluster, pass `platform: "cloud"` | `skills/redpanda-docs/references/SOURCES.md` | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 
-## TODO / re-verify
+## Docs gaps (not skill claims; do not re-verify here)
 
-- **Enterprise cluster-config keys and their defaults** (`audit_*`, `oidc_*`, `sasl_kerberos_*`, `enable_schema_id_validation`, `schema_registry_enable_authorization`, `nested_group_behavior`, `http_authentication`) are broker config, not rpk. The property defaults listed were **not each line-verified** against `src/v/config/configuration.cc` — re-check; treat the docs property partials as the citation of record.
-- ~~`oidc_token_expire_disconnect`~~ **RESOLVED (2026-10-01, drift audit):** no such property exists at v26.2.2 — the full `oidc_*` set in `src/v/config/configuration.cc` is `oidc_discovery_url`, `oidc_token_audience`, `oidc_principal_mapping`, `oidc_clock_skew_tolerance`, `oidc_group_claim_path`, `oidc_keys_refresh_interval`, and `oidc_http_proxy_url`/`_username`/`_password`. The fabricated row and its `rpk cluster config set` line were removed from `authentication.md`, and the three forward-proxy properties plus `oidc_group_claim_path` were added.
-- **`fips_mode` and `rpk node config set`**: `fips_mode`/`openssl_*` are broker (`redpanda.yaml`) properties. rpk has **no `node` command** — the correct form is `rpk redpanda config set redpanda.fips_mode` (`src/go/rpk/pkg/cli/redpanda/config.go`); `rpk node config set` is a docs/Admin-API spelling. Call sites corrected on 2026-07-07.
-- **`-X sasl.mechanism=OAUTHBEARER` rpk support and version claims** (v26.1.7 / v25.3.x / v25.2.x): verify against `src/go/rpk/pkg/config/params.go` and the release tag; version pins are unverified.
-- **mTLS / Kerberos principal-mapping rule grammar**: verify against `src/v/security/mtls_rule.cc`, `gssapi_rule.cc`, `gssapi_principal_mapper.cc` rather than paraphrasing.
+- `rpk security acl delete --dry` still asks for confirmation before it prints "Dry run,
+  exiting.", even with `--no-confirm`, so with no terminal it fails after printing the matches.
+  `rpk security acl list` with the same filters is the non-interactive preview. The page
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-security/rpk-security-acl-delete/
+  (checked 2026-11-10) describes `--dry` only as "Dry run: validate what would be deleted."
+  Source: `src/go/rpk/pkg/cli/security/acl/delete.go` (`if !noConfirm || dry` runs the describe,
+  then `out.Confirm`, then the dry-run exit). Eval case `acl-delete-dry-still-prompts`: every arm
+  failed 0/3, because neither the docs nor the full skill said it.
+- The same page says "Anything matching more than 10 ACLs doubly confirms." The command asks
+  once: `src/go/rpk/pkg/cli/security/acl/delete.go` has a single `out.Confirm` and no match
+  count check. The sentence comes from the command's own help text, so the fix is in the rpk
+  help. No eval case.
 
-## Usage
+## Lines removed for lack of a failing baseline
 
-For each file being reviewed or updated, open the listed source paths first and confirm
-every claim still matches. Verify against the current stable release tag of
-`redpanda-data/redpanda`, and re-confirm exact command paths / flag names / config keys
-before writing any new fact.
+Each of these procedures from the full skill (or its references) was tested on 2026-11-10 with
+a behavioral case graded on the outcome. The baseline passed, so the thin skill carries no line
+for it. The cases stay in the suite.
+
+- Remove only the operation asked for when revoking access: `rpk security acl delete` matches
+  every operation you leave out. Case `revoke-consume-keep-produce`: baseline 3/3 (full skill
+  3/3, installed 3/3).
+- Deleting a user does not delete its ACLs or role memberships, so offboarding also deletes the
+  ACLs for `User:<name>` and unassigns the user from each role, without deleting shared roles.
+  Case `offboard-user-acls-and-roles`: baseline 3/3 (full skill 2/3, installed 3/3).
+- `superusers` is a list that `rpk cluster config set` replaces, so read it first and keep the
+  existing entries. Case `add-superuser-keeps-existing`: baseline 3/3 (full skill 3/3,
+  installed 3/3).
+- Bootstrapping SASL: create the superuser first, add it to `superusers`, then turn on
+  `enable_sasl` and `kafka_enable_authorization` as cluster properties (not in `redpanda.yaml`).
+  A behavioral case was drafted and dropped, because the stateless shell mock showed the old
+  state after each change and the agents stopped. The baseline transcripts that were read planned the right
+  order with cluster properties, so the line is treated as general knowledge.
+
+The first run of the three kept cases used invariants that failed an answer for honestly
+reporting that a listing after the change still showed the old state. The invariants were
+rewritten to grade the change the agent made, and the three cases were rerun; the rates above
+are from the rerun.
