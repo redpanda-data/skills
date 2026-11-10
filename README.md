@@ -1,8 +1,8 @@
 # Redpanda Agent Skills
 
-Agent Skills for Redpanda's five products — **Streaming** (the Kafka-compatible engine),
-**SQL**, **Connect**, **Cloud** (Serverless, BYOC, Dedicated), and the **Agentic
-Data Plane** — unified by the **rpk** command-line experience. Each skill is grounded
+Agent Skills for Redpanda's products: **Streaming** (the Kafka-compatible engine),
+**SQL**, **Cloud** (Serverless, BYOC, Dedicated), and the **Agentic Data Plane**,
+unified by the **rpk** command-line experience. Redpanda Connect has its own plugin. Each skill is grounded
 in Redpanda's own source code, documentation, and APIs.
 
 ## Installation
@@ -55,8 +55,9 @@ copy-pasteable commands, configs, and code.
 
 ## Available Skills
 
-Redpanda has five public products — Streaming, SQL, Connect, Cloud, and the Agentic
-Data Plane — with `rpk` as the unifying CLI across all of them.
+Redpanda has five public products: Streaming, SQL, Connect, Cloud, and the Agentic Data
+Plane, with `rpk` as the unifying CLI across all of them. Connect's skills live in the
+`redpanda-connect` plugin (see below).
 
 ### 🌊 Streaming
 The Kafka-compatible streaming engine (the Redpanda broker).
@@ -72,20 +73,11 @@ Redpanda SQL — the distributed, columnar, PostgreSQL-compatible query engine o
 - [**sql-debugging**](./skills/sql-debugging) — Diagnose: system virtual tables, degraded nodes, query out-of-memory errors, slow queries, and when to contact Redpanda Support.
 
 ### 🔌 Connect
-Redpanda Connect — declarative stream processing (formerly Benthos).
-- [**connect**](./skills/connect) — Build pipelines (inputs, processors, outputs, Bloblang), the config structure, and running pipelines.
-- [**connect-debugging**](./skills/connect-debugging) — Debug pipelines: linting, log levels, metrics, tracing, health endpoints, dry-runs, and common failure modes.
+Redpanda Connect has its own plugin, `redpanda-connect`, maintained in the [Connect repo](https://github.com/redpanda-data/connect/blob/main/.claude-plugin/README.md). It has skills for building pipelines, finding components, and writing Bloblang. This marketplace lists it too, so after you add the marketplace, install it with:
 
-**Change Data Capture (one per connector):**
-- [**connect-cdc-postgres**](./skills/connect-cdc-postgres) — PostgreSQL (`postgres_cdc`, logical replication / WAL).
-- [**connect-cdc-mysql**](./skills/connect-cdc-mysql) — MySQL/MariaDB (`mysql_cdc`, binlog).
-- [**connect-cdc-mongodb**](./skills/connect-cdc-mongodb) — MongoDB (`mongodb_cdc`, change streams).
-- [**connect-cdc-sqlserver**](./skills/connect-cdc-sqlserver) — Microsoft SQL Server (`microsoft_sql_server_cdc`).
-- [**connect-cdc-oracle**](./skills/connect-cdc-oracle) — Oracle (`oracledb_cdc`, LogMiner).
-- [**connect-cdc-spanner**](./skills/connect-cdc-spanner) — Google Cloud Spanner (`gcp_spanner_cdc`, change streams).
-- [**connect-cdc-dynamodb**](./skills/connect-cdc-dynamodb) — AWS DynamoDB (`aws_dynamodb_cdc`, DynamoDB Streams).
-- [**connect-cdc-salesforce**](./skills/connect-cdc-salesforce) — Salesforce (`salesforce_cdc`, Pub/Sub API).
-- [**connect-cdc-tigerbeetle**](./skills/connect-cdc-tigerbeetle) — TigerBeetle (`tigerbeetle_cdc`, ledger change events; cgo builds only).
+```
+/plugin install redpanda-connect@redpanda-skills
+```
 
 ### ☁️ Cloud
 Redpanda Cloud — the managed control plane and per-cluster data plane.

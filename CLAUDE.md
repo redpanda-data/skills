@@ -11,8 +11,9 @@ duplicated into each routine prompt.
 ## About this repo
 
 This is a Claude Code **plugin** named `redpanda`: a set of Agent Skills for Redpanda's
-five products — Streaming, SQL (Oxla), Connect, Cloud (Serverless, BYOC, Dedicated), and
-the Agentic Data Plane (ADP) — unified by `rpk`. Each skill is a `SKILL.md` (loaded on
+products: Streaming, SQL (Oxla), Cloud (Serverless, BYOC, Dedicated), and the
+Agentic Data Plane (ADP), unified by `rpk`. Redpanda Connect's skills live in the
+`redpanda-connect` plugin in the Connect repo, not here. Each skill is a `SKILL.md` (loaded on
 demand) plus `references/` files, grounded in Redpanda's own source code, docs, and APIs.
 Skills are moving, one at a time, to a thin format whose `references/` holds only
 `SOURCES.md` (see "Skill format: thin skills"). Several rules below differ for thin skills and
