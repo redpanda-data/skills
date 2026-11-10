@@ -47,10 +47,9 @@ Rerun on 2026-11-10 against this `SKILL.md`, 3 runs per arm. Archive run folder:
 Found by the evals and handed to the docs team:
 
 - `redpanda_cloud_provider_tags` is not backfilled and can be empty on older clusters while
-  `cloud_provider_tags` carries `redpanda-managed` (cloudv2
-  `apps/controlplane-api/internal/services/redpanda/redpanda_service.go`,
-  `syncRedpandaCloudProviderTags` keeps `redpanda-managed` only if the stored field already had
-  it); the API reference does not say so.
+  `cloud_provider_tags` carries `redpanda-managed` (product source: the control plane's
+  provider-tag sync keeps `redpanda-managed` only if the stored field already had it); the API
+  reference does not say so.
 
 ## Lines removed for lack of a failing baseline
 
