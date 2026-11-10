@@ -1,0 +1,448 @@
+{
+  "name": "connect-cdc-spanner skill vs docs",
+  "skill": "connect-cdc-spanner",
+  "description": "Measures whether the connect-cdc-spanner skill adds value over general knowledge and the published Redpanda Connect docs for the gcp_spanner_cdc input: licensing, the metadata table and its permissions, message shape, replay windows, and mod type filtering.",
+  "test_cases": [
+    {
+      "id": "spanner-cdc-license",
+      "query": "Can I run the Redpanda Connect gcp_spanner_cdc input with the free open-source Redpanda Connect build, without buying anything?",
+      "why": "gcp_spanner_cdc calls license.CheckRunningEnterprise when the input is built, so it needs a Redpanda Enterprise license (a trial works); without one the pipeline fails to start. Models assume every GCP connector is in the free build. Sampled from the skill's opening section.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_cdc.go"
+      ],
+      "invariants": [
+        {
+          "name": "enterprise_license_required",
+          "failure_condition": "Fails if the answer says the input runs without a license, or does not say a Redpanda Enterprise license (or trial license) is needed. Passes if it says gcp_spanner_cdc is an Enterprise connector that needs a Redpanda Enterprise license and does not start without one."
+        }
+      ]
+    },
+    {
+      "id": "metadata-table-default-name",
+      "query": "I'm about to run the Redpanda Connect gcp_spanner_cdc input against stream_id OrderChanges and I left metadata_table unset. What table will it use to keep its state, in which database, and do I have to create it first?",
+      "why": "When metadata_table is empty the input sets it to cdc_metadata_<stream_id> (defaultMetadataTableFormat), so here cdc_metadata_OrderChanges, in the same Spanner database as the stream. The connector creates it with CREATE TABLE IF NOT EXISTS during setup. Sampled from the skill's How It Works section.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_cdc.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go"
+      ],
+      "required_patterns": [
+        "cdc_metadata_OrderChanges"
+      ],
+      "invariants": [
+        {
+          "name": "same_db_auto_created",
+          "failure_condition": "Fails if the answer says the user must create the table first, or puts it in a different database or outside Spanner. Passes if it says the connector creates cdc_metadata_OrderChanges itself in the same Spanner database that holds the change stream."
+        }
+      ]
+    },
+    {
+      "id": "change-stream-must-exist",
+      "query": "I pointed the Redpanda Connect gcp_spanner_cdc input at stream_id AllChanges, but that change stream doesn't exist in the Spanner database yet. Will the connector create the change stream for me on startup like it does with its own state table?",
+      "why": "The input only reads the change stream; the stream_id description says the stream must already exist in the database. The connector creates its metadata table, not the change stream, which is created with CREATE CHANGE STREAM DDL. Sampled from the skill's Quickstart.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_cdc.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go"
+      ],
+      "invariants": [
+        {
+          "name": "stream_not_created",
+          "failure_condition": "Fails if the answer says the connector creates the change stream. Passes if it says the change stream must already exist and the user creates it with CREATE CHANGE STREAM DDL (the connector creates only its metadata table)."
+        }
+      ]
+    },
+    {
+      "id": "message-per-mod-payload",
+      "query": "With the Redpanda Connect gcp_spanner_cdc input, if one Spanner transaction updates 50 rows of the orders table, how many messages do I get, and what is in the body of each one? Where do I find the table name and the operation type?",
+      "why": "Each DataChangeRecord's Mods are emitted one message per mod: the body is the JSON of one Mod with keys, new_values and old_values, and table_name and mod_type (plus commit_timestamp, server_transaction_id and others) are message metadata, not body fields. Sampled from the skill's message section.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_partition_batcher.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/model.go"
+      ],
+      "required_patterns": [
+        "new_values",
+        "old_values",
+        "keys"
+      ],
+      "invariants": [
+        {
+          "name": "one_message_per_row_meta",
+          "failure_condition": "Fails if the answer says one message per transaction or per data change record, or puts table name and mod type in the body instead of metadata. Passes if it says one message per modified row (50 here), the body holds keys, new_values and old_values, and table_name and mod_type are metadata fields."
+        }
+      ]
+    },
+    {
+      "id": "timestamp-bounds-inclusive-exclusive",
+      "query": "I want a Redpanda Connect gcp_spanner_cdc job that replays exactly the changes committed on 2026-03-01 UTC, no more and no less. What values do I put in start_timestamp and end_timestamp, and in what format?",
+      "why": "start_timestamp is inclusive and end_timestamp is exclusive, both parsed as RFC3339 (time.RFC3339Nano), so the day is start 2026-03-01T00:00:00Z and end 2026-03-02T00:00:00Z. Sampled from the skill's config fields.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_cdc.go"
+      ],
+      "required_patterns": [
+        "2026-03-01T00:00:00",
+        "2026-03-02T00:00:00"
+      ],
+      "invariants": [
+        {
+          "name": "inclusive_start_exclusive_end",
+          "failure_condition": "Fails if the answer sets end_timestamp to 2026-03-01T23:59:59 or similar as the main answer, or says end is inclusive, or uses a non-RFC3339 format. Passes if start is 2026-03-01T00:00:00Z (inclusive) and end is 2026-03-02T00:00:00Z (exclusive) in RFC3339."
+        }
+      ]
+    },
+    {
+      "id": "heartbeat-records-not-emitted",
+      "query": "I set heartbeat_interval: 1s on the Redpanda Connect gcp_spanner_cdc input. Will my output topic now get a heartbeat message every second for each partition when the tables are idle? I don't want heartbeat noise in the topic.",
+      "why": "Heartbeat records only advance partition progress in the connector; the field description says they are not emitted as messages. Models used to Debezium heartbeat topics expect them downstream. Sampled from the skill's config fields.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_cdc.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/handler.go"
+      ],
+      "invariants": [
+        {
+          "name": "heartbeats_not_messages",
+          "failure_condition": "Fails if the answer says heartbeats arrive as messages in the output or must be filtered out. Passes if it says heartbeat records are not emitted as messages; the connector uses them to advance partition watermarks."
+        }
+      ]
+    },
+    {
+      "id": "postgresql-dialect-no-config",
+      "query": "Our Spanner database uses the PostgreSQL interface (PostgreSQL dialect), not GoogleSQL. Which setting on the Redpanda Connect gcp_spanner_cdc input do I change to make it work with that dialect?",
+      "why": "The subscriber detects the database dialect itself (detectDialect) and uses PostgreSQL-dialect queries and DDL for the metadata table, so there is no dialect setting. Sampled from the skill's opening section.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/dialect.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go"
+      ],
+      "invariants": [
+        {
+          "name": "auto_detected",
+          "failure_condition": "Fails if the answer names a dialect field or says the PostgreSQL dialect is unsupported. Passes if it says the connector detects the dialect automatically and nothing needs to change."
+        }
+      ]
+    },
+    {
+      "id": "restart-resumes-from-watermark",
+      "query": "If I stop a Redpanda Connect gcp_spanner_cdc pipeline for an hour and then start it again without changing the config (start_timestamp is unset), does it pick up the changes made during that hour, or start from the current time?",
+      "why": "On start the subscriber reads partitions in SCHEDULED or RUNNING state from the metadata table (GetInterruptedPartitions) and resumes them from their stored watermarks, so changes made while it was down are read, as long as they are within the change stream's retention period. Unset start_timestamp only matters for a fresh metadata table. Sampled from the skill's How It Works section.",
+      "origin": "sampled",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go"
+      ],
+      "invariants": [
+        {
+          "name": "resumes_from_stored_watermark",
+          "failure_condition": "Fails if the answer says it starts from the current time and loses the hour. Passes if it says it resumes from the progress (watermarks) stored in its Spanner metadata table and reads the hour's changes, given they are still within the change stream retention period."
+        }
+      ]
+    },
+    {
+      "id": "ddl-permission-every-start",
+      "query": "The Redpanda Connect gcp_spanner_cdc pipeline has been running for weeks and its state table already exists. Our security team wants to revoke the service account's permission to change the database schema. Will the pipeline keep working after its next restart?",
+      "why": "Setup runs UpdateDatabaseDdl with CREATE TABLE IF NOT EXISTS and two CREATE INDEX IF NOT EXISTS statements on every start, so the service account needs spanner.databases.updateDdl permanently; without it the next start fails at setup. Targeted: expected missing from the docs.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_cdc.go"
+      ],
+      "invariants": [
+        {
+          "name": "ddl_needed_every_start",
+          "failure_condition": "Fails if the answer says it keeps working because the table exists, or that DDL is only needed the first time. Passes if it says the connector issues its CREATE TABLE/INDEX IF NOT EXISTS DDL on every start, so the next restart fails without spanner.databases.updateDdl."
+        }
+      ]
+    },
+    {
+      "id": "metadata-writes-need-more-than-reader",
+      "query": "For the Redpanda Connect gcp_spanner_cdc input, is granting the service account roles/spanner.databaseReader on the database enough, since it only reads the change stream?",
+      "why": "Besides reading the stream, the connector creates and writes its metadata table (store Create mutations, read-write transactions in updatePartitionStatus and UpdateWatermark) and runs DDL on every start, so it needs spanner.databases.write and spanner.databases.updateDdl. roles/spanner.databaseReader has neither; roles/spanner.databaseUser has both (Google Cloud Spanner IAM roles reference). Targeted.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go",
+        "https://cloud.google.com/spanner/docs/iam"
+      ],
+      "invariants": [
+        {
+          "name": "reader_not_enough",
+          "failure_condition": "Fails if the answer says databaseReader is enough. Passes if it says the connector also writes its metadata table and runs DDL, so it needs write and updateDdl permissions, for example roles/spanner.databaseUser or a custom role."
+        }
+      ]
+    },
+    {
+      "id": "mod-types-case-sensitive",
+      "query": "My Redpanda Connect gcp_spanner_cdc input has allowed_mod_types: [insert, update]. It starts cleanly, logs no errors, and the change stream definitely has new writes, but not a single message comes out. What is the most likely cause?",
+      "why": "modTypeFilter does an exact map lookup of the record's ModType, which Spanner reports as INSERT, UPDATE or DELETE. Lowercase values match nothing, so every record is dropped silently; the config is not validated. Targeted.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/filter.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_cdc.go"
+      ],
+      "invariants": [
+        {
+          "name": "uppercase_values",
+          "failure_condition": "Fails if the answer does not identify the lowercase allowed_mod_types values as the likely cause. Passes if it says the match is case-sensitive and the values must be INSERT and UPDATE in upper case, because lowercase values filter out every record."
+        }
+      ]
+    },
+    {
+      "id": "precreated-metadata-index-names",
+      "query": "We pre-created the Redpanda Connect gcp_spanner_cdc metadata table ourselves, with the same columns and our own two secondary indexes named meta_watermark_idx and meta_created_idx. What will the connector do with indexes when it starts, and will it keep adding indexes on every restart?",
+      "why": "Setup always issues CREATE INDEX IF NOT EXISTS with its own names, WatermarkIdx_<databaseId>_<suffix> and CreatedAtIdx_<databaseId>_<suffix>, where the suffix is a hash of the database id and table name. With differently named indexes it adds its two indexes once beside the user's; because the names are deterministic it does not add more on later restarts. Targeted.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/name.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go"
+      ],
+      "invariants": [
+        {
+          "name": "adds_two_once",
+          "failure_condition": "Fails if the answer says the connector reuses the user's indexes without creating its own, or says it adds new indexes on every restart. Passes if it says the connector creates its own two indexes (with its own fixed names) once, next to the user's, and later restarts are no-ops."
+        }
+      ]
+    },
+    {
+      "id": "finished-partition-rows-expire",
+      "query": "Will the state table that the Redpanda Connect gcp_spanner_cdc input keeps in Spanner grow forever as Spanner splits and merges partitions over months? Do I need a cleanup job?",
+      "why": "The metadata table is created with ROW DELETION POLICY (OLDER_THAN(FinishedAt, INTERVAL 1 DAY)) (GoogleSQL) or TTL INTERVAL '1 days' ON FinishedAt (PostgreSQL), so Spanner deletes rows for finished partitions a day after they finish. Targeted.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go"
+      ],
+      "invariants": [
+        {
+          "name": "row_deletion_policy",
+          "failure_condition": "Fails if the answer says a cleanup job is needed or the table grows without bound. Passes if it says the connector creates the table with a row deletion (TTL) policy that removes finished partition rows about a day after they finish."
+        }
+      ]
+    },
+    {
+      "id": "child-waits-for-parents",
+      "query": "When Spanner splits a change stream partition while the Redpanda Connect gcp_spanner_cdc input is reading, can changes to the same primary key come out of order, with a child partition's newer change emitted before the parent's older one?",
+      "why": "waitForParentPartitionsToFinish holds a child partition until every parent is FINISHED, so per-key commit order is kept across splits and merges. Records from different partitions are processed in parallel, so there is no total order across keys. Targeted.",
+      "origin": "targeted",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go"
+      ],
+      "invariants": [
+        {
+          "name": "parents_first",
+          "failure_condition": "Fails if the answer says same-key changes can be reordered across a split. Passes if it says a child partition is read only after its parent partitions finish, so changes to a key stay in commit order (while different partitions run in parallel)."
+        }
+      ]
+    },
+    {
+      "id": "replay-window-own-metadata-table",
+      "query": "Our warehouse lost every orders change from 2026-11-09 (UTC). The production Redpanda Connect pipeline orders-cdc must keep running untouched. Deploy a separate one-off pipeline that re-streams that day's changes from the same Spanner change stream to the topic orders-replay. You can read the production config, run SQL on the Spanner database, and deploy pipelines; go ahead and deploy it, then tell me what you did.",
+      "why": "The input keeps its partition state and watermarks in metadata_table, which defaults to cdc_metadata_<stream_id>. A second pipeline on the same stream with the default name shares the production pipeline's table: on start it resumes the production pipeline's SCHEDULED and RUNNING partitions (GetInterruptedPartitions), and the production pipeline can pick up the replay's new root partitions (GetPartitionsCreatedAfter), so the two pipelines read each other's partitions. The replay needs its own metadata_table, plus start_timestamp 2026-11-09T00:00:00Z and end_timestamp 2026-11-10T00:00:00Z (exclusive). Dropping or editing the production metadata table loses the production position.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/input_spanner_cdc.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "read_pipeline_config",
+            "description": "Return the YAML config of a deployed Redpanda Connect pipeline by name.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "responses": [
+              {
+                "match": "orders-cdc",
+                "output": "input:\n  label: spanner_cdc\n  gcp_spanner_cdc:\n    credentials_json: ${SPANNER_CDC_CREDENTIALS}\n    project_id: acme-prod\n    instance_id: acme-spanner\n    database_id: orders-db\n    stream_id: OrderChanges\n    heartbeat_interval: 10s\n    batching:\n      count: 100\n      period: 1s\n\noutput:\n  redpanda:\n    seed_brokers: [ \"redpanda-0.internal:9092\" ]\n    topic: orders-cdc\n"
+              },
+              {
+                "match": ".",
+                "output": "error: no pipeline with that name. Deployed pipelines: orders-cdc"
+              }
+            ]
+          },
+          {
+            "name": "run_spanner_sql",
+            "description": "Run a GoogleSQL statement (query or DDL) on the Spanner database orders-db and return the result as a table.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "sql": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sql"
+              ]
+            },
+            "responses": [
+              {
+                "match": "^\\{\"sql\":\"\\s*(drop|delete|truncate|update|alter|create|insert)",
+                "output": "Statement executed."
+              },
+              {
+                "match": "change_stream_options|retention",
+                "output": "change_stream_name | option_name           | option_value\n-------------------+-----------------------+-------------\nOrderChanges       | retention_period      | 7d\nOrderChanges       | value_capture_type    | OLD_AND_NEW_VALUES\n(2 rows)"
+              },
+              {
+                "match": "change_stream",
+                "output": "change_stream_name | all\n-------------------+------\nOrderChanges       | false\n(1 row)"
+              },
+              {
+                "match": "information_schema\\.tables",
+                "output": "table_name\n--------------------------\nOrders\nOrderItems\ncdc_metadata_OrderChanges\n(3 rows)"
+              },
+              {
+                "match": "cdc_metadata",
+                "output": "State    | count\n---------+------\nRUNNING  | 4\nFINISHED | 12\n(2 rows)"
+              },
+              {
+                "match": "select",
+                "output": "(0 rows)"
+              }
+            ]
+          },
+          {
+            "name": "deploy_pipeline",
+            "description": "Create or replace a Redpanda Connect pipeline with the given name and YAML config, and start it.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "config": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "config"
+              ]
+            },
+            "responses": [
+              {
+                "match": ".",
+                "output": "pipeline deployed and started"
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "deploy_pipeline",
+            "args": "(?=[\\s\\S]*orders-replay)(?=[\\s\\S]*start_timestamp[^\\n]{0,8}2026-11-09T00:00:00)(?=[\\s\\S]*end_timestamp[^\\n]{0,8}2026-11-10T00:00:00)(?=[\\s\\S]*metadata_table\\s*:\\s*[\\\\\"']*(?!cdc_metadata_OrderChanges\\b)[A-Za-z_])"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "deploy_pipeline",
+            "args": "\"name\"\\s*:\\s*\"orders-cdc\""
+          },
+          {
+            "tool": "run_spanner_sql",
+            "args": "^\\{\"sql\":\"\\s*(drop|delete|truncate|update|alter|insert)[\\s\\S]*cdc_metadata_OrderChanges"
+          }
+        ]
+      }
+    },
+    {
+      "id": "least-privilege-keeps-write-and-ddl",
+      "query": "Security flagged our Redpanda Connect Spanner CDC service account, spanner-cdc@acme-prod.iam.gserviceaccount.com, as over-privileged: it has roles/spanner.databaseReader and roles/spanner.databaseAdmin on database orders-db (instance acme-spanner, project acme-prod), and the gcp_spanner_cdc pipeline has been running for a month. Cut it down to least privilege and apply the IAM change with gcloud. Don't ask me questions; make the change and tell me what you did.",
+      "why": "The connector writes its metadata table on every partition state change and watermark update, and runs CREATE TABLE/INDEX IF NOT EXISTS on every start, so the account needs spanner.databases.write and spanner.databases.updateDdl as long as the pipeline runs. Leaving only roles/spanner.databaseReader breaks the next start. roles/spanner.databaseUser covers read, write and updateDdl without admin rights (Google Cloud Spanner IAM roles reference); a custom role with updateDdl and write also works.",
+      "origin": "behavioral",
+      "verified_against": [
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/subscriber.go",
+        "github.com/redpanda-data/connect internal/impl/gcp/enterprise/changestreams/metadata/metadata.go",
+        "https://cloud.google.com/spanner/docs/iam"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_gcloud",
+            "description": "Run a gcloud command against project acme-prod and return its output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "get-iam-policy",
+                "output": "bindings:\n- members:\n  - serviceAccount:spanner-cdc@acme-prod.iam.gserviceaccount.com\n  role: roles/spanner.databaseAdmin\n- members:\n  - serviceAccount:spanner-cdc@acme-prod.iam.gserviceaccount.com\n  role: roles/spanner.databaseReader\netag: BwYk3xQ0aBc=\nversion: 1"
+              },
+              {
+                "match": "add-iam-policy-binding|remove-iam-policy-binding|set-iam-policy",
+                "output": "Updated IAM policy for database [orders-db]."
+              },
+              {
+                "match": "iam roles (create|update)",
+                "output": "Created role [spannerCdcConnector]."
+              },
+              {
+                "match": "iam roles describe",
+                "output": "ERROR: (gcloud.iam.roles.describe) NOT_FOUND: The role does not exist."
+              },
+              {
+                "match": "ddl describe",
+                "output": "CREATE TABLE Orders (\n  OrderId STRING(36) NOT NULL,\n  Status STRING(32),\n) PRIMARY KEY(OrderId);\nCREATE TABLE cdc_metadata_OrderChanges (\n  PartitionToken STRING(MAX) NOT NULL,\n  State STRING(MAX) NOT NULL,\n  Watermark TIMESTAMP NOT NULL,\n  FinishedAt TIMESTAMP OPTIONS (allow_commit_timestamp = true),\n) PRIMARY KEY(PartitionToken),\n  ROW DELETION POLICY (OLDER_THAN(FinishedAt, INTERVAL 1 DAY));\nCREATE CHANGE STREAM OrderChanges FOR Orders;"
+              },
+              {
+                "match": "logging read",
+                "output": ""
+              },
+              {
+                "match": "spanner (databases|instances) (list|describe)",
+                "output": "name: projects/acme-prod/instances/acme-spanner/databases/orders-db\nstate: READY\ndatabaseDialect: GOOGLE_STANDARD_SQL"
+              },
+              {
+                "match": "service-accounts (describe|list)",
+                "output": "email: spanner-cdc@acme-prod.iam.gserviceaccount.com\ndisabled: false"
+              },
+              {
+                "match": "\\broles\\b[\\s\\S]*(describe|list)",
+                "output": "Use https://cloud.google.com/spanner/docs/iam for predefined role permissions."
+              },
+              {
+                "match": ".",
+                "output": "Done."
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_gcloud",
+            "args": "(add-iam-policy-binding|set-iam-policy)[\\s\\S]*roles/spanner\\.databaseUser|roles/spanner\\.databaseUser[\\s\\S]*set-iam-policy|iam roles (create|update)[\\s\\S]*spanner\\.databases\\.updateDdl"
+          },
+          {
+            "tool": "run_gcloud",
+            "args": "remove-iam-policy-binding[\\s\\S]*roles/spanner\\.databaseAdmin|set-iam-policy"
+          }
+        ]
+      }
+    }
+  ]
+}
