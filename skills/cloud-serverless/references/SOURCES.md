@@ -12,14 +12,16 @@ cloning.
 
 ## How to work: line, source, eval case
 
-Pass rates are from the 2026-11-10 run (3 runs per arm, subject claude-sonnet-5-5).
+Pass rates are from the rerun against the thin skill on 2026-11-10 (3 runs per arm, subject
+claude-sonnet-5-5). Three cases were fixed before that rerun (see "Corrections after the eval
+run") and run again in `2026-11-10T20-48-02Z`; the fourth is from `2026-11-10T20-28-10Z`.
 
 | How to work line | Source | Eval case |
 |---|---|---|
-| The add-partitions request (PATCH) takes the number to add, not the total; read the current count first, or use the set-partitions request (PUT) with the total. Partitions can't be removed (verified 2026-11-10). Baseline 0/3, skill 3/3, installed 3/3. | `proto/gen/openapi/openapi.dataplane.yaml` (`TopicService_AddTopicPartitions`, `AddTopicPartitionsBody.partition_count` "number of partitions to add"; `TopicService_SetTopicPartitions`, `SetTopicPartitionsBody.partition_count` "number of partitions to set"; same pair on `/v1/topics-partitions`) | `add-partitions-to-reach-total` |
-| Change one topic config with PATCH, not PUT: PUT replaces the whole set and resets every config left out to its default (verified 2026-11-10). Safety guardrail (data loss on a compacted or custom-retention topic): the baseline passed its case 3/3 on 2026-11-10, and the line and case stay as a regression guard. Skill 3/3, installed 3/3. | `proto/gen/openapi/openapi.dataplane.yaml` (`TopicService_SetTopicConfigurations`: "Config entries that are not provided in the request are removed and will fall back to their default values"; `TopicService_UpdateTopicConfigurations`) | `topic-config-change-keeps-others` |
-| Set up PrivateLink as two resources: create a Serverless private link allowing the user's AWS account, wait for its operation, then update the cluster to enable private networking with the link's ID; give the user the endpoint service name; leave public access on unless asked (verified 2026-11-10). Baseline 0/3, skill 3/3, installed 3/3. | `controlplane/v1/serverless_private_link.proto` (`CreateServerlessPrivateLink`, `ServerlessPrivateLinkCreate` AWS-only CEL rule and `allowed_principals`, `ServerlessPrivateLinkStatus.AWS.vpc_endpoint_service_name`), `controlplane/v1/serverless.proto` (`ServerlessClusterUpdate` CEL rules `private_link_id_required` and `network_must_not_have_both_private_public_disabled`). Published: https://docs.redpanda.com/cloud-data-platform/networking/serverless/aws/privatelink-api/ | `serverless-privatelink-setup` |
-| When a cluster is at its pipeline limit, list drafts too: drafts use slots but are left out of the pipeline list by default; don't delete or start one without asking (verified 2026-11-10). Baseline 0/3, skill 3/3, installed 3/3. | `proto/gen/openapi/openapi.dataplane.yaml` (`ListPipelinesRequest.Filter.include_drafts`: drafts excluded by default even when `states` names `STATE_DRAFT`; `Pipeline.State` `STATE_DRAFT`; `PipelineCreate.draft`: "Drafts count against the cluster's pipeline limit") | `pipeline-slots-hidden-drafts` |
+| The add-partitions request (PATCH) takes the number to add, not the total; read the current count first, or use the set-partitions request (PUT) with the total. Partitions can't be removed (verified 2026-11-10). Run `2026-11-10T20-48-02Z`: baseline 0/3, skill 3/3, installed 3/3. | `proto/gen/openapi/openapi.dataplane.yaml` (`TopicService_AddTopicPartitions`, `AddTopicPartitionsBody.partition_count` "number of partitions to add"; `TopicService_SetTopicPartitions`, `SetTopicPartitionsBody.partition_count` "number of partitions to set"; same pair on `/v1/topics-partitions`) | `add-partitions-to-reach-total` |
+| Change one topic config with PATCH, not PUT: PUT replaces the whole set and resets every config left out to its default (verified 2026-11-10). Safety guardrail (data loss on a compacted or custom-retention topic): the baseline passes its case, and the line and case stay as a regression guard. Run `2026-11-10T20-28-10Z`: baseline 3/3, skill 3/3, installed 3/3. | `proto/gen/openapi/openapi.dataplane.yaml` (`TopicService_SetTopicConfigurations`: "Config entries that are not provided in the request are removed and will fall back to their default values"; `TopicService_UpdateTopicConfigurations`) | `topic-config-change-keeps-others` |
+| Set up PrivateLink as two resources: create a Serverless private link allowing the user's AWS account, wait for its operation, then update the cluster to enable private networking with the link's ID; give the user the endpoint service name; leave public access on unless asked (verified 2026-11-10). Run `2026-11-10T20-48-02Z`: baseline 0/3, skill 3/3, installed 3/3. | `controlplane/v1/serverless_private_link.proto` (`CreateServerlessPrivateLink`, `ServerlessPrivateLinkCreate` AWS-only CEL rule and `allowed_principals`, `ServerlessPrivateLinkStatus.AWS.vpc_endpoint_service_name`), `controlplane/v1/serverless.proto` (`ServerlessClusterUpdate` CEL rules `private_link_id_required` and `network_must_not_have_both_private_public_disabled`). Published: https://docs.redpanda.com/cloud-data-platform/networking/serverless/aws/privatelink-api/ | `serverless-privatelink-setup` |
+| When a cluster is at its pipeline limit, list drafts too: drafts use slots but are left out of the pipeline list by default; don't delete or start one without asking (verified 2026-11-10). Run `2026-11-10T20-48-02Z`: baseline 0/3, skill 3/3, installed 3/3. | `proto/gen/openapi/openapi.dataplane.yaml` (`ListPipelinesRequest.Filter.include_drafts`: drafts excluded by default even when `states` names `STATE_DRAFT`; `Pipeline.State` `STATE_DRAFT`; `PipelineCreate.draft`: "Drafts count against the cluster's pipeline limit") | `pipeline-slots-hidden-drafts` |
 
 ## Other claims in SKILL.md
 
@@ -62,6 +64,26 @@ Found by the evals and handed to the docs team:
   for topics, ACLs and secrets, draft promotion, and Shadow Link eligibility were dropped. Their
   fact cases passed in the baseline (2/3 or 3/3) and in the docs arms; they stay in the suite
   as coverage measures.
+
+## Corrections after the eval run
+
+Three behavioral cases had mocks that answered differently from the API. Each was fixed and
+rerun in `2026-11-10T20-48-02Z`; no line's verdict changed.
+
+- `serverless-privatelink-setup`: the cluster update ignores `private_link_id` unless private
+  networking is set to enabled in the same request, and a request with neither networking nor
+  tags is refused with "no changes requested" (cloudv2
+  `apps/public-api-go/internal/services/serverless/v1/serverless_cluster_service.go`,
+  `UpdateServerlessCluster`). The mock accepted a link-ID-only update as a success; it now
+  returns the refusal. The invariant also failed runs that sent the right update and then
+  honestly reported that the stateless mock's re-read showed no private endpoint; it no longer
+  does. In the first run this case scored skill 0/3, two of those for that reason.
+- `add-partitions-to-reach-total`: the Data Plane API has no GET on a single topic or on its
+  partitions path, but the mock answered those with an empty object or the topic list. It now
+  answers Method Not Allowed.
+- `pipeline-slots-hidden-drafts`: the list filter is `filter.include_drafts`; the API ignores
+  a bare `include_drafts`, but the mock returned the drafts for it. It now returns the default
+  list.
 
 ## TODO / re-verify
 
