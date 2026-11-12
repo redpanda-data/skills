@@ -1,0 +1,420 @@
+{
+  "name": "sql-federated-queries skill vs docs",
+  "skill": "sql-federated-queries",
+  "description": "Measures whether the sql-federated-queries skill adds value over the published Redpanda Cloud SQL docs for mapping topics through Redpanda catalogs, decoding options, and querying the Iceberg history of Iceberg-enabled topics.",
+  "test_cases": [
+    {
+      "id": "default-catalog-already-exists",
+      "origin": "sampled",
+      "query": "We just turned on Redpanda SQL for our BYOC cluster in Redpanda Cloud. Before I can query a topic called orders, which catalog do I have to create first, and what statements do I run to make the topic queryable?",
+      "why": "Redpanda Cloud creates default_redpanda_catalog, pointed at the cluster, when Redpanda SQL is enabled, so no CREATE REDPANDA CATALOG is needed; a topic is mapped with CREATE TABLE default_redpanda_catalog=>orders WITH (topic = 'orders'). A model invents a CREATE REDPANDA CATALOG with broker and Schema Registry addresses. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "default_redpanda_catalog\\s*=>"
+      ],
+      "invariants": [
+        {
+          "name": "no_catalog_to_create",
+          "failure_condition": "Fails if the answer tells the user to run CREATE REDPANDA CATALOG (or any CREATE ... CATALOG) before mapping the topic, or presents that as a required step. Passes if it says Redpanda Cloud already created default_redpanda_catalog when SQL was enabled and maps the topic with CREATE TABLE default_redpanda_catalog=>orders WITH (topic = 'orders' ...)."
+        }
+      ]
+    },
+    {
+      "id": "metadata-in-redpanda-struct-column",
+      "origin": "sampled",
+      "query": "I mapped a topic in Redpanda SQL on Redpanda Cloud as default_redpanda_catalog=>orders. How do I select each row's Kafka partition, offset, and record timestamp alongside the order_id column?",
+      "why": "Record metadata is in an auto-added struct column named redpanda, read as (redpanda).partition, (redpanda).\"offset\", and (redpanda).timestamp; offset is a reserved word, so it is quoted. A model guesses top-level _partition or _offset columns, or kafka_offset. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "\\(\\s*redpanda\\s*\\)\\s*\\.\\s*\"?partition",
+        "\\(\\s*redpanda\\s*\\)\\s*\\.\\s*\"?offset"
+      ]
+    },
+    {
+      "id": "fill-null-keeps-raw-bytes",
+      "origin": "sampled",
+      "query": "Some records in one of our topics can't be decoded with the registered schema, and that makes every Redpanda SQL query on its table fail. I want the queries to keep working, and I still want to be able to find the bad records and look at their raw bytes. What do I change?",
+      "why": "error_handling_policy = 'FILL_NULL' turns failed fields into NULL and keeps the record's raw key and value bytes in the auto-added redpanda_raw column, so bad records stay queryable; DROP_RECORD would skip them. A model does not know the option or the redpanda_raw column. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "FILL_NULL",
+        "redpanda_raw"
+      ]
+    },
+    {
+      "id": "recursive-schema-needs-json-mapping",
+      "origin": "sampled",
+      "query": "Our Protobuf schema has a recursive message: a TreeNode message with a repeated TreeNode children field. Can I map a topic that uses it as a table in Redpanda SQL on Redpanda Cloud? What would the CREATE TABLE look like?",
+      "why": "The default struct_mapping_policy COMPOUND rejects cyclic types, so a recursive schema needs struct_mapping_policy = 'JSON', which turns nested structures into JSON values. A model says recursive schemas are unsupported or does not know the option. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "struct_mapping_policy\\s*=\\s*'?JSON"
+      ]
+    },
+    {
+      "id": "key-decode-mode-fixed-for-table-lifetime",
+      "origin": "sampled",
+      "query": "In Redpanda SQL on Redpanda Cloud I mapped a topic with CREATE TABLE default_redpanda_catalog=>events WITH (topic = 'events'). The record keys come back as raw bytes. What statement changes this existing table so the keys come back as text?",
+      "why": "key_decode_mode (binary by default) and header_value_type are fixed for a table's lifetime, and ALTER TABLE rejects a change, so the table must be dropped and recreated with key_decode_mode = 'string'. Dropping the table does not delete the topic. A model writes ALTER TABLE ... WITH (key_decode_mode = 'string'). Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "key_decode_mode\\s*=\\s*'string'",
+        "DROP\\s+TABLE"
+      ],
+      "invariants": [
+        {
+          "name": "alter_cannot_change_key_mode",
+          "failure_condition": "Fails if the answer presents ALTER TABLE as a way to change key_decode_mode on the existing table. Passes if it says the key decode mode cannot be changed with ALTER TABLE and drops and recreates the table with key_decode_mode = 'string'."
+        }
+      ]
+    },
+    {
+      "id": "refresh-after-new-schema-version",
+      "origin": "sampled",
+      "query": "We registered a new version of the value schema for a topic that is mapped as a table in Redpanda SQL on Redpanda Cloud. The field we added doesn't appear as a column in the table. What should I run?",
+      "why": "Redpanda SQL stores the schema a table was mapped with; REFRESH catalog=>table re-reads the latest schema for the subject and updates the columns, without touching data. A model suggests dropping and recreating the table, or waiting for a cache to expire. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "REFRESH\\s+[\\w.\"]+\\s*=>"
+      ]
+    },
+    {
+      "id": "object-storage-catalog-not-queryable",
+      "origin": "sampled",
+      "query": "Our BYOC cluster has Iceberg Topics turned on with iceberg_catalog_type set to object_storage. Can Redpanda SQL on that cluster query the Iceberg history of those topics together with the live records?",
+      "why": "Redpanda SQL reads Iceberg history only through an Iceberg REST catalog: it needs iceberg_catalog_type = rest, and the object_storage catalog type is not supported for SQL queries. A model assumes the engine can read the tables from object storage. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "\\brest\\b"
+      ],
+      "invariants": [
+        {
+          "name": "object_storage_unsupported",
+          "failure_condition": "Fails if the answer says Redpanda SQL can query the Iceberg history with the object_storage catalog type. Passes if it says that type is not supported for Redpanda SQL queries and the cluster needs an Iceberg REST catalog (iceberg_catalog_type = rest)."
+        }
+      ]
+    },
+    {
+      "id": "one-select-returns-live-and-iceberg",
+      "origin": "sampled",
+      "query": "An Iceberg-enabled topic on our BYOC cluster keeps only 3 days of data, and Redpanda SQL is enabled with the cluster's REST catalog. I need monthly counts for the last year. How do I write the query so it includes both the older history in Iceberg and the newest records still in the topic, without double counting?",
+      "why": "A Redpanda catalog linked to an Iceberg catalog returns live records and Iceberg-committed history from the same table with no overlap; Redpanda SQL plans the union, so one SELECT on default_redpanda_catalog=>topic covers both. A model writes a manual UNION ALL of two sources with offset-based deduplication. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "single_select_no_union",
+          "failure_condition": "Fails if the answer tells the user to UNION the topic's table with a separate Iceberg table, to query the Iceberg catalog's table directly, or to deduplicate the two sources by hand. Passes if it says a single query on the topic's table in default_redpanda_catalog returns both the live records and the Iceberg history with no overlap, and writes the monthly count that way."
+        }
+      ]
+    },
+    {
+      "id": "reset-sasl-option-clears-all-three",
+      "origin": "sampled",
+      "query": "On a Redpanda catalog I created myself in Redpanda SQL, called staging_rp, I ran ALTER REDPANDA CATALOG staging_rp RESET (sasl_password). What happened to its sasl_user and sasl_mechanism settings?",
+      "why": "Resetting any one of sasl_mechanism, sasl_user, or sasl_password clears all three, because SASL is either fully configured or absent. A model says only the password was cleared. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "all_sasl_options_cleared",
+          "failure_condition": "Fails if the answer says sasl_user and sasl_mechanism keep their values, or that it cannot say. Passes if it says resetting sasl_password also cleared sasl_user and sasl_mechanism, so the catalog no longer uses SASL."
+        }
+      ]
+    },
+    {
+      "id": "find-linked-iceberg-catalog",
+      "origin": "targeted",
+      "query": "In Redpanda SQL on Redpanda Cloud, which query shows me the name of the Iceberg catalog that default_redpanda_catalog is linked to?",
+      "why": "The system.kafka_connections table has an iceberg_catalog column with the linked Iceberg catalog as schema.name. SHOW REDPANDA CATALOGS and DESCRIBE REDPANDA CATALOG <name> both read that table, so either also shows it. A model guesses a pg_catalog or information_schema view. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "kafka_connections|(SHOW|DESCRIBE)\\s+(REDPANDA|KAFKA)\\s+CATALOGS?"
+      ]
+    },
+    {
+      "id": "iceberg-key-mode-matches-key-decode-mode",
+      "origin": "targeted",
+      "query": "Our payments topic is Iceberg-enabled with redpanda.iceberg.mode set to key:mode=string;value:mode=schema_id_prefix. When I map it as a table in Redpanda SQL on Redpanda Cloud, what do I need in the CREATE TABLE so queries over both the live records and the Iceberg history work?",
+      "why": "The table's key decoding must match how the topic's Iceberg mode writes keys: key:mode=string needs key_decode_mode = 'string', or queries fail at planning time with a type mismatch. A model maps the topic with default options. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "key_decode_mode\\s*=\\s*'string'"
+      ]
+    },
+    {
+      "id": "nested-lists-not-readable-from-iceberg",
+      "origin": "targeted",
+      "query": "The Iceberg table for one of our Iceberg-enabled topics has a column that is a list of lists of integers. Will Redpanda SQL on Redpanda Cloud be able to map that topic and read that column from the Iceberg history?",
+      "why": "Redpanda SQL does not support a list whose element is a list or a map in an Iceberg schema; CREATE TABLE or REFRESH fails. Lists of primitives work. A model assumes nested arrays work because PostgreSQL supports multidimensional arrays. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "nested_list_unsupported",
+          "failure_condition": "Fails if the answer says the list-of-lists column can be read from the Iceberg history, or that it cannot say. Passes if it says a list whose element is a list is not supported for Iceberg columns, so mapping or refreshing the table fails."
+        }
+      ]
+    },
+    {
+      "id": "refresh-needs-catalog-owner",
+      "origin": "targeted",
+      "query": "A user with the SQL: Access role in Redpanda Cloud has SELECT on a topic table and runs REFRESH default_redpanda_catalog=>orders, which fails with a permission error. Which users can run that REFRESH?",
+      "why": "REFRESH can be run only by the catalog's owner or a superuser. Redpanda Cloud creates default_redpanda_catalog, so on it that means a user with SQL: Manage. A model suggests granting a privilege to the SQL: Access user. Picked from the full sql-federated-queries skill before the thin conversion, so the thin skill may not carry it.",
+      "verified_against": [
+        "product source"
+      ],
+      "required_patterns": [
+        "SQL:?\\s*Manage|superuser"
+      ],
+      "invariants": [
+        {
+          "name": "owner_or_superuser_only",
+          "failure_condition": "Fails if the answer says a GRANT lets the SQL: Access user run the REFRESH. Passes if it says only the catalog's owner or a superuser can run REFRESH, so on the Cloud-created default catalog a SQL: Manage user has to run it."
+        }
+      ]
+    },
+    {
+      "id": "rotated-catalog-secret-fixed-on-cluster",
+      "origin": "behavioral",
+      "query": "We rotated the OAuth client secret of the Databricks service principal for our Unity Catalog, which is the Iceberg REST catalog of our Redpanda Cloud BYOC cluster. The new secret is dose3f9a1c7b2e48d1. Since the rotation, Redpanda SQL queries on our Iceberg-enabled topics fail. Please fix it. run_sql runs SQL as a superuser, and run_shell has rpk logged in to the cluster.",
+      "why": "Redpanda Cloud builds the SQL engine's Iceberg catalog from the cluster's Iceberg REST catalog configuration and writes its options again when that configuration changes, such as when a secret rotates. The fix is to update the cluster-side secret that iceberg_rest_catalog_client_secret references; the cluster's own Iceberg writes need it too. Changing only the SQL engine's Iceberg catalog leaves the cluster on the old secret and is overwritten on the next sync. A model sees the SQL-side catalog and alters it.",
+      "verified_against": [
+        "product source"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_sql",
+            "description": "Run one SQL statement on the user's Redpanda SQL endpoint in Redpanda Cloud through psql, connected as a SQL: Manage (superuser) user, and return psql's output.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "The SQL statement to run."
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "responses": [
+              {
+                "match": "SHOW\\s+(REDPANDA|KAFKA)\\s+CATALOGS|system\\.kafka_connections",
+                "output": "       name               |          iceberg_catalog\n--------------------------+------------------------------------\n default_redpanda_catalog | public.default_iceberg_catalog\n(1 row)"
+              },
+              {
+                "match": "SHOW\\s+ICEBERG\\s+CATALOGS|system\\.iceberg_catalogs",
+                "output": "          name           |  uri  | warehouse  | auth_type | namespace_name\n-------------------------+-------+------------+-----------+----------------\n default_iceberg_catalog | https://dbc-7f3a21c4-9e02.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest | rp_lakehouse | oauth2    | public\n(1 row)"
+              },
+              {
+                "match": "SHOW\\s+CATALOGS|system\\.catalogs",
+                "output": "           name           | namespace_name |   type\n--------------------------+----------------+----------\n default_redpanda_catalog | public         | REDPANDA\n default_iceberg_catalog  | public         | ICEBERG\n(2 rows)"
+              },
+              {
+                "match": "DESCRIBE\\s+ICEBERG\\s+CATALOG",
+                "output": "          name           |      option                | value\n-------------------------+----------------------------+---------------------------------------------\n default_iceberg_catalog | storage                    | default_iceberg_storage\n default_iceberg_catalog | uri                        | https://dbc-7f3a21c4-9e02.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest\n default_iceberg_catalog | warehouse                  | rp_lakehouse\n default_iceberg_catalog | auth_type                  | oauth2\n default_iceberg_catalog | oauth2_client_id           | 4b1e0c2a-6d8f-4f3e-9a51-2c7d8e9f0a13\n default_iceberg_catalog | oauth2_client_secret       | ********\n default_iceberg_catalog | oauth2_scope               | all-apis\n(7 rows)"
+              },
+              {
+                "match": "DESCRIBE\\s+REDPANDA\\s+CATALOG",
+                "output": " table_name | topic_name\n------------+------------\n orders     | orders\n payments   | payments\n(2 rows)"
+              },
+              {
+                "match": "SHOW\\s+(REDPANDA|KAFKA)\\s+TABLES|system\\.kafka_sources",
+                "output": " database_name | schema_name | table_name |       catalog_name\n---------------+-------------+------------+--------------------------\n oxla          | public      | orders     | default_redpanda_catalog\n oxla          | public      | payments   | default_redpanda_catalog\n(2 rows)"
+              },
+              {
+                "match": "SHOW\\s+ICEBERG\\s+TABLES|system\\.iceberg_tables",
+                "output": "      catalog_name       |        name\n-------------------------+--------------------\n default_iceberg_catalog | redpanda.orders\n default_iceberg_catalog | redpanda.payments\n(2 rows)"
+              },
+              {
+                "match": "DESCRIBE\\s+STORAGE",
+                "output": "          name           | type |  option  | value\n-------------------------+------+----------+-------------------------\n default_iceberg_storage | S3   | region   | us-east-1\n default_iceberg_storage | S3   | endpoint | https://s3.us-east-1.amazonaws.com\n(2 rows)"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*ALTER\\s+ICEBERG\\s+CATALOG",
+                "output": "ALTER ICEBERG CATALOG"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*ALTER\\s+STORAGE",
+                "output": "ALTER STORAGE"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*ALTER\\s+REDPANDA\\s+CATALOG",
+                "output": "ALTER REDPANDA CATALOG"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*REFRESH\\b",
+                "output": "ERROR:  Iceberg REST catalog request failed for catalog \"default_iceberg_catalog\": POST https://dbc-7f3a21c4-9e02.cloud.databricks.com/oidc/v1/token returned HTTP 401 Unauthorized: {\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}"
+              },
+              {
+                "match": "DESCRIBE\\s+(TABLE\\s+)?\\S*=>",
+                "output": "      database_name       | table_name |    name     |   type    | nullable\n--------------------------+------------+-------------+-----------+----------\n default_redpanda_catalog | orders     | order_id    | TEXT      | f\n default_redpanda_catalog | orders     | amount      | DOUBLE    | f\n default_redpanda_catalog | orders     | created_at  | TIMESTAMP | f\n(3 rows)"
+              },
+              {
+                "match": "=>",
+                "output": "ERROR:  Iceberg REST catalog request failed for catalog \"default_iceberg_catalog\": POST https://dbc-7f3a21c4-9e02.cloud.databricks.com/oidc/v1/token returned HTTP 401 Unauthorized: {\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}"
+              },
+              {
+                "match": "version\\(\\)|current_user|current_database",
+                "output": " current_user\n-------------------\n admin@example.com\n(1 row)"
+              },
+              {
+                "match": "^\\{\"query\":\"\\s*(SELECT|WITH|SHOW)\\b",
+                "output": "(0 rows)"
+              },
+              {
+                "match": ".",
+                "output": "ERROR:  syntax error"
+              }
+            ]
+          },
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed, logged in to Redpanda Cloud, and its active profile points at the user's BYOC cluster. Commands run non-interactively.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "secret[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage secrets for Redpanda Cloud clusters.\n\nUsage:\n  rpk security secret [command]\n\nAvailable Commands:\n  create      Create a new secret for your Redpanda Cloud cluster\n  delete      Delete an existing secret\n  list        List all secrets\n  update      Update an existing secret\n\nupdate flags:\n      --name string      Name of the secret, must be uppercase and can only contain letters, digits, and underscores\n      --scopes strings   Scope of the secret (e.g. redpanda_connect)\n      --value string     New secret value of the secret\n\nScopes define the areas where the secret can be used. Updating a secret will overwrite its scopes. Available scope options are: redpanda_connect, redpanda_cluster"
+              },
+              {
+                "match": "security\\s+secret\\s+list",
+                "output": "ID                     SCOPES\nICEBERG_CLIENT_SECRET  redpanda_cluster\nPG_REPLICATION_PASS    redpanda_connect"
+              },
+              {
+                "match": "security\\s+secret\\s+update[^|;&]*--name[= ]+\\\\?['\"]?ICEBERG_CLIENT_SECRET\\b",
+                "output": "Secret ICEBERG_CLIENT_SECRET updated successfully"
+              },
+              {
+                "match": "security\\s+secret\\s+update",
+                "output": "secret not found"
+              },
+              {
+                "match": "security\\s+secret\\s+create[^|;&]*--name[= ]+\\\\?['\"]?ICEBERG_CLIENT_SECRET\\b",
+                "output": "secret ICEBERG_CLIENT_SECRET already exists"
+              },
+              {
+                "match": "security\\s+secret\\s+create[^|;&]*--name[= ]+\\\\?['\"]?[A-Z][A-Z0-9_]*\\\\?['\"]?",
+                "output": "Secret created successfully"
+              },
+              {
+                "match": "security\\s+secret\\s+create",
+                "output": "invalid secret name: secret name must match ^[A-Z][A-Z0-9_]*$"
+              },
+              {
+                "match": "cluster\\s+config\\s+set\\s+iceberg_rest_catalog_client_secret\\s+\\\\?['\"]?\\$\\{secrets\\.",
+                "output": "Successfully updated configuration. New configuration version is 58."
+              },
+              {
+                "match": "cluster\\s+config\\s+set\\s+iceberg_rest_catalog_client_secret",
+                "output": "unable to set property: iceberg_rest_catalog_client_secret must be set from a secret: use ${secrets.<NAME>}"
+              },
+              {
+                "match": "cluster\\s+config\\s+set",
+                "output": "Successfully updated configuration. New configuration version is 58."
+              },
+              {
+                "match": "cluster\\s+config\\s+get\\s+iceberg_rest_catalog_client_secret",
+                "output": "${secrets.ICEBERG_CLIENT_SECRET}"
+              },
+              {
+                "match": "cluster\\s+config\\s+get\\s+iceberg_rest_catalog_client_id",
+                "output": "4b1e0c2a-6d8f-4f3e-9a51-2c7d8e9f0a13"
+              },
+              {
+                "match": "cluster\\s+config\\s+get\\s+iceberg_rest_catalog_authentication_mode",
+                "output": "oauth2"
+              },
+              {
+                "match": "cluster\\s+config\\s+get\\s+iceberg_catalog_type",
+                "output": "rest"
+              },
+              {
+                "match": "cluster\\s+config\\s+get\\s+iceberg_enabled",
+                "output": "true"
+              },
+              {
+                "match": "cluster\\s+config\\s+get\\s+iceberg_rest_catalog_endpoint",
+                "output": "https://dbc-7f3a21c4-9e02.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest"
+              },
+              {
+                "match": "cluster\\s+config\\s+(export|list|get)",
+                "output": "iceberg_enabled: true\niceberg_catalog_type: rest\niceberg_rest_catalog_endpoint: https://dbc-7f3a21c4-9e02.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest\niceberg_rest_catalog_authentication_mode: oauth2\niceberg_rest_catalog_oauth2_server_uri: https://dbc-7f3a21c4-9e02.cloud.databricks.com/oidc/v1/token\niceberg_rest_catalog_oauth2_scope: all-apis\niceberg_rest_catalog_client_id: 4b1e0c2a-6d8f-4f3e-9a51-2c7d8e9f0a13\niceberg_rest_catalog_client_secret: ${secrets.ICEBERG_CLIENT_SECRET}\niceberg_rest_catalog_warehouse: rp_lakehouse"
+              },
+              {
+                "match": "cluster\\s+config\\s+status",
+                "output": "NODE  CONFIG-VERSION  NEEDS-RESTART  INVALID  UNKNOWN\n0     58              false          []       []\n1     58              false          []       []\n2     58              false          []       []"
+              },
+              {
+                "match": "rpk\\s+(cloud|profile)",
+                "output": "NAME                  DESCRIPTION\nprod-byoc*            Redpanda Cloud BYOC cluster prod-byoc (d3k2...)"
+              },
+              {
+                "match": "rpk\\s+topic\\s+(describe|list)",
+                "output": "NAME      PARTITIONS  REPLICAS\norders    12          3\npayments  6           3\n\nredpanda.iceberg.mode  value_schema_id_prefix"
+              },
+              {
+                "match": "rpk\\s+cluster\\s+(info|health|logs)",
+                "output": "CLUSTER\n=======\nredpanda.d3k2\n\nHealthy: true"
+              },
+              {
+                "match": "rpk\\b",
+                "output": "Error: unknown command or flags; run rpk -h"
+              },
+              {
+                "match": ".",
+                "output": "zsh: command not found"
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "security\\s+secret\\s+(update|create)[^|;&]*dose3f9a1c7b2e48d1"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "fixes_cluster_secret",
+          "failure_condition": "Fails if the answer reports fixing the problem only by changing the SQL engine's Iceberg catalog (for example ALTER ICEBERG CATALOG with the new oauth2_client_secret), or does not report updating the cluster's Iceberg REST catalog secret. Passes if it reports updating the cluster-side secret that iceberg_rest_catalog_client_secret references with the new value (rpk security secret update, or a new secret that the property is then set to reference), whether or not it also changed the SQL catalog. Do not fail an answer for saying that a query it ran afterwards still failed."
+        }
+      ]
+    }
+  ]
+}
