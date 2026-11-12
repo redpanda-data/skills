@@ -1,0 +1,685 @@
+{
+  "name": "adp-observability skill vs docs",
+  "skill": "adp-observability",
+  "description": "Measures whether the adp-observability skill adds value over the published Agentic Data Plane docs (https://docs.redpanda.com/agentic-data-plane/) and the rpk ai command reference the Docs MCP serves. Fact cases were picked from the full skill before its thin conversion, without checking the published docs: sampled at even intervals through references/observability.md (traces, transcripts, the audit log) and targeted at claims expected to be missing from the docs. The behavioral cases grade the outcome of a task run against a mocked rpk ai: naming every server a grouped, partly denied audit log call refused; finding a conversation by what was said, which --query does not search; and listing conversations that completed after a failed tool call.",
+  "test_cases": [
+    {
+      "id": "trace-recovered-tool-call-status",
+      "origin": "sampled",
+      "query": "In the Redpanda Agentic Data Plane Traces view, one of our agent runs had a tool call fail, then the agent retried with a different tool and gave the user a correct answer. What status does that trace show in the list? And from the terminal, how would I list the last day's runs that had a failed tool call in them, including ones like this that recovered?",
+      "why": "A trace's status is Error only when the run itself failed. A run that finished with a failed tool call inside it reads Completed, with the failed-call count beside the status. `rpk ai trace list --errors` covers failed runs and runs with a failed tool call, which `--status error` does not. A model would guess the trace shows Error.",
+      "verified_against": [
+        "product source (trace status ERROR only when the run itself failed; failed tool call count; rpk ai trace list --errors help)"
+      ],
+      "required_patterns": [
+        "--errors\\b"
+      ],
+      "invariants": [
+        {
+          "name": "completed_not_error",
+          "failure_condition": "FAILS if the answer says the trace shows Error (or Failed) status, or gives only `--status error` as the way to find such runs. PASSES if it says the trace shows Completed (optionally noting a failed-call count beside it) and lists such runs with `rpk ai trace list` using `--errors` and a one-day window such as `--since 24h`."
+        }
+      ]
+    },
+    {
+      "id": "trace-filter-value-cap",
+      "origin": "sampled",
+      "query": "In the Redpanda Agentic Data Plane Traces view I picked 25 users in the User filter, and now the list seems to show traces from every user, including ones I didn't pick. When I picked 10 users it worked. What's going on?",
+      "why": "Each Traces filter facet takes at most 20 values. Past that the UI drops the facet's filter silently instead of reporting an error, so the list goes unfiltered. Only visible in the UI source.",
+      "verified_against": [
+        "product source (Traces view search schema: at most 20 values per facet, an over-long list falls back to no filter)"
+      ],
+      "required_patterns": [
+        "\\b20\\b"
+      ],
+      "invariants": [
+        {
+          "name": "twenty_value_cap_silent",
+          "failure_condition": "FAILS if the answer blames caching, permissions, or a bug without naming the value limit, or names a limit other than 20. PASSES if it says a filter facet accepts at most 20 values and that past that the filter stops applying without an error, so the user should pick 20 or fewer (or split the search)."
+        }
+      ]
+    },
+    {
+      "id": "trace-restricted-span",
+      "origin": "sampled",
+      "query": "A teammate opening a trace in the Redpanda Agentic Data Plane sees some spans marked Restricted. Can they still see anything about those spans, and which permission would let them read the content?",
+      "why": "A restricted span keeps its shape visible: kind, timing, token use, the emitting agent, error code and gateway status. Prompts, messages and tool payloads stay hidden. The content needs dataplane_adp_trace_content_read, or for an agent's spans transcript read on that agent. A model would guess the whole span is hidden.",
+      "verified_against": [
+        "product source (trace API: redacted span fields; GetTrace redaction rules; trace permissions)"
+      ],
+      "required_patterns": [
+        "trace_content_read|Trace\\.read_content"
+      ],
+      "invariants": [
+        {
+          "name": "shape_visible_content_hidden",
+          "failure_condition": "FAILS if the answer says nothing about a restricted span is visible, or names no trace content permission. PASSES if it says the span still shows metadata such as its kind, timing or token usage (any two of kind, timing, tokens, agent, error code) while prompts, messages or tool payloads are hidden, and names the trace content-read permission (dataplane_adp_trace_content_read or Trace.read_content). Also mentioning transcript read access on the agent is fine."
+        }
+      ]
+    },
+    {
+      "id": "transcript-tool-errors-older-conversations",
+      "origin": "sampled",
+      "query": "`rpk ai agent transcript list support --tool-errors-only --since 30d` returns a handful of recent conversations, but none from earlier in the month, even though when I open one of those older conversations with `rpk ai agent transcript get` it clearly shows a failed tool call. Why doesn't the filter find it?",
+      "why": "The list filter reads a stored per-conversation count of failed tool calls. A conversation last written before that count existed reads zero until new activity republishes it, while `get` derives the count from the conversation's own tool calls. Only visible in the storage source.",
+      "verified_against": [
+        "product source (transcript list storage: rows written before the failed tool call count column existed count as 0)"
+      ],
+      "invariants": [
+        {
+          "name": "stored_count_missing_on_older",
+          "failure_condition": "FAILS if the answer blames the --since window, a permission, a retention limit, or says the filter is working and the tool call did not really fail, without naming the stored count. PASSES if it says the filter reads a per-conversation failed-tool-call count that conversations written before the count was introduced do not have (they read as zero until updated), while get computes it from the tool calls, so older conversations must be opened to see their tool errors."
+        }
+      ]
+    },
+    {
+      "id": "transcript-get-tool-output-truncated",
+      "origin": "sampled",
+      "query": "I'm reading `rpk ai agent transcript get support <conversation-id>` to check exactly what a tool returned, but the tool output stops partway through. Did ADP only store part of the result? How do I see all of it?",
+      "why": "The table and wide views of `transcript get` truncate tool input and output to 500 characters for readability. `-o json` and `-o yaml` return the full, untruncated structure. The help text does not say so.",
+      "verified_against": [
+        "product source (rpk ai agent transcript get: truncate(..., 500) in the readable log)"
+      ],
+      "required_patterns": [
+        "(-o|--output)[ =]?(json|yaml)"
+      ],
+      "invariants": [
+        {
+          "name": "display_truncation",
+          "failure_condition": "FAILS if the answer says ADP stored only part of the result, or that the full output cannot be retrieved. PASSES if it says the readable (table) view truncates tool input and output and that -o json or -o yaml shows the full payload. Naming the 500-character limit is not required."
+        }
+      ]
+    },
+    {
+      "id": "transcript-error-records-window",
+      "origin": "sampled",
+      "query": "One of our Redpanda Agentic Data Plane agent conversations has been running on and off for about a month. If its transcript's error notice lists no errors, can I conclude nothing failed in that conversation since it started?",
+      "why": "A transcript's recorded-error list covers at most the seven days before the conversation's last turn, up to 1,000 records; past either limit the notice says the history is limited, and a failed lookup reports the records unavailable. A model would treat an empty list as proof.",
+      "verified_against": [
+        "product source (transcript API: errors snapshot covers at most seven days before the latest turn, at most 1000 records, errors_truncated and errors_unavailable)"
+      ],
+      "required_patterns": [
+        "seven|\\b7[- ]day"
+      ],
+      "invariants": [
+        {
+          "name": "bounded_window",
+          "failure_condition": "FAILS if the answer says yes, an empty error list proves nothing failed, or gives a window other than seven days. PASSES if it says no, because the error records cover only the seven days before the last turn (and at most 1,000 records), so older failures can be missing; it may suggest reading the turns and tool calls."
+        }
+      ]
+    },
+    {
+      "id": "transcript-context-size-vs-input-tokens",
+      "origin": "sampled",
+      "query": "In a Redpanda Agentic Data Plane transcript's Detailed view, one turn's context chip says about 41k tokens, but the same turn's input tokens add up to about 120k. Is one of those numbers wrong?",
+      "why": "Neither is wrong. The context size is the prompt the model read on the turn's last model call, cache reads included; the input-token total sums every model call in the turn and is what it cost. A multi-call turn reports a context size smaller than its input total.",
+      "verified_against": [
+        "product source (transcript turn context_tokens: the last LLM step's input; usage.input_tokens summed across every step)"
+      ],
+      "invariants": [
+        {
+          "name": "last_call_vs_sum",
+          "failure_condition": "FAILS if the answer says one number is wrong or a bug, or explains the gap only by caching or compaction without saying the input total sums several model calls. PASSES if it says the context chip is the prompt size of the turn's last model call while the input-token total adds up every model call in the turn, so with several calls the total is larger."
+        }
+      ]
+    },
+    {
+      "id": "transcript-compaction-sizes-not-billed",
+      "origin": "sampled",
+      "query": "A Redpanda Agentic Data Plane transcript shows a 'Context compacted' marker with a before size of 180k tokens and an after size of 60k. Our model provider's bill for that turn doesn't match either number. Which should I trust for cost?",
+      "why": "Compaction sizes are the agent's own heuristic estimates of the request it was about to send, not billed usage, so they do not reconcile with the turn's token totals. Use the token totals or Cost and usage for spend.",
+      "verified_against": [
+        "product source (transcript API: compaction context sizes are the agent SDK's heuristic estimates, not billed usage)"
+      ],
+      "invariants": [
+        {
+          "name": "estimates_not_billing",
+          "failure_condition": "FAILS if the answer says the compaction sizes are billed tokens or should match the bill. PASSES if it says the before and after sizes are the agent's estimates of the request size, not billed usage, and points to the turn's recorded token usage or the cost and usage view for spend."
+        }
+      ]
+    },
+    {
+      "id": "audit-denied-despite-access",
+      "origin": "sampled",
+      "query": "In the Redpanda Agentic Data Plane audit log, an MCP tool call by our support agent shows Outcome Denied, yet the access policy grants that agent the tool and other calls to the same tool show Allowed. How can that be, and where in the audit log do I confirm what refused it?",
+      "why": "Denied covers a refusal by access policy and a call that was authorized and then blocked by a guardrail or data policy. The event's details list the checks in order: an Access row of Permit and a Guardrail (or Data policy) row of Blocked shows the later check stopped it.",
+      "verified_against": [
+        "product source (audit log API: DENIED means refused by authorization or authorized then withheld by a guardrail; policy decisions PERMIT, DENY, BLOCK, MASK)"
+      ],
+      "invariants": [
+        {
+          "name": "guardrail_after_access",
+          "failure_condition": "FAILS if the answer blames only the access policy (a missing grant, caching, or a stale policy) and never mentions a guardrail or data policy. PASSES if it says a guardrail or data policy that runs after access is granted can block the call and still record Denied, and says to open the event and read its policy decisions (access permitted, guardrail or data policy blocked)."
+        }
+      ]
+    },
+    {
+      "id": "audit-actor-type-unknown",
+      "origin": "sampled",
+      "query": "In the Redpanda Agentic Data Plane audit log, a large share of events show an actor type of Unknown. Are those calls from unauthenticated or anonymous callers that we should worry about?",
+      "why": "Actor type is empty, shown as Unknown, on events recorded before the field existed and on configuration changes, which carry no account type. It means the type was not recorded, not that the caller was anonymous.",
+      "verified_against": [
+        "product source (audit log API: actor_type empty on events emitted before the field existed and on entity management events; treat empty as unknown)"
+      ],
+      "invariants": [
+        {
+          "name": "unknown_means_not_recorded",
+          "failure_condition": "FAILS if the answer says Unknown means unauthenticated or anonymous callers, or treats them as a security concern without naming why the type is missing. PASSES if it says Unknown means the actor type was not recorded, because the event is older than the field or is a configuration change, which records no account type."
+        }
+      ]
+    },
+    {
+      "id": "audit-mcp-session-count",
+      "origin": "sampled",
+      "query": "I want to count how many MCP sessions clients opened against our Redpanda Agentic Data Plane MCP gateway last week. Can I count the `initialize` entries in the audit log to get that?",
+      "why": "The MCP gateway audits session setup and upkeep (initialize, ping, tools/list, notifications) only when refused or failed; tool calls are always recorded. Counting initialize entries counts failed or refused handshakes, not sessions.",
+      "verified_against": [
+        "product source (AI Gateway MCP audit hook: handshake and session upkeep audited only when refused or failed)"
+      ],
+      "invariants": [
+        {
+          "name": "initialize_only_on_failure",
+          "failure_condition": "FAILS if the answer says yes, counting initialize entries gives the session count. PASSES if it says no, because initialize (and other setup messages such as ping or tools/list) is recorded only when refused or failed, so successful sessions leave no initialize entry."
+        }
+      ]
+    },
+    {
+      "id": "trace-missing-for-discovery-only-session",
+      "origin": "targeted",
+      "query": "An MCP client connected to our Redpanda Agentic Data Plane gateway, listed the tools, and then disconnected without calling any tool. I can't find any trace for it in the Traces view. Does that mean the connection never reached the gateway?",
+      "why": "Traces lists gateway traces only when they hold a model call or a tool call. Session setup, tool discovery and keepalives alone produce no listed trace, so its absence is not proof the client never connected.",
+      "verified_against": [
+        "product source (trace list storage: a gateway trace is listed only with a customer-facing span, an LLM call or MCP tool call)"
+      ],
+      "invariants": [
+        {
+          "name": "upkeep_not_traced",
+          "failure_condition": "FAILS if the answer says the missing trace means the connection failed or never reached the gateway. PASSES if it says a session that only set up and listed tools produces no trace, because traces show runs with a model or tool call, so the absence does not mean the connection failed."
+        }
+      ]
+    },
+    {
+      "id": "trace-running-vs-incomplete",
+      "origin": "targeted",
+      "query": "In the Redpanda Agentic Data Plane Traces view, what's the difference between a trace marked Running and one marked Incomplete? When does one become the other?",
+      "why": "Running means the root span is still open, or there is no root span and spans arrived in the last 15 minutes. Incomplete means no root span and no span in the last 15 minutes, so the record is partial. A gateway-only trace is never either.",
+      "verified_against": [
+        "product source (trace API: TraceStatus RUNNING and INCOMPLETE definitions)"
+      ],
+      "required_patterns": [
+        "15[- ]?min"
+      ],
+      "invariants": [
+        {
+          "name": "root_span_and_15_minutes",
+          "failure_condition": "FAILS if the answer gives a different time threshold or does not tie the difference to a missing root span. PASSES if it says Incomplete is a trace with no root span and no new span for 15 minutes, while Running means the root span is still open or spans arrived within the last 15 minutes."
+        }
+      ]
+    },
+    {
+      "id": "audit-grouped-partial-denial",
+      "origin": "behavioral",
+      "query": "Bob (bob@acme.com) says the MCP servers page in our Redpanda Agentic Data Plane console showed him only some of our servers this morning. Use the audit log to find out exactly which servers he was refused and which policy refused them. You can run commands with the run_shell tool.",
+      "why": "The page load is one ListMCPServers call that decided on eight servers, so the audit log shows it as one grouped row with outcome partial and no single resource. `--outcome denied` alone misses it. `rpk ai auditlog get` on the row reads one member event, never the group, so it names one server at most. The members, one row per server, come from `rpk ai auditlog list --correlation-id <id>` (or a list that asks for the resources field). Graded on the outcome: the answer names all three refused servers and the deciding policy, however the agent got them.",
+      "verified_against": [
+        "product source (rpk ai auditlog list and get help; audit log API: partial outcome, resource_count, resources is a list-view field that GetAuditLogEntry never fills, correlation_id expansion)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed with the rpk ai plugin, signed in to the user's Agentic Data Plane, with an environment selected. Commands run non-interactively.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk ai agent list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "auditlog\\s+list[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Search the ADP audit log: who did what, to which resource, and which policy\nallowed or denied it. One row is one API call. A call that decided on several\nresources is one grouped row; RESOURCE_COUNT says how many.\n\n--since defaults to 24h, or to no lower bound with --correlation-id. It takes\nan RFC 3339 timestamp, a duration ago (15m, 24h, 7d, 2w), or \"all\" for no lower\nbound. \"all\" scans the whole archive and can run into the server's 30s query\nlimit. --until must be after --since.\n\nFilter flags (--actor, --resource-type, --policy, ...) each match one field:\n  - values within one flag are ORed; different flags are ANDed\n  - repeat a flag or separate values with commas; a literal comma is \\,\n  - a leading ! negates: --subsystem '!llm-proxy'; a literal leading ! is \\!\n  - the resource, parent, --policy and --status flags match a call when any\n    one of its resources matches, and return the whole call\n\n--denied is shorthand for --outcome denied,partial: anything with a refusal\nin it. --outcome denied alone leaves out partly denied calls.\n\n-o table shows a lean column set; -o wide, json, yaml and markdown add the\ndecision and delegation fields. --fields picks the fields (and the table\ncolumns); --fields all returns every field, including the request and entity\nbodies, which is slower. 'rpk ai auditlog get ID' reads one entry in full.\n\n--limit caps the entries printed (default 50; 0 returns everything). When more\nremain, the exit code stays 0 and stderr gets the flags that continue the\nlisting. When nothing matches, stderr names the filter that was sent.\n\nReading the audit log is itself audited; --operation '!ListAuditLogEntries'\nhides those reads.\n\nUsage:\n  rpk ai auditlog list [flags]\n\nFlags:\n      --activity strings         activity: create, read, update, delete\n      --actor strings            effective user email (the human on a delegated call)\n      --actor-type strings       actor kind: user, agent, service-account\n      --agent strings            agent name; a bare name also matches agents/<name>\n      --correlation-id string    one call's member events, one row per resource, denials first; any age unless --since is set\n      --denied                   only calls with a refusal in them (outcome denied or partial)\n      --event-class strings      event class: api-activity, entity-management (config changes)\n      --fields strings           fields to return, also the table columns (comma-separated), or \"all\"\n      --limit int                maximum entries to print; 0 returns everything (default 50)\n      --operation strings        operation: CreateLLMProvider, tools/call, chat/completions, ...\n      --order-by string          sort field with an optional \" desc\" (default \"time desc\")\n      --outcome strings          call verdict: allowed, denied, partial, masked (repeatable, comma-separated)\n      --page-token string        resume a previous listing from the token it wrote to stderr\n      --policy strings           any policy the decision was attributed to\n      --query string             case-insensitive substring of the entry message\n      --resource-id strings      resource id\n      --resource-type strings    resource type as a CLI noun: mcp-server, llm-provider, agent, ...\n      --since string             start of the window (default \"24h\")\n      --status strings           operation status: succeeded, failed (the verdict is --outcome)\n      --subsystem strings        product surface: llm-proxy, mcp-gateway, a2a-proxy, agents, guardrails, ...\n      --until string             end of the window, exclusive and after --since\n\nGlobal Flags:\n  -o, --output string   output format: table, wide, json, yaml, markdown (default \"table\")\n"
+              },
+              {
+                "match": "auditlog\\s+get[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Read one audit log entry with every field, including the request and entity\nbodies that list leaves out. -o yaml is the readable form for those. --fields\nnarrows the entry to the named fields.\n\nget reads one event, not a grouped call, so its resources field is never\nfilled. When a list row shows a resource_count above 1, the call's members come\nfrom 'rpk ai auditlog list --correlation-id <correlation_id>', one row per\nresource; each member's id works with get.\n\nUsage:\n  rpk ai auditlog get <id> [flags]\n\nFlags:\n      --fields strings   fields to return (comma-separated); default all\n\nGlobal Flags:\n  -o, --output string   output format: table, wide, json, yaml, markdown (default \"table\")\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+((?-i:-h)\\b|--help)",
+                "output": "Read the ADP audit log (read-only).\n\nUsage:\n  rpk ai auditlog [command]\n\nAliases:\n  auditlog, audit-log, audit\n\nAvailable Commands:\n  get         Read one audit log entry\n  list        Search the audit log\n  query       Query audit entries, timeline and facets (set a bounded time window)\n"
+              },
+              {
+                "match": "(policy|policies)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage access policies.\n\nUsage:\n  rpk ai policy [command]\n\nAvailable Commands:\n  get, list, create, update, delete\n"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk ai [command]\n\nAvailable Commands:\n  agent, agent-network, auditlog, auth, env, gateway, mcp-server, model, policy, provider, session, spending, trace, trigger\n\nUse \"rpk ai [command] --help\" for more information about a command."
+              },
+              {
+                "match": "(audit-?log|audit)\\s+list(?=[^|;&]*--correlation-id)(?=[^|;&]*(-o\\s*(wide|json|yaml|markdown)|--output[ =]\\S|--fields))",
+                "output": "TIME                  ACTOR         RESOURCE_TYPE  RESOURCE_ID    OUTCOME  DECIDING_POLICY             OPERATION_STATUS  CORRELATION_ID  ID\n2026-11-10T08:41:12Z  bob@acme.com  mcp-server     finance-tools  denied   policies/eng-mcp-servers    failed            c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HD\n2026-11-10T08:41:12Z  bob@acme.com  mcp-server     hr-directory   denied   policies/eng-mcp-servers    failed            c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HE\n2026-11-10T08:41:12Z  bob@acme.com  mcp-server     payroll-db     denied   policies/eng-mcp-servers    failed            c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HF\n2026-11-10T08:41:12Z  bob@acme.com  mcp-server     github         allowed  policies/eng-mcp-servers    succeeded         c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HG\n2026-11-10T08:41:12Z  bob@acme.com  mcp-server     jira           allowed  policies/eng-mcp-servers    succeeded         c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HH\n2026-11-10T08:41:12Z  bob@acme.com  mcp-server     servicenow     allowed  policies/eng-mcp-servers    succeeded         c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HJ\n2026-11-10T08:41:12Z  bob@acme.com  mcp-server     slack          allowed  policies/eng-mcp-servers    succeeded         c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HK\n2026-11-10T08:41:12Z  bob@acme.com  mcp-server     web-search     allowed  policies/eng-mcp-servers    succeeded         c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HM\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+list(?=[^|;&]*--correlation-id)",
+                "output": "TIME                  ACTOR           SUBSYSTEM  OPERATION       RESOURCE_TYPE  RESOURCE_ID     OUTCOME  ID\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers  mcp-server     finance-tools   denied   01JCZ8Q4V7M2RK3T9XW5N6B1HD\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers  mcp-server     hr-directory    denied   01JCZ8Q4V7M2RK3T9XW5N6B1HE\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers  mcp-server     payroll-db      denied   01JCZ8Q4V7M2RK3T9XW5N6B1HF\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers  mcp-server     github          allowed  01JCZ8Q4V7M2RK3T9XW5N6B1HG\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers  mcp-server     jira            allowed  01JCZ8Q4V7M2RK3T9XW5N6B1HH\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers  mcp-server     servicenow      allowed  01JCZ8Q4V7M2RK3T9XW5N6B1HJ\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers  mcp-server     slack           allowed  01JCZ8Q4V7M2RK3T9XW5N6B1HK\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers  mcp-server     web-search      allowed  01JCZ8Q4V7M2RK3T9XW5N6B1HM\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+(list|query)(?=[^|;&]*--fields[ =]\\S*(all|resources))",
+                "output": "- id: 01JCZ8Q4V7M2RK3T9XW5N6B1HD\n  time: \"2026-11-10T08:41:12Z\"\n  actor: bob@acme.com\n  operation: ListMCPServers\n  outcome: partial\n  resource_count: 8\n  denied_resource_count: 3\n  correlation_id: c0r-7e41f2a9\n  resources:\n    - {resource_type: mcp-server, resource_id: finance-tools, outcome: denied, deciding_policy: policies/eng-mcp-servers}\n    - {resource_type: mcp-server, resource_id: hr-directory, outcome: denied, deciding_policy: policies/eng-mcp-servers}\n    - {resource_type: mcp-server, resource_id: payroll-db, outcome: denied, deciding_policy: policies/eng-mcp-servers}\n    - {resource_type: mcp-server, resource_id: github, outcome: allowed, deciding_policy: policies/eng-mcp-servers}\n    - {resource_type: mcp-server, resource_id: jira, outcome: allowed, deciding_policy: policies/eng-mcp-servers}\n    - {resource_type: mcp-server, resource_id: servicenow, outcome: allowed, deciding_policy: policies/eng-mcp-servers}\n    - {resource_type: mcp-server, resource_id: slack, outcome: allowed, deciding_policy: policies/eng-mcp-servers}\n    - {resource_type: mcp-server, resource_id: web-search, outcome: allowed, deciding_policy: policies/eng-mcp-servers}\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+get[^|;&]*B1HD\\b",
+                "output": "id: 01JCZ8Q4V7M2RK3T9XW5N6B1HD\ntime: \"2026-11-10T08:41:12Z\"\nactor: bob@acme.com\nactor_type: User\nsubsystem: agents\nservice: MCPServerService\noperation: ListMCPServers\nevent_class: api-activity\nresource_type: mcp-server\nresource_id: finance-tools\noutcome: denied\noperation_status: failed\ndeciding_policy: policies/eng-mcp-servers\npolicies:\n  - uid: policies/eng-mcp-servers\n    name: eng-mcp-servers\n    applied: true\n    decision: DENY\ncorrelation_id: c0r-7e41f2a9\nresource_count: 8\ndenied_resource_count: 3\nresources: []\nsource_ip: 10.20.4.17\nmessage: ListMCPServers by bob@acme.com\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+get[^|;&]*B1HE\\b",
+                "output": "id: 01JCZ8Q4V7M2RK3T9XW5N6B1HE\ntime: \"2026-11-10T08:41:12Z\"\nactor: bob@acme.com\nactor_type: User\nsubsystem: agents\nservice: MCPServerService\noperation: ListMCPServers\nevent_class: api-activity\nresource_type: mcp-server\nresource_id: hr-directory\noutcome: denied\noperation_status: failed\ndeciding_policy: policies/eng-mcp-servers\npolicies:\n  - uid: policies/eng-mcp-servers\n    name: eng-mcp-servers\n    applied: true\n    decision: DENY\ncorrelation_id: c0r-7e41f2a9\nresource_count: 8\ndenied_resource_count: 3\nresources: []\nsource_ip: 10.20.4.17\nmessage: ListMCPServers by bob@acme.com\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+get[^|;&]*B1HF\\b",
+                "output": "id: 01JCZ8Q4V7M2RK3T9XW5N6B1HF\ntime: \"2026-11-10T08:41:12Z\"\nactor: bob@acme.com\nactor_type: User\nsubsystem: agents\nservice: MCPServerService\noperation: ListMCPServers\nevent_class: api-activity\nresource_type: mcp-server\nresource_id: payroll-db\noutcome: denied\noperation_status: failed\ndeciding_policy: policies/eng-mcp-servers\npolicies:\n  - uid: policies/eng-mcp-servers\n    name: eng-mcp-servers\n    applied: true\n    decision: DENY\ncorrelation_id: c0r-7e41f2a9\nresource_count: 8\ndenied_resource_count: 3\nresources: []\nsource_ip: 10.20.4.17\nmessage: ListMCPServers by bob@acme.com\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+get[^|;&]*B1H[GHJKM]\\b",
+                "output": "id: 01JCZ8Q4V7M2RK3T9XW5N6B1HG\ntime: \"2026-11-10T08:41:12Z\"\nactor: bob@acme.com\nactor_type: User\nsubsystem: agents\nservice: MCPServerService\noperation: ListMCPServers\nevent_class: api-activity\nresource_type: mcp-server\nresource_id: github\noutcome: allowed\noperation_status: succeeded\ndeciding_policy: policies/eng-mcp-servers\npolicies:\n  - uid: policies/eng-mcp-servers\n    name: eng-mcp-servers\n    applied: true\n    decision: PERMIT\ncorrelation_id: c0r-7e41f2a9\nresource_count: 8\ndenied_resource_count: 3\nresources: []\nsource_ip: 10.20.4.17\nmessage: ListMCPServers by bob@acme.com\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+get",
+                "output": "Error: audit log entry not found"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+(list|query)(?=[^|;&]*--outcome[ =]['\\\\\\\"]*denied(?![,\\w]))(?![^|;&]*partial)",
+                "output": "no entries match: since 2026-11-09T09:02:11Z, outcome denied, actor bob@acme.com"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+(list|query)(?=[^|;&]*(--denied|partial))(?=[^|;&]*(-o\\s*(wide|json|yaml|markdown)|--output[ =]\\S|--fields))",
+                "output": "TIME                  ACTOR           ACTOR_TYPE  SUBSYSTEM  OPERATION       RESOURCE_TYPE  RESOURCE_ID  RESOURCE_PARENT_ID  OUTCOME  DECIDING_POLICY  OPERATION_STATUS  RESOURCE_COUNT  DENIED_RESOURCE_COUNT  AGENT_NAME  INVOKED_BY  SOURCE_IP     RESPONSE_ERROR  CORRELATION_ID  ID\n2026-11-10T08:41:12Z  bob@acme.com    User        agents     ListMCPServers  mcp-server                                  partial                   succeeded         8               3                                              10.20.4.17                    c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HD\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+(list|query)(?=[^|;&]*(--denied|partial))",
+                "output": "TIME                  ACTOR           SUBSYSTEM  OPERATION         RESOURCE_TYPE  RESOURCE_ID    OUTCOME  ID\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers    mcp-server                    partial  01JCZ8Q4V7M2RK3T9XW5N6B1HD\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+(list|query)(?=[^|;&]*(-o\\s*(wide|json|yaml|markdown)|--output[ =]\\S|--fields))",
+                "output": "TIME                  ACTOR           ACTOR_TYPE  SUBSYSTEM  OPERATION       RESOURCE_TYPE  RESOURCE_ID  RESOURCE_PARENT_ID  OUTCOME  DECIDING_POLICY  OPERATION_STATUS  RESOURCE_COUNT  DENIED_RESOURCE_COUNT  AGENT_NAME  INVOKED_BY  SOURCE_IP     RESPONSE_ERROR  CORRELATION_ID  ID\n2026-11-10T08:41:12Z  bob@acme.com    User        agents     ListMCPServers  mcp-server                                  partial                   succeeded         8               3                                              10.20.4.17                    c0r-7e41f2a9    01JCZ8Q4V7M2RK3T9XW5N6B1HD\n2026-11-10T08:41:02Z  bob@acme.com    User        agents     GetAgent        agent          support                          allowed  policies/staff-read  succeeded  1  0                      10.20.4.17                    c0r-11b0e3d4    01JCZ8PZ0C4QF8D2S1K7M3R9TA\n"
+              },
+              {
+                "match": "(audit-?log|audit)\\s+(list|query)",
+                "output": "TIME                  ACTOR           SUBSYSTEM  OPERATION         RESOURCE_TYPE  RESOURCE_ID    OUTCOME  ID\n2026-11-10T08:41:12Z  bob@acme.com    agents     ListMCPServers    mcp-server                    partial  01JCZ8Q4V7M2RK3T9XW5N6B1HD\n2026-11-10T08:41:02Z  bob@acme.com    agents     GetAgent          agent          support        allowed  01JCZ8PZ0C4QF8D2S1K7M3R9TA\n2026-11-10T08:40:55Z  bob@acme.com    agents     ListAgents        agent                         allowed  01JCZ8PS6H2W9N4B7V1X3K5QJE\n"
+              },
+              {
+                "match": "mcp-?servers?\\s+(list|ls)",
+                "output": "NAME           DISPLAY_NAME     STATE\nfinance-tools  Finance tools    RUNNING\ngithub         GitHub           RUNNING\nhr-directory   HR directory     RUNNING\njira           Jira             RUNNING\npayroll-db     Payroll DB       RUNNING\nservicenow     ServiceNow       RUNNING\nslack          Slack            RUNNING\nweb-search     Web search       RUNNING"
+              },
+              {
+                "match": "(policy|policies)\\s+(list|ls)",
+                "output": "NAME              DESCRIPTION\neng-mcp-servers   Engineering staff: engineering MCP servers only\nstaff-read        All staff: read agents\nadmins            Platform admins"
+              },
+              {
+                "match": "(policy|policies)\\s+get[^|;&]*eng-mcp",
+                "output": "name: eng-mcp-servers\ndescription: 'Engineering staff: engineering MCP servers only'\npolicy: |\n  permit (principal in Group::\"engineering\", action == Action::\"MCPServer.list\", resource)\n  when { resource.labels.team == \"engineering\" };\n"
+              },
+              {
+                "match": "(policy|policies)\\s+get",
+                "output": "Error: policy not found"
+              },
+              {
+                "match": "auth\\s+(whoami|status)|whoami",
+                "output": "Signed in as admin@acme.com (environment: production)"
+              },
+              {
+                "match": "env\\s+(list|current|get)",
+                "output": "NAME        CURRENT\nproduction  *"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ]
+      },
+      "required_patterns": [
+        "finance-tools",
+        "hr-directory",
+        "payroll-db",
+        "eng-mcp-servers"
+      ],
+      "invariants": [
+        {
+          "name": "all_three_refused_and_policy",
+          "failure_condition": "FAILS if the answer misses any of finance-tools, hr-directory and payroll-db as refused servers, names an allowed server as refused, says nothing was refused, or does not name eng-mcp-servers as the deciding policy. PASSES if it says Bob was refused finance-tools, hr-directory and payroll-db, and that the eng-mcp-servers policy decided it."
+        }
+      ]
+    },
+    {
+      "id": "transcript-find-conversation-by-content",
+      "origin": "behavioral",
+      "query": "A customer says our Redpanda Agentic Data Plane agent `support` promised them a refund for order 4471 sometime in the past week. Find that conversation and tell me its conversation ID and exactly what the agent promised. You can run commands with the run_shell tool.",
+      "why": "`rpk ai agent transcript list --query` matches the conversation title or ID, not what was said, and no title mentions the order number. An agent that treats an empty `--query 4471` or `--query refund` result as \"no such conversation\" fails; one that reads the conversations themselves (transcript get, or the trace spans) finds it. Graded on the outcome: the answer names the right conversation and the promise, however it was found.",
+      "verified_against": [
+        "product source (transcript list storage: the query matches title or conversation ID only)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed with the rpk ai plugin, signed in to the user's Agentic Data Plane, with an environment selected. Commands run non-interactively.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk ai agent list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "(transcripts?|tr)\\s+list[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "List an agent's conversation transcripts. <agent> is the agent name, or its uid (the agent's UUID, as shown by `agent list -o wide`).\n\nUsage:\n  rpk ai agent transcript list <agent> [flags]\n\nFlags:\n      --end-user string     only conversations with turns from this end user id (exact match)\n      --errors-only         only conversations that contain errors\n  -h, --help                help for list\n      --query string        case-insensitive substring match on the conversation title or conversation ID.\n      --since string        only conversations started at/after this time (RFC3339, or a duration ago like 24h or 7d)\n      --status string       filter by status: running, completed, error\n      --tool-errors-only    only conversations with a failed tool call (=false: only conversations without one)\n      --until string        only conversations started before this time (RFC3339, or a duration ago like 1h)\n\nGlobal Flags:\n  -o, --output string   output format: table, wide, json, yaml, markdown (default \"table\")\n"
+              },
+              {
+                "match": "(transcripts?|tr)\\s+get[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Get a single conversation transcript with its turns. <agent> is the agent name or uid.\n\nUsage:\n  rpk ai agent transcript get <agent> <conversation-id> [flags]\n\nFlags:\n  -h, --help   help for get\n\nGlobal Flags:\n  -o, --output string   output format: table, wide, json, yaml, markdown (default \"table\")\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+((?-i:-h)\\b|--help)",
+                "output": "Inspect an agent's conversation transcripts (list, get)\n\nUsage:\n  rpk ai agent transcript [command]\n\nAliases:\n  transcript, transcripts, tr\n\nAvailable Commands:\n  get         Get a single conversation transcript with its turns\n  list        List an agent's conversation transcripts\n"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk ai [command]\n\nAvailable Commands:\n  agent, agent-network, auditlog, auth, env, gateway, mcp-server, model, policy, provider, session, spending, trace, trigger\n\nUse \"rpk ai [command] --help\" for more information about a command."
+              },
+              {
+                "match": "(for\\s|while\\s|xargs|\\$\\().*(transcripts?|\\btr)\\s+get",
+                "output": "Conversation 3f9c2a71-0b4e-4d2a-9f61-2c8e5d7a1b03\nAgent:   support\nTitle:   Where is my package\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  Hi, my package hasn't shown up. Tracking says it left the warehouse on Monday.\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  I checked the carrier: it is out for delivery today and should arrive by 6 pm.\n\nConversation 8a14d6e2-7c3b-41f9-b2d5-6e0a9c3f4d18\nAgent:   support\nTitle:   Change shipping address\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  I moved. Can you send my next order to 22 Elm Street instead?\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  Done. Your shipping address is updated for future orders.\n\nConversation 5b1e7c42-9d3a-4e86-a7f0-1c2b3d4e5f60\nAgent:   support\nTitle:   Order arrived damaged\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  My order 4471 came today and the lamp base is cracked.\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  Sorry about that. I can offer a replacement or a refund.\n\n[3] user  model=claude-sonnet  1.8s  tokens=612\n  A refund please.\n\n[4] assistant  model=claude-sonnet  1.8s  tokens=612\n  I have issued a full refund of $89.00 for order 4471 to your original payment method. You do not need to send the lamp back.\n\nConversation c27f0e93-4a58-46b1-8d3c-9e7f1a2b3c45\nAgent:   support\nTitle:   Cancel subscription\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  Please cancel my monthly subscription.\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  Your subscription is cancelled and you won't be charged next month.\n\nConversation e60b3d18-2f7a-4c95-b1e4-7a8d9c0f1e22\nAgent:   support\nTitle:   Password reset\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  I can't log in, the reset email never arrived.\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  I sent a new reset link. Check your spam folder too.\n\nConversation 91d4a5c7-6e2b-4f08-9a3d-5b6c7d8e9f01\nAgent:   support\nTitle:   Invoice copy\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  Can I get a copy of last month's invoice?\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  I've emailed the October invoice to the address on your account.\n\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*5b1e7c42",
+                "output": "Conversation 5b1e7c42-9d3a-4e86-a7f0-1c2b3d4e5f60\nAgent:   support\nTitle:   Order arrived damaged\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  My order 4471 came today and the lamp base is cracked.\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  Sorry about that. I can offer a replacement or a refund.\n\n[3] user  model=claude-sonnet  1.8s  tokens=612\n  A refund please.\n\n[4] assistant  model=claude-sonnet  1.8s  tokens=612\n  I have issued a full refund of $89.00 for order 4471 to your original payment method. You do not need to send the lamp back.\n\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*3f9c2a71",
+                "output": "Conversation 3f9c2a71-0b4e-4d2a-9f61-2c8e5d7a1b03\nAgent:   support\nTitle:   Where is my package\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  Hi, my package hasn't shown up. Tracking says it left the warehouse on Monday.\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  I checked the carrier: it is out for delivery today and should arrive by 6 pm.\n\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*8a14d6e2",
+                "output": "Conversation 8a14d6e2-7c3b-41f9-b2d5-6e0a9c3f4d18\nAgent:   support\nTitle:   Change shipping address\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  I moved. Can you send my next order to 22 Elm Street instead?\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  Done. Your shipping address is updated for future orders.\n\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*c27f0e93",
+                "output": "Conversation c27f0e93-4a58-46b1-8d3c-9e7f1a2b3c45\nAgent:   support\nTitle:   Cancel subscription\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  Please cancel my monthly subscription.\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  Your subscription is cancelled and you won't be charged next month.\n\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*e60b3d18",
+                "output": "Conversation e60b3d18-2f7a-4c95-b1e4-7a8d9c0f1e22\nAgent:   support\nTitle:   Password reset\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  I can't log in, the reset email never arrived.\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  I sent a new reset link. Check your spam folder too.\n\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*91d4a5c7",
+                "output": "Conversation 91d4a5c7-6e2b-4f08-9a3d-5b6c7d8e9f01\nAgent:   support\nTitle:   Invoice copy\nStatus:  completed\n\nSystem prompt:\n  You are the Acme support agent.\n\n[1] user  model=claude-sonnet  1.8s  tokens=612\n  Can I get a copy of last month's invoice?\n\n[2] assistant  model=claude-sonnet  1.8s  tokens=612\n  I've emailed the October invoice to the address on your account.\n\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get",
+                "output": "Error: transcript not found"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--query[ =]['\\\\\\\"]*(order|damage|arrived|5b1e)",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\n5b1e7c42-9d3a-4e86-a7f0-1c2b3d4e5f60  Order arrived damaged    completed  6           2026-11-06T09:47:19Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--query[ =]['\\\\\\\"]*(where|package|3f9c)",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\n3f9c2a71-0b4e-4d2a-9f61-2c8e5d7a1b03  Where is my package      completed  4           2026-11-04T10:12:44Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--query[ =]['\\\\\\\"]*(cancel|subscr)",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\nc27f0e93-4a58-46b1-8d3c-9e7f1a2b3c45  Cancel subscription      completed  2           2026-11-07T18:05:51Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--query[ =]['\\\\\\\"]*(invoice)",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\n91d4a5c7-6e2b-4f08-9a3d-5b6c7d8e9f01  Invoice copy             completed  2           2026-11-09T13:58:10Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--query[ =]['\\\\\\\"]*(password|reset)",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\ne60b3d18-2f7a-4c95-b1e4-7a8d9c0f1e22  Password reset           completed  3           2026-11-08T11:22:37Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--query[ =]['\\\\\\\"]*(change|address|shipping)",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\n8a14d6e2-7c3b-41f9-b2d5-6e0a9c3f4d18  Change shipping address  completed  3           2026-11-05T15:30:02Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--query",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*(--errors-only|--tool-errors-only(?!=false)|--status[ =]['\\\\\\\"]*(error|failed|running))",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\n3f9c2a71-0b4e-4d2a-9f61-2c8e5d7a1b03  Where is my package      completed  4           2026-11-04T10:12:44Z\n8a14d6e2-7c3b-41f9-b2d5-6e0a9c3f4d18  Change shipping address  completed  3           2026-11-05T15:30:02Z\n5b1e7c42-9d3a-4e86-a7f0-1c2b3d4e5f60  Order arrived damaged    completed  6           2026-11-06T09:47:19Z\nc27f0e93-4a58-46b1-8d3c-9e7f1a2b3c45  Cancel subscription      completed  2           2026-11-07T18:05:51Z\ne60b3d18-2f7a-4c95-b1e4-7a8d9c0f1e22  Password reset           completed  3           2026-11-08T11:22:37Z\n91d4a5c7-6e2b-4f08-9a3d-5b6c7d8e9f01  Invoice copy             completed  2           2026-11-09T13:58:10Z\n"
+              },
+              {
+                "match": "agent\\s+(list|ls)",
+                "output": "NAME       DISPLAY_NAME    STATE\nsupport    Support agent   RUNNING\nbilling    Billing agent   RUNNING"
+              },
+              {
+                "match": "agent\\s+get",
+                "output": "name: support\ndisplay_name: Support agent\nstate: RUNNING\ntranscripts:\n  recording_mode: full\n"
+              },
+              {
+                "match": "trace\\s+list",
+                "output": "TRACE_ID                          START_TIME            AGENT    CONVERSATION                          STATUS     DURATION  COST\n9f2c41d7a3e85b06c1d2e3f4a5b6c7d8  2026-11-09T13:58:10Z  support  91d4a5c7-6e2b-4f08-9a3d-5b6c7d8e9f01  completed  2.1s      $0.004\n4b7e0a19c2d36f58e9a0b1c2d3e4f5a6  2026-11-08T11:22:37Z  support  e60b3d18-2f7a-4c95-b1e4-7a8d9c0f1e22  completed  2.4s      $0.005\n7d1a5e3c9b2f40a6d8e7f6a5b4c3d2e1  2026-11-07T18:05:51Z  support  c27f0e93-4a58-46b1-8d3c-9e7f1a2b3c45  completed  1.9s      $0.003\n2e8b6f4a0c1d93e7b5a4f3e2d1c0b9a8  2026-11-06T09:47:19Z  support  5b1e7c42-9d3a-4e86-a7f0-1c2b3d4e5f60  completed  5.6s      $0.011\n6c3f9a2e7b0d41c8a5e6f7d8c9b0a1f2  2026-11-05T15:30:02Z  support  8a14d6e2-7c3b-41f9-b2d5-6e0a9c3f4d18  completed  2.2s      $0.004\n0a5d2c8e4f7b39a1c6d5e4f3a2b1c0d9  2026-11-04T10:12:44Z  support  3f9c2a71-0b4e-4d2a-9f61-2c8e5d7a1b03  completed  3.0s      $0.006\n"
+              },
+              {
+                "match": "trace\\s+(get|span)[^|;&]*2e8b6f4a",
+                "output": "Trace 2e8b6f4a0c1d93e7b5a4f3e2d1c0b9a8\nAgent: support  Conversation: Order arrived damaged (5b1e7c42-9d3a-4e86-a7f0-1c2b3d4e5f60)\nStatus: completed  Duration: 5.6s\n\nAGENT  invoke_agent support\n  LLM  chat claude-sonnet  input: \"My order 4471 came today and the lamp base is cracked.\" ... output: \"I have issued a full refund of $89.00 for order 4471 ...\"\n"
+              },
+              {
+                "match": "trace\\s+(get|span)",
+                "output": "Trace summary: agent support, status completed. LLM spans: a single short exchange with no order number mentioned.\n"
+              },
+              {
+                "match": "auditlog|audit-log|\\baudit\\b",
+                "output": "TIME                  ACTOR          SUBSYSTEM   OPERATION         RESOURCE_TYPE  RESOURCE_ID  OUTCOME  ID\n2026-11-06T09:47:19Z  agents/support  llm-proxy  chat/completions  llm-provider   anthropic    allowed  01JCQ2W8X4Y6Z8A0B2C4D6E8F0\n"
+              },
+              {
+                "match": "auth\\s+(whoami|status)|whoami",
+                "output": "Signed in as admin@acme.com (environment: production)"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ]
+      },
+      "required_patterns": [
+        "5b1e7c42"
+      ],
+      "invariants": [
+        {
+          "name": "finds_by_content",
+          "failure_condition": "FAILS if the answer says the conversation could not be found, says it does not exist, or names a different conversation. PASSES if it identifies conversation 5b1e7c42-9d3a-4e86-a7f0-1c2b3d4e5f60 and says the agent issued a full refund of $89.00 for order 4471."
+        }
+      ]
+    },
+    {
+      "id": "transcript-failed-tool-calls-in-completed-conversations",
+      "origin": "behavioral",
+      "query": "In the last 24 hours, which conversations of our Redpanda Agentic Data Plane agent `support` had a tool call fail? Give me the conversation IDs. You can run commands with the run_shell tool.",
+      "why": "`--errors-only` and `--status error` read the conversation's own outcome, so they return only the conversation whose turn failed. Two conversations completed after a failed tool call was retried, and only `--tool-errors-only`, `-o wide` (its failed tool call count column), `rpk ai trace list --errors`, or reading the transcripts finds them. Graded on the outcome: the answer lists all three conversations, however it found them.",
+      "verified_against": [
+        "product source (rpk ai agent transcript list: has_errors and failed_tool_call_count are separate filters; rpk ai trace list --errors help)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed with the rpk ai plugin, signed in to the user's Agentic Data Plane, with an environment selected. Commands run non-interactively.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk ai agent list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "(transcripts?|tr)\\s+list[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "List an agent's conversation transcripts. <agent> is the agent name, or its uid (the agent's UUID, as shown by `agent list -o wide`).\n\nUsage:\n  rpk ai agent transcript list <agent> [flags]\n\nFlags:\n      --end-user string     only conversations with turns from this end user id (exact match)\n      --errors-only         only conversations that contain errors\n  -h, --help                help for list\n      --query string        case-insensitive substring match on the conversation title or conversation ID.\n      --since string        only conversations started at/after this time (RFC3339, or a duration ago like 24h or 7d)\n      --status string       filter by status: running, completed, error\n      --tool-errors-only    only conversations with a failed tool call (=false: only conversations without one)\n      --until string        only conversations started before this time (RFC3339, or a duration ago like 1h)\n\nGlobal Flags:\n  -o, --output string   output format: table, wide, json, yaml, markdown (default \"table\")\n"
+              },
+              {
+                "match": "(transcripts?|tr)\\s+get[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Get a single conversation transcript with its turns. <agent> is the agent name or uid.\n\nUsage:\n  rpk ai agent transcript get <agent> <conversation-id> [flags]\n\nFlags:\n  -h, --help   help for get\n\nGlobal Flags:\n  -o, --output string   output format: table, wide, json, yaml, markdown (default \"table\")\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+((?-i:-h)\\b|--help)",
+                "output": "Inspect an agent's conversation transcripts (list, get)\n\nUsage:\n  rpk ai agent transcript [command]\n\nAliases:\n  transcript, transcripts, tr\n\nAvailable Commands:\n  get         Get a single conversation transcript with its turns\n  list        List an agent's conversation transcripts\n"
+              },
+              {
+                "match": "trace\\s+list[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "List traces of agent runs and AI gateway calls, newest first unless\n--order-by says otherwise.\n\n--since is required and the window is at most 30 days.\n\nUsage:\n  rpk ai trace list [flags]\n\nFlags:\n      --agent string          agent name or uid\n      --conversation string   conversation id\n      --errors                failed runs and runs with a failed tool call\n      --filter string         raw AIP-160 filter, ANDed with the flags above\n      --limit int             maximum traces to print, 1 to 1000 (default 50)\n      --order-by string       AIP-132 order_by, e.g. \"duration desc\" (default \"start_time desc\")\n      --since string          traces started at or after, as RFC 3339 or a duration ago (15m, 24h, 7d); required\n      --status strings        running, completed, error or incomplete (repeatable)\n      --until string          traces started before: RFC 3339 or a duration ago\n      --user strings          caller email or end-user id (repeatable)\n\nGlobal Flags:\n  -o, --output string   output format: table, wide, json, yaml, markdown (default \"table\")\n"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk ai [command]\n\nAvailable Commands:\n  agent, agent-network, auditlog, auth, env, gateway, mcp-server, model, policy, provider, session, spending, trace, trigger\n\nUse \"rpk ai [command] --help\" for more information about a command."
+              },
+              {
+                "match": "(for\\s|while\\s|xargs|\\$\\().*(transcripts?|\\btr)\\s+get",
+                "output": "Conversation a1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e\nAgent:   support\nTitle:   Reset VPN token\nStatus:  error\n\n[1] user  \"My VPN token expired, please reset it\"\n[2] assistant  model=claude-sonnet  4.2s\n    tool it_vpn__reset_token  status=error  error: upstream 503 Service Unavailable\n    Turn failed: tool it_vpn__reset_token failed\n\nConversation b2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f\nAgent:   support\nTitle:   Look up order 9912\nStatus:  completed\n\n[1] user  \"Where is order 9912?\"\n[2] assistant  model=claude-sonnet  6.8s\n    tool orders__lookup  status=error  error: timeout after 5s\n    tool orders__lookup  status=ok  1.2s\n    \"Order 9912 shipped yesterday and arrives Thursday.\"\n\nConversation c3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70\nAgent:   support\nTitle:   Update shipping address\nStatus:  completed\n\n[1] user  \"Change the address on my open order\"\n[2] assistant  model=claude-sonnet  9.1s\n    tool orders__update_address  status=error  error: validation failed: postcode\n    tool orders__update_address  status=error  error: validation failed: postcode\n    tool orders__update_address  status=ok  0.8s\n    \"Your address is updated.\"\n\nConversation d4f7b0c3-5e8a-41d2-8f6b-9c4d5e6f7081\nAgent:   support\nTitle:   Store hours\nStatus:  completed\n\n[1] user  \"Hi\"\n[2] assistant  model=claude-sonnet  1.1s\n    \"Happy to help.\"\n\nConversation e5a8c1d4-6f9b-42e3-9a7c-0d5e6f708192\nAgent:   support\nTitle:   Return label\nStatus:  completed\n\n[1] user  \"Hi\"\n[2] assistant  model=claude-sonnet  1.1s\n    \"Happy to help.\"\n\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*a1c4e7f0",
+                "output": "Conversation a1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e\nAgent:   support\nTitle:   Reset VPN token\nStatus:  error\n\n[1] user  \"My VPN token expired, please reset it\"\n[2] assistant  model=claude-sonnet  4.2s\n    tool it_vpn__reset_token  status=error  error: upstream 503 Service Unavailable\n    Turn failed: tool it_vpn__reset_token failed\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*b2d5f8a1",
+                "output": "Conversation b2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f\nAgent:   support\nTitle:   Look up order 9912\nStatus:  completed\n\n[1] user  \"Where is order 9912?\"\n[2] assistant  model=claude-sonnet  6.8s\n    tool orders__lookup  status=error  error: timeout after 5s\n    tool orders__lookup  status=ok  1.2s\n    \"Order 9912 shipped yesterday and arrives Thursday.\"\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*c3e6a9b2",
+                "output": "Conversation c3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70\nAgent:   support\nTitle:   Update shipping address\nStatus:  completed\n\n[1] user  \"Change the address on my open order\"\n[2] assistant  model=claude-sonnet  9.1s\n    tool orders__update_address  status=error  error: validation failed: postcode\n    tool orders__update_address  status=error  error: validation failed: postcode\n    tool orders__update_address  status=ok  0.8s\n    \"Your address is updated.\"\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*d4f7b0c3",
+                "output": "Conversation d4f7b0c3-5e8a-41d2-8f6b-9c4d5e6f7081\nAgent:   support\nTitle:   Store hours\nStatus:  completed\n\n[1] user  \"Hi\"\n[2] assistant  model=claude-sonnet  1.1s\n    \"Happy to help.\"\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get[^|;&]*e5a8c1d4",
+                "output": "Conversation e5a8c1d4-6f9b-42e3-9a7c-0d5e6f708192\nAgent:   support\nTitle:   Return label\nStatus:  completed\n\n[1] user  \"Hi\"\n[2] assistant  model=claude-sonnet  1.1s\n    \"Happy to help.\"\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+get",
+                "output": "Error: transcript not found"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--tool-errors-only[ =]+['\\\\\\\"]*false",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\nd4f7b0c3-5e8a-41d2-8f6b-9c4d5e6f7081  Store hours              completed  2           2026-11-09T22:05:12Z\ne5a8c1d4-6f9b-42e3-9a7c-0d5e6f708192  Return label             completed  3           2026-11-09T16:51:27Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list(?=[^|;&]*--tool-errors-only)(?=[^|;&]*(--errors-only|--status[ =]['\\\\\\\"]*(error|failed)))",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\na1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  Reset VPN token          error      3           2026-11-10T07:12:05Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list(?=[^|;&]*--tool-errors-only)(?=[^|;&]*(-o\\s*(wide|json|yaml)|--output[ =]\\S))",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME            END_TIME              USER_ID       HAS_ERRORS  FAILED_TOOL_CALL_COUNT\na1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  Reset VPN token          error      3           2026-11-10T07:12:05Z  2026-11-10T07:12:05Z  cust-a1c4     true        1\nb2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f  Look up order 9912       completed  4           2026-11-10T06:40:31Z  2026-11-10T06:40:31Z  cust-b2d5     false       1\nc3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70  Update shipping address  completed  5           2026-11-10T03:18:44Z  2026-11-10T03:18:44Z  cust-c3e6     false       2\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--tool-errors-only",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\na1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  Reset VPN token          error      3           2026-11-10T07:12:05Z\nb2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f  Look up order 9912       completed  4           2026-11-10T06:40:31Z\nc3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70  Update shipping address  completed  5           2026-11-10T03:18:44Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*(--errors-only|--status[ =]['\\\\\\\"]*(error|failed))",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\na1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  Reset VPN token          error      3           2026-11-10T07:12:05Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--status[ =]['\\\\\\\"]*(completed|complete|done)",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\nb2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f  Look up order 9912       completed  4           2026-11-10T06:40:31Z\nc3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70  Update shipping address  completed  5           2026-11-10T03:18:44Z\nd4f7b0c3-5e8a-41d2-8f6b-9c4d5e6f7081  Store hours              completed  2           2026-11-09T22:05:12Z\ne5a8c1d4-6f9b-42e3-9a7c-0d5e6f708192  Return label             completed  3           2026-11-09T16:51:27Z\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list[^|;&]*--status[ =]['\\\\\\\"]*running",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list(?=[^|;&]*(-o\\s*(wide|json|yaml)|--output[ =]\\S))",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME            END_TIME              USER_ID       HAS_ERRORS  FAILED_TOOL_CALL_COUNT\na1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  Reset VPN token          error      3           2026-11-10T07:12:05Z  2026-11-10T07:12:05Z  cust-a1c4     true        1\nb2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f  Look up order 9912       completed  4           2026-11-10T06:40:31Z  2026-11-10T06:40:31Z  cust-b2d5     false       1\nc3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70  Update shipping address  completed  5           2026-11-10T03:18:44Z  2026-11-10T03:18:44Z  cust-c3e6     false       2\nd4f7b0c3-5e8a-41d2-8f6b-9c4d5e6f7081  Store hours              completed  2           2026-11-09T22:05:12Z  2026-11-09T22:05:12Z  cust-d4f7     false       0\ne5a8c1d4-6f9b-42e3-9a7c-0d5e6f708192  Return label             completed  3           2026-11-09T16:51:27Z  2026-11-09T16:51:27Z  cust-e5a8     false       0\n"
+              },
+              {
+                "match": "(transcripts?|\\btr)\\s+list",
+                "output": "CONVERSATION_ID                       TITLE                    STATUS     TURN_COUNT  START_TIME\na1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  Reset VPN token          error      3           2026-11-10T07:12:05Z\nb2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f  Look up order 9912       completed  4           2026-11-10T06:40:31Z\nc3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70  Update shipping address  completed  5           2026-11-10T03:18:44Z\nd4f7b0c3-5e8a-41d2-8f6b-9c4d5e6f7081  Store hours              completed  2           2026-11-09T22:05:12Z\ne5a8c1d4-6f9b-42e3-9a7c-0d5e6f708192  Return label             completed  3           2026-11-09T16:51:27Z\n"
+              },
+              {
+                "match": "trace\\s+list(?![^|;&]*--since)",
+                "output": "Error: required flag(s) \"since\" not set"
+              },
+              {
+                "match": "trace\\s+list[^|;&]*--errors",
+                "output": "TRACE_ID                          START_TIME            AGENT    CONVERSATION                          STATUS     FAILED_CALLS  DURATION\n11aa22bb33cc44dd55ee66ff77889900  2026-11-10T07:12:05Z  support  a1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  error      1             4.2s\n22bb33cc44dd55ee66ff778899001122  2026-11-10T06:40:31Z  support  b2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f  completed  1             6.8s\n33cc44dd55ee66ff7788990011223344  2026-11-10T03:18:44Z  support  c3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70  completed  2             9.1s\n"
+              },
+              {
+                "match": "trace\\s+list[^|;&]*--status[ =]['\\\\\\\"]*error",
+                "output": "TRACE_ID                          START_TIME            AGENT    CONVERSATION                          STATUS     FAILED_CALLS  DURATION\n11aa22bb33cc44dd55ee66ff77889900  2026-11-10T07:12:05Z  support  a1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  error      1             4.2s\n"
+              },
+              {
+                "match": "trace\\s+list",
+                "output": "TRACE_ID                          START_TIME            AGENT    CONVERSATION                          STATUS     FAILED_CALLS  DURATION\n11aa22bb33cc44dd55ee66ff77889900  2026-11-10T07:12:05Z  support  a1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e  error      1             4.2s\n22bb33cc44dd55ee66ff778899001122  2026-11-10T06:40:31Z  support  b2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f  completed  1             6.8s\n33cc44dd55ee66ff7788990011223344  2026-11-10T03:18:44Z  support  c3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70  completed  2             9.1s\n44dd55ee66ff77889900112233445566  2026-11-09T22:05:12Z  support  d4f7b0c3-5e8a-41d2-8f6b-9c4d5e6f7081  completed  0             1.1s\n55ee66ff778899001122334455667788  2026-11-09T16:51:27Z  support  e5a8c1d4-6f9b-42e3-9a7c-0d5e6f708192  completed  0             1.4s\n"
+              },
+              {
+                "match": "trace\\s+(get|span)",
+                "output": "See rpk ai agent transcript get for the conversation's tool calls.\n"
+              },
+              {
+                "match": "agent\\s+(list|ls)",
+                "output": "NAME       DISPLAY_NAME    STATE\nsupport    Support agent   RUNNING"
+              },
+              {
+                "match": "agent\\s+get",
+                "output": "name: support\ndisplay_name: Support agent\nstate: RUNNING\n"
+              },
+              {
+                "match": "auth\\s+(whoami|status)|whoami",
+                "output": "Signed in as admin@acme.com (environment: production)"
+              },
+              {
+                "match": "\\b(date|echo|printf|true)\\b",
+                "output": "Tue Nov 10 09:30:00 UTC 2026"
+              }
+            ]
+          }
+        ]
+      },
+      "required_patterns": [
+        "a1c4e7f0",
+        "b2d5f8a1",
+        "c3e6a9b2"
+      ],
+      "failure_patterns": [
+        "d4f7b0c3-[^\\n]*(fail|error)",
+        "e5a8c1d4-[^\\n]*(fail|error)"
+      ],
+      "invariants": [
+        {
+          "name": "includes_recovered_conversations",
+          "failure_condition": "FAILS if the answer lists only a1c4e7f0-2b5d-48a9-9c3e-6f1a2b3c4d5e, omits b2d5f8a1-3c6e-49b0-8d4f-7a2b3c4d5e6f or c3e6a9b2-4d7f-40c1-9e5a-8b3c4d5e6f70, or lists d4f7b0c3 or e5a8c1d4 as having a failed tool call. PASSES if it lists exactly the three conversations a1c4e7f0, b2d5f8a1 and c3e6a9b2 as having a failed tool call."
+        }
+      ]
+    }
+  ]
+}
