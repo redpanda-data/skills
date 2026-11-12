@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` (`resource_group.proto`, `serverless_region.proto`, `serverless.proto`, `serverless_private_link.proto`, `operation.proto`, `common.proto`); redpanda `src/go/rpk/pkg/publicapi/controlplane.go`, `publicapi.go`; api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `ServerlessNetworkingConfig.State` accepted values, `ServerlessClusterCreate` required fields, `ServerlessCluster.State` — **verified 2026-10-01**). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/` (`resource_group.proto`, `serverless_region.proto`, `serverless.proto`, `serverless_private_link.proto`, `operation.proto`, `common.proto`); redpanda `src/go/rpk/pkg/publicapi/controlplane.go`, `publicapi.go`; api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `ServerlessNetworkingConfig.State` accepted values, `ServerlessClusterCreate` required fields, `ServerlessCluster.State` — **verified 2026-10-01**). Consumer side of a Serverless private link (verified 2026-11-12): api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `ServerlessPrivateLinkStatus.AWS` `vpc_endpoint_service_name` and `availability_zones`; `ServerlessCluster.KafkaAPI` `private_seed_brokers` as the private bootstrap and `seed_brokers` as the public one), cloud-docs `modules/networking/pages/serverless/aws/privatelink-api.adoc` (published consumer-side steps: the endpoint service name read from the private link's status, client VPC and DNS attributes, security group, subnet, and the interface VPC endpoint with private DNS). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Control Plane: Serverless Cluster Management
 
@@ -352,6 +352,17 @@ curl -s "https://api.redpanda.com/v1/serverless/private-links?filter.serverless_
 `filter.state_in`, `filter.resource_group_id`, `filter.name_contains`,
 `filter.serverless_region`, plus `page_size` (1–100) and `page_token`.
 
+**Status** (`ServerlessPrivateLink.status.aws`): `vpc_endpoint_service_name` is the AWS endpoint service
+name your VPC endpoint attaches to, and `availability_zones` lists the zones the endpoint service is offered
+in — pick your endpoint subnets from those zones. Read it back after the create Operation reaches
+`STATE_COMPLETED`:
+
+```bash
+curl -s "https://api.redpanda.com/v1/serverless/private-links/${PL_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  | jq -r '.serverless_private_link.status.aws.vpc_endpoint_service_name'
+```
+
 ### Update / Delete
 
 ```bash
@@ -400,6 +411,18 @@ curl -s -X POST https://api.redpanda.com/v1/serverless/clusters \
     }
   }" | jq .operation.id
 ```
+
+4. Create the consumer endpoint in your own AWS account. Steps 1–3 create only the Redpanda-side
+   endpoint service; no client can reach the cluster until an interface VPC endpoint in your own VPC
+   attaches to it. Read `status.aws.vpc_endpoint_service_name` from the private link, create the endpoint
+   against that service name from a VPC in the same region, with subnets in the zones
+   `status.aws.availability_zones` lists, and enable private DNS. Clients then connect to
+   `kafka_api.private_seed_brokers[]` from the cluster you read back (`kafka_api.seed_brokers[]` is the
+   public bootstrap). These are AWS procedures rather than Cloud API calls — see
+   [Configure AWS PrivateLink with the Cloud API](https://docs.redpanda.com/cloud-data-platform/networking/serverless/aws/privatelink-api/).
+
+Treat an enabled private link as "ready for a client to attach", not as "connected": the API calls in steps
+1–3 leave private networking unfinished until step 4 is done in your own account.
 
 ---
 

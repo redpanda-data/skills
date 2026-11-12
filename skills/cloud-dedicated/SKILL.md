@@ -142,7 +142,7 @@ TOKEN=$(rpk cloud auth token)
 | Tenancy | Single-tenant | Single-tenant | Multi-tenant |
 | VPC ownership | Redpanda | Customer | Redpanda |
 | Network resource needed | Yes (`TYPE_DEDICATED`) | Yes (`TYPE_BYOC`) | No (separate `ServerlessCluster` service) |
-| Agent installation | None (Redpanda-managed) | `rpk cloud byoc apply` required | None |
+| Agent installation | None (Redpanda-managed) | `rpk cloud byoc <provider> apply` required | None |
 | Customer-managed resources | Not required | Required (IAM, buckets, subnets) | Not applicable |
 | Enterprise features | Included | Included | Limited subset |
 | Pricing model | Throughput tier + cloud infra | Throughput tier + own cloud bill | Pay-per-use |

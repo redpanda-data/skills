@@ -223,7 +223,12 @@ DELETE /v1/serverless/private-links/{id}   → 202 Operation
 Required create fields: `name`, `resource_group_id`, `cloudprovider`
 (`CLOUD_PROVIDER_AWS` only, set together with `aws_config`),
 `aws_config.allowed_principals` (min 1 AWS principal ARN), and
-`serverless_region`. See
+`serverless_region`.
+
+Creating the private link and referencing it from the cluster creates only the Redpanda-side endpoint
+service. Clients reach the cluster only once you create an interface VPC endpoint in your own AWS account
+against `status.aws.vpc_endpoint_service_name`, so don't report private networking as done at the end of the
+API calls. See
 [Control Plane: Serverless](references/control-plane-serverless.md#serverlessprivatelink)
 for the full field-level reference and the private-networking workflow.
 
@@ -286,7 +291,7 @@ key tables, accepted values, defaults, mode semantics, and self-managed mappings
 | Infra ownership | Redpanda manages everything | Customer's cloud account |
 | Network resources | Not required | Requires creating a `Network` resource |
 | Cluster type | Serverless (separate `ServerlessCluster` resource; no `Cluster.Type`) | BYOC (`Cluster.Type` = `TYPE_BYOC`) |
-| Provisioning agent | None | `rpk cloud byoc apply` runs Terraform |
+| Provisioning agent | None | `rpk cloud byoc <provider> apply` runs Terraform |
 | Billing | Redpanda bills per-use | Customer pays cloud provider directly |
 
 ## Reference Directory
