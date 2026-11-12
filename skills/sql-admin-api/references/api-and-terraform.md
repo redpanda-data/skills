@@ -47,7 +47,7 @@ curl -X POST "https://api.redpanda.com/v1/clusters" \
   }'
 ```
 
-For the rest of the BYOC cluster creation flow (network, agent, `rpk cloud byoc ... apply`), see `/redpanda:cloud-byoc`.
+For the rest of the BYOC cluster creation flow (network, agent, `rpk cloud byoc ... apply`), see https://docs.redpanda.com/cloud-data-platform/manage/api/cloud-byoc-controlplane-api/.
 
 ## Enable on an existing BYOC cluster
 

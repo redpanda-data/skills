@@ -120,7 +120,7 @@ A *SQL: Manage* user gives *SQL: Access* users `SELECT` on a topic, a topic patt
 - `REVOKE ... => 'pattern'` errors if the pattern matches no existing grant. The catalog-level `REVOKE` (no pattern) is idempotent, so it is safe in cleanup scripts.
 - Schema privileges are separate. `USAGE` on the schema (`public` by default) is needed to see catalogs in `SHOW CATALOGS` and `system.catalogs` and to reference objects by name. `CREATE` on the schema lets a non-superuser run `CREATE REDPANDA CATALOG` or `CREATE STORAGE` there.
 
-Full `GRANT` / `REVOKE` / `ALTER USER` syntax: `/redpanda:sql`. Catalog and table mapping: `/redpanda:sql-federated-queries`.
+Full `GRANT` / `REVOKE` / `ALTER USER` syntax: https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/grant/, https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/revoke/, and https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/alter-user/. Catalog and table mapping: `/redpanda:sql-federated-queries`.
 
 ### Inspect grants
 

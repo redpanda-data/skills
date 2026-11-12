@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "redpanda-docs": {
+      "type": "http",
+      "url": "https://docs.redpanda.com/mcp"
+    }
+  }
+}
