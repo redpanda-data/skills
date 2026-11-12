@@ -1,46 +1,106 @@
-# Cloud Dedicated Skill Source Map
+# cloud-dedicated Skill Source Map
 
-Maps each file in `skills/cloud-dedicated/` to the authoritative `cloudv2` source
-paths and docs URLs it derives from, so future syncs and human maintainers know
-exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" procedure below, backed by behavioral eval
+cases in `evals/suites/cloud-dedicated.eval.json`, and sends the agent to the docs for
+everything else. This file maps only the claims the skill still makes.
 
-All cloudv2 paths are relative to the `redpanda-data/cloudv2` repository root.
-Control-plane protos live under
-`proto/public/cloud/redpanda/api/controlplane/v1/`; generated OpenAPI specs under
-`proto/gen/openapi/`. Doc-source `.adoc` paths are in the `redpanda-data/docs`
-(self-managed) and `redpanda-data/cloud-docs` (cloud) repositories.
+The source repo for the intro and guardrail claims is private. Read it through the GitHub API
+or the Redpanda-Github-Read MCP connector; do not clone it.
 
-## File-to-source table
+- `redpanda-data/cloudv2`: paths below are relative to the repo root.
 
-| Skill file | cloudv2 source paths | Docs sources |
+## How to work: line, source, eval case
+
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `controlplane/v1/cluster.proto` (`ClusterService`, `ClusterCreate`, `Cluster`), `network.proto`, `network_peering.proto`, `shadow_link.proto`, `operation.proto`, `region.proto`, `resource_group.proto`; `proto/gen/openapi/openapi.controlplane.yaml` | docs.redpanda.com Cloud API overview; `cloud-data-platform/networking/` |
-| `references/model-and-auth.md` | `controlplane.go`, `publicapi.go` (auth flow, base URL, audience); `controlplane/v1/cluster.proto`, `serverless.proto` (Dedicated vs BYOC vs Serverless); `network.proto` + `apps/controlplane-api/internal/services/network/network_service.go` (`cidr_block` private-IPv4 + /16–/20 prefix-length constraint, verified 2026-10-08) | Auth0 client-credentials flow; Cloud console Clients tab |
-| `references/create-cluster.md` | `controlplane/v1/cluster.proto` (`ClusterCreate` fields incl. `redpanda_connect` field 30, `ClusterUpdate` incl. `redpanda_connect` field 22, `Cluster.RedpandaConnect.allowed_destination_cidr_ports` + `Cluster.CidrPort` `{cidr, port_start, port_end}` max 16, `UpdateCluster` RPC `patch: "/v1/clusters/{cluster.id}"` + `body: "cluster"` + required top-level `update_mask`, `Cluster.State`, `AWSPrivateLinkSpec`/`GCPPrivateServiceConnectSpec`/`AzurePrivateLinkSpec`), `network.proto` (`NetworkCreate`, `cluster_type` validation; `cidr_block` private-IPv4 + /16–/20 prefix-length constraint, verified 2026-10-08 against `apps/controlplane-api/internal/services/network/network_service.go` `validateCIDR` / `minVPCSize` / `maxVPCSize` / `errNetworkCIDRNotPrivate`, with the published statement in `cloud-docs` `modules/networking/pages/cidr-ranges.adoc`), `network_peering.proto` (`NetworkPeeringService`, `NetworkPeeringCreate`, `AWS/GCP/AzurePeeringSpec`, `NetworkPeering.State`), `region.proto` (`/v1/regions/{cloud_provider}[/{name}]`), `operation.proto` (`Operation.Type`/`State` enums); `proto/gen/openapi/openapi.controlplane.yaml:~5623` (PATCH `/v1/clusters/{cluster.id}`, `ClusterUpdate` body, omitted `update_mask`); **per-service `connections`** (verified 2026-09-17): `cluster.proto` (`ConnectionSpec`, `AuthSpec`, `AuthMode`, `ConnectionStatus`, `connections` field 3 on each service spec, deprecation comments on `connection_type` and on the `seed_brokers`/`url`/`mtls` endpoint fields), `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (validation rules, Azure reject, per-organization enablement guard) ; **tier migration and cloud provider tags** (verified 2026-10-15): `cluster.proto` (`cloud_provider_tags` 16-pair cap on `ClusterCreate`/`ClusterUpdate`, no cap on the `Cluster` response), `apps/controlplane-api/internal/services/redpanda/redpanda_service.go` (`reservedTagKeyErr`); **read-only managed-tag map** (verified 2026-10-22): api-docs `cloud-controlplane/cloud-controlplane.yaml` (published read-only `Cluster.redpanda_cloud_provider_tags`, and the appended sentence on `Cluster.cloud_provider_tags` stating that it includes those keys), `cluster.proto` (`Cluster.redpanda_cloud_provider_tags` field 45, OUTPUT_ONLY, absent from `ClusterCreate`/`ClusterUpdate`), and the map is not backfilled — `apps/public-api-go/internal/services/cluster/v1/mapper.go` maps the stored field directly, and `apps/cloud-ui/src/utils/cluster/cloud-provider-tags.ts` adds `redpanda-managed` by key because the map stays empty until a cluster's first write after the field shipped (`redpanda-managed` is named in `custom-tags-{aws,gcp}.adoc`) | `cloud-data-platform/networking/`; `cloud-docs` `modules/networking/pages/byoc/aws/dual-listener-mode.adoc` (published how-to — scoped to AWS, examples use BYOC); `cloud-docs` `modules/manage/pages/maintenance.adoc` `tier-migrations` section (published: a Dedicated tier change is run by Redpanda Support and begins in the scheduled maintenance window; rolling broker replacement; endpoints unchanged; the Terraform follow-up) and `modules/manage/pages/cluster-maintenance/scale-cluster.adoc` (published: self-service scaling is limited to BYOC clusters in organizations on usage-based billing); `modules/get-started/partials/custom-tags-{gcp,aws,azure}.adoc` (published reserved keys, replace-the-whole-map PATCH semantics, and per-provider key rules: GCP-only lowercase format, Azure case-insensitivity); cloudv2 `apps/controlplane-api/internal/services/redpanda/validate_test.go` (reserved keys: presence check on create, delta check on update; verified 2026-10-15) |
-| `references/data-plane.md` | `proto/gen/openapi/openapi.dataplane.yaml` (verified `/v1` paths: topics + `/v1/topics/{topic_name}/partitions`, acls, users, secrets, roles, quotas, transforms, `/v1/redpanda-connect/pipelines`, `/v1/cloud-storage/...`, `/v1/monitoring/kafka/connections`, `/v1/redpanda-connect/mcp-servers`, `/v1/redpanda-connect/components`, `/v1/redpanda-connect/config-schema`); `dataplane.go` (`DataPlaneClientSet` struct fields); `controlplane/v1/cluster.proto` (`Cluster.DataplaneAPI.url`) | — |
-| `references/enterprise-features.md` | `controlplane/v1/shadow_link.proto` (control-plane `ShadowLinkService` paths, `ShadowLinkCreate`, `ShadowLinkClientOptions`, flat `TLSSettings`, `ShadowLink.State`, Schema Registry API-mode CEL rules: `sr_api_source_url_required` (Create only), `sr_api_auth_options_only_basic_supported`, `sr_api_password_must_reference_secret`, `sr_api_tls_key_must_reference_secret`, `sr_api_tls_key_cert_both_or_neither`, `sr_api_tls_file_settings_not_supported`); public `redpanda` repo `proto/redpanda/core/admin/v2/shadow_link.proto` (`SchemaRegistrySyncOptions` oneof, `ShadowSchemaRegistryApi` fields/defaults, `SchemaRegistrySourceFilter`, `SchemaRegistryContextDestination`, `UnsupportedSchemaFeaturePolicy`, `SchemaRegistrySyncStatus`) and `proto/redpanda/core/common/v1/tls.proto` (nested `TLSSettings`); `proto/gen/openapi/openapi.controlplane.yaml` (`UNSUPPORTED_SCHEMA_FEATURE_POLICY_*` enum strings on the HTTP surface), `operation.proto` (`TYPE_CREATE/UPDATE/DELETE_SHADOW_LINK = 15/16/17`); `proto/gen/openapi/openapi.dataplane.yaml` (data-plane `ShadowLinkService` `/v1/shadow-links/{name}`, `CloudStorageService` mount paths); **shadow-link source clusters, auth arms and role sync** (verified 2026-10-01): `shadow_link.proto` (`role_sync_options` on `ShadowLinkCreate`/`ShadowLinkUpdate`/`ShadowLink`; `ShadowLinkClientOptions.authentication_configuration`), api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `AuthenticationConfiguration` with `plain_configuration`/`scram_configuration`, `PlainConfig`/`ScramConfig` incl. read-only `password_set`/`password_set_at`, `RoleSyncOptions` incl. `interval` 30s default and the empty-filter default, `NameFilter`) | `docs` repo: `reference/partials/properties/topic-properties.adoc` (Iceberg `redpanda.iceberg.invalid.record.action` values `drop`/`dlq_table`, default `dlq_table`), `manage/partials/tiered-storage.adoc` (incl. the `tiered-storage-versions` tagged region: v1/v2 comparison, `redpanda.storage.mode` alias resolution, create-time-only selection, restrictions), `reference/partials/properties/object-storage-properties.adoc` (`default_redpanda_storage_mode_tiered_impl`, values `tiered_v1`/`tiered_v2`, default `tiered_v1`), `reference/partials/properties/topic-properties.adoc` (`redpanda.storage.mode.impl`), public `redpanda` repo `src/v/model/metadata.h` (`redpanda_storage_mode_tiered_impl` enum) + `src/v/config/configuration.{h,cc}` (property definition), `develop/pages/manage-topics/cloud-topics.adoc` (Cloud Topics need no enablement property once `cloud_storage_enabled` is on), `upgrade/pages/deprecated/index.adoc` (`cloud_topics_enabled` deprecated in 26.2.1, setting it has no effect — verified 2026-10-02), `manage/pages/iceberg/*.adoc`, `manage/pages/cluster-maintenance/continuous-data-balancing.adoc`, `manage/pages/disaster-recovery/shadowing/setup.adoc` (the `env-cloud` variants: the shadow cluster must be BYOC or Dedicated; the source may be another Redpanda cluster or any Kafka API-compatible cluster such as Apache Kafka, Confluent Cloud or Confluent Platform; byte-for-byte `_schemas` replication needs a Redpanda source; Amazon MSK with SASL/SCRAM-SHA-512 only, no MSK IAM, no AWS Glue Schema Registry — verified 2026-10-01), `manage/pages/disaster-recovery/shadowing/overview.adoc` (Shadowing as a migration path onto Redpanda), `manage/pages/disaster-recovery/shadowing/migrate-schemas-confluent.adoc` (Confluent Schema Registry migration: workflow, prerequisites, limitations, monitoring; the `env-cloud` variant carries the Cloud configuration paths), `manage/partials/remote-read-replicas.adoc`, `manage/pages/mountable-topics.adoc`, `develop/pages/produce-data/leader-pinning.adoc`, `manage/pages/schema-reg/schema-id-validation.adoc`, `manage/partials/audit-logging.adoc`, `get-started/pages/licensing/overview.adoc`, `get-started/pages/licensing/disable-enterprise-features.adoc`, `reference/pages/rpk/rpk-shadow/rpk-shadow-create.adoc` and `rpk-shadow-failover.adoc` (the `rpk shadow` reference pages the Shadowing section points at); `cloud-docs` repo: `security/pages/cloud-encryption.adoc` (no BYOK/CMK; SSE-S3 Redpanda-managed key), `develop/pages/managed-connectors/disable-kc.adoc` + `get-started/pages/cloud-overview.adoc` (Kafka Connect disabled by default, Jul 2025) |
+| Send a change in network exposure (private-only to or from publicly reachable) to Redpanda Support; don't delete and recreate the cluster, and don't build a public path around it such as a new public cluster that mirrors its data (verified 2026-11-10). Safety guardrail: guards a change to a cluster's network exposure. | cloudv2 `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (the connectivity-migration refusal on the shared cluster API, with no cluster-type exception) | `dedicated-private-to-public-goes-through-support` |
+| Don't move production data to Tiered Storage v2: it is beta and not for production, and a topic's version is fixed at create time (verified 2026-11-10) | https://docs.redpanda.com/cloud-data-platform/manage/tiered-storage-versions/ | `dedicated-tiered-storage-v2-not-for-production` |
 
-## TODO / re-verify
+Eval results from the rerun against the thin skill on 2026-11-10 (run `2026-11-10T20-28-08Z`, 3
+runs per arm), as baseline / skill / installed:
 
-- **Dual listener mode on Dedicated (open question, 2026-09-17).** The per-service `connections`
-  validation lives on the shared cluster API (no cluster-type check in
-  `dual_mode_connections.go`), and only Azure is rejected by provider. But the published how-to is
-  scoped to AWS with BYOC examples, and no source states whether Dedicated is offered the feature.
-  `references/create-cluster.md` therefore documents the `connection_type` deprecation and the
-  request/response shapes, and flags availability as needing confirmation. Resolve with Redpanda
-  Support or the cluster-service owners, then drop the TODO in that file.
-- Dual listener mode is **beta** (visibility-restricted messages in `cluster.proto`; absent from
-  the generated `openapi.controlplane.yaml` as of 2026-09-17) and enabled per organization — do not
-  describe it as GA.
+- `dedicated-private-to-public-goes-through-support`: 0/3, 3/3, 3/3. The line passes on its failing baseline and is also a safety guardrail, so it stays even if a later baseline passes.
+- `dedicated-tiered-storage-v2-not-for-production`: 0/3, 3/3, 3/3.
 
-## Usage
+## Other claims in SKILL.md
 
-For each file being reviewed or updated, open the listed source paths in `cloudv2`
-first and confirm that every claim in the skill file still matches. Re-open the
-exact cited proto/OpenAPI line before changing any endpoint path, field name, or
-enum value.
+| Claim | Source |
+|---|---|
+| A Dedicated cluster is a Control Plane API resource of type `TYPE_DEDICATED` on a Network resource | cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`Cluster.Type`), `network.proto` (`cluster_type` validation) |
+| Create, update, and delete return a long-running operation; poll `GET /v1/operations/{id}` until `STATE_COMPLETED` or `STATE_FAILED` | cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/cluster.proto` (`CreateCluster`, `UpdateCluster`, `DeleteCluster` return operations), `operation.proto` (`Operation.State`) |
+| Docs URLs | served at https://docs.redpanda.com/cloud-data-platform/ |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` rather than answering from memory | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) |
+| `get_config_property` with `platform: "cloud"` says whether a cluster property is supported or editable in Redpanda Cloud | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) |
 
-The `cloudv2` repo is private; read it via the Redpanda-Github-Read MCP connector
-(`search_code`, `get_file_contents`) or a local checkout at
-`/Users/miche/projects/cloudv2`. Docs `.adoc` sources are in the local
-`/Users/miche/projects/docs` and `/Users/miche/projects/cloud-docs` checkouts.
+## Docs gaps reported (not skill claims; do not re-verify here)
+
+Found by the evals (the skill arm passed and the docs arm mostly failed) and handed to the docs team:
+
+- **Shadow link Schema Registry API-mode credentials.** In
+  `schema_registry_sync_options.shadow_schema_registry_api.auth_options`, only `basic` is
+  accepted, and `basic.password` must reference a Data Plane secret as `${secrets.<SECRET_ID>}`;
+  an inline password is rejected. Pages that lack it: the API reference operation page
+  https://docs.redpanda.com/api/doc/cloud-controlplane/operation/operation-shadowlinkservice_createshadowlink
+  (no mention of the secret reference), and
+  https://docs.redpanda.com/cloud-data-platform/manage/disaster-recovery/shadowing/migrate-schemas-confluent/
+  (its Cloud API example sends `"password": "<sr-api-secret>"`; only the Terraform example uses a
+  secret reference). Source: cloudv2
+  `proto/public/cloud/redpanda/api/controlplane/v1/shadow_link.proto` (CEL rules
+  `sr_api_password_must_reference_secret`, `sr_api_auth_options_only_basic_supported`). Case:
+  `shadow-sr-api-password-secret`.
+
+- **Private-only to public on Dedicated goes through Support.** Moving a Dedicated cluster
+  between private-only and publicly reachable connectivity is refused by the Control Plane API
+  and is done by Redpanda Support. The only published statement is on the BYOC page
+  https://docs.redpanda.com/cloud-data-platform/networking/byoc/aws/dual-listener-mode/; the
+  Dedicated pages (https://docs.redpanda.com/cloud-data-platform/networking/ and
+  https://docs.redpanda.com/cloud-data-platform/manage/api/cloud-dedicated-controlplane-api/) do
+  not say it. Source: cloudv2
+  `apps/public-api-go/internal/services/cluster/v1/dual_mode_connections.go` (refusal with no
+  cluster-type check). Case: `dedicated-private-to-public-goes-through-support` (docs arm 1/3).
+
+Weak coverage, not a gap: `no-customer-managed-keys` passed 2/3 in the docs arm. The fact is on
+https://docs.redpanda.com/cloud-data-platform/security/cloud-encryption/, but one docs run did
+not find it.
+
+## Lines removed for lack of a failing baseline
+
+- "A `cloud_provider_tags` PATCH replaces the whole map, so read the current tags and send the
+  full map" was not kept. Its behavioral case `tags-patch-keeps-existing-tags` passes in the
+  baseline: without the skill, the agent read the cluster first and sent the existing tags with
+  the new one. Rerun on 2026-11-10 (run `2026-11-10T20-28-08Z`): baseline 3/3, skill 3/3,
+  installed 3/3. The case stays in the suite.
+
+## Corrections to the pre-thin references
+
+The thin skill does not carry these claims; they are recorded so they are not reintroduced.
+
+- The pre-thin `references/data-plane.md` and `create-cluster.md` said `dataplane_api.url` is
+  returned only by `GetCluster`, not `ListClusters`. cloudv2
+  `apps/public-api-go/internal/services/cluster/v1/cluster_service.go` builds both responses with
+  the same mapper (`mapper.go`, `RedpandaToCluster`), which sets `DataplaneApi`, so the list
+  response carries it too.
+- The pre-thin `references/data-plane.md` said an empty `DeleteACLs` filter matches broadly. The
+  public Data Plane proto marks the filter's `resource_type`, `resource_pattern_type`,
+  `operation`, and `permission_type` as required
+  (https://github.com/redpanda-data/console/blob/master/proto/redpanda/api/dataplane/v1/acl.proto,
+  `DeleteACLsRequest.Filter`), so a request without them is rejected.
+- The pre-thin `references/create-cluster.md` said self-service tier changes are not offered on
+  Dedicated. In cloudv2, a `throughput_tier` update is allowed or refused by organization
+  settings and usage-based billing (`cluster_service.go`) and by whether the target tier is
+  enabled for the cluster's type and region (`apps/controlplane-api/internal/services/redpanda/redpanda_service.go`,
+  `validateDesiredScaling`), with no blanket Dedicated refusal. The published maintenance and
+  scale-cluster pages describe a Dedicated tier change as a migration run by Redpanda Support;
+  the thin skill defers to those pages.
+
+## Corrections after the eval run
+
+- `update_mask` on UpdateCluster is optional over REST. When the request leaves it out, the REST
+  gateway derives it from the request body (cloudv2
+  `proto/gen/go/redpanda/api/controlplane/v1/cluster.pb.gw.go`, `request_ClusterService_UpdateCluster_0`,
+  `runtime.FieldMaskFromRequestBody`), so the API reference omits it by design and the Dedicated
+  "Update cluster configuration" example works as published. This was first recorded as a docs gap; it
+  isn't one. An explicit mask matters only where a derived leaf path is rejected. Case
+  `cluster-patch-update-mask` was rewritten to accept either form. Rerun on 2026-11-10 (run
+  `2026-11-10T20-48-06Z`): baseline 3/3, skill 2/3, installed 3/3, so the rewritten case is
+  uninformative.

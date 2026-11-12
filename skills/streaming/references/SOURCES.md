@@ -1,74 +1,77 @@
 # streaming Skill Source Map
 
-Maps each file in `skills/streaming/` to the source paths it derives from, so future syncs
-and human maintainers know exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" procedures below, each backed by a
+behavioral eval case in `evals/suites/streaming.eval.json`, and sends the agent to the docs
+for everything else. This file maps only the claims the skill still makes.
 
-The `streaming` skill documents the Kafka-API surface and behavior of the Redpanda broker
-plus cluster/topic/broker properties and enterprise streaming features. It is grounded in
-the **public** repo `redpanda-data/redpanda` (broker is C++ under `src/v/`; config under
-`src/v/config/`) and the auto-generated reference + feature pages in the **private** repo
-`redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP
-connector (`search_code`, `get_file_contents`), or `gh` for verification.
+The skill is grounded in the **public** repo `redpanda-data/redpanda` (broker C++ under
+`src/v/`, config under `src/v/config/`, rpk under `src/go/rpk/`). Verify against the current
+stable release tag (checked at `v26.2.2`), not `dev`. Paths below are relative to that repo.
 
-**Property grounding:** all cluster/topic/broker property claims are grounded in the
-auto-generated partials under `modules/reference/partials/properties/`
-(`cluster-properties.adoc`, `topic-properties.adoc`, `broker-properties.adoc`,
-`object-storage-properties.adoc`, `topic-property-mappings.adoc`), regenerated per release;
-their upstream source of truth is `src/v/config/configuration.cc` (cluster) and
-`src/v/config/node_config.cc` (listener/broker). Do not pin property defaults to hardcoded
-values. Streaming is versioned: verify against the **current stable release tag**, not
-`dev`/`main`.
+## How to work: line, source, eval case
 
-## File-to-source table
-
-| Skill file | redpanda source paths | docs sources |
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `src/v/kafka/server/handlers/`, `src/v/config/configuration.cc`, `src/v/config/node_config.cc` | `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc`, `broker-properties.adoc` |
-| `references/core-concepts.md` | `src/v/kafka/server/handlers/` (per-API `.h`/`.cc`: `produce.cc`, `fetch.cc`, `list_offsets.cc`, `metadata.cc`, `offset_commit.h`, `offset_fetch.h`, `find_coordinator.cc`, `join_group.h`, `sync_group.h`, `create_topics.cc`, `init_producer_id.h`), `handler_interface.cc`, `src/v/config/configuration.cc` (`minimum_topic_replications`) | `modules/reference/partials/properties/cluster-properties.adoc` |
-| `references/produce-data.md` | `src/v/kafka/server/handlers/produce.cc`, `produce_validation.cc` (`validate_batch_attributes` — client control batches rejected with `invalid_record`), `src/v/config/configuration.cc` (`enable_idempotence`, `write_caching_default`, `kafka_produce_batch_validation`) | `modules/develop/pages/produce-data/configure-producers.adoc`, `idempotent-producers.adoc`, `modules/reference/partials/properties/topic-properties.adoc` |
-| `references/consume-data.md` | `src/v/kafka/server/handlers/fetch.cc`, `src/v/kafka/server/group_manager.cc`, `handlers/offset_commit.h`, `offset_fetch.h`, `find_coordinator.cc`, `src/v/config/configuration.cc` (`enable_rack_awareness`) | `modules/develop/pages/consume-data/consumer-offsets.adoc`, `follower-fetching.adoc`, `modules/manage/pages/rack-awareness.adoc` |
-| `references/transactions.md` | `src/v/cluster/rm_stm.cc`, `tx_gateway_frontend.cc`, `src/v/kafka/server/rm_group_frontend.cc`, `handlers/{init_producer_id.h,add_partitions_to_txn.h,add_offsets_to_txn.h,end_txn.h}`, `src/v/config/configuration.cc` (`enable_transactions`, `enable_idempotence`, `max_concurrent_producer_ids`, `transactional_id_expiration_ms`, `max_transactions_per_coordinator`, `transaction_coordinator_delete_retention_ms`, `transaction_coordinator_partitions`) | `modules/develop/pages/transactions.adoc`, `modules/reference/partials/properties/cluster-properties.adoc` |
-| `references/topic-management.md` | `src/v/kafka/server/handlers/topics/types.cc`, `create_topics.cc`, `create_partitions.cc`, `alter_configs.cc`, `incremental_alter_configs.cc`, `describe_configs.cc`, `delete_records.cc`, `handlers/configs/storage_mode_properties.h`, `src/v/model/metadata.h`, `src/v/config/configuration.cc` (`default_topic_partitions`, `default_topic_replications`, `minimum_topic_replications`, `write_caching_default`, `default_leaders_preference`), `src/v/config/leaders_preference.cc` | `modules/develop/pages/manage-topics/config-topics.adoc`, `modules/manage/pages/cluster-maintenance/topic-property-configuration.adoc`, `modules/develop/pages/produce-data/leader-pinning.adoc`, `modules/reference/partials/properties/topic-properties.adoc` |
-| `references/clients-and-compatibility.md` | `src/v/kafka/server/handlers/api_versions.cc`, `handler_interface.cc`, `handlers/{alter_client_quotas.h,describe_client_quotas.h}` | `modules/develop/pages/kafka-clients.adoc` |
-| `references/tls-and-auth.md` | `src/v/config/node_config.cc` (`kafka_api`, `kafka_api_tls`, `advertised_kafka_api`), `src/v/config/configuration.cc` (`kafka_mtls_principal_mapping_rules`), `tls_config.cc`, `broker_authn_endpoint.cc`, `handlers/{sasl_handshake.h,sasl_authenticate.h}` | `modules/manage/pages/security/authentication.adoc`, `encryption.adoc`, `listener-configuration.adoc`, `authorization/` (ACLs), `modules/reference/partials/properties/broker-properties.adoc`, `cluster-properties.adoc` |
-| `references/kafka-client-metadata.md` | `src/v/kafka/server/handlers/metadata.cc` (server-side metadata refresh / `NOT_LEADER_OR_FOLLOWER`). Client-side keys are external client libraries — no redpanda path. | `modules/manage/pages/cluster-maintenance/configure-client-connections.adoc`, `modules/develop/pages/kafka-clients.adoc` |
-| `references/tiered-storage.md` | `src/v/config/configuration.cc` (`cloud_storage_enabled`, `cloud_storage_enable_remote_read`/`write`, `default_redpanda_storage_mode`), `handlers/configs/storage_mode_properties.h`, `src/v/model/metadata.h`, `src/v/config/configuration.cc` (`log_eviction_exempt_topics`) + `src/v/storage/disk_log_impl.cc` (`deletion_exempt()`) | `modules/manage/pages/tiered-storage.adoc`, `remote-read-replicas.adoc`, `modules/reference/partials/properties/topic-properties.adoc`, `object-storage-properties.adoc`, `topic-property-mappings.adoc` |
-| `references/enterprise-features.md` | `src/v/config/configuration.cc` (`cloud_storage_enabled`, `cloud_topics_enabled`, `iceberg_enabled`, `partition_autobalancing_mode`, `core_balancing_continuous`, `enable_shadow_linking`, `cloud_storage_enable_remote_read`, `enable_schema_id_validation`, `delete_topic_enable`, `default_leaders_preference`) | `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc` (+ per-feature pages in the rows below) |
-| `references/iceberg-topics.md` | `src/v/datalake/` (`datalake_manager.cc`, `partition_spec_parser.cc`, `record_translator.cc`, `record_schema_resolver.cc`, `catalog_schema_manager.cc`), `src/v/config/configuration.cc` (`iceberg_enabled`, `iceberg_default_catalog_namespace`, `iceberg_delete`, `iceberg_invalid_record_action`, `iceberg_default_partition_spec`, `iceberg_target_lag_ms`, `iceberg_catalog_*`) | `modules/manage/pages/iceberg/about-iceberg-topics.adoc`, `use-iceberg-catalogs.adoc`, `iceberg-topics-aws-glue.adoc`, `specify-iceberg-schema.adoc`, `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc` |
-| `references/cloud-topics.md` | `src/v/cloud_topics/`, `src/v/config/configuration.cc` (`cloud_topics_enabled`, `default_redpanda_storage_mode`), `handlers/configs/storage_mode_properties.h` | `modules/develop/pages/manage-topics/cloud-topics.adoc`, `configure-producers-for-cloud-topics.adoc`, `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc` |
-| `references/continuous-balancing.md` | `src/v/config/configuration.cc` (`partition_autobalancing_mode`, `partition_autobalancing_node_availability_timeout_sec`, `partition_autobalancing_node_autodecommission_timeout_sec`, `partition_autobalancing_max_disk_usage_percent`, `core_balancing_continuous`, `core_balancing_on_core_count_change`), `src/v/model/metadata.h` | `modules/manage/pages/cluster-maintenance/continuous-data-balancing.adoc`, `cluster-balancing.adoc`, `modules/reference/partials/properties/cluster-properties.adoc` |
-| `references/shadow-linking.md` | `src/v/cluster_link/` (`service.h`/`service.cc`, `frontend`, `shadow_linking_rpc.json`, `model/`), `src/v/cluster/cluster_link/frontend.cc` (`cluster_linking_enabled()`), `src/v/cluster_link/roles_migrator.{h,cc}` (source-side `DescribeRedpandaRoles` negotiation, RBAC-active and permission gates -> `link_unavailable`) + `src/v/cluster_link/model/types.{h,cc}` (`role_sync_config`), `src/v/cluster_link/source_topic_syncer.cc` (source read path: Metadata + negotiated `DescribeConfigs`, i.e. any Kafka API-compatible source), `src/go/rpk/pkg/cli/shadow/types.go` (`ShadowLinkClientOptions`, `AuthenticationConfiguration` = SASL/PLAIN | SASL/SCRAM only, `source_cluster_id`), `src/v/redpanda/admin/services/shadow_link/` (Admin API v2 service; `shadow_link.cc` `check_role_sync_supported`, `converter.cc` `create_role_sync_config`), `src/v/features/feature_table.{h,cc}` (`shadow_link_role_sync`), `proto/redpanda/core/admin/v2/shadow_link.proto` (`RoleSyncOptions`), `src/v/config/configuration.cc`/`configuration.h` (`enable_shadow_linking`, `shadow_link_failover_batch_size`), `src/v/features/enterprise_features.h` + `src/v/cluster/feature_manager.cc` (license gating) | `modules/manage/pages/disaster-recovery/shadowing/` (`overview.adoc`, `setup.adoc`, `monitor.adoc`, `failover.adoc`, `failover-runbook.adoc`), `modules/reference/partials/properties/cluster-properties.adoc` |
+| Deleting a topic deletes its object storage objects while `redpanda.remote.delete` is `true`, the default; set it to `false` first to keep the archive. Safety guardrail (data loss): the baseline passes its case, and the line and case stay as a regression guard. Run `2026-11-10T20-28-08Z`: baseline 3/3, skill 3/3, installed 2/2 (1 run errored). | `src/v/storage/ntp_config.h` (`default_remote_delete{true}`), `src/v/kafka/server/handlers/topics/types.cc` (`redpanda.remote.delete` falls back to `default_remote_delete`) | `delete-tiered-topic-keep-archive` |
+| Tables go in the namespace `redpanda` unless `iceberg_default_catalog_namespace` is set; set a distinct one before or with `iceberg_enabled` when clusters share a catalog, and never change it afterward. Run `2026-11-10T20-48-04Z` (after the case fix below): baseline 0/3, skill 3/3, installed 2/3. | `src/v/config/configuration.cc` (`iceberg_default_catalog_namespace`: default `{"redpanda"}`, "must be configured before enabling Iceberg and must not be changed afterward", needs restart) | `iceberg-second-cluster-shared-catalog` |
+| With `partition_autobalancing_mode=continuous`, cancelling moves is not enough; set the mode to `off` or `node_add`, then run `rpk cluster partitions move-cancel`. Run `2026-11-10T20-28-08Z`: baseline 0/3, skill 3/3, installed 2/3. | `src/v/config/configuration.cc` (`partition_autobalancing_mode`: `node_add`, `continuous`, `off`), `src/go/rpk/pkg/cli/cluster/partitions/cancel.go` (`move-cancel`); the "first set to off, then cancel" rule is stated on https://docs.redpanda.com/streaming/current/manage/cluster-maintenance/continuous-data-balancing/ | `stop-partition-balancing-for-maintenance` |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+Rates above are from the rerun against this thin skill on 2026-11-10, 3 runs per arm, as
+baseline / skill / installed. The failing installed run of the Iceberg case set the namespace,
+then stopped and reverted `iceberg_enabled` because the stateless mock's re-read still showed
+`redpanda`; the judge failed it for that. The failing installed run of the stop-balancing case
+set the mode to `off` and never cancelled the in-flight moves.
 
-- **Kafka API handler version ranges** (`core-concepts.md`, `consume-data.md`, `transactions.md`, `topic-management.md` — e.g. `Produce 0–7`, `Fetch 4–13`, `InitProducerId 0–3`): version-specific, change per release. Source them from the handler templates (`single_stage_handler<...>`) at the target ref, not a fixed line.
-- **Transaction/producer metrics** (`transactions.md`, e.g. `vectorized_cluster_producer_state_manager_*`): release-specific metric names — from generated metrics docs / live `/metrics`, not a source path.
-- **Third-party client library config keys/defaults** (`kafka-client-metadata.md`, `produce-data.md`, `consume-data.md`, `clients-and-compatibility.md`, `tls-and-auth.md` — Java, librdkafka, franz-go, KafkaJS, kafka-python-ng): live in external client repos, not redpanda. Only server-side behavior maps here (`metadata.cc`, error code 6).
+## Other claims in SKILL.md
 
-## Naming note
+| Claim | Source | Eval case |
+|---|---|---|
+| `get_config_property` looks up one property and `list_config_properties` finds a property's name | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| The docs page URLs listed under "Most useful pages" | Each returned 200 on 2026-11-10 | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 
-Shadow Linking is the **user-facing** name; internally the broker module is named
-**`cluster_link`** / "cluster linking" (`src/v/cluster_link/`, `src/v/cluster/cluster_link/`,
-`shadow_linking_rpc.json`, `feature::shadow_linking`). Search the source for `cluster_link`
-and `shadow_link`, not `shadow-link`.
+## Docs gaps (not skill claims; do not re-verify here)
 
-## TODO / re-verify
+The 2026-11-10 eval run found no fact the docs lack. Every informative fact case
+(`kafka4-transactions-v2-fallback`, `local-log-eviction-exempt-topic`,
+`cloud-topics-no-separate-switch`, `shadow-link-msk-iam-source`,
+`shadow-link-roles-not-synced`, `shadow-update-file-password`,
+`down-broker-not-decommissioned`) passed 3/3 in the docs arm.
 
-- **Iceberg manifest statistics and Parquet-writer table properties (`v26.2.3`,
-  deliberately not in `iceberg-topics.md`, 2026-10-20).** The `v26.2.3` release
-  notes say Iceberg topics now persist statistics in Iceberg manifests, and that
-  Iceberg translation now honors "several" table properties controlling how
-  Parquet is written, including compression and Bloom filters. They name no
-  property keys, and the public `redpanda-data/redpanda` repo carries no tag or
-  branch head for releases after `v26.2.2`, so the honored property set cannot be
-  read from source. Do not add a property list to the skill until the keys can be
-  confirmed from source, the generated property reference, or a live cluster;
-  until then this is not a gap for the sync to re-flag.
-- **Iceberg / Cloud Topics per-topic property parsing:** grounded via `topic-properties.adoc` + the feature modules (`src/v/datalake/`, `src/v/cloud_topics/`). The exact C++ file registering the `redpanda.iceberg.*` / `redpanda.cloud_topic.*` topic-property strings is not pinned; `handlers/topics/types.cc` and `handlers/configs/storage_mode_properties.h` are the verified entry points.
+The two kept procedures fail in the docs arm (Iceberg namespace 0/3, stop balancing 0/3 and
+1/3 across two runs) although the docs state both facts:
+https://docs.redpanda.com/streaming/current/manage/iceberg/about-iceberg-topics/ and
+`iceberg-topics-aws-glue` say each cluster writing to one catalog needs a distinct namespace,
+and the Continuous Data Balancing page says to set the mode to `off` before cancelling. The
+agent does not look these up during the task, so they are reasons the skill lines exist,
+not missing docs.
 
-## Usage
+## Lines removed for lack of a failing baseline
 
-For each file being reviewed or updated, open the listed source paths first and confirm
-every claim still matches. Verify against the current stable release tag of
-`redpanda-data/redpanda`; prefer the generated property partials for property facts, and
-re-confirm exact property keys / handler version ranges before writing any new fact.
+- "Update a shadow link from its full current configuration (`rpk shadow describe --format
+  yaml`), because `rpk shadow update` replaces the whole configuration" was not kept. Its case
+  `shadow-link-update-full-config` passes in the baseline: after the case fix below, run
+  `2026-11-10T20-48-04Z` scored baseline 3/3, skill 3/3, installed 3/3, and no baseline run
+  wrote a partial configuration. Without the skill, the agent read the `rpk shadow update` help,
+  which says both modes replace the entire configuration, and used the editor seeded with the
+  current configuration. The case stays in the suite as data.
+- The full pre-thin skill (14 reference files on Kafka API behavior, producers, consumers,
+  transactions, topic management, clients, TLS, Tiered Storage, enterprise features, Iceberg,
+  Cloud Topics, balancing, Shadow Linking, and client metadata settings) was removed. Its
+  fact cases were either answered by the baseline (`storage-mode-tiered-to-cloud`,
+  `schema-id-validation-mode-values`, `iceberg-invalid-records-dlq-table`,
+  `scram-one-mechanism-per-user`, `shadow-topic-alter-rejected`) or answered 3/3 by the docs.
+
+## Corrections after the eval run
+
+Two cases graded wrongly and were fixed, then rerun in `2026-11-10T20-48-04Z`; no line's
+verdict changed.
+
+- `iceberg-second-cluster-shared-catalog`: the expected call treated any namespace that starts
+  with `redpanda` followed by a non-word character as the default, so a distinct namespace such
+  as `redpanda-west`, or the nested `["redpanda","west"]`, would have failed. It now rejects
+  only a namespace that is exactly `redpanda`.
+- `shadow-link-update-full-config`: the mock cannot run an editor script passed through
+  `EDITOR`, so a run that applied the update that way saw no change on a later diff or re-read,
+  and the judge failed it for reporting that. The invariant now says not to. In
+  `2026-11-10T20-28-08Z`, before the fix, two of the three installed runs failed this way.
