@@ -8,7 +8,7 @@ description: >-
   a cluster; setting up private connectivity (AWS PrivateLink, GCP Private Service
   Connect, Azure Private Link, VPC peering, or Transit Gateway egress); configuring dual
   listener mode; scaling a cluster by broker count or tier; registering cross-account AWS
-  access; managing Shadow Link cross-cluster DR; running `rpk cloud byoc apply`; or
+  access; managing Shadow Link cross-cluster DR; running `rpk cloud byoc <provider> apply`; or
   enabling Enterprise features (Tiered Storage, Cloud Topics, Iceberg Topics, Continuous
   Data Balancing, RBAC, and more) on a BYOC cluster. For workload sizing, see
   `/redpanda:cloud-byoc-sizing`; for Serverless clusters, see
@@ -20,7 +20,7 @@ description: >-
 
 BYOC (Bring Your Own Cloud) lets you run Redpanda in your own AWS, GCP, or Azure account: Redpanda manages the control plane and agent lifecycle, while your VPC, IAM roles, and storage buckets stay under your cloud account. You pay cloud infrastructure costs directly. This is the primary alternative to Serverless, which runs entirely in Redpanda's account.
 
-The provisioning workflow has three phases: (1) create a **Network** resource that registers your VPC/VNet with Redpanda, (2) create a **Cluster** resource of `TYPE_BYOC` referencing that network, and (3) run `rpk cloud byoc apply --redpanda-id <id>` to execute the Terraform that installs the agent in your cloud account.
+The provisioning workflow has three phases: (1) create a **Network** resource that registers your VPC/VNet with Redpanda, (2) create a **Cluster** resource of `TYPE_BYOC` referencing that network, and (3) run `rpk cloud byoc <provider> apply --redpanda-id <id>` — where `<provider>` is `aws`, `gcp`, or `azure` — to execute the Terraform that installs the agent in your cloud account.
 
 **BYOVNet on Azure is the exception.** For a customer-managed VNet on Azure — generally available, and an add-on requiring Premium support — the documented path is a single Terraform configuration: the Redpanda BYOVNet module creates the Azure resources and the Redpanda Terraform provider creates the network and cluster and runs the agent bootstrap, so creating the cluster takes no Cloud API calls and no `rpk cloud byoc azure apply` (changing its tags later still needs an agent apply). See [Networks](references/networks.md#deploying-a-byovnet-cluster-on-azure).
 
@@ -144,7 +144,7 @@ echo "Cluster is READY"
 | Infra ownership | Customer VPC / account | Redpanda's account |
 | Cloud bill | Customer pays AWS/GCP/Azure directly | Redpanda charges per usage |
 | Network isolation | Fully isolated VPC | Shared multi-tenant |
-| Agent required | Yes — `rpk cloud byoc apply` | No |
+| Agent required | Yes — `rpk cloud byoc <provider> apply` | No |
 | Cluster type | `TYPE_BYOC` | N/A (separate `ServerlessCluster` resource) |
 | Network resource | Required | Not required |
 | Customer-managed IAM | Optional (`customer_managed_resources`) | Not supported |
@@ -221,7 +221,7 @@ STATE_SUSPENDED
 `STATE_UPGRADING` covers a scaling operation as well as a version upgrade, and the cluster refuses
 other changes while it lasts — see [Scaling a cluster](references/clusters-and-agent.md#scaling-a-cluster-broker-count-and-tier).
 
-The cluster enters `STATE_CREATING_AGENT` after the API accepts the create request. This is when you must run `rpk cloud byoc apply` to install the agent Terraform. Once the agent completes provisioning, the cluster transitions to `STATE_CREATING`, then `STATE_READY`.
+The cluster enters `STATE_CREATING_AGENT` after the API accepts the create request. This is when you must run `rpk cloud byoc <provider> apply` to install the agent Terraform. Once the agent completes provisioning, the cluster transitions to `STATE_CREATING`, then `STATE_READY`.
 
 ## rpk cloud byoc Commands
 
@@ -248,6 +248,12 @@ rpk cloud byoc gcp validate
 # Uninstall the local plugin binary
 rpk cloud byoc uninstall
 ```
+
+The cloud-provider subcommand is not optional. `rpk cloud byoc apply` is not a command: rpk passes the
+invocation to the plugin only when it sees `aws`, `gcp`, `azure`, or `validate`, and otherwise prints the
+help text and returns without an error instead of running Terraform. So a run that “succeeded” but produced
+no Terraform output was most likely missing the provider — read `Cluster.state` back before concluding the
+agent ran. Dropping `cloud` (`rpk byoc aws apply`) is not a command either.
 
 The `--redpanda-id` flag is required for `apply` and `destroy`. The plugin is automatically pinned to the version the control plane specifies for the given cluster ID. Set `RPK_CLOUD_SKIP_VERSION_CHECK=1` to use the currently installed plugin binary as-is (dev/CI use only).
 

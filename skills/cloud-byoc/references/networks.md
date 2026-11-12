@@ -1,4 +1,4 @@
-Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/network.proto`, `network_peering.proto`, `common.proto` (field names and constraints); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, whose `IsPrivate()` check admits RFC 1918 only, so RFC 6598 `100.64.0.0/10` is rejected; `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 ranges and the “block size between /16 and /20” note). BYOVNet on Azure (verified 2026-10-22): cloud-docs `modules/get-started/pages/cluster-types/byoc/azure/vnet-azure.adoc` (published how-to: the Terraform module and provider path, the agent bootstrap replacing `rpk cloud byoc azure apply`, the limitations list, provisioning time, and the two tag scopes with the agent-apply prerequisite), `modules/get-started/pages/cluster-types/byoc/choose-byoc-or-byovpc.adoc` (BYOVPC/BYOVNet scope and the no-conversion rule) and `modules/shared/partials/feature-flag-rpcn.adoc` (BYOVPC/BYOVNet is a Premium-support add-on). File-by-file mapping in [SOURCES.md](SOURCES.md).
+Source: cloudv2 `proto/public/cloud/redpanda/api/controlplane/v1/network.proto`, `network_peering.proto`, `common.proto` (field names and constraints); `cidr_block` private-IPv4 and /16–/20 prefix-length constraint (verified 2026-10-08): cloudv2 `apps/controlplane-api/internal/services/network/network_service.go` (`validateCIDR`, whose `IsPrivate()` check admits RFC 1918 only, so RFC 6598 `100.64.0.0/10` is rejected; `minVPCSize` = 20 / `maxVPCSize` = 16, `errNetworkCIDRNotPrivate`, and the INVALID_ARGUMENT message “the prefix length must be between /16 and /20”), `network.proto` `NetworkCreate.cidr_block` / `Network.cidr_block` field comments, cloud-docs `modules/networking/pages/cidr-ranges.adoc` (published RFC 1918 ranges and the “block size between /16 and /20” note). BYOVNet on Azure (verified 2026-10-22): cloud-docs `modules/get-started/pages/cluster-types/byoc/azure/vnet-azure.adoc` (published how-to: the Terraform module and provider path, the agent bootstrap replacing `rpk cloud byoc azure apply`, the limitations list, provisioning time, and the two tag scopes with the agent-apply prerequisite), `modules/get-started/pages/cluster-types/byoc/choose-byoc-or-byovpc.adoc` (BYOVPC/BYOVNet scope and the no-conversion rule) and `modules/shared/partials/feature-flag-rpcn.adoc` (BYOVPC/BYOVNet is a Premium-support add-on). Consumer side of a private link (verified 2026-11-12): api-docs `cloud-controlplane/cloud-controlplane.yaml` (published `AWSPrivateLink.Status` `service_name`, `service_id`, `service_state`, `vpc_endpoint_connections[]` and the per-service port fields; `GCPPrivateServiceConnect.Status` `service_attachment`, `connected_endpoints[]`, `dns_a_records[]`, `seed_hostname`; `AzurePrivateLink.Status` `service_id`, `service_name`, `private_endpoint_connections[]`, `dns_a_record`), cloud-docs `modules/networking/pages/aws-privatelink.adoc` (published note that enabling the endpoint service creates only the Redpanda side, and the consumer VPC-endpoint steps), `modules/networking/pages/gcp-private-service-connect.adoc` and `modules/networking/pages/azure-private-link.adoc` (the equivalent consumer-side procedures). File-by-file mapping in [SOURCES.md](SOURCES.md).
 
 # Networks
 
@@ -421,6 +421,34 @@ BYOC supports a range of private-connectivity options. Most are configured as cl
 | Dual listener mode | cluster `kafka_api`/`http_proxy`/`schema_registry` `connections[]` | One public and one private listener per service, each with its own endpoint and its own SASL or mTLS auth (beta, AWS only). On a BYOVPC network it also needs the network's `public_subnets`. See [Dual Listener Mode](clusters-and-agent.md#dual-listener-mode-public--private-listeners-per-service-beta-aws). |
 
 See the [Redpanda Cloud networking docs](https://docs.redpanda.com/cloud-data-platform/networking/) for the full guidance, including **BYOVPC on AWS (GA, March 2026)** as a fully customer-managed networking variant.
+
+### A private link only creates the Redpanda side
+
+Enabling `aws_private_link`, `gcp_private_service_connect`, or `azure_private_link` on the cluster creates
+the **Redpanda-side** endpoint service (AWS), service attachment (GCP), or Private Link service (Azure), and
+the list of principals allowed to attach to it — nothing in your own account. Clients cannot reach the
+cluster until you create the consumer endpoint in your VPC/VNet and point DNS at it. Read an enabled spec as
+"ready for a client to attach", not as "connected", and don't report private connectivity as done on the
+strength of a `PATCH` that enabled the spec.
+
+Everything the consumer side needs is on the private-link `status` of the cluster you read back:
+
+| Provider | Attach to | Connections that exist | DNS |
+|---|---|---|---|
+| AWS | `aws_private_link.status.service_name` (`service_id` is the `vpce-svc-…` ID, `service_state` the service's own state) | `status.vpc_endpoint_connections[]` — each with `id`, `connection_id`, `owner`, `state`, `dns_entries[]` | Private DNS on your interface endpoint |
+| GCP | `gcp_private_service_connect.status.service_attachment` | `status.connected_endpoints[]` | `status.dns_a_records[]` are the records you create pointing at the PSC endpoint; `status.seed_hostname` is what clients connect to |
+| Azure | `azure_private_link.status.service_id` (`service_name` is the Private Link service name) | `status.private_endpoint_connections[]` | `status.dns_a_record` is the record you create pointing at your private endpoint |
+
+The per-service ports clients need are on the same `status`: `kafka_api_seed_port`,
+`kafka_api_node_base_port`, `schema_registry_seed_port`, `redpanda_proxy_seed_port`,
+`redpanda_proxy_node_base_port`, and (AWS and Azure) `console_port`. The port for node `i` is the matching
+node base port + `i`.
+
+Follow the Cloud networking docs for the consumer-side steps, which are cloud-provider procedures rather than
+API calls:
+[AWS PrivateLink](https://docs.redpanda.com/cloud-data-platform/networking/aws-privatelink/),
+[GCP Private Service Connect](https://docs.redpanda.com/cloud-data-platform/networking/gcp-private-service-connect/),
+[Azure Private Link](https://docs.redpanda.com/cloud-data-platform/networking/azure-private-link/).
 
 ### Centralized egress (beta)
 
