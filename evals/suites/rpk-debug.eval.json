@@ -1,0 +1,674 @@
+{
+  "name": "rpk-debug skill vs docs",
+  "skill": "rpk-debug",
+  "description": "Measures whether the rpk-debug skill adds value over the published docs for rpk debug bundle, rpk debug remote-bundle, and triaging Enterprise features from a bundle. Fact cases were sampled at even intervals through the full skill (SKILL.md and its references, before the thin conversion) or targeted at claims expected to be missing from the docs, chosen from the skill and the public redpanda source at v26.2.6 without checking the docs. The thin skill no longer carries those claims, so a thin skill-arm result on a sampled or targeted case is not a measure of skill coverage. The behavioral cases grade outcomes against a mocked shell: no workstation bundle passed off as a Cloud cluster's bundle, a remote bundle that covers every broker when the profile lists only one admin address, a bundle whose log window reaches an incident from a week ago, and an expired license found as the cause of a Leadership Pinning regression.",
+  "test_cases": [
+    {
+      "id": "debug-info-noop",
+      "query": "What does `rpk debug info` print? I want a quick check of the Redpanda process's CPU and memory use on a broker without building a whole bundle.",
+      "why": "rpk debug info (alias status) is hidden and does nothing: its Run function is an empty no-op kept for backward compatibility. It once sent usage stats to Redpanda Data. A model may assume it prints process info.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/info.go"
+      ],
+      "invariants": [
+        {
+          "name": "info_is_noop",
+          "failure_condition": "FAILS if the answer says rpk debug info prints CPU, memory, or other process or cluster information, or shows sample output for it. PASSES if it says rpk debug info is a hidden command that does nothing (a no-op kept for backward compatibility), so it cannot give that check."
+        }
+      ]
+    },
+    {
+      "id": "dedicated-cluster-debug-bundle",
+      "query": "Our cluster is on Redpanda Cloud Dedicated and Support wants diagnostics for a ticket. Should I run `rpk debug bundle` or `rpk debug remote-bundle` against it, and how?",
+      "why": "Neither works on Redpanda Cloud: debug bundles and the Admin API are not available there, remote-bundle exits with an error for a Cloud profile, and there is no broker host to run a local bundle on. Redpanda collects cluster-side diagnostics, so the user opens or updates the support ticket instead.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/remotebundle/start.go (config.CheckExitCloudAdmin)",
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/config/config.go (CheckExitCloudAdmin: \"this admin API based command is not supported on Redpanda Cloud clusters\")",
+        "product source (Cloud feature compatibility list)"
+      ],
+      "invariants": [
+        {
+          "name": "no_bundle_on_cloud",
+          "failure_condition": "FAILS if the answer gives either command as a working way to collect a bundle from the Dedicated cluster. PASSES if it says debug bundles (both rpk debug bundle and remote-bundle) are not supported on Redpanda Cloud clusters, and that Redpanda Support handles cluster-side diagnostics, so the user should work through the support ticket instead."
+        }
+      ]
+    },
+    {
+      "id": "bundle-default-log-window",
+      "query": "If I run `rpk debug bundle` on a bare-metal broker with no flags, how far back do the Redpanda logs in the bundle go?",
+      "why": "--logs-since defaults to yesterday, meaning 00:00:00 of the previous day in systemd.time, and the read stops at --logs-size-limit (100MiB). An incident from earlier in the week is not in a default bundle.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/debugbundle/common.go (--logs-since default \"yesterday\")",
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle.go (help text)"
+      ],
+      "required_patterns": [
+        "yesterday|previous day|prior day|day before"
+      ],
+      "invariants": [
+        {
+          "name": "since_yesterday",
+          "failure_condition": "FAILS if the answer says the bundle includes all logs, a fixed number of hours other than from the start of the previous day, or only today's logs. PASSES if it says the logs start from yesterday (the start of the previous day), up to a size limit."
+        }
+      ]
+    },
+    {
+      "id": "cpu-profiler-wait-minimum",
+      "query": "To make the bundle faster I ran `rpk debug bundle --cpu-profiler-wait 5s`, and it exits right away without creating anything. Why, and what's the shortest profiler wait I can use?",
+      "why": "rpk debug bundle rejects a --cpu-profiler-wait below 15 seconds before collecting anything, because Redpanda samples the Seastar CPU profiler about every 13 seconds and a shorter wait returns no samples.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle.go (out.Die(\"--cpu-profiler-wait must be higher than 15 seconds\"))"
+      ],
+      "required_patterns": [
+        "\\b15\\s*(s\\b|sec)"
+      ],
+      "invariants": [
+        {
+          "name": "fifteen_second_floor",
+          "failure_condition": "FAILS if the answer names a minimum other than 15 seconds or says any positive value works. PASSES if it says the wait must be at least 15 seconds (rpk rejects shorter values) because the profiler samples only about every 13 seconds."
+        }
+      ]
+    },
+    {
+      "id": "bundle-output-unwritable-dir",
+      "query": "I ran `rpk debug bundle` from /opt/app, which my user can't write to, and didn't pass -o. Where does the bundle end up? And what happens if I run it again with `-o /opt/app/bundle.zip`?",
+      "why": "Without --output, rpk falls back to the user's home directory when the current directory is not writable. With --output set to an unwritable directory, it fails instead of falling back.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle_linux.go (determineFilepath)"
+      ],
+      "invariants": [
+        {
+          "name": "home_fallback_only_without_flag",
+          "failure_condition": "FAILS if the answer says the first run fails, writes to /tmp or the data directory, or says the -o run also falls back to the home directory. PASSES if it says the first run writes the bundle to the user's home directory, and the run with -o pointing at the unwritable directory fails with a permission error."
+        }
+      ]
+    },
+    {
+      "id": "remote-bundle-download-layout",
+      "query": "After `rpk debug remote-bundle download`, what's inside the ZIP file? How do I find one broker's data?",
+      "why": "The download is a ZIP of ZIPs: one bundle ZIP per broker, stored at <root>/<broker address with special characters replaced by ->/<job ID>.zip. You unzip the outer file, then the broker's inner ZIP.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/remotebundle/download.go (writeToZip)",
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/debugbundle/common.go (SanitizeName)"
+      ],
+      "invariants": [
+        {
+          "name": "zip_of_zips_per_broker",
+          "failure_condition": "FAILS if the answer says the download is one merged bundle with a single admin/ and logs tree for the whole cluster, or does not say each broker has its own inner ZIP. PASSES if it says the file contains one ZIP per broker, in a directory named after the broker's address, and that you unzip that inner ZIP to read the broker's bundle. Naming the inner file after the job ID is not required."
+        }
+      ]
+    },
+    {
+      "id": "remote-bundle-wait-timeout",
+      "query": "I ran `rpk debug remote-bundle start --wait` and the command gave up with a timeout error. Did that stop the collection on the brokers? What should I do next?",
+      "why": "--wait-timeout (default 5m) bounds only the local wait. Collection on the brokers continues, so the next step is rpk debug remote-bundle status and then download, not a restart.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/remotebundle/start.go (--wait-timeout help: \"Collection on cluster will continue regardless.\")"
+      ],
+      "invariants": [
+        {
+          "name": "collection_continues",
+          "failure_condition": "FAILS if the answer says the timeout canceled or failed the collection on the brokers, or says to start a new collection as the next step. PASSES if it says the brokers keep collecting after the local wait times out, and the next step is to check rpk debug remote-bundle status and download when the brokers report success."
+        }
+      ]
+    },
+    {
+      "id": "k8s-logs-until-ignored",
+      "query": "I'm running `rpk debug bundle --logs-since 2026-11-03 --logs-until 2026-11-04` inside a Redpanda pod in Kubernetes. Will the pod logs in the bundle stop at the start of 2026-11-04?",
+      "why": "In Kubernetes, rpk debug bundle reads pod logs through the Kubernetes API with only a since time; --logs-until is not applied, so the logs run to the present.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle_k8s_linux.go (saveK8SLogs takes only since)"
+      ],
+      "invariants": [
+        {
+          "name": "until_not_applied",
+          "failure_condition": "FAILS if the answer says the pod logs will stop at 2026-11-04. PASSES if it says --logs-until is not supported (ignored) in Kubernetes, so the logs start at --logs-since and run to the time of collection."
+        }
+      ]
+    },
+    {
+      "id": "bundle-license-file",
+      "query": "In an extracted rpk debug bundle, which file shows the cluster's Enterprise license and whether it has expired?",
+      "why": "The bundle saves the Admin API license response as admin/license.json.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle_linux.go (requestAndSave \"admin/license.json\", cl.GetLicenseInfo)"
+      ],
+      "required_patterns": [
+        "admin/license\\.json"
+      ]
+    },
+    {
+      "id": "continuous-balancing-expired-license",
+      "query": "Our Redpanda Enterprise license expired last week. The debug bundle's cluster_config.json still shows partition_autobalancing_mode set to continuous. Is continuous balancing still running?",
+      "why": "When the license has expired, the partition balancer restricts its behavior to node_add and logs a warning; the configured value stays continuous but is not honored.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/v/cluster/partition_balancer_backend.cc (make_sanctioning_binding for partition_auto_balancing_continuous)",
+        "redpanda-data/redpanda v26.2.6: src/v/features/enterprise_feature_messages.h (\"Behavior is restricted to \\\"node_add\\\"\")"
+      ],
+      "invariants": [
+        {
+          "name": "restricted_to_node_add",
+          "failure_condition": "FAILS if the answer says continuous balancing keeps running, or says the setting was changed or reset in the config. PASSES if it says the balancer falls back to node_add behavior while the license is expired, even though the config still shows continuous."
+        }
+      ]
+    },
+    {
+      "id": "controller-partition-extra-requests",
+      "query": "I want `rpk debug bundle` to save the extra per-partition Admin API data for the Raft controller partition. What exactly do I pass?",
+      "why": "--partition (-p) takes {namespace}/{topic}/{partitions}, with kafka as the default namespace. The controller partition is redpanda/controller/0. The command's help shows a non-existent _redpanda-internal namespace and spells the flag --partitions.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/out/in.go (ParsePartitionString)",
+        "redpanda-data/redpanda v26.2.6: src/v/model/namespace.h (controller_ntp)"
+      ],
+      "required_patterns": [
+        "redpanda/controller/0"
+      ],
+      "failure_patterns": [
+        "(-p|--partitions?)[\\s=]+_redpanda"
+      ]
+    },
+    {
+      "id": "k8s-namespace-resolution",
+      "query": "Inside a Redpanda pod, I ran `rpk debug bundle` without `--namespace`. Which Kubernetes namespace does it collect resources and pod logs from?",
+      "why": "rpk resolves the namespace from --namespace, then the NAMESPACE environment variable, then the pod's service account namespace file, and finally falls back to redpanda. Inside a pod it normally picks the pod's own namespace.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle_k8s_linux.go (resolveNamespace)"
+      ],
+      "invariants": [
+        {
+          "name": "resolution_order",
+          "failure_condition": "FAILS if the answer says it uses the default namespace, collects nothing, or fails without --namespace. PASSES if it says rpk falls back to the NAMESPACE environment variable or the pod's service account namespace (so normally the pod's own namespace), with redpanda as the last fallback. Naming both of the first two sources is not required, but at least one must be named."
+        }
+      ]
+    },
+    {
+      "id": "remote-bundle-sasl-credentials",
+      "query": "Our self-managed cluster uses SASL/SCRAM. I started a remote bundle with `rpk debug remote-bundle start -X admin.hosts=...` and the Admin API calls worked, but the kafka.json inside each broker's bundle is full of authentication errors. How does the broker get Kafka credentials for that part, and how do I fix it?",
+      "why": "remote-bundle start forwards the Kafka API SASL credentials (SCRAM user, password, mechanism, or an OAUTHBEARER token) and TLS settings from the rpk profile to each broker, which uses them to collect Kafka metadata. If the profile has no Kafka SASL credentials, nothing is forwarded. Fix: set the user, password, and mechanism in the profile or with -X on start.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/remotebundle/start.go (toRpadminOptions: WithSCRAMAuthentication, WithOAuthBearerAuthentication, WithTLS)"
+      ],
+      "invariants": [
+        {
+          "name": "forwarded_from_profile",
+          "failure_condition": "FAILS if the answer says the broker uses its own internal or superuser credentials, or that the fix is a broker-side config change. PASSES if it says rpk sends the Kafka SASL credentials from the rpk profile (or -X user, pass, and sasl.mechanism) along with the start request, and the fix is to supply them when running remote-bundle start."
+        }
+      ]
+    },
+    {
+      "id": "controller-logs-over-limit",
+      "query": "The controller log directory on one broker is about 2 GB. If I run `rpk debug bundle` with default flags, which part of the controller log ends up in the bundle?",
+      "why": "With the default --controller-logs-size-limit of 132MB, rpk sorts the controller segments and keeps segments from the start and the end, each up to half the limit, dropping the middle. It prints a warning.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle_linux.go (saveControllerLogDir, sliceControllerDir)"
+      ],
+      "invariants": [
+        {
+          "name": "head_and_tail",
+          "failure_condition": "FAILS if the answer says the controller log is skipped entirely, the whole log is included, or only the newest (or only the oldest) segments are kept. PASSES if it says the bundle keeps segments from both the beginning and the end of the controller log, about half the limit each, and drops the middle, with a default limit of 132MB."
+        }
+      ]
+    },
+    {
+      "id": "cloud-cluster-bundle-request",
+      "query": "Redpanda Support asked for a debug bundle from our production cluster for the ticket about intermittent produce timeouts. Collect one and tell me what to send them. You can run commands with the run_shell tool on my Linux workstation, where rpk is set up for the cluster.",
+      "why": "The active rpk profile is a Redpanda Cloud (BYOC) profile. Cloud clusters don't support debug bundles: remote-bundle exits with an error, and rpk debug bundle on the workstation only collects the workstation, with the Admin API unreachable, while still printing \"Debug bundle saved\". The right outcome is to tell the user that Redpanda Support collects cluster diagnostics for Cloud clusters and not to send the workstation bundle as the cluster's. The mock answers every read-only rpk and profile command.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/config/config.go (CheckExitCloudAdmin)",
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle.go (no Cloud check for the local bundle)",
+        "product source (Cloud feature compatibility list)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's Linux workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's production Redpanda cluster. Commands run non-interactively.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "remote-bundle[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Start a remote debug bundle collection in your cluster.\n\nThis command starts the debug collection process in a remote cluster that\nyou configured in flags, environment variables, or your rpk profile.\n\nAfter starting the debug collection process, you can query the status with\n'rpk debug remote-bundle status'. When it completes, you can download it with\n'rpk debug remote-bundle download'.\n\nUse the flag '--no-confirm' to avoid the confirmation prompt.\n\nUsage:\n  rpk debug remote-bundle start [flags]\n\nFlags:\n      --controller-logs-size-limit string   The size limit of the controller logs that can be stored in the bundle. For example: 3MB, 1GiB (default \"132MB\")\n      --cpu-profiler-wait duration          How long to collect samples for the CPU profiler. For example: 30s, 1.5m. Must be higher than 15s (default 30s)\n      --job-id string                       Custom UUID to assign to the job that generates the debug bundle\n      --logs-since string                   Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options (default \"yesterday\")\n      --logs-size-limit string              Read the logs until the given size is reached. For example: 3MB, 1GiB (default \"100MiB\")\n      --logs-until string                   Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options\n      --no-confirm                          Disable confirmation prompt\n      --wait                                Wait for completion of remote bundle before returning\n      --wait-timeout duration               How long to wait locally for remote-bundle completion if --wait is specified. Collection on cluster will continue regardless. (default 5m0s)\n\nGlobal Flags:\n  -X, --config-opt stringArray   Override rpk configuration settings; '-X help' for detail or '-X list' for terse syntax\n      --profile string           rpk profile to use"
+              },
+              {
+                "match": "debug\\s+bundle[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "'rpk debug bundle' collects environment data that can help debug and diagnose\nissues with a redpanda cluster, a broker, or the machine it's running on. It\nthen bundles the collected data into a ZIP file, called a diagnostics bundle.\n\n - Redpanda logs: The node's Redpanda logs written to journald since yesterday\n   (00:00:00 of the previous day based on systemd.time). If '--logs-since' or\n   '--logs-until' are passed, then only the logs within the resulting time frame\n   are included.\n\nIf you have an upload URL from the Redpanda support team, provide it in the\n--upload-url flag to upload your diagnostics bundle to Redpanda.\n\nUsage:\n  rpk debug bundle [flags]\n\nFlags:\n      --controller-logs-size-limit string   The size limit of the controller logs that can be stored in the bundle. For example: 3MB, 1GiB (default \"132MB\")\n      --cpu-profiler-wait duration          How long to collect samples for the CPU profiler. For example: 30s, 1.5m. Must be higher than 15s (default 30s)\n  -h, --help                                Help for bundle\n      --kafka-connections-limit int         The maximum number of kafka connections to store in the bundle. (default 256)\n  -l, --label-selector stringArray          Comma-separated label selectors to filter your resources. For example: <label>=<value>,<label>=<value> (K8s only) (default [app.kubernetes.io/name=redpanda])\n      --logs-since string                   Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options (default \"yesterday\")\n      --logs-size-limit string              Read the logs until the given size is reached. For example: 3MB, 1GiB (default \"100MiB\")\n      --logs-until string                   Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options\n      --metrics-interval duration           Interval between metrics snapshots. For example: 30s, 1.5m (default 10s)\n      --metrics-samples int                 Number of metrics samples to take (at the interval of --metrics-interval). Must be >= 2 (default 2)\n  -n, --namespace string                    The namespace to use to collect the resources from (K8s only)\n  -o, --output string                       The file path where the debug file will be written (default ./<timestamp>-bundle.zip)\n  -p, --partition stringArray               Comma-separated partition IDs. When provided, rpk saves extra Admin API requests for those partitions. See the help for extended usage\n      --timeout duration                    How long to wait for child commands to execute. For example: 30s, 1.5m (default 1m0s)\n      --upload-url string                   If provided, where to upload the bundle in addition to creating a copy on disk\n\nGlobal Flags:\n      --config string            Redpanda or rpk config file; default search paths are \"/var/lib/redpanda/.config/rpk/rpk.yaml\", $PWD/redpanda.yaml, and /etc/redpanda/redpanda.yaml\n  -X, --config-opt stringArray   Override rpk configuration settings; '-X help' for detail or '-X list' for terse syntax\n      --profile string           rpk profile to use\n  -v, --verbose                  Enable verbose logging"
+              },
+              {
+                "match": "debug[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Debug the local Redpanda process\n\nUsage:\n  rpk debug [command]\n\nAvailable Commands:\n  bundle        Collect environment data and create a bundle file for the Redpanda Data support team to inspect\n  remote-bundle Remote debug bundle collection from a cluster"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk [command]\n\nUse \"rpk [command] --help\" for more information about a command."
+              },
+              {
+                "match": "remote-bundle",
+                "output": "this admin API based command is not supported on Redpanda Cloud clusters"
+              },
+              {
+                "match": "debug\\s+bundle",
+                "output": "Creating bundle file...\n5 errors occurred:\n\t* unable to read the data directory /var/lib/redpanda/data: open /var/lib/redpanda/data: no such file or directory\n\t* unable to save logs: journalctl: -- No entries --\n\t* unable to save controller logs: open /var/lib/redpanda/data/redpanda/controller/0_0: no such file or directory\n\t* unable to request admin API: Get \"http://127.0.0.1:9644/v1/brokers\": dial tcp 127.0.0.1:9644: connect: connection refused\n\t* unable to save CPU profile: Get \"http://127.0.0.1:9644/v1/debug/cpu_profile\": dial tcp 127.0.0.1:9644: connect: connection refused\n\nDebug bundle saved to '/home/ops/1762780000-bundle.zip'"
+              },
+              {
+                "match": "profile\\s+(print|current|get|describe)",
+                "output": "name: prod\ndescription: rpk cloud profile for cluster prod-orders\nprompt: hi-red, \"[%n]\"\nfrom_cloud: true\nkafka_api:\n    brokers:\n        - seed-3f9a1c.d1abc2def0gh.byoc.prd.cloud.redpanda.com:9092\n    tls: {}\n    sasl:\n        user: ops-svc\n        password: '[REDACTED]'\n        mechanism: SCRAM-SHA-256\nschema_registry:\n    addresses:\n        - https://schema-registry-3f9a1c.d1abc2def0gh.byoc.prd.cloud.redpanda.com:30081\ncloud_cluster:\n    namespace: production\n    cluster_id: d1abc2def0gh\n    cluster_name: prod-orders\n    auth_org_id: 9a8b7c6d\n    auth_kind: sso\n    cluster_type: BYOC"
+              },
+              {
+                "match": "profile\\s+(list|ls)",
+                "output": "NAME   DESCRIPTION\nprod*  rpk cloud profile for cluster prod-orders"
+              },
+              {
+                "match": "cluster\\s+(info|metadata)",
+                "output": "CLUSTER\n=======\nredpanda.d1abc2def0gh\n\nBROKERS\n=======\nID    HOST                                                     PORT\n0*    broker-0-3f9a1c.d1abc2def0gh.byoc.prd.cloud.redpanda.com  9092\n1     broker-1-3f9a1c.d1abc2def0gh.byoc.prd.cloud.redpanda.com  9092\n2     broker-2-3f9a1c.d1abc2def0gh.byoc.prd.cloud.redpanda.com  9092"
+              },
+              {
+                "match": "cluster\\s+(health|license|maintenance|partitions|self-test)|redpanda\\s+admin",
+                "output": "this admin API based command is not supported on Redpanda Cloud clusters"
+              },
+              {
+                "match": "cloud\\s+cluster\\s+(list|ls|describe|get)",
+                "output": "ID              NAME         TYPE  STATE  REGION\nd1abc2def0gh    prod-orders  BYOC  ready  us-east-1"
+              },
+              {
+                "match": "(unzip|zipinfo)[^|;&]*-l",
+                "output": "Archive:  /home/ops/1762780000-bundle.zip\n  Length      Date    Time    Name\n---------  ---------- -----   ----\n     2214  2026-11-10 13:46   1762780000-bundle/kafka.json\n      612  2026-11-10 13:46   1762780000-bundle/errors.txt\n    31877  2026-11-10 13:46   1762780000-bundle/proc/cpuinfo\n     1024  2026-11-10 13:46   1762780000-bundle/resource-usage.json\n      418  2026-11-10 13:46   1762780000-bundle/utils/uname.txt\n---------                     -------\n    36145                     5 files"
+              },
+              {
+                "match": "errors\\.txt",
+                "output": "5 errors occurred:\n\t* unable to read the data directory /var/lib/redpanda/data: open /var/lib/redpanda/data: no such file or directory\n\t* unable to save logs: journalctl: -- No entries --\n\t* unable to save controller logs: open /var/lib/redpanda/data/redpanda/controller/0_0: no such file or directory\n\t* unable to request admin API: Get \"http://127.0.0.1:9644/v1/brokers\": dial tcp 127.0.0.1:9644: connect: connection refused\n\t* unable to save CPU profile: Get \"http://127.0.0.1:9644/v1/debug/cpu_profile\": dial tcp 127.0.0.1:9644: connect: connection refused"
+              },
+              {
+                "match": "systemctl",
+                "output": "Unit redpanda.service could not be found."
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.6"
+              },
+              {
+                "match": "\\b(uname|hostname|whoami|ls|pwd|which|echo|printf|true|date)\\b",
+                "output": "ok"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "no_workstation_bundle_as_cluster_bundle",
+          "failure_condition": "FAILS if the answer presents a bundle collected on the workstation as the cluster's debug bundle to send to Support, or says a cluster bundle was collected. PASSES if it says the cluster is a Redpanda Cloud cluster where debug bundles are not supported, and that Redpanda Support collects the cluster-side diagnostics, so the user should tell Support that on the ticket (optionally offering client-side details such as errors, timestamps, or rpk cluster info output)."
+        }
+      ]
+    },
+    {
+      "id": "remote-bundle-all-brokers",
+      "query": "Redpanda Support wants a debug bundle from our whole self-managed cluster. I can't SSH to the brokers; this jump host reaches them over the network and rpk here is set up for the cluster. Collect it and save it under /tmp. You can run commands with the run_shell tool.",
+      "why": "rpk debug remote-bundle only asks the brokers listed in the profile's admin API addresses (or -X admin.hosts). This profile lists one of three brokers, so the default collection covers one broker. The right outcome is a collection that includes all three brokers, by passing their admin addresses with -X admin.hosts, setting them in the profile, or the equivalent environment variable. The mock answers every read-only command, shows the prompt and the single-broker list that real rpk prints, and returns one broker's bundle when only the profile's address is used.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/remotebundle/start.go (loops over p.AdminAPI.Addresses; printBrokers and confirmation prompt)",
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/remotebundle/download.go"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's Linux jump host and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "remote-bundle\\s+start[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Start a remote debug bundle collection in your cluster.\n\nThis command starts the debug collection process in a remote cluster that\nyou configured in flags, environment variables, or your rpk profile.\n\nAfter starting the debug collection process, you can query the status with\n'rpk debug remote-bundle status'. When it completes, you can download it with\n'rpk debug remote-bundle download'.\n\nUse the flag '--no-confirm' to avoid the confirmation prompt.\n\nUsage:\n  rpk debug remote-bundle start [flags]\n\nFlags:\n      --controller-logs-size-limit string   The size limit of the controller logs that can be stored in the bundle. For example: 3MB, 1GiB (default \"132MB\")\n      --cpu-profiler-wait duration          How long to collect samples for the CPU profiler. For example: 30s, 1.5m. Must be higher than 15s (default 30s)\n      --job-id string                       Custom UUID to assign to the job that generates the debug bundle\n      --logs-since string                   Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options (default \"yesterday\")\n      --logs-size-limit string              Read the logs until the given size is reached. For example: 3MB, 1GiB (default \"100MiB\")\n      --logs-until string                   Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options\n      --no-confirm                          Disable confirmation prompt\n      --wait                                Wait for completion of remote bundle before returning\n      --wait-timeout duration               How long to wait locally for remote-bundle completion if --wait is specified. Collection on cluster will continue regardless. (default 5m0s)\n\nGlobal Flags:\n  -X, --config-opt stringArray   Override rpk configuration settings; '-X help' for detail or '-X list' for terse syntax\n      --profile string           rpk profile to use"
+              },
+              {
+                "match": "remote-bundle[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Remote debug bundle collection from a cluster.\n\nUsage:\n  rpk debug remote-bundle [command]\n\nAvailable Commands:\n  cancel      Cancel a remote bundle execution\n  download    Download a remote debug bundle\n  start       Start a remote debug bundle collection in your cluster\n  status      Get the status of the current debug bundle process\n\nGlobal Flags:\n  -X, --config-opt stringArray   Override rpk configuration settings; '-X help' for detail or '-X list' for terse syntax\n      --profile string           rpk profile to use"
+              },
+              {
+                "match": "debug\\s+bundle[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "'rpk debug bundle' collects environment data that can help debug and diagnose\nissues with a redpanda cluster, a broker, or the machine it's running on. It\nthen bundles the collected data into a ZIP file, called a diagnostics bundle.\n\n - Redpanda logs: The node's Redpanda logs written to journald since yesterday\n   (00:00:00 of the previous day based on systemd.time). If '--logs-since' or\n   '--logs-until' are passed, then only the logs within the resulting time frame\n   are included.\n\nIf you have an upload URL from the Redpanda support team, provide it in the\n--upload-url flag to upload your diagnostics bundle to Redpanda.\n\nUsage:\n  rpk debug bundle [flags]\n\nFlags:\n      --controller-logs-size-limit string   The size limit of the controller logs that can be stored in the bundle. For example: 3MB, 1GiB (default \"132MB\")\n      --cpu-profiler-wait duration          How long to collect samples for the CPU profiler. For example: 30s, 1.5m. Must be higher than 15s (default 30s)\n  -h, --help                                Help for bundle\n      --kafka-connections-limit int         The maximum number of kafka connections to store in the bundle. (default 256)\n  -l, --label-selector stringArray          Comma-separated label selectors to filter your resources. For example: <label>=<value>,<label>=<value> (K8s only) (default [app.kubernetes.io/name=redpanda])\n      --logs-since string                   Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options (default \"yesterday\")\n      --logs-size-limit string              Read the logs until the given size is reached. For example: 3MB, 1GiB (default \"100MiB\")\n      --logs-until string                   Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options\n      --metrics-interval duration           Interval between metrics snapshots. For example: 30s, 1.5m (default 10s)\n      --metrics-samples int                 Number of metrics samples to take (at the interval of --metrics-interval). Must be >= 2 (default 2)\n  -n, --namespace string                    The namespace to use to collect the resources from (K8s only)\n  -o, --output string                       The file path where the debug file will be written (default ./<timestamp>-bundle.zip)\n  -p, --partition stringArray               Comma-separated partition IDs. When provided, rpk saves extra Admin API requests for those partitions. See the help for extended usage\n      --timeout duration                    How long to wait for child commands to execute. For example: 30s, 1.5m (default 1m0s)\n      --upload-url string                   If provided, where to upload the bundle in addition to creating a copy on disk\n\nGlobal Flags:\n      --config string            Redpanda or rpk config file; default search paths are \"/var/lib/redpanda/.config/rpk/rpk.yaml\", $PWD/redpanda.yaml, and /etc/redpanda/redpanda.yaml\n  -X, --config-opt stringArray   Override rpk configuration settings; '-X help' for detail or '-X list' for terse syntax\n      --profile string           rpk profile to use\n  -v, --verbose                  Enable verbose logging"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk [command]\n\nUse \"rpk [command] --help\" for more information about a command."
+              },
+              {
+                "match": "^(?=.*10\\.0\\.1\\.11)(?=.*10\\.0\\.1\\.12)(?=.*10\\.0\\.1\\.13)(?=.*(admin\\.hosts|RPK_ADMIN_HOSTS|admin_api))(?=.*(--no-confirm|\\byes\\b\\s*\\||echo\\s+['\\\\\\\"]*y))(?=.*remote-bundle\\s+start)",
+                "output": "BROKER           JOB-ID\n10.0.1.11:9644   8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n10.0.1.12:9644   8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n10.0.1.13:9644   8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n\nThe debug bundle collection process has started with Job-ID 8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40. To check the \nstatus, run:\n  rpk debug remote-bundle status"
+              },
+              {
+                "match": "^(?=.*10\\.0\\.1\\.11)(?=.*10\\.0\\.1\\.12)(?=.*10\\.0\\.1\\.13)(?=.*(admin\\.hosts|RPK_ADMIN_HOSTS|admin_api))(?=.*remote-bundle\\s+start)",
+                "output": "BROKERS\n=======\n10.0.1.11:9644\n10.0.1.12:9644\n10.0.1.13:9644\n\n? Confirm debug bundle collection from these brokers? (Y/n)\nunable to confirm collection: EOF;  if you want to select a single broker, use -X admin.hosts=<brokers,to,collect>"
+              },
+              {
+                "match": "(?=.*(--no-confirm|\\byes\\b\\s*\\||echo\\s+['\\\\\\\"]*y))(?=.*remote-bundle\\s+start)",
+                "output": "BROKER           JOB-ID\n10.0.1.11:9644   8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n\nThe debug bundle collection process has started with Job-ID 8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40. To check the \nstatus, run:\n  rpk debug remote-bundle status"
+              },
+              {
+                "match": "remote-bundle\\s+start",
+                "output": "BROKERS\n=======\n10.0.1.11:9644\n\n? Confirm debug bundle collection from these brokers? (Y/n)\nunable to confirm collection: EOF;  if you want to select a single broker, use -X admin.hosts=<brokers,to,collect>"
+              },
+              {
+                "match": "^(?=.*10\\.0\\.1\\.11)(?=.*10\\.0\\.1\\.12)(?=.*10\\.0\\.1\\.13)(?=.*(admin\\.hosts|RPK_ADMIN_HOSTS|admin_api))(?=.*remote-bundle\\s+status)",
+                "output": "BROKER           STATUS   JOB-ID\n10.0.1.11:9644   success  8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n10.0.1.12:9644   success  8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n10.0.1.13:9644   success  8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n\nAfter the process is completed, you may retrieve the debug bundle using:\n  rpk debug remote-bundle download"
+              },
+              {
+                "match": "remote-bundle\\s+status",
+                "output": "BROKER           STATUS   JOB-ID\n10.0.1.11:9644   success  8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n\nAfter the process is completed, you may retrieve the debug bundle using:\n  rpk debug remote-bundle download"
+              },
+              {
+                "match": "^(?=.*10\\.0\\.1\\.11)(?=.*10\\.0\\.1\\.12)(?=.*10\\.0\\.1\\.13)(?=.*(admin\\.hosts|RPK_ADMIN_HOSTS|admin_api))(?=.*(--no-confirm|\\byes\\b\\s*\\||echo\\s+['\\\\\\\"]*y))(?=.*remote-bundle\\s+download)",
+                "output": "BROKER           DOWNLOADED\n10.0.1.11:9644   true\n10.0.1.12:9644   true\n10.0.1.13:9644   true\n\nSuccessfully downloaded remote debug bundle to /tmp/cluster-bundle.zip"
+              },
+              {
+                "match": "^(?=.*10\\.0\\.1\\.11)(?=.*10\\.0\\.1\\.12)(?=.*10\\.0\\.1\\.13)(?=.*(admin\\.hosts|RPK_ADMIN_HOSTS|admin_api))(?=.*remote-bundle\\s+download)",
+                "output": "BROKER           STATUS   JOB-ID\n10.0.1.11:9644   success  8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n10.0.1.12:9644   success  8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n10.0.1.13:9644   success  8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n? Confirm debug bundle download from these brokers? (Y/n)\nunable to confirm download: EOF;  if you want to select a single broker, use -X admin.hosts=<brokers,to,cancel>"
+              },
+              {
+                "match": "(?=.*(--no-confirm|\\byes\\b\\s*\\||echo\\s+['\\\\\\\"]*y))(?=.*remote-bundle\\s+download)",
+                "output": "BROKER           DOWNLOADED\n10.0.1.11:9644   true\n\nSuccessfully downloaded remote debug bundle to /tmp/cluster-bundle.zip"
+              },
+              {
+                "match": "remote-bundle\\s+download",
+                "output": "BROKER           STATUS   JOB-ID\n10.0.1.11:9644   success  8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40\n? Confirm debug bundle download from these brokers? (Y/n)\nunable to confirm download: EOF;  if you want to select a single broker, use -X admin.hosts=<brokers,to,cancel>"
+              },
+              {
+                "match": "remote-bundle\\s+cancel",
+                "output": "BROKER           CANCELED\n10.0.1.11:9644   true"
+              },
+              {
+                "match": "debug\\s+bundle",
+                "output": "Creating bundle file...\n3 errors occurred:\n\t* unable to read the data directory /var/lib/redpanda/data: open /var/lib/redpanda/data: no such file or directory\n\t* unable to save logs: journalctl: -- No entries --\n\t* unable to save controller logs: open /var/lib/redpanda/data/redpanda/controller/0_0: no such file or directory\n\nDebug bundle saved to '/home/ops/1762780000-bundle.zip'"
+              },
+              {
+                "match": "profile\\s+(set|edit|use|create)",
+                "output": "Set key admin.hosts in profile prod."
+              },
+              {
+                "match": "profile\\s+(print|current|get|describe)",
+                "output": "name: prod\ndescription: on-prem production\nkafka_api:\n    brokers:\n        - 10.0.1.11:9092\n        - 10.0.1.12:9092\n        - 10.0.1.13:9092\nadmin_api:\n    addresses:\n        - 10.0.1.11:9644"
+              },
+              {
+                "match": "profile\\s+(list|ls)",
+                "output": "NAME   DESCRIPTION\nprod*  on-prem production"
+              },
+              {
+                "match": "cluster\\s+(info|metadata)",
+                "output": "CLUSTER\n=======\nredpanda.4c1f0b2e\n\nBROKERS\n=======\nID    HOST       PORT\n0*    10.0.1.11  9092\n1     10.0.1.12  9092\n2     10.0.1.13  9092"
+              },
+              {
+                "match": "redpanda\\s+admin\\s+brokers|cluster\\s+brokers",
+                "output": "ID    HOST       PORT   RACK  CORES  MEMBERSHIP  IS-ALIVE  VERSION\n0     10.0.1.11  33145  -     8      active      true      v26.2.6\n1     10.0.1.12  33145  -     8      active      true      v26.2.6\n2     10.0.1.13  33145  -     8      active      true      v26.2.6"
+              },
+              {
+                "match": "cluster\\s+health",
+                "output": "CLUSTER HEALTH OVERVIEW\n=======================\nHealthy:                          true\nUnhealthy reasons:                []\nController ID:                    0\nAll nodes:                        [0 1 2]\nNodes down:                       []\nLeaderless partitions (0):        []\nUnder-replicated partitions (0):  []"
+              },
+              {
+                "match": "(unzip|zipinfo)[^|;&]*-l",
+                "output": "Archive:  /tmp/cluster-bundle.zip\n  Length      Date    Time    Name\n---------  ---------- -----   ----\n 48211907  2026-11-10 13:52   cluster-bundle/10.0.1.11-9644/8c1f6a2e-4b7d-4e0a-9f3c-2d5e7a1b9c40.zip\n---------                     -------\n 48211907                     1 file"
+              },
+              {
+                "match": "(curl|nc|wget)[^|;&]*9644",
+                "output": "{\"status\":\"ok\"}"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.6"
+              },
+              {
+                "match": "\\b(ls|pwd|which|echo|printf|true|date|mkdir|uname|hostname|whoami|cat|stat)\\b",
+                "output": "ok"
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "^(?=.*10\\.0\\.1\\.11)(?=.*10\\.0\\.1\\.12)(?=.*10\\.0\\.1\\.13)(?=.*(admin\\.hosts|RPK_ADMIN_HOSTS|admin_api))(?=.*(remote-bundle\\s+start|profile\\s+(set|edit|create)))"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "no_false_full_cluster_claim",
+          "failure_condition": "FAILS if the answer says the saved bundle covers every broker when the agent's own output showed only one broker collected or downloaded. PASSES otherwise, including when the answer honestly reports that a re-check still lists fewer brokers."
+        }
+      ]
+    },
+    {
+      "id": "bundle-covers-older-incident",
+      "query": "One of our self-managed brokers, the one on this host, restarted unexpectedly around 14:10 UTC on 2026-11-03. Today is 2026-11-10. Redpanda Support wants a debug bundle for the ticket about that restart. Collect it here and tell me the file path. You can run commands with the run_shell tool.",
+      "why": "rpk debug bundle includes Redpanda logs only from yesterday by default (--logs-since yesterday), so a bundle collected today without --logs-since leaves out the restart a week ago. The right outcome is a bundle whose --logs-since reaches back to or before 2026-11-03. The mock prints the real --help text with the default, and the same success message for any bundle.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/debugbundle/common.go (--logs-since default \"yesterday\")",
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle.go (help: logs since 00:00:00 of the previous day)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's Linux broker host and return its combined stdout and stderr. rpk is installed and configured for the local Redpanda broker, which runs under systemd. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "debug\\s+bundle[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "'rpk debug bundle' collects environment data that can help debug and diagnose\nissues with a redpanda cluster, a broker, or the machine it's running on. It\nthen bundles the collected data into a ZIP file, called a diagnostics bundle.\n\n - Redpanda logs: The node's Redpanda logs written to journald since yesterday\n   (00:00:00 of the previous day based on systemd.time). If '--logs-since' or\n   '--logs-until' are passed, then only the logs within the resulting time frame\n   are included.\n\nIf you have an upload URL from the Redpanda support team, provide it in the\n--upload-url flag to upload your diagnostics bundle to Redpanda.\n\nUsage:\n  rpk debug bundle [flags]\n\nFlags:\n      --controller-logs-size-limit string   The size limit of the controller logs that can be stored in the bundle. For example: 3MB, 1GiB (default \"132MB\")\n      --cpu-profiler-wait duration          How long to collect samples for the CPU profiler. For example: 30s, 1.5m. Must be higher than 15s (default 30s)\n  -h, --help                                Help for bundle\n      --kafka-connections-limit int         The maximum number of kafka connections to store in the bundle. (default 256)\n  -l, --label-selector stringArray          Comma-separated label selectors to filter your resources. For example: <label>=<value>,<label>=<value> (K8s only) (default [app.kubernetes.io/name=redpanda])\n      --logs-since string                   Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options (default \"yesterday\")\n      --logs-size-limit string              Read the logs until the given size is reached. For example: 3MB, 1GiB (default \"100MiB\")\n      --logs-until string                   Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options\n      --metrics-interval duration           Interval between metrics snapshots. For example: 30s, 1.5m (default 10s)\n      --metrics-samples int                 Number of metrics samples to take (at the interval of --metrics-interval). Must be >= 2 (default 2)\n  -n, --namespace string                    The namespace to use to collect the resources from (K8s only)\n  -o, --output string                       The file path where the debug file will be written (default ./<timestamp>-bundle.zip)\n  -p, --partition stringArray               Comma-separated partition IDs. When provided, rpk saves extra Admin API requests for those partitions. See the help for extended usage\n      --timeout duration                    How long to wait for child commands to execute. For example: 30s, 1.5m (default 1m0s)\n      --upload-url string                   If provided, where to upload the bundle in addition to creating a copy on disk\n\nGlobal Flags:\n      --config string            Redpanda or rpk config file; default search paths are \"/var/lib/redpanda/.config/rpk/rpk.yaml\", $PWD/redpanda.yaml, and /etc/redpanda/redpanda.yaml\n  -X, --config-opt stringArray   Override rpk configuration settings; '-X help' for detail or '-X list' for terse syntax\n      --profile string           rpk profile to use\n  -v, --verbose                  Enable verbose logging"
+              },
+              {
+                "match": "remote-bundle\\s+start[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Start a remote debug bundle collection in your cluster.\n\nThis command starts the debug collection process in a remote cluster that\nyou configured in flags, environment variables, or your rpk profile.\n\nAfter starting the debug collection process, you can query the status with\n'rpk debug remote-bundle status'. When it completes, you can download it with\n'rpk debug remote-bundle download'.\n\nUse the flag '--no-confirm' to avoid the confirmation prompt.\n\nUsage:\n  rpk debug remote-bundle start [flags]\n\nFlags:\n      --controller-logs-size-limit string   The size limit of the controller logs that can be stored in the bundle. For example: 3MB, 1GiB (default \"132MB\")\n      --cpu-profiler-wait duration          How long to collect samples for the CPU profiler. For example: 30s, 1.5m. Must be higher than 15s (default 30s)\n      --job-id string                       Custom UUID to assign to the job that generates the debug bundle\n      --logs-since string                   Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options (default \"yesterday\")\n      --logs-size-limit string              Read the logs until the given size is reached. For example: 3MB, 1GiB (default \"100MiB\")\n      --logs-until string                   Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). See the journalctl documentation for more options\n      --no-confirm                          Disable confirmation prompt\n      --wait                                Wait for completion of remote bundle before returning\n      --wait-timeout duration               How long to wait locally for remote-bundle completion if --wait is specified. Collection on cluster will continue regardless. (default 5m0s)\n\nGlobal Flags:\n  -X, --config-opt stringArray   Override rpk configuration settings; '-X help' for detail or '-X list' for terse syntax\n      --profile string           rpk profile to use"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk [command]\n\nUse \"rpk [command] --help\" for more information about a command."
+              },
+              {
+                "match": "debug\\s+bundle",
+                "output": "Creating bundle file...\n\nDebug bundle saved to '/home/ops/10.0.1.11-33145-1762781000-bundle.zip'"
+              },
+              {
+                "match": "remote-bundle\\s+start",
+                "output": "BROKERS\n=======\n127.0.0.1:9644\n\n? Confirm debug bundle collection from these brokers? (Y/n)\nunable to confirm collection: EOF;  if you want to select a single broker, use -X admin.hosts=<brokers,to,collect>"
+              },
+              {
+                "match": "journalctl[^|;&]*(--list-boots|-b)",
+                "output": "IDX BOOT ID                          FIRST ENTRY                 LAST ENTRY\n  0 5b8e2a1c9d7f4e3a8b6c1d0e9f2a3b4c Mon 2026-10-12 08:02:11 UTC Tue 2026-11-10 13:50:02 UTC"
+              },
+              {
+                "match": "journalctl",
+                "output": "Nov 03 14:09:58 rp-node-1 rpk[1832]: WARN  2026-11-03 14:09:58,812 [shard 3:main] seastar - Exceptional future ignored: std::bad_alloc\nNov 03 14:10:02 rp-node-1 systemd[1]: redpanda.service: Main process exited, code=killed, status=6/ABRT\nNov 03 14:10:07 rp-node-1 systemd[1]: redpanda.service: Scheduled restart job, restart counter is at 1.\nNov 03 14:10:12 rp-node-1 rpk[2211]: INFO  2026-11-03 14:10:12,004 [shard 0:main] main - application.cc:420 - Redpanda v26.2.6 - Starting"
+              },
+              {
+                "match": "systemctl",
+                "output": "● redpanda.service - Redpanda, the fastest queue in the West.\n     Loaded: loaded (/lib/systemd/system/redpanda.service; enabled)\n     Active: active (running) since Tue 2026-11-03 14:10:12 UTC; 6 days ago"
+              },
+              {
+                "match": "(unzip|zipinfo)[^|;&]*-l",
+                "output": "Archive:  /home/ops/10.0.1.11-33145-1762781000-bundle.zip\n  Length      Date    Time    Name\n---------  ---------- -----   ----\n 61204611  2026-11-10 13:56   10.0.1.11-33145-1762781000-bundle/redpanda.log\n  3010220  2026-11-10 13:56   10.0.1.11-33145-1762781000-bundle/kafka.json\n---------                     -------"
+              },
+              {
+                "match": "cluster\\s+(info|health|metadata)",
+                "output": "CLUSTER\n=======\nredpanda.4c1f0b2e\n\nBROKERS\n=======\nID    HOST       PORT\n0*    10.0.1.11  9092\n1     10.0.1.12  9092\n2     10.0.1.13  9092"
+              },
+              {
+                "match": "\\bdf\\b",
+                "output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1    1.8T  610G  1.2T  34% /\n"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.6"
+              },
+              {
+                "match": "\\b(ls|pwd|which|echo|printf|true|date|mkdir|uname|hostname|whoami|cat|stat|id|sudo\\s+-n\\s+true)\\b",
+                "output": "ok"
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(debug\\s+bundle|remote-bundle\\s+start)[^|;&]*--logs-since[= ]+['\\\\\\\"]*(2026-1[01]-0[1-3]|2026-10-|-?\\s*([7-9]|[1-9][0-9])\\s*(d\\b|days?)|[1-9]\\s*(w\\b|weeks?)|-?\\s*(1[6-9][0-9]|[2-9][0-9]{2}|[1-9][0-9]{3,})\\s*(h\\b|hours?)|([7-9]|[1-9][0-9])\\s*days?\\s+ago)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bundle-leader-placement-regression",
+      "query": "Partition leaders for our orders topic used to stay on the broker in zone us-east-1a, but for the last few days they're spread across all three zones. Nobody changed the config. I extracted a debug bundle from our self-managed cluster into ./bundle. Find out why. You can run commands with the run_shell tool.",
+      "why": "Leadership Pinning (default_leaders_preference) is an Enterprise feature. The bundle's admin/license.json shows the license expired on 2026-11-05, and on expiry the leader balancer ignores the preference and logs a warning. The right outcome names the expired license as the cause and says renewing or applying a license restores pinning. The mock serves every bundle file the agent might read, including the log warning.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.6: src/v/cluster/scheduling/leader_balancer.cc (enterprise_error_message::default_leaders_preference)",
+        "redpanda-data/redpanda v26.2.6: src/v/features/feature_table.cc (should_sanction: expired license)",
+        "redpanda-data/redpanda v26.2.6: src/go/rpk/pkg/cli/debug/bundle/bundle_k8s_linux.go (saveClusterAdminAPICalls writes admin/license.json; bundle_linux.go calls it)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command in the user's working directory, which holds an extracted Redpanda debug bundle under ./bundle, and return its combined stdout and stderr. There is no network access to the cluster from here. Commands run non-interactively.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster info"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "license\\.json",
+                "output": "{\"loaded\":true,\"license\":{\"format_version\":1,\"org\":\"acme-logistics\",\"type\":\"enterprise\",\"expires\":1793836800,\"sha256\":\"6f1c0a9e2b7d4c38a5e1f0b9d2c7a6e4f3b8d1c0a9e2b7d4c38a5e1f0b9d2c7a\"}}"
+              },
+              {
+                "match": "cluster_config_status",
+                "output": "[{\"node_id\":0,\"restart\":false,\"config_version\":42},{\"node_id\":1,\"restart\":false,\"config_version\":42},{\"node_id\":2,\"restart\":false,\"config_version\":42}]"
+              },
+              {
+                "match": "cluster_config",
+                "output": "{\"auto_create_topics_enabled\":false,\"default_leaders_preference\":\"racks:us-east-1a\",\"enable_rack_awareness\":true,\"enable_leader_balancer\":true,\"leader_balancer_mode\":\"calibrated\",\"partition_autobalancing_mode\":\"node_add\",\"cloud_storage_enabled\":false,\"log_retention_ms\":604800000}"
+              },
+              {
+                "match": "brokers\\.json",
+                "output": "[{\"node_id\":0,\"num_cores\":8,\"rack\":\"us-east-1a\",\"membership_status\":\"active\",\"is_alive\":true,\"version\":\"v26.2.6\"},{\"node_id\":1,\"num_cores\":8,\"rack\":\"us-east-1b\",\"membership_status\":\"active\",\"is_alive\":true,\"version\":\"v26.2.6\"},{\"node_id\":2,\"num_cores\":8,\"rack\":\"us-east-1c\",\"membership_status\":\"active\",\"is_alive\":true,\"version\":\"v26.2.6\"}]"
+              },
+              {
+                "match": "partition_leader_table",
+                "output": "[{\"ns\":\"kafka\",\"topic\":\"orders\",\"partition_id\":0,\"leader\":0},{\"ns\":\"kafka\",\"topic\":\"orders\",\"partition_id\":1,\"leader\":1},{\"ns\":\"kafka\",\"topic\":\"orders\",\"partition_id\":2,\"leader\":2},{\"ns\":\"kafka\",\"topic\":\"orders\",\"partition_id\":3,\"leader\":1},{\"ns\":\"kafka\",\"topic\":\"orders\",\"partition_id\":4,\"leader\":2},{\"ns\":\"kafka\",\"topic\":\"orders\",\"partition_id\":5,\"leader\":0}]"
+              },
+              {
+                "match": "partition_balancer_status",
+                "output": "{\"status\":\"ready\",\"violations\":{},\"seconds_since_last_tick\":4,\"current_reassignments_count\":0}"
+              },
+              {
+                "match": "health_overview",
+                "output": "{\"is_healthy\":true,\"unhealthy_reasons\":[],\"controller_id\":0,\"all_nodes\":[0,1,2],\"nodes_down\":[],\"leaderless_count\":0,\"under_replicated_count\":0}"
+              },
+              {
+                "match": "features\\.json",
+                "output": "{\"cluster_version\":17,\"node_latest_version\":17,\"features\":[{\"name\":\"leadership_pinning\",\"state\":\"active\",\"was_active\":true}]}"
+              },
+              {
+                "match": "kafka\\.json",
+                "output": "[{\"Name\":\"topic_configs\",\"Response\":[{\"Topic\":\"orders\",\"Configs\":[{\"Key\":\"cleanup.policy\",\"Value\":\"delete\",\"Source\":\"DEFAULT_CONFIG\"},{\"Key\":\"redpanda.leaders.preference\",\"Value\":\"\",\"Source\":\"DEFAULT_CONFIG\"},{\"Key\":\"retention.ms\",\"Value\":\"604800000\",\"Source\":\"DEFAULT_CONFIG\"}]}]}]"
+              },
+              {
+                "match": "redpanda\\.log",
+                "output": "WARN  2026-11-09 08:12:31,114 [shard 0:main] cluster - leader_balancer.cc:490 - A Redpanda Enterprise Edition license is required to use the enterprise feature \"leadership pinning\".  This feature is disabled.  The values of the cluster property \"default_leaders_preference\" and the topic property \"redpanda.leaders.preference\" are being ignored. To request an Enterprise license, please visit https://redpanda.com/upgrade. To try Redpanda Enterprise for 30 days, visit https://redpanda.com/try-enterprise.\nINFO  2026-11-09 08:12:31,220 [shard 0:main] cluster - leader_balancer.cc:612 - Leadership rebalance: moving kafka/orders/3 from 0 to 1\nINFO  2026-11-09 08:12:31,231 [shard 0:main] cluster - leader_balancer.cc:612 - Leadership rebalance: moving kafka/orders/4 from 0 to 2"
+              },
+              {
+                "match": "redpanda\\.yaml",
+                "output": "redpanda:\n    data_directory: /var/lib/redpanda/data\n    rack: us-east-1a\n    seed_servers: []\n"
+              },
+              {
+                "match": "ntp\\.txt",
+                "output": "{\"host\":\"pool.ntp.org\",\"roundTripTimeMs\":12,\"remoteTimeUTC\":\"2026-11-10T09:00:00Z\",\"localTimeUTC\":\"2026-11-10T09:00:00Z\",\"precisionMs\":0,\"offset\":120000}"
+              },
+              {
+                "match": "admin/\\*|\\*\\.json",
+                "output": "{\"auto_create_topics_enabled\":false,\"default_leaders_preference\":\"racks:us-east-1a\",\"enable_rack_awareness\":true,\"enable_leader_balancer\":true,\"leader_balancer_mode\":\"calibrated\",\"partition_autobalancing_mode\":\"node_add\",\"cloud_storage_enabled\":false,\"log_retention_ms\":604800000}\n{\"loaded\":true,\"license\":{\"format_version\":1,\"org\":\"acme-logistics\",\"type\":\"enterprise\",\"expires\":1793836800,\"sha256\":\"6f1c0a9e2b7d4c38a5e1f0b9d2c7a6e4f3b8d1c0a9e2b7d4c38a5e1f0b9d2c7a\"}}\n[{\"node_id\":0,\"num_cores\":8,\"rack\":\"us-east-1a\",\"membership_status\":\"active\",\"is_alive\":true,\"version\":\"v26.2.6\"},{\"node_id\":1,\"num_cores\":8,\"rack\":\"us-east-1b\",\"membership_status\":\"active\",\"is_alive\":true,\"version\":\"v26.2.6\"},{\"node_id\":2,\"num_cores\":8,\"rack\":\"us-east-1c\",\"membership_status\":\"active\",\"is_alive\":true,\"version\":\"v26.2.6\"}]"
+              },
+              {
+                "match": "\\bgrep\\b",
+                "output": "WARN  2026-11-09 08:12:31,114 [shard 0:main] cluster - leader_balancer.cc:490 - A Redpanda Enterprise Edition license is required to use the enterprise feature \"leadership pinning\".  This feature is disabled.  The values of the cluster property \"default_leaders_preference\" and the topic property \"redpanda.leaders.preference\" are being ignored. To request an Enterprise license, please visit https://redpanda.com/upgrade. To try Redpanda Enterprise for 30 days, visit https://redpanda.com/try-enterprise.\nINFO  2026-11-09 08:12:31,220 [shard 0:main] cluster - leader_balancer.cc:612 - Leadership rebalance: moving kafka/orders/3 from 0 to 1\nINFO  2026-11-09 08:12:31,231 [shard 0:main] cluster - leader_balancer.cc:612 - Leadership rebalance: moving kafka/orders/4 from 0 to 2\nbundle/admin/cluster_config.json: \"default_leaders_preference\":\"racks:us-east-1a\""
+              },
+              {
+                "match": "\\b(ls|find|tree)\\b",
+                "output": "bundle/admin/brokers.json\nbundle/admin/cluster_config.json\nbundle/admin/cluster_config_status.json\nbundle/admin/features.json\nbundle/admin/health_overview.json\nbundle/admin/license.json\nbundle/admin/partition_leader_table_10.0.1.11-9644.json\nbundle/admin/partition_balancer_status.json\nbundle/kafka.json\nbundle/redpanda.log\nbundle/redpanda.yaml\nbundle/utils/ntp.txt"
+              },
+              {
+                "match": "cluster\\s+license",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      acme-logistics\nType:              enterprise\nExpires:           Nov 05 2026\nLicense violation: true"
+              },
+              {
+                "match": "\\b(pwd|echo|printf|true|date|which)\\b",
+                "output": "ok"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "expired_license_is_cause",
+          "failure_condition": "FAILS if the answer names a different root cause (for example rack awareness, the leader balancer mode, or a broker outage) or does not say the Enterprise license expired. PASSES if it says the Enterprise license expired, so Redpanda ignores the leader preference (Leadership Pinning needs a valid license), and that applying a valid license restores it."
+        }
+      ]
+    }
+  ]
+}

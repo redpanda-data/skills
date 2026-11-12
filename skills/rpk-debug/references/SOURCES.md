@@ -1,42 +1,95 @@
 # rpk-debug Skill Source Map
 
-Maps each file in `skills/rpk-debug/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" procedure below, backed by a behavioral
+eval case in `evals/suites/rpk-debug.eval.json`, and sends the agent to the docs for
+everything else. This file maps only the claims the skill still makes.
 
-The `rpk debug` command group is Go source in the **public** repo `redpanda-data/redpanda` under `src/go/rpk/pkg/cli/debug/`. The remote (cluster-wide) bundle is orchestrated through the Redpanda **Admin API**, whose server-side handler lives in the same repo under `src/v/redpanda/admin/`. The user-facing reference is in the **private** repo `redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP connector (`search_code`, `get_file_contents`), or `gh api .../contents/<path>` for verification; do not guess. `rpk` is versioned: verify against the **current stable release tag**, not `dev`/`main`.
+The `rpk debug` command group is Go source in the **public** repo `redpanda-data/redpanda`
+under `src/go/rpk/pkg/cli/debug/`. Verify against the current stable release tag (checked at
+`v26.2.6`), not `dev`. Paths below are relative to that repo unless they name another.
 
-## File-to-source table
+## How to work: line, source, eval case
 
-| Skill file | redpanda source paths | docs sources |
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `src/go/rpk/pkg/cli/debug/debug.go` (command group wiring), `debug/info.go` (hidden no-op `info`, `status` alias, backompat), `debug/bundle/` (`bundle.go`, `bundle_all.go`, `bundle_linux.go`, `bundle_k8s_linux.go`), `debug/remotebundle/` (`remote.go`, `start.go`, `status.go`, `download.go`, `cancel.go`), `debug/debugbundle/common.go`; enterprise config keys are broker config in `src/v/config/configuration.cc` (rpk only passes them through) | `modules/reference/pages/rpk/rpk-debug/rpk-debug.adoc`, `rpk-debug-bundle.adoc`, `rpk-debug-remote-bundle.adoc`, `rpk-debug-remote-bundle-{start,status,download,cancel}.adoc`; `modules/troubleshoot/pages/debug-bundle/` (`index.adoc`, `overview.adoc`, `inspect.adoc`, `configure/{index,linux,kubernetes}.adoc`, `generate/{index,linux,kubernetes}.adoc`); `modules/troubleshoot/pages/cluster-diagnostics/` |
-| `references/bundle.md` | `src/go/rpk/pkg/cli/debug/bundle/bundle.go` (flags, output-path logic, `--cpu-profiler-wait`/`--metrics-samples` validation), `bundle_all.go` (Admin API snapshot set + rpadmin client method mapping, `kafka.json`, metrics scrapes), `bundle_linux.go` (Linux/bare-metal collectors: `utils/`, `proc/`, journald `redpanda.log`, controller logs, `data-dir.txt`), `bundle_k8s_linux.go` (Kubernetes detection via `KUBERNETES_SERVICE_HOST`/`_PORT`, `k8s/` manifests, per-pod logs), `bundle_test.go` | `modules/troubleshoot/pages/debug-bundle/generate/{linux,kubernetes}.adoc`, `configure/{linux,kubernetes}.adoc`, `inspect.adoc`; `modules/reference/pages/rpk/rpk-debug/rpk-debug-bundle.adoc` |
-| `references/remotebundle.md` | `src/go/rpk/pkg/cli/debug/remotebundle/` (`remote.go` [group], `start.go` [`CreateDebugBundle`, `--wait`/`--job-id`, credential forwarding], `status.go` [`GetDebugBundleStatus`, `--format`, `job_id` JSON key], `download.go` [`DownloadDebugBundleFile`, ZIP-of-ZIPs layout, addr sanitization], `cancel.go` [`CancelDebugBundleProcess`]), `debug/debugbundle/common.go`; Admin API server side: `src/v/redpanda/admin/debug_bundle.cc`, `debug_bundle.h`, `debug.cc` | `modules/reference/pages/rpk/rpk-debug/rpk-debug-remote-bundle*.adoc`; `modules/troubleshoot/pages/debug-bundle/generate/index.adoc` |
-| `references/enterprise-triage.md` | Bundle capture points in `src/go/rpk/pkg/cli/debug/bundle/bundle_all.go` (`admin/cluster_config.json`, `admin/license.json`, `admin/features.json`, `kafka.json`, per-node `admin/node_config_<addr>.json`, `partitions/cloud_*`); enterprise keys/topic properties defined in `src/v/config/configuration.cc` (rpk passes them through). Live triage commands: `src/go/rpk/pkg/cli/cluster/license/`, `src/go/rpk/pkg/cli/shadow/`, `src/go/rpk/pkg/cli/security/role/` + `security/acl/` | `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc`, `object-storage-properties.adoc` (citation of record for keys/defaults/accepted values); `modules/troubleshoot/pages/debug-bundle/inspect.adoc` |
+| `rpk debug remote-bundle` asks only the brokers in the profile's Admin API addresses (or `-X admin.hosts`); compare with `rpk cluster info` before `start`, and pass every broker's Admin API address on `start`, `status`, and `download` | `src/go/rpk/pkg/cli/debug/remotebundle/start.go` (loops over `p.AdminAPI.Addresses`), `status.go` and `download.go` (same address list) | `remote-bundle-all-brokers` (rerun 2026-11-10, archive run `2026-11-10T20-41-56Z`: baseline 1/3, thin skill 3/3, installed 3/3) |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-- `rpk debug bundle --help` / `rpk debug remote-bundle <sub> --help` — the live flag set and defaults; verify against the current tag rather than trusting a static table.
-- **Exact bundle file manifest** — the set of files/`admin/*.json` snapshots collected varies by version, environment (Linux vs Kubernetes), whether `--partition` was passed, and which Admin API endpoints succeed at collection time. `errors.txt` records per-step failures. Treat the manifest in `bundle.md` as representative, not exhaustive.
-- `rpk debug remote-bundle status` values (`running`/`success`/`error`) and output columns — runtime state from the Admin API.
-- Live-only enterprise triage: `rpk cluster license info`, `rpk shadow status`/`describe`/`list`, `rpk security role`/`acl list` — live cluster state.
-- `--upload-url` presigned S3 URLs — provided by Redpanda Support at runtime.
+| Claim | Source | Eval case |
+|---|---|---|
+| `rpk debug` works only on self-managed clusters; Redpanda Cloud has no broker host for `bundle`, `remote-bundle` needs the Admin API, and Support collects Cloud cluster diagnostics | `src/go/rpk/pkg/config/config.go` (`CheckExitCloudAdmin`), called from every `remotebundle/*.go` command; private `cloud-docs` `modules/get-started/pages/cloud-overview.adoc` (unsupported list: debug bundles, Admin API, `rpk debug`), published at https://docs.redpanda.com/cloud-data-platform/get-started/cloud-overview/ | `dedicated-cluster-debug-bundle`, `cloud-cluster-bundle-request` |
+| `get_rpk_command` looks up one `rpk debug` subcommand; `get_config_property` looks up a feature's config property | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 
-## TODO / re-verify
+## Docs gaps (not skill claims; do not re-verify here)
 
-- **Drift audit 2026-11-01:** the `--partition` example in `bundle.md` used `_redpanda-internal` as a namespace. Redpanda has three namespaces — `kafka`, `kafka_internal` and `redpanda` (`src/v/model/namespace.h`, tag v26.2.2) — and the controller partition is `redpanda/controller/0`. The flag parses `{namespace}/{topic}/[partitions...]` with `kafka` as the default namespace (`src/go/rpk/pkg/out/in.go`).
+Found by the 2026-11-10 eval run (skill arm passes, docs arm fails, or no arm passes). Gaps on
+an rpk reference page are fixed in rpk's help text at source, not in the docs.
 
-- **Per-flag defaults** (`--logs-since=yesterday`, `--logs-size-limit=100MiB`, `--controller-logs-size-limit=132MB`, `--cpu-profiler-wait=30s`, `--metrics-samples=2`, `--metrics-interval=10s`, `--kafka-connections-limit=256`, `--wait-timeout=5m`) not each line-verified against flag registrations in `bundle/bundle.go` and `remotebundle/start.go` — re-check. Also re-confirm local `bundle` validates `--cpu-profiler-wait>=15s`/`--metrics-samples>=2` while `remote-bundle` passes them through.
-- **rpadmin client method → file mapping** (e.g., `cl.Brokers`→`admin/brokers.json`, `cl.GetLicenseInfo`→`admin/license.json`, per-node `cl.RawNodeConfig`→`admin/node_config_<addr>.json`) not each line-verified against `bundle_all.go`.
-- **Admin API endpoint names** (`CreateDebugBundle`, `GetDebugBundleStatus`, `DownloadDebugBundleFile`, `CancelDebugBundleProcess`) — verify against `src/v/redpanda/admin/debug_bundle.cc`/`.h` and the Go rpadmin client wrapper (`src/go/rpk/pkg/adminapi/`).
-- **Enterprise config keys / topic-property values** (all of `enterprise-triage.md`) are broker config, not rpk. The docs property partials are the citation of record. `fips_mode` is set via the local `redpanda.yaml`; the `rpk node config set` spelling was corrected to `rpk redpanda config set` on 2026-07-07 (rpk has no `node` group).
+- **Cloud support for debug bundles (docs).** The self-managed debug bundle guides
+  (https://docs.redpanda.com/streaming/current/troubleshoot/debug-bundle/) and the rpk debug
+  reference don't say that Redpanda Cloud clusters don't support debug bundles. The Cloud
+  overview lists it, but the docs arm didn't find it (`dedicated-cluster-debug-bundle`, docs
+  0/3). Source: `src/go/rpk/pkg/config/config.go` (`CheckExitCloudAdmin`).
+- **remote-bundle scope (docs).** "Generate a Debug Bundle with `rpk` in Linux" says
+  `rpk debug remote-bundle` collects "from all brokers in your cluster". It collects only from
+  the Admin API addresses in the profile or `-X admin.hosts`. Source: `remotebundle/start.go`.
+- **Output path fallback (help text).** Without `--output`, `rpk debug bundle` writes to the
+  user's home directory when the current directory isn't writable; with `--output` set to an
+  unwritable directory it fails. The `--output` help says only the default path, and the
+  `rpk debug bundle` page has no other mention (`bundle-output-unwritable-dir`, docs 0/3).
+  The docs override for this command does not hide it. Source:
+  `src/go/rpk/pkg/cli/debug/bundle/bundle_linux.go` (`determineFilepath`).
+- **Controller log slicing (help text).** When the controller log is over
+  `--controller-logs-size-limit`, rpk keeps segments from the start and the end, about half the
+  limit each, and drops the middle. The flag help says only "the size limit"
+  (`controller-logs-over-limit`, docs 0/3). Not hidden by an override. Source:
+  `bundle/bundle_linux.go` (`saveControllerLogDir`, `sliceControllerDir`).
+- **Kubernetes namespace fallback (help text).** Without `--namespace`, rpk uses `$NAMESPACE`,
+  then the pod's service account namespace file, then `redpanda`. The `--namespace` help says
+  only "(K8s only)"; no arm answered (`k8s-namespace-resolution`, 0/3 in every arm). Not
+  hidden by an override. Source: `bundle/bundle_k8s_linux.go` (`resolveNamespace`).
+- **remote-bundle download layout (help text).** The download is one ZIP that holds one ZIP per
+  broker, at `<root>/<broker address>/<job ID>.zip`. The download help and page don't say so
+  (`remote-bundle-download-layout`, docs 0/3, baseline 2/3). Source: `remotebundle/download.go`.
+- **`--partition` help example (help text).** The `rpk debug bundle` long help spells the flag
+  `--partitions` and uses a `_redpanda-internal` namespace that does not exist; Redpanda's
+  namespaces are `kafka`, `kafka_internal`, and `redpanda`, and the controller partition is
+  `redpanda/controller/0`. The docs override for `rpk debug bundle` fixes the flag name to
+  `--partition` but keeps the `_redpanda-internal` example. Sources: `bundle/bundle.go` (`bundleHelpText`), `src/go/rpk/pkg/out/in.go`
+  (`ParsePartitionString`), `src/v/model/namespace.h`.
 
-## Redpanda Cloud applicability sources
+## Lines removed for lack of a failing baseline
 
-The "Scope: Self-Managed Deployments Only" section in `SKILL.md` and the Cloud callouts in `references/bundle.md` / `references/remotebundle.md` derive from the **private** repo `redpanda-data/cloud-docs` (read via the Redpanda-Github-Read connector; do not clone):
+Checked on 2026-11-10 with 3 runs per arm, and rerun the same day (archive run `2026-11-10T20-41-56Z`).
 
-- `modules/get-started/pages/cloud-overview.adoc`, "Redpanda Cloud vs Self-Managed feature compatibility": lists the Admin API, Redpanda debug bundles, `rpk debug`, `rpk cluster health`, `rpk cluster license`, `rpk cluster maintenance`, `rpk cluster partitions`, and `rpk cluster self-test` as unsupported in Redpanda Cloud.
-- Supported client-side surface cited as the fallback: cloud-docs `modules/reference/pages/rpk/` documents `rpk-cluster` (info, logdirs-describe, quotas, txn, connections, config, storage), `rpk-group`, `rpk-registry`, `rpk-security`, `rpk-topic`, and `rpk-transform`; it has **no** `rpk-debug` pages.
+- "Don't collect a bundle for a Redpanda Cloud cluster; send the user to Support" as a "How to
+  work" line: its behavioral case `cloud-cluster-bundle-request` passed 3/3 in the baseline
+  (rerun: baseline 2/3, skill 3/3, installed 3/3; the baseline miss hedged between deployment
+  types), because `remote-bundle` prints that Admin API commands aren't supported on Cloud. The scope
+  stays as a one-paragraph claim (see "Other claims"), backed by the fact case
+  `dedicated-cluster-debug-bundle` (baseline 0/3, docs 0/3, thin skill 3/3, installed 3/3).
+- "Set `--logs-since` to cover the incident, since the default is yesterday": its case
+  `bundle-covers-older-incident` passed 3/3 in the baseline (rerun: baseline 3/3, skill 3/3,
+  installed 3/3, after the case was fixed to accept hour-based `--logs-since` values).
+- "When triaging an Enterprise feature from a bundle, check `admin/license.json` first": its
+  case `bundle-leader-placement-regression` passed 3/3 in the baseline (rerun: baseline 3/3,
+  skill 3/3, installed 3/3).
+- The full flag tables, the bundle file manifest, the remote-bundle lifecycle, and the
+  per-feature Enterprise key reference (former `references/bundle.md`, `remotebundle.md`, and
+  `enterprise-triage.md`) are facts and belong in the docs.
 
-## Usage
+## Corrections after the eval run
 
-For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. Verify against the current stable release tag of `redpanda-data/redpanda`, and re-confirm exact command paths / flag names / defaults / config keys before writing any new fact.
+Found by a premise audit on 2026-11-10, before the rerun.
+
+- Case `bundle-covers-older-incident` graded only day, week, and date values of `--logs-since`
+  as reaching the incident. It now also accepts hour values of a week or more (for example
+  `-200h`), which journalctl takes.
+- Case `bundle-leader-placement-regression` cited `bundle_linux.go` for `admin/license.json`.
+  The request is in `bundle/bundle_k8s_linux.go` (`saveClusterAdminAPICalls`), which
+  `bundle_linux.go` calls.
+- The `--partition` docs gap said the docs override copies the help example. The override fixes
+  the flag name but keeps the `_redpanda-internal` namespace.
+- The download layout gap now says the download is one ZIP that holds one ZIP per broker.
