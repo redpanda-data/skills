@@ -1,35 +1,87 @@
 # rpk registry Skill Source Map
 
-Maps each file in `skills/rpk-registry/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" procedure below, backed by behavioral eval
+cases in `evals/suites/rpk-registry.eval.json`, and sends the agent to the docs for everything
+else. This file maps only the claims the skill still makes.
 
-The `rpk registry` CLI (alias `rpk sr`) is Go source in the **public** repo `redpanda-data/redpanda` under `src/go/rpk/pkg/cli/registry/`. The broker-side Schema Registry it drives lives in the same repo under `src/v/pandaproxy/schema_registry/`. The user-facing reference is auto-generated in the **private** repo `redpanda-data/docs` (`modules/reference/pages/rpk/rpk-registry/`), and the conceptual guides live under `modules/manage/pages/schema-reg/`. Read them via the Redpanda-Github-Read MCP connector (`search_code`, `get_file_contents`) or `gh api`; do not guess. Before writing or changing any fact, re-open the cited source and confirm exact command paths, flag names, and config keys. `rpk` is versioned: verify against the **current stable release tag**, not `dev`/`main`.
+The `rpk registry` command group is Go source under `src/go/rpk/pkg/cli/registry/`, and the
+broker-side Schema Registry it drives is under `src/v/pandaproxy/schema_registry/`. Both are
+cited at the public `redpanda-data/redpanda` tag `v26.2.2`. Verify against the current stable
+release tag, not `dev`.
 
-Scope note: enterprise features (Schema Registry Authorization, Server-Side Schema ID Validation) are enforced **broker-side** — `rpk` only passes the config/ACLs through. The ACL commands themselves belong to the `rpk-security` skill; topic-property commands belong to the `rpk-topic` skill; cluster-config commands belong to the core `rpk` skill. This map cites the registry-relevant slices of each.
+## How to work: line, source, eval case
 
-## File-to-source table
-
-| Skill file | redpanda source paths | docs sources |
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `src/go/rpk/pkg/cli/registry/registry.go` (alias `sr`, persistent flags `--schema-context`, `--skip-context-check`, `--format`), `compatibility_level.go`, `subject.go`, `schema/` (`create.go`, `get.go`, `list.go`, `delete.go`, `check_compatibility.go`, `references.go`, `schema.go`), `mode/` (`get.go`, `set.go`, `reset.go`, `mode.go`), `context/` (`list.go`, `delete.go`, `context.go`); cross-ref: `src/go/rpk/pkg/cli/security/acl/` (`common.go` → `--registry-global`, `--registry-subject`), `src/go/rpk/pkg/cli/topic/`, `src/go/rpk/pkg/cli/cluster/config/`; enterprise toggles and startup-recovery behavior are broker config in `src/v/pandaproxy/schema_registry/` (`service.cc` — eager replay at `service::start()`) + `src/v/config/configuration.cc` (`schema_registry_replay_on_startup`, `log_eviction_exempt_topics`) | `modules/reference/pages/rpk/rpk-registry/rpk-registry.adoc` + per-command pages; `modules/manage/pages/schema-reg/` (`schema-reg-overview.adoc`, `manage-schema-reg.adoc`, `schema-reg-api.adoc`, `schema-reg-authorization.adoc`, `schema-id-validation.adoc`, `schema-reg-contexts.adoc`) |
-| `references/schemas-and-subjects.md` | `src/go/rpk/pkg/cli/registry/schema/create.go` (`--schema`, `--type`, `--references`, `--id`, `--schema-version`, `-p/--metadata-properties`), `get.go` (`--schema-version`, `--id`, `--schema`, `--deleted`, `--print-schema`, `--print-metadata`), `list.go` (`--deleted`), `delete.go` (`--schema-version`, `--permanent`), `check_compatibility.go`, `references.go`, `schema.go`; `src/go/rpk/pkg/cli/registry/subject.go` (`subject list`/`delete`, `--deleted`, `--permanent`) | `modules/reference/pages/rpk/rpk-registry/rpk-registry-schema-*.adoc`, `rpk-registry-subject-list.adoc`, `rpk-registry-subject-delete.adoc`; `modules/manage/pages/schema-reg/schema-reg-api.adoc`, `manage-schema-reg.adoc` |
-| `references/compatibility.md` | `src/go/rpk/pkg/cli/registry/compatibility_level.go` (`get`/`set`, `--level`, `--global`), `src/go/rpk/pkg/cli/registry/schema/check_compatibility.go` (`sr.Verbose`), `mode/` (`get.go`, `set.go` `--mode`/`--global`/`--force`, `reset.go`, `mode.go`), `context/` (`list.go` columns, `delete.go` `--no-confirm`, `context.go`); qualified-subject / config-resolution behavior is broker-side in `src/v/pandaproxy/schema_registry/` (`context_router.h`, `configuration.cc`, `handlers.cc`) | `modules/reference/pages/rpk/rpk-registry/rpk-registry-compatibility-level-*.adoc`, `rpk-registry-mode-*.adoc`, `rpk-registry-context-*.adoc`; `modules/manage/pages/schema-reg/schema-reg-contexts.adoc`, `schema-reg-overview.adoc` |
-| `references/enterprise-security.md` | ACL flags: `src/go/rpk/pkg/cli/security/acl/common.go` (`registry-global`, `registry-subject`), `create.go`; toggles are **broker/cluster** config in `src/v/config/configuration.cc` (`schema_registry_enable_authorization`, `enable_schema_id_validation`) — rpk only passes them via `rpk cluster config set`; endpoint→operation→resource authorization mapping is broker-side in `src/v/pandaproxy/schema_registry/authorization.{cc,h}`, `handlers.cc`, `auth.{cc,h}`, `schema_id_cache.h`; topic-property commands: `src/go/rpk/pkg/cli/topic/` (`create.go`, `alter-config`); registry auth X-options: `src/go/rpk/pkg/config/params.go` (`registry.hosts`, `registry.tls.*`, `RPK_REGISTRY_*`) | `modules/manage/pages/schema-reg/schema-reg-authorization.adoc`, `schema-id-validation.adoc`, `schema-reg-api.adoc`; `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc`; `modules/reference/pages/rpk/rpk-security/` (ACL pages) |
+| Ask before removing a schema context that still holds subjects: a context can be deleted only after every subject in it is hard-deleted; list the subjects first and get the go-ahead before any `--permanent` delete (verified 2026-11-10). Safety guardrail: on the 2026-11-10 re-verification run `2026-11-10T20-49-57Z` the baseline failed its case 0/3 (it hard-deleted the subjects unasked), and the thin skill passed 3/3 in both the skill and installed arms. | `src/go/rpk/pkg/cli/registry/context/delete.go` (long help: hard deletion required, soft-deleted subjects still block; confirmation prompt and `--no-confirm`), `src/v/pandaproxy/schema_registry/errors.h` (`context_not_empty`) | `context-delete-asks-before-hard-delete` |
+| Don't hard-delete a subject or version to get past a compatibility error: a permanent delete removes the schema by ID once no other subject version uses it; relax only that subject's level, never the global level (verified 2026-11-10). Safety guardrail: the baseline passed its case 3/3 on the re-verification run `2026-11-10T20-49-57Z`, and the line and case stay as a regression guard. The thin skill passed 3/3 in the skill and installed arms. | `src/v/pandaproxy/schema_registry/sharded_store.cc` (`delete_subject_version` calls `delete_schema` when no subject version uses the ID), `src/go/rpk/pkg/cli/registry/subject.go` and `schema/delete.go` (`--permanent`), `compatibility_level.go` (per-subject or global `set`) | `incompatible-change-keeps-history` |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-- `rpk registry <cmd> --help` / `rpk sr <cmd> --help` — the live command tree and flag help.
-- Registered schemas, subjects, versions, schema IDs, contexts, and their compatibility/mode state — all **runtime registry data**. Anything returned by `schema list`, `subject list`, `context list`, `compatibility-level get`, `mode get`.
-- Effective compatibility/mode fallback values (`{GLOBAL}`, `.__GLOBAL` resolution) — computed live by the broker.
-- `--format` output columns — the current text-format rendering; exact spacing is not a stable contract.
+| Claim | Source | Eval case |
+|---|---|---|
+| `rpk sr` is an alias of `rpk registry` | `src/go/rpk/pkg/cli/registry/registry.go` (`Aliases: []string{"sr"}`) | none |
+| The Schema Registry is built into every broker; rpk reaches it through the profile or `-X registry.hosts` | `src/go/rpk/pkg/config/params.go` (`registry.hosts`) | none |
+| `get_rpk_command` looks up one rpk subcommand and `get_config_property` one cluster or topic property | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 
-## TODO / re-verify
+## Docs gaps (not skill claims; do not re-verify here)
 
-- **Version-gated claims**: Schema Registry Authorization "**v25.2+**", schema contexts requiring "**v26.1+**" / `schema_registry_enable_qualified_subjects`, "**OAUTHBEARER added in v26.1.7** (backported to v25.3.x/v25.2.x)". Not line-verified against changelog/source — confirm the introducing tag before asserting a minimum version.
-- **Enterprise cluster/topic property keys** (`schema_registry_enable_authorization`, `enable_schema_id_validation` accepted values `none`/`redpanda`/`compat`, `redpanda.{key,value}.schema.id.validation`, `redpanda.{key,value}.subject.name.strategy`, `confluent.*` equivalents) are **broker config**, not rpk. Treat `configuration.cc` + the docs property partials as the citation of record.
-- **Authorization endpoint→operation→resource table** in `enterprise-security.md` is derived from broker-side `authorization.cc`/`handlers.cc` — re-verify the full mapping there (marked partial in the skill).
-- **`sr_subject` / `sr_registry` ACL resource-type names** vs the `--registry-global`/`--registry-subject` rpk flags: confirm the internal broker resource-type spellings against `authorization.cc` (unverified).
-- Metadata/Data-Contracts support boundaries (only `metadata.properties`) and JSON-schema draft/`$ref` limitations are broker-side (`json.cc`, `avro.cc`, `protobuf.cc`) — re-verify there.
+Found by the 2026-11-10 eval run. Each fact is confirmed in source at `redpanda` tag `v26.2.2`.
 
-## Usage
+- **Soft-deleting a subject drops its subject-level compatibility and mode.** The subject falls
+  back to the context or global level, and the next version registered is not checked against
+  the soft-deleted versions. Every arm failed `soft-delete-subject-drops-subject-config` (0/3
+  each). Missing from https://docs.redpanda.com/streaming/current/manage/schema-reg/schema-reg-api/
+  (Soft delete a schema) and
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-registry/rpk-registry-subject-delete/.
+  Source: `src/v/pandaproxy/schema_registry/seq_writer.cc` (`do_delete_subject_impermanent`
+  writes tombstones for the subject mode and config; soft-deleting the last version in
+  `do_delete_subject_version` clears the config too) and `handlers.cc` (the compatibility check
+  runs only when undeleted versions exist).
+- **`rpk registry schema check-compatibility` exits 0 for an incompatible schema.** It prints
+  "Schema is not compatible." and the reasons; only a failed check exits non-zero, so a CI gate
+  must read the output (the `compatible` field of `--format json`). The docs arm did not find
+  this (0/3 on a complete rerun; the baseline passed 3/3, so the case is uninformative). Missing from
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-registry/rpk-registry-schema-check-compatibility/.
+  Source: `src/go/rpk/pkg/cli/registry/schema/check_compatibility.go` (no non-zero exit on
+  `compatible.Is == false`). The pre-thin skill said the command exits non-zero, which was wrong.
+- **A soft-deleted schema is still served by ID; a hard delete removes it.** `GET
+  /schemas/ids/{id}` resolves soft-deleted versions, so consumers still decode old records,
+  while a permanent delete removes the schema once no other subject version uses the ID. The
+  docs arms passed `soft-deleted-schema-readable-by-id` 1/3 and 0/3. Missing from
+  https://docs.redpanda.com/streaming/current/manage/schema-reg/schema-reg-api/ (Delete a
+  schema). Source: `src/v/pandaproxy/schema_registry/handlers.cc` (`resolve_schema_id_simple`
+  uses `include_deleted::yes`) and `sharded_store.cc` (`delete_subject_version`).
 
-For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. Verify CLI paths/flags against the current stable release tag of `redpanda-data/redpanda` (`src/go/rpk/pkg/cli/registry/`), broker behavior against `src/v/pandaproxy/schema_registry/`, and re-confirm exact command paths / flag names / config keys before writing any new fact.
+## Lines removed for lack of a failing baseline
+
+- "Grant registry ACLs over a subject prefix with `--resource-pattern-type prefixed` and no
+  asterisk" was not kept. Its behavioral case `registry-acl-subject-prefix` passed 3/3 in the
+  baseline on the re-verification run `2026-11-10T20-49-57Z` (skill 3/3, installed 3/3), and the fact case
+  `prefixed-subject-acl-asterisk` passed 3/3 too.
+- "For a migration with fixed IDs into a busy registry, set IMPORT on the target subject only,
+  not globally with `--force`, then set it back" was not kept. Its case
+  `import-ids-without-forcing-global-import` scored baseline 3/3, skill 3/3, installed 3/3 on the
+  re-verification run `2026-11-10T20-55-21Z`, after the mock fix under "Corrections after the eval run". Every
+  baseline run chose per-subject IMPORT. The pre-thin skill taught global IMPORT for this, which
+  is the riskier path.
+- The pre-thin skill's quickstart, command map, compatibility table, mode and context sections,
+  and the Enterprise Authorization, Schema ID Validation, and authentication references were
+  removed as facts. The docs arms answered the sampled cases drawn from them, or the baseline
+  already did (see the suite's sampled and targeted results).
+
+## Drift found in the pre-thin skill (fixed by removal)
+
+- It said `schema_registry_enable_qualified_subjects` must be set to true before contexts work.
+  At `v26.2.2` the property defaults to true (`src/v/config/configuration.cc`).
+- It said `check-compatibility` exits non-zero for an incompatible schema (see Docs gaps).
+
+## Corrections after the eval run
+
+- `import-ids-without-forcing-global-import`: the mock answered `cat` of both migration files with
+  the same schema, so agents concluded that version 1 and version 2 were identical and stopped
+  (run `2026-11-10T20-49-57Z`: baseline 0/3, skill 1/3, installed 2/3). The earlier note blamed confusing read-backs.
+  The mock now serves two different schemas and answers `cmp`, `diff`, `wc`, and checksum
+  commands. Rerun `2026-11-10T20-55-21Z` scored 3/3 in every arm; the line stays dropped, now on a clean baseline
+  pass.
