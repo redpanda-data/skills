@@ -4,7 +4,8 @@ description: >-
   Streams change data capture from MongoDB into Redpanda or Kafka using Redpanda
   Connect's mongodb_cdc input, built on MongoDB Change Streams over a replica set or
   sharded cluster. Use when configuring mongodb_cdc, setting up Change Streams,
-  enabling an initial snapshot before live streaming, choosing between update_lookup
+  enabling an initial or incremental snapshot alongside live streaming, backfilling a
+  collection on demand through a signal collection, choosing between update_lookup
   and pre_and_post_images document modes, or checkpointing with resume tokens in a
   cache resource. Also covers Redpanda Enterprise destination features like Iceberg
   Topics, Tiered Storage, and server-side Schema ID Validation, all of which require a
@@ -175,7 +176,71 @@ Rules that matter when choosing this path:
 
 Per-field detail (`region`, `session_duration`, `id`/`secret`/`token`, `role`/`role_external_id`, `roles[]`) is in [Config Reference](references/config-reference.md) and the generated connector reference.
 
-### Snapshot Phase
+### Snapshot Modes
+
+Since Connect 4.116.0 there are three ways existing documents are read, and the first two are
+**mutually exclusive snapshot modes** — setting both `stream_snapshot: true` and
+`incremental_snapshot.enabled: true` is rejected at startup, because both read the same documents
+and enabling both would deliver everything twice.
+
+| Mode | How it reads | Pick it when |
+|---|---|---|
+| `stream_snapshot: true` | An up-front snapshot of every collection, then streaming | You want the backfill complete before any change is delivered |
+| `incremental_snapshot.enabled: true` | Collections are read in `_id`-ordered chunks **alongside** streaming, from the start | Streaming must not wait for a large backfill |
+| A `snapshot-execute` signal | Reads the named collections in chunks alongside streaming, on demand | You are adding a collection, or re-reading one, on a running pipeline |
+
+The third works in **every** snapshot mode: `incremental_snapshot.enabled` is not required for a
+signal to queue a read. The rest of the `incremental_snapshot` block (chunk size, the progress
+cache key, the retry cooldown) governs signal-requested reads too.
+
+Incremental reads are chunked and each chunk is released once the change stream has caught up with
+the moment it was read, so a chunk that a live write superseded is dropped rather than reverting
+it. Progress is stored in `checkpoint_cache` under `incremental_snapshot.checkpoint_cache_key`,
+separate from the stream position, so a restart continues from the last acknowledged chunk.
+
+Two constraints the input enforces at startup: `incremental_snapshot.checkpoint_cache_key` must
+differ from `checkpoint_key` (the two are stored separately), and
+`incremental_snapshot.chunk_size` must not exceed `checkpoint_limit` — a chunk goes in flight as a
+whole, so a larger one stalls streaming until everything before it is acknowledged.
+
+Read the field types, defaults and the full block from the generated reference or
+`rpk connect create mongodb_cdc`.
+
+### Signal Collection
+
+`signal_collection_name` names a collection in `database` that the input watches for control
+documents while it runs. Each is `{"type": ..., "data": ...}`, where `data` may be a subdocument or
+a JSON string: `log` logs `data.message`, and `snapshot-execute` queues a chunked read of the
+collections it names. MongoDB has collections rather than tables, so the payload accepts
+`collections` alongside the shared `tables` key, and the two are merged:
+
+```javascript
+db.connect_signals.insertOne({
+  type: "snapshot-execute",
+  data: { collections: ["orders"] }
+})
+```
+
+Four traps, each enforced or logged by the connector:
+
+- **The signal collection must not be one of the streamed `collections`.** The input rejects that
+  config at startup — its own inserts would be read back as signals.
+- **Signal inserts are also emitted as ordinary messages**, with `collection` metadata set to the
+  signal collection. Filter them out downstream if you do not want them in the topic.
+- **A signal naming a collection that is not in `collections` is rejected**, logged at error, and
+  nothing else reports it — the stream carries on. Nothing outside the watched set can be
+  deduplicated against the chunks, which is why it is refused. A collection already queued or
+  being read is skipped and logged at info, not an error.
+- **Progress is only kept current while `incremental_snapshot.enabled` is true or a
+  `signal_collection_name` is set.** With neither, the input discards what is stored under the
+  progress key, and enabling either later will not resume a read the stream has long since moved
+  past.
+
+Unlike `postgres_cdc`, pointing `incremental_snapshot.checkpoint_cache_key` at a fresh key does
+**not** cause a new read: with a stream position stored, a restart treats every collection as
+already read. Re-reading a collection takes a `snapshot-execute` signal.
+
+### Up-front Snapshot Phase
 
 When `stream_snapshot: true` and no resume token is cached, the connector snapshots all documents in each collection before streaming live changes.
 
@@ -238,7 +303,9 @@ When a stored position can no longer be resumed from (aged out of the oplog, or 
 
 ### Restart Behavior
 
-On restart with a valid cached token, the connector immediately opens the change stream at the stored position — no snapshot is performed regardless of the `stream_snapshot` setting. The snapshot only runs when no checkpoint exists; because the completed snapshot's position is now checkpointed once fully acknowledged, a restart after a finished snapshot resumes the stream rather than snapshotting again.
+On restart with a valid cached token, the connector immediately opens the change stream at the stored position — no **up-front** snapshot is performed regardless of the `stream_snapshot` setting. That snapshot only runs when no checkpoint exists; because the completed snapshot's position is now checkpointed once fully acknowledged, a restart after a finished snapshot resumes the stream rather than snapshotting again.
+
+An incremental read is the exception: a restart resumes it from the last acknowledged chunk, since its progress is checkpointed separately under `incremental_snapshot.checkpoint_cache_key`. A `snapshot-execute` signal is checkpointed into the queue before the transaction carrying it is acknowledged, so a restart does not lose a read that was requested but not yet started.
 
 ### Scaling
 

@@ -49,6 +49,40 @@ the newest sync-log entry below; docs paths on `redpanda-data/rp-connect-docs@ma
 
 ## Sync log
 
+- **Verified against Connect v4.118.0 (2026-11-13 sync).** One drifted claim, corrected in
+  `SKILL.md`: the connector now keeps the checkpoint current while the monitored tables are idle.
+  - **The SCN checkpoint no longer stops on an idle table set.** The skill said the checkpoint
+    "only advances when messages are delivered", so a quiet table set left it stationary until the
+    logs aged out, and told the reader to size archive log retention for the longest *idle* period.
+    At v4.117.0 the LogMiner loop marks the mined position after each mining cycle, so the
+    checkpoint advances with no rows to deliver. Grounded at tag `v4.118.0` in
+    `internal/impl/oracledb/logminer/logminer.go` (the new `Publisher` interface with
+    `CheckpointWindow`, `checkpointMinedPosition`, `checkpointRequestInterval = 10 * time.Second`,
+    and `capBelowOpenTxn`, which caps the marked SCN at `lowWatermark-1`, the last SCN before the
+    oldest open transaction) and `internal/impl/oracledb/batcher.go`
+    (`batchPublisher.CheckpointWindow`, `takeTicketIfDrained`, and the `hasBuffered` flag that
+    makes a marker wait for buffered rows to flush). The input's own doc string in
+    `internal/impl/oracledb/input_oracledb_cdc.go` was rewritten in the same release and is the
+    published wording this correction follows.
+  - **What still pins the checkpoint, now in the skill:** a transaction that is still open
+    (`capBelowOpenTxn`); an idle database trailing the current SCN by up to
+    `logminer.min_scn_window_size`, since the input mines no smaller range; and a `batching.count`
+    policy with no `batching.period`, where rows sit in the batcher and block the marker until more
+    rows arrive — the doc string's explicit advice is to set a `period`.
+  - **Error code corrected to ORA-01291.** `SKILL.md` said the retention failure surfaces as
+    **ORA-01292**, which contradicted this skill's own `references/pipeline-and-output.md`
+    (§"ORA-01291: missing logfile", which already treats retention and incarnation as the two
+    causes of ORA-01291) and `references/setup-oracle.md` §6. The source agrees:
+    `errCodeMissingLogFile` is 1291, and the rewritten doc string names ORA-01291. The skill is now
+    self-consistent.
+  - **Deliberately not documented:** the Oracle CDC changes in `v4.118.0` are performance and
+    correctness work with no config or behavior surface for the skill — partitioned table snapshots
+    for large tables (`#5006`), and the timestamp-precision and open-LOB replay fixes. The
+    `prefetch_rows` and PDB-scoping doc strings were reflowed in `v4.117.0` with no change of
+    meaning, except that `pdb_name` now states it must be left unset when the connection is already
+    scoped to a PDB (the input fails at startup otherwise) — already consistent with what the skill
+    and `references/setup-oracle.md` say, so no edit.
+
 - **Verified against Connect v4.112.0 (2026-10-09 sync).** One new structural surface: the LogMiner mining window gained a second sizing strategy.
   - **`logminer.window_strategy` (enum, default `scn_window`) plus `logminer.redo_volume_min` (default `2`) and `logminer.redo_volume_growth_max` (default `4`), all Advanced.** Grounded at tag `v4.112.0` in `internal/impl/oracledb/input_oracledb_cdc.go` (the `service.NewStringEnumField` registration and the three field specs, and the per-strategy validation in the config parse) and `internal/impl/oracledb/logminer/config.go` (`WindowStrategy` with values `scn_window` / `WindowStrategySCNWindow` and `redo_volume` / `WindowStrategyRedoVolume`, the `DefaultRedoVolume*` constants, and `MinRedoVolumeGrowthCeiling` = 2). Applied to `references/config-reference.md` (three new field sections plus the "no effect under `redo_volume`" notes on `scn_window_size` / `max_scn_window_size`), `SKILL.md` (one operational-notes bullet for the CDB/PDB case) and the throughput-tuning table in `references/pipeline-and-output.md`.
   - **Mutual exclusivity is enforced, not advisory:** under `redo_volume`, a non-default `scn_window_size` or `max_scn_window_size` is rejected with a "has no effect" error, and vice versa for the `redo_volume_*` pair under `scn_window`. `min_scn_window_size` is explicitly exempt — its doc string says the gate "applies regardless of `window_strategy`". `redo_volume_growth_max` must be `>= redo_volume_min` and at least `2`.
