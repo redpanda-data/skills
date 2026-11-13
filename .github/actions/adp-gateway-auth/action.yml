@@ -1,0 +1,128 @@
+# A copy of the Redpanda docs team's ADP gateway auth action. Workflows here
+# must not fetch an action from another repository at run time, so it lives in
+# this repository and is kept in step with the original by hand.
+#
+# It differs from the original in four places, each forced by this repository:
+#   - it reads this workload's own agent credential, whose JSON keys carry that
+#     secret's name as their prefix (a secrets naming rule), so the secret id
+#     and the key names differ;
+#   - the gateway address comes from that secret rather than from this file,
+#     because this repository is public and the address is internal
+#     infrastructure detail;
+#   - the third-party actions are pinned by commit SHA, not by tag;
+#   - the description names this workload.
+name: ADP AI Gateway auth
+description: >
+  Mints a short-lived AI Gateway bearer as the skills-evals agent and leaves the
+  `claude` CLI pointed at the gateway in Bedrock mode. Extracted
+  so every eval job shares one implementation: the hardening below
+  is the part that must not drift between copies.
+
+inputs:
+  aws-region:
+    description: Region for the OIDC role assumption
+    required: true
+  role-to-assume:
+    description: Full ARN of this repo's RedpandaGitHubActionsWorkflowRole
+    required: true
+  model:
+    description: Bedrock model id for the subject. Must be on the gateway provider's allowlist.
+    required: false
+    default: us.anthropic.claude-opus-5
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      with:
+        aws-region: ${{ inputs.aws-region }}
+        role-to-assume: ${{ inputs.role-to-assume }}
+
+    # Leading comma = no name prefix, so the JSON keys land verbatim as env var
+    # names. Which names those are is fixed by the secrets convention, not by us:
+    # every key must start with the secret name's last path segment
+    # upper-cased, which is also why this cannot borrow another secret's keys.
+    - name: Fetch the ADP client credential
+      uses: aws-actions/aws-secretsmanager-get-secrets@2297f9a879480a9e3af9b293ed15c70caf8e1c88 # v3.0.2
+      with:
+        secret-ids: |
+          ,sdlc/prod/github/skills_evals_client
+        parse-json-secrets: true
+
+    - name: Mint ADP gateway token
+      shell: bash
+      env:
+        SUBJECT_MODEL: ${{ inputs.model }}
+      run: |
+        set -euo pipefail
+        if [ -z "${SKILLS_EVALS_CLIENT_ID:-}" ] || [ -z "${SKILLS_EVALS_CLIENT_SECRET:-}" ]; then
+          echo "::error::ADP client credential missing (SKILLS_EVALS_CLIENT_ID, SKILLS_EVALS_CLIENT_SECRET)."
+          exit 1
+        fi
+        gateway="${SKILLS_EVALS_CLIENT_GATEWAY_URL:-}"
+        gateway="${gateway%/}"
+        case "$gateway" in
+          https://*) ;;
+          *) echo "::error::SKILLS_EVALS_CLIENT_GATEWAY_URL is missing or is not an https URL."; exit 1 ;;
+        esac
+        case "$gateway" in *[[:space:][:cntrl:]]*)
+          echo "::error::SKILLS_EVALS_CLIENT_GATEWAY_URL contains whitespace or control characters."
+          exit 1 ;;
+        esac
+        # The secret rides stdin (client_secret@-) so it never appears in argv.
+        # This is the gateway's own self-managed agent endpoint, NOT the Cloud
+        # auth service, and it takes no audience. Using the Cloud endpoint with
+        # an audience here is the documented way to lose an afternoon.
+        status=$(printf '%s' "$SKILLS_EVALS_CLIENT_SECRET" | curl -sS --request POST \
+          --connect-timeout 10 --max-time 30 \
+          --retry 3 --retry-all-errors --retry-delay 2 \
+          --output "$RUNNER_TEMP/adp_token.json" --write-out '%{http_code}' \
+          --url "$gateway/oauth/idp/token" \
+          --header 'content-type: application/x-www-form-urlencoded' \
+          --data grant_type=client_credentials \
+          --data-urlencode client_id="$SKILLS_EVALS_CLIENT_ID" \
+          --data-urlencode client_secret@-) || status=000
+        token=$(jq -r '.access_token // empty' "$RUNNER_TEMP/adp_token.json" 2>/dev/null || true)
+        expires=$(jq -r '.expires_in // empty' "$RUNNER_TEMP/adp_token.json" 2>/dev/null || true)
+        rm -f "$RUNNER_TEMP/adp_token.json"
+        if [ -z "$token" ]; then
+          echo "::error::failed to mint ADP gateway token (HTTP $status)."
+          exit 1
+        fi
+        # A token containing whitespace could smuggle extra variables into
+        # GITHUB_ENV, and ::add-mask:: covers only the first line.
+        case "$token" in *[[:space:][:cntrl:]]*)
+          echo "::error::minted token contains whitespace or control characters."
+          exit 1 ;;
+        esac
+        echo "::add-mask::$token"
+        echo "Minted gateway bearer, expires_in=${expires:-unknown}s"
+        # Bedrock mode sends the bearer as Authorization: Bearer, which is what
+        # the gateway authenticates on. AWS_REGION is required by the Bedrock
+        # client but unused once the base URL is explicit. A model id off the
+        # provider's allowlist is rejected and retried silently, which looks
+        # like a hang rather than an error.
+        {
+          echo "AWS_BEARER_TOKEN_BEDROCK=$token"
+          echo "CLAUDE_CODE_USE_BEDROCK=1"
+          echo "CLAUDE_CODE_SKIP_BEDROCK_AUTH=1"
+          echo "ANTHROPIC_BEDROCK_BASE_URL=$gateway/llm/v1/providers/claude-code-provider-adp"
+          echo "ANTHROPIC_MODEL=$SUBJECT_MODEL"
+          echo "ANTHROPIC_DEFAULT_HAIKU_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0"
+          echo "AWS_REGION=us-west-2"
+        } >> "$GITHUB_ENV"
+
+    # The AWS session and the long-lived client credential must not be readable
+    # from the eval's environment. The short-lived bearer survives because it IS
+    # the model auth. GITHUB_ENV cannot unset a variable, so these become
+    # present-but-empty.
+    - name: Drop AWS session and client credentials from the job env
+      shell: bash
+      run: |
+        set -euo pipefail
+        for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN \
+                 SKILLS_EVALS_CLIENT_ID SKILLS_EVALS_CLIENT_SECRET \
+                 SKILLS_EVALS_CLIENT_GATEWAY_URL; do
+          echo "$v=" >> "$GITHUB_ENV"
+        done
