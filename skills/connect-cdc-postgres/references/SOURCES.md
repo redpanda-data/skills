@@ -19,7 +19,7 @@ https://docs.redpanda.com/connect/components/inputs/postgres_cdc/. Read source w
 | How to work line | Source (`redpanda-data/connect`) | Eval case |
 |---|---|---|
 | Backfill with a signal, never by dropping the slot: `stream_snapshot` runs only when the slot does not exist; the `snapshot-execute` signal with `{"tables": [...]}` and no schema prefix; incremental snapshots are incompatible with `stream_snapshot` | `pglogicalstream/logical_stream.go` (existing-slot branch resumes from `confirmed_flush_lsn` and returns before the snapshotter), `input_pg_stream.go` (input description); `internal/replication/signalling.go` (`SnapshotSignalType`), `input_pg_stream.go` (`signal_table_name` description and example); `internal/impl/postgresql/config.go` (`parseIncrementalSnapshotCfg`) | `backfill-table-via-signal-not-slot-drop` |
-| Before signaling, or when a signal was rejected, check the table in order: in `tables`, primary key without a rejected key type, `publish_via_partition_root` on `pglog_stream_<slot_name>` for a partitioned table, `REPLICA IDENTITY FULL` for TOASTable columns; a finished table is re-read by changing or clearing `checkpoint_cache_key` | `pglogicalstream/incremental_snapshot.go` (`incrementalPKColumns`, `checkKeyTypesBindable`, `checkDedupReachable`, `warnUndedupableTables`); `input_pg_stream.go` (`incremental_snapshot.enabled` description); `pglogicalstream/logical_stream.go` (`pubName := "pglog_stream_" + config.ReplicationSlotName`, `publication_names` plugin arg); `pglogicalstream/incremental_snapshot.go` (`warnToastFidelity`); `input_pg_stream.go` (`incremental_snapshot.checkpoint_cache_key` and `signal_table_name` descriptions) | `rejected-backfill-check-key-type` |
+| Before signaling, or when a signal was rejected, check the table in order: in `tables`, primary key without a rejected key type, `publish_via_partition_root` on `pglog_stream_<slot_name>` for a partitioned table, `REPLICA IDENTITY FULL` for TOASTable columns; a signal re-reads a finished table, and only one still queued or being read is skipped (corrected for v4.117.0, verified 2026-11-13) | `pglogicalstream/incremental_snapshot.go` (`dispatchSnapshotSignal` calls `coordinator.RequeueTables`, replacing `AddTables` at v4.117.0, and logs "already queued or being backfilled"), `internal/replication/incrementalsnapshot/coordinator.go` (`RequeueTables` vs `AddTables`: `AddTables` skips anything in `knownTables`, which covers the finished ones, while `RequeueTables` skips only `remaining` and `reading`); `pglogicalstream/incremental_snapshot.go` (`incrementalPKColumns`, `checkKeyTypesBindable`, `checkDedupReachable`, `warnUndedupableTables`); `input_pg_stream.go` (`incremental_snapshot.enabled` description); `pglogicalstream/logical_stream.go` (`pubName := "pglog_stream_" + config.ReplicationSlotName`, `publication_names` plugin arg); `pglogicalstream/incremental_snapshot.go` (`warnToastFidelity`); `input_pg_stream.go` (`incremental_snapshot.checkpoint_cache_key` and `signal_table_name` descriptions) | `rejected-backfill-check-key-type` |
 | Choose `batch_transactions` or a `batching` policy, never both (verified 2026-10-27) | `input_pg_stream.go` (`resolveBatchingPolicy` error "batch_transactions cannot be combined with a batching policy", field `Version("4.115.0")`). Published in the field description on the postgres_cdc page | `batch-transactions-without-batching-policy` |
 | Ask the user before `ALTER TABLE ... REPLICA IDENTITY FULL` for a TOASTable table (part of the step 4 check) (verified 2026-10-31) | `pglogicalstream/incremental_snapshot.go` (`warnToastFidelity`) | `toast-backfill-ask-before-replica-identity` |
 | When WAL piles up behind the slot, move the slot forward: measure `confirmed_flush_lsn` lag, restart a stopped pipeline, keep `heartbeat_interval` above `0s` for quiet tables, and drop the slot only when the pipeline is removed for good, after asking (verified 2026-10-31). Safety guardrail: the baseline passed its case 3/3 on 2026-10-31, and the line and case stay as a regression guard. | `input_pg_stream.go` (`heartbeat_interval` description), `pglogicalstream/logical_stream.go` (resume from `confirmed_flush_lsn`, heartbeat via `pg_logical_emit_message`) | `wal-growth-keep-slot-fix-heartbeat` |
@@ -62,6 +62,20 @@ long as it runs, which is why large tables should use `incremental_snapshot`. Bo
 `modules/cookbooks/pages/postgres_cdc.adoc`; the source grounding is
 `pglogicalstream/logical_stream.go` (`EXPORT_SNAPSHOT`) and `pglogicalstream/snapshotter.go`
 (`openTxn`, `sql.LevelRepeatableRead`, released in `releaseSnapshot`).
+
+## Drift corrected at Connect v4.118.0 (2026-11-13 sync)
+
+- **A snapshot signal now re-reads a finished table.** Until v4.116.1,
+  `dispatchSnapshotSignal` called `Coordinator.AddTables`, which skips every table in
+  `knownTables` — the finished ones included — so the skill correctly said a finished table was
+  skipped and had to be re-read by moving `incremental_snapshot.checkpoint_cache_key` or clearing
+  that cache entry. At v4.117.0 the call became `Coordinator.RequeueTables`, which skips only a
+  table still in `remaining` or currently `reading`. The "How to work" line was corrected in place
+  under rule 3 (a drifted fact inside an existing line) and needs no new eval case. The old
+  `checkpoint_cache_key` route still works; the signal is now the simpler one, so the line names
+  it. Verified in `internal/impl/postgresql/pglogicalstream/incremental_snapshot.go` and
+  `internal/replication/incrementalsnapshot/coordinator.go` at tag `v4.118.0`, and against the
+  `v4.116.1`→`v4.117.0` diff of that call.
 
 ## TODO / re-verify
 

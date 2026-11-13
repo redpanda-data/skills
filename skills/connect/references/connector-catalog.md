@@ -19,14 +19,14 @@ https://docs.redpanda.com/connect/components/catalog/):
 | `community` | Community-maintained, best-effort |
 
 > **Tier vs. runtime gate caveat:** the tier label and the runtime license
-> check don't always agree. One discrepancy remains at v4.116.1:
+> check don't always agree. One discrepancy remains at v4.118.0:
 > `aws_dynamodb_cdc` is tiered `enterprise` but has no runtime gate in source.
 > (The `jira` input and processor were the other one — both were re-tiered
 > `enterprise` at v4.113.0 to match the enterprise check their source has
 > always called.) When licensing matters for a decision, verify the specific
 > component (its docs page, or a dry run without a license).
 
-## Enterprise components (complete at Connect v4.116.1, deprecated components excluded)
+## Enterprise components (complete at Connect v4.118.0, deprecated components excluded)
 
 Every non-deprecated enterprise-tier component, grouped by family. Which components carry the
 tier changes between releases, so treat this as a point-in-time list and read

@@ -185,10 +185,16 @@ prefetch_rows: 5000
 
 A `PREFETCH_ROWS` query parameter on `connection_string` still works and **takes precedence** over the field (matched case-insensitively), so remove it if you want the field to apply. Values of `0` or below are rejected — both by `rpk connect lint` and at startup.
 
-**Redo log retention must cover idle periods, not just outages.** The SCN checkpoint only advances when messages are delivered, so a monitored table set that goes quiet leaves the checkpoint stationary while Oracle ages out redo/archive logs. If the checkpointed SCN is gone when activity resumes or the pipeline restarts, the input cannot resume and fails repeatedly with **ORA-01292**. Therefore:
+**Redo log retention must cover open transactions and outages.** Since Connect 4.117.0 the checkpoint advances roughly every 10 seconds once every delivered batch has been acknowledged, **including while the monitored tables are idle** — the input marks the mined position after a mining cycle that produced no rows. A quiet table set therefore no longer pins the checkpoint while Oracle ages out redo/archive logs. (Before 4.117.0 only a delivered message moved it, so an idle table set left it stationary; if you are pinned to an earlier release, size retention for the longest idle period instead.) Three things still hold the checkpoint back:
 
-- Size archive log retention to exceed the longest plausible **idle** period for the monitored tables — not just the longest expected downtime.
-- Alert on a **stagnant checkpoint SCN** and on repeated ORA errors; a stationary checkpoint under a quiet workload is indistinguishable from a healthy one until the logs age out.
+- It **never moves past the start of a transaction that is still open**, so one long-running transaction pins the resume position for as long as it stays open.
+- On an idle database it can trail the current SCN by up to `logminer.min_scn_window_size` SCNs, because the input does not mine a range smaller than that.
+- With a `batching.count` policy and no `batching.period`, rows wait in the batcher until more rows arrive and the checkpoint does not advance until they flush. **Set a `period` on any count-based batching policy**, or a quiet pipeline stops checkpointing for a different reason.
+
+Therefore:
+
+- Size archive log retention to exceed the longest open transaction plus the longest plausible pipeline outage. If the checkpointed SCN is gone when the pipeline restarts, the input cannot resume and fails with **ORA-01291**.
+- Alert on a **stagnant checkpoint SCN** and on repeated ORA errors. A checkpoint that is not moving now means an open transaction, a count-only batching policy, or a stalled pipeline — not merely a quiet one.
 - On databases with infrequent log switches, watch for **ORA-04036** (LogMiner PGA growth) and bound it with `logminer.max_session_age`.
 - On a CDB whose shared SCN is advanced by another PDB, the default `scn_window` strategy grows its window over mostly-empty SCN ranges. Switch `logminer.window_strategy` to `redo_volume` to size each cycle by the redo actually read instead — see [config-reference.md](references/config-reference.md).
 - A **flashback or point-in-time recovery followed by `OPEN RESETLOGS`** looks like the same failure but is not a retention problem: it starts a new database incarnation, so a checkpoint taken before the reset can never be resumed and the input fails with **ORA-01291** no matter how much retention you add. Recovery is to delete the checkpoint entry — with the default Oracle-based cache the flashback rolls the row *back* rather than clearing it, so it must be deleted explicitly — and to set `snapshot_mode: snapshot_and_stream` in the same change, since a checkpoint that is still present skips snapshotting entirely.
