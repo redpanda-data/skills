@@ -4,7 +4,7 @@ CI checks only skill frontmatter and size (`.github/workflows/validate-skills.ym
 the evals automatically. Skill accuracy is kept up over time by a **human + automation
 process**: a fleet of scheduled agents ("routines") watch each product's source and open a PR
 when a user-facing change affects a skill, and a human reviews and merges. What counts as
-affecting a skill depends on its format: a **thin** skill (its `references/` holds only
+affecting a skill depends on its format: a **thin** skill (no reference files besides
 `SOURCES.md`) changes only when what an agent should *do* changes, while a skill that is **not
 yet thin** also changes when a fact it documents changes. A new or changed fact for a thin skill
 is a docs gap, reported for the docs, not a skill PR. This document is the
