@@ -221,7 +221,7 @@ only that. A skill in this format has two sections:
 
 Facts go in the docs, not the skill. When an eval shows the docs lack a fact or state it
 wrongly, the fix is a docs change. A thin `SKILL.md` is as short as its proven procedures allow,
-and its only reference file is `SOURCES.md`, which maps each "How to work" line to its source and
+and the skill's only reference file is `SOURCES.md`, which maps each "How to work" line to its source and
 its eval case id. A behavioral case counts only if it grades the outcome, its mocks answer every
 legitimate command, and the baseline still fails it. If no procedure for a product survives that
 test, the skill carries none and points at the docs; whether to keep such a skill at all is a
