@@ -41,3 +41,16 @@ test("--no-judge rows are ungraded and never pooled with judged rows", async () 
     (e) => e.status === 1 && /refusing to pool/.test(e.stderr.toString())
   );
 });
+
+test("a credential in an errored run's reason is redacted before it is logged", async () => {
+  const { redact } = await import("./run-evals.mjs");
+  const env = { AWS_BEARER_TOKEN_BEDROCK: "bearer-value-123456", EVAL_DOCS_CLIENT_KEY: "docs-key-abcdefgh" };
+  const out = redact("claude exited 1: auth bearer-value-123456 failed; key docs-key-abcdefgh", env);
+  assert.ok(!out.includes("bearer-value-123456"));
+  assert.ok(!out.includes("docs-key-abcdefgh"));
+  assert.match(out, /<AWS_BEARER_TOKEN_BEDROCK>/);
+  // Short or unset values are left alone, so a one-character value cannot
+  // blank out every occurrence of that character.
+  assert.equal(redact("abc", { EVAL_DOCS_CLIENT_KEY: "a" }), "abc");
+  assert.equal(redact(undefined, {}), "");
+});
