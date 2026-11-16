@@ -52,6 +52,67 @@ For each file being reviewed or updated, open the listed source paths first and 
 
 ## Sync log
 
+### Connect v4.118.0 / benthos v4.84.0 (2026-11-13)
+
+Releases checked: `v4.118.0` (changelog dated 2026-11-13, the current stable
+tag), `v4.117.0` (2026-11-06), `v4.116.1` and `v4.116.0` (2026-10-30) — every
+stable release newer than the `v4.115.1` sync below. No `-rc` tag was
+considered.
+
+- **benthos did not move.** `connect/go.mod` pins
+  `github.com/redpanda-data/benthos/v4 v4.84.0` at `v4.118.0`, the same version
+  the `v4.115.0` entry below recorded and the newest benthos tag. So no engine,
+  CLI or Bloblang change entered this window, and the `--docs-format` flag that
+  entry applied to `references/connector-catalog.md` is still the newest CLI
+  surface. Re-confirmed in `internal/cli/list.go` at `v4.84.0`.
+- **No change to `skills/connect/` or `skills/connect-debugging/`.** Nothing in
+  the window touched a CLI verb, a Bloblang function or method, license or
+  secrets handling, or the connector allow/deny list. The enterprise roster is
+  unchanged: `info.csv` at `v4.118.0` carries the same non-deprecated
+  enterprise set `connector-catalog.md` lists, so that file's completeness
+  heading and the tier-vs-gate caveat now read v4.118.0 and nothing else in it
+  changed. The `aws_dynamodb_cdc` discrepancy is still open — `info.csv` tiers
+  it `enterprise` while `internal/impl/aws/dynamodb/` still calls no
+  `license.CheckRunningEnterprise` (re-checked by code search; the file carries
+  only the RCL header).
+- **`sap_hana` is now available in the Redpanda Cloud distribution** (`v4.117.0`,
+  `info.csv` at the tag flips its `cloud` column from `n` to `y`). **Not a skill
+  change:** per-distribution availability is deliberately not recorded in these
+  skills — see the `v4.115.0` entry, which made that call for the same
+  connector. `rpk connect list` and the catalog page remain the live surface.
+- **Three CDC skills changed, each grounded in its own `SOURCES.md`:**
+  - `connect-cdc-oracle` — drift. The checkpoint now advances while the
+    monitored tables are idle (`v4.117.0`), so the skill's "size retention for
+    the longest idle period" advice and its ORA-01292 reference were both wrong.
+    Corrected in `SKILL.md`; details in
+    `skills/connect-cdc-oracle/references/SOURCES.md`.
+  - `connect-cdc-postgres` (thin) — drift inside an existing "How to work" line.
+    A `snapshot-execute` signal now re-reads a table the run already finished
+    (`v4.117.0`). Corrected under rule 3 without widening the line, so no new
+    eval case; details in
+    `skills/connect-cdc-postgres/references/SOURCES.md`.
+  - `connect-cdc-mongodb` — new structural surface. The incremental snapshot
+    mode and the signal collection (`v4.116.0`) were uncovered; the modes, the
+    signal contract and the enforced constraints are now in `SKILL.md`, with the
+    field set left to the generated reference. Details in
+    `skills/connect-cdc-mongodb/references/SOURCES.md`.
+- **Verified and deliberately not documented this window** (auto-generated
+  per-field detail, internal work, or fixes to behavior no skill asserts):
+  blob index tags on the `azure_blob_storage` output and the `cache_mode` field
+  on the `sftp` input (both new fields on existing connectors, deferred to the
+  generated reference); the pipeline id added to the anonymous telemetry
+  payload; the `parquet_encode` coercion fast path; Oracle's partitioned-table
+  snapshots; the `ticket.Lock` refactor behind the SQL Server and replication
+  flush paths; and the fixes to `aws_dynamodb_cdc` (shard completion and
+  snapshot deduplication), `aws_kinesis`, `kafka`/Sarama idempotent writes,
+  `influxdb` metrics, `mssqlserver`, `sftp` minimum age, `redpanda_migrator`
+  schema-id translation and `sap_hana`. `v4.116.1` carries no changelog section
+  of its own: its diff against `v4.116.0` is the `docs_gen` tooling and doc-string
+  wording, with no config or behavior surface.
+- **Out of scope, handed off:** nothing in this window belongs to another
+  product's skill. The OTEL dependency upgrade in `v4.118.0` is a breaking Go
+  API change for embedders only, not an `rpk`, Cloud, Core or SQL surface.
+
 ### Connect v4.115.0 / benthos v4.84.0 (2026-10-23)
 
 Releases checked: `v4.115.0` (changelog dated 2026-10-22, the current stable

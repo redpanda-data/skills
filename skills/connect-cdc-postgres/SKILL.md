@@ -46,9 +46,9 @@ signal is only logged; replication continues and nothing else reports it.
    user before running that `ALTER TABLE`: it takes a lock, and every later update and delete logs
    the full old row.
 
-A table that already finished is skipped. To read it again, point
-`incremental_snapshot.checkpoint_cache_key` at a fresh key or clear that entry in the checkpoint
-cache; the signal payload has no force option.
+Since Connect 4.117.0 a signal re-reads a table this run already finished: only a table still
+queued, or the one being read right now, is skipped, and the log names which. To re-read one of
+those, wait for it to finish and signal again.
 
 **Choose `batch_transactions` or a `batching` policy, never both.** The input rejects the
 combination at startup.
