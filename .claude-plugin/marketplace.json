@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "redpanda-skills",
-  "description": "Agent Skills for Redpanda products: Streaming, SQL, Connect, Cloud, the Agentic Data Plane, and the rpk CLI.",
+  "description": "Agent Skills for Redpanda products: Streaming, SQL, Cloud, the Agentic Data Plane, and the rpk CLI.",
   "owner": {
     "name": "Redpanda Data",
     "url": "https://github.com/redpanda-data"
@@ -9,13 +9,28 @@
   "plugins": [
     {
       "name": "redpanda",
-      "description": "Skills for Redpanda's five products (Streaming, SQL, Connect, Cloud, Agentic Data Plane) plus the rpk CLI, grounded in Redpanda source, docs, and APIs.",
+      "description": "Skills for Redpanda's five products (Streaming, SQL, Cloud, Agentic Data Plane) plus the rpk CLI, grounded in Redpanda source, docs, and APIs.",
       "author": {
         "name": "Redpanda Data"
       },
       "source": "./",
       "category": "devops",
       "homepage": "https://github.com/redpanda-data/skills"
+    },
+    {
+      "name": "redpanda-connect",
+      "description": "Redpanda Connect pipelines, component search and Bloblang authoring. Maintained in the Redpanda Connect repo.",
+      "author": {
+        "name": "Redpanda Data"
+      },
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/redpanda-data/connect.git",
+        "path": ".claude-plugin/plugins/redpanda-connect",
+        "ref": "main"
+      },
+      "category": "development",
+      "homepage": "https://github.com/redpanda-data/connect/blob/main/.claude-plugin/README.md"
     }
   ]
 }

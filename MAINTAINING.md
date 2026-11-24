@@ -42,12 +42,10 @@ human loop**:
 | Cloud skills sync | `skills/cloud-serverless`, `skills/cloud-byoc`, `skills/cloud-dedicated` (3; **not** `cloud-byoc-sizing`) | `cloudv2` + `cloud-docs` (private) | commit-watch, keyed off `whats-new-cloud.adoc` + OpenAPI diff |
 | Redpanda Core skills sync | `skills/streaming*`, `skills/rpk*` (12) | `redpanda-data/redpanda` (public) + `docs` (private) | **release-pinned**, keyed off the published Redpanda release notes (`modules/reference/pages/releases/redpanda.adoc` in `docs`), not GitHub Releases |
 | SQL skills sync | `skills/sql*` (4) | `cloud-docs` (private; the published Cloud SQL docs are the scope gate) + `redpanda-data/oxla` (private; confirms documented behavior only) | pin-watch: the Oxla version `cloudv2` pins, verified at that version's Oxla release tag (not the default branch) |
-| Connect skills sync | `skills/connect*` (10) | `connect` + `benthos` engine + `rp-connect-docs` (public) | **release-pinned** (Connect releases) |
 | Skills sync critic | reviews all generator PRs | (per skill's `SOURCES.md`) | every 6h, read-only |
-| Skills drift audit | all 30 source-grounded skills | (per skill's `SOURCES.md`) | monthly full re-verification |
+| Skills drift audit | all source-grounded skills | (per skill's `SOURCES.md`) | monthly full re-verification |
 
-Generators are staggered onto different weekdays (ADP Mon, Core Tue, SQL Wed, Cloud Thu,
-Connect Fri) so their PRs don't all land on the same day, and use a lookback window slightly
+Generators are staggered onto different weekdays (ADP Mon, Core Tue, SQL Wed, Cloud Thu) so their PRs don't all land on the same day, and use a lookback window slightly
 longer than the weekly cadence so one skipped run self-heals.
 
 ## The durability principle (why this differs from prose-docs automation)
@@ -58,7 +56,7 @@ docs. A skill that is not yet thin documents the *shape and semantics* of an API
 flags, service names, config-key names, endpoint paths, enum values), because those are stable,
 until it is converted. Neither may **hardcode** values that rotate frequently (model lists,
 category counts, pricing, region lists, version numbers, metric names, per-release property
-*defaults*, and — for Connect — the auto-generated per-field connector config). Those are deferred
+*defaults*). Those are deferred
 to **live introspection** (`rpk ai model list`, `rpk cloud region list`, `rpk <cmd> --help`, the
 live `/metrics` endpoint, the auto-generated reference docs).
 
@@ -87,8 +85,7 @@ Every source-grounded skill carries a `SOURCES.md` (at `skills/<name>/references
 `skills/adp*/SOURCES.md`) mapping each skill file to the exact source paths its claims derive from,
 plus a **"Deferred to live introspection"** section (what NOT to hardcode) and a **"TODO / re-verify"**
 section. This is what the generators, critic, and drift audit read first, and where a human starts
-when re-verifying. **All 30 source-grounded skills have one** (ADP; 3 Cloud; 12 Core; 4 SQL;
-10 Connect), and so does the `redpanda-docs` lookup skill, which the drift audit re-verifies too.
+when re-verifying. **Every source-grounded skill has one** (ADP, Cloud, Core and SQL), and so does the `redpanda-docs` lookup skill, which the drift audit re-verifies too.
 Each names its authoritative source repo(s):
 
 - **ADP / Cloud** → `cloudv2` (+ `cloud-docs`), private.
@@ -102,7 +99,6 @@ Each names its authoritative source repo(s):
   release's change); otherwise describe the change only as far as the release notes state it, with a
   version marker, and record it as a TODO in the skill's `SOURCES.md`.
 - **SQL** → `cloud-docs` module `sql` and the `reference/sql` pages (private), which set the scope: a skill covers only what the published Cloud docs document for users. `redpanda-data/oxla` (private) confirms the behavior of documented surfaces at the shipped tag and never adds undocumented ones (no engine config, env vars, admin API, raw metrics, or self-hosted deployment).
-- **Connect** → `redpanda-data/connect` + the `benthos` engine + the auto-generated `rp-connect-docs`.
 - **`redpanda-docs`** → the live Docs MCP `tools/list`, `redpanda-data/docs-site` (private), and the
   `rpk` and `rpk connect` version commands in `streaming-enterprise` (private) and `benthos`.
 
