@@ -1,44 +1,87 @@
 # rpk-transform Skill Source Map
 
-Maps each file in `skills/rpk-transform/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" procedure below, backed by a behavioral
+eval case in `evals/suites/rpk-transform.eval.json`, and sends the agent to the docs for
+everything else. This file maps only the claims the skill still makes.
 
-The `rpk transform` CLI is Go source in the **public** repo `redpanda-data/redpanda` under `src/go/rpk/pkg/cli/transform/`. The broker-side Data Transforms engine (in-broker WebAssembly) is C++ under `src/v/transform/`, and transform cluster-config keys are defined in `src/v/config/configuration.cc`. The transform SDKs live under `src/transform-sdk/` (`go/`, `rust/`, `js/`, `cpp/`). The user-facing reference is in the **private** repo `redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP connector (`search_code`, `get_file_contents`) or `gh api .../contents/<path>`; do not guess. Before writing or changing any fact, re-open the cited source and confirm exact command paths, flag names, config keys, and metric names. `rpk`/Redpanda are versioned: verify against the **current stable release tag**, not `dev`/`main`.
+The `rpk transform` CLI is Go source in the **public** repo `redpanda-data/redpanda` under
+`src/go/rpk/pkg/cli/transform/`, and the broker side of Data Transforms is C++ under
+`src/v/transform/`, `src/v/wasm/`, and `src/v/cluster/plugin_frontend.cc`. The user-facing
+reference is in the **private** repo `redpanda-data/docs`; read it with the Redpanda-Github-Read
+connector or `gh api`, and do not clone it. Verify against the current stable release tag
+(v26.2.2 when this map was written), not `dev`. Paths below are relative to
+`redpanda-data/redpanda`.
 
-## File-to-source table
+## How to work: line, source, eval case
 
-| Skill file | redpanda source paths | docs sources |
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `src/go/rpk/pkg/cli/transform/transform.go` (`NewCommand`, `wasm` alias, `newPauseCommand`/`newResumeCommand` are defined here — no separate `pause.go`/`resume.go`), `init.go`, `build.go`, `deploy.go`, `list.go`, `logs.go`, `delete.go`, `meta.go`, `project/`, `template/`, `buildpack/`; broker engine `src/v/transform/` (`transform_manager.cc`, `transform_processor.cc`, `probe.cc`, `logger.cc`); config keys `src/v/config/configuration.cc` (`data_transforms_*`); SDK import paths `src/transform-sdk/go/transform/` (+ `sr/`), `src/transform-sdk/rust/`, `src/transform-sdk/js/` | `modules/reference/pages/rpk/rpk-transform/rpk-transform.adoc` (+ per-command pages below); `modules/develop/pages/data-transforms/` (`index.adoc`, `how-transforms-work.adoc`, `deploy.adoc`, `monitor.adoc`); `modules/reference/partials/properties/cluster-properties.adoc` |
-| `references/develop-and-build.md` | `src/go/rpk/pkg/cli/transform/init.go`, `build.go`, `template/`, `project/`, `buildpack/`; SDK sources `src/transform-sdk/go/transform/` (+ `sr/`), `src/transform-sdk/rust/`, `src/transform-sdk/js/` (generated boilerplate + API surface); language/build behavior verified against `build.go` | `modules/develop/pages/data-transforms/build.adoc`, `run-transforms.adoc`, `configure.adoc`, `test.adoc`, `versioning-compatibility.adoc`; `modules/reference/pages/rpk/rpk-transform/rpk-transform-init.adoc`, `rpk-transform-build.adoc` |
-| `references/deploy-and-operate.md` | `src/go/rpk/pkg/cli/transform/deploy.go`, `list.go` (+ `list_test.go`), `logs.go` (+ `logs_test.go`), `delete.go`, `transform.go` (pause/resume); config keys `src/v/config/configuration.cc` (`data_transforms_*`); metrics `src/v/transform/probe.cc` (labels `function_name`, `state`, `output_topic` verified) | `modules/develop/pages/data-transforms/deploy.adoc`, `monitor.adoc`; `modules/reference/pages/rpk/rpk-transform/rpk-transform-deploy.adoc`, `rpk-transform-list.adoc`, `rpk-transform-logs.adoc`, `rpk-transform-pause.adoc`, `rpk-transform-resume.adoc`, `rpk-transform-delete.adoc`; `modules/reference/partials/properties/cluster-properties.adoc` |
-| `references/enterprise-output-topics.md` | Enterprise **cluster/topic** config keys defined in `src/v/config/configuration.cc` (`iceberg_*`, `cloud_storage_*`, `enable_schema_id_validation`, `default_leaders_preference`) and `src/v/config/leaders_preference.cc` — rpk only passes these through via `rpk cluster config set` / `rpk topic create|alter-config`; license check `src/go/rpk/pkg/cli/cluster/license/`; RBAC `src/go/rpk/pkg/cli/security/role/` | `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc`, `object-storage-properties.adoc`; Iceberg / Tiered Storage / schema-ID-validation / leadership-pinning pages under `modules/manage/` and `modules/develop/` |
+| A redeploy takes environment variables and compression only from `transform.yaml` and that deploy's flags, so values an earlier deploy set with `--var` or `--compression` are dropped with no error; read them with `rpk transform list --format json` and pass them again (verified 2026-11-10). Baseline 0/3, skill 3/3, both 3/3, installed 3/3, docs 0/3 on 2026-11-10. Rerun 2026-11-10 (archive run `2026-11-10T20-42-00Z`): baseline 0/3, skill 3/3, installed 3/3. | `src/go/rpk/pkg/cli/transform/deploy.go` (`mergeProjectConfigs`: metadata built from `transform.yaml` plus this deploy's flags; compression defaults to `none`), `src/v/cluster/plugin_frontend.cc` (an update of an existing transform may change its environment), `src/go/rpk/pkg/cli/transform/list.go` (`environment` and `compression` in json and yaml output) | `redeploy-keeps-deployed-settings` |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-- `rpk transform <cmd> --help` and the live command tree — authoritative flag list; confirm the skill's flag tables against live `--help`.
-- Deployed-transform runtime state: `rpk transform list` / `--detailed` output (processor counts, `NODE`, `STATUS`, `LAG`), and `rpk transform logs` content.
-- Live metric values and the exact label set surfaced on `/public_metrics` for a running cluster.
-- Language toolchain / SDK versions (Go `>=1.20`, Node LTS, Rust stable, `redpanda-transform-sdk` version, `write_with_options` requiring SDK `>= 1.1.0`) — external/versioned; confirm against current SDK releases.
-- Buildpack download behavior (TinyGo / JS Wasm VM fetched at build time) — depends on the release's bundled buildpack versions.
+| Claim | Source | Eval case |
+|---|---|---|
+| Transforms run on self-managed, BYOC, and Dedicated clusters, not Serverless | `src/go/rpk/pkg/cli/transform/deploy.go` (`config.CheckExitServerlessAdmin`); https://docs.redpanda.com/cloud-data-platform/develop/data-transforms/how-transforms-work/ (checked 2026-11-10) | `serverless-transform-support` |
+| `get_rpk_command` looks up an rpk subcommand and `get_config_property` a cluster property | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| For a Cloud cluster, pass `platform: "cloud"`; the Cloud page says which cluster types support transforms | https://docs.redpanda.com/cloud-data-platform/develop/data-transforms/how-transforms-work/ (checked 2026-11-10) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 
-## TODO / re-verify
+## Docs gaps (not skill claims; do not re-verify here)
 
-- **Exact Prometheus metric names** (`redpanda_transform_execution_latency_sec`, `redpanda_transform_execution_errors`, `redpanda_wasm_engine_*`) not each line-verified. `src/v/transform/probe.cc` confirms labels `function_name`/`state`/`output_topic` and stems `failures`/`lag`/`read_bytes`/`write_bytes`/`state`; the `redpanda_transform_` prefix and `wasm_engine_*` metrics are added elsewhere (likely `src/v/wasm/` probes). Re-verify the full metric-name list against `probe.cc`, the wasm-engine probe, and `modules/develop/pages/data-transforms/monitor.adoc`.
-- **Cluster-config defaults** shown as "(varies)" are intentionally not pinned; authoritative values are `configuration.cc` + `cluster-properties.adoc`. Note `configuration.cc` also defines `data_transforms_read_buffer_memory_percentage` and `data_transforms_write_buffer_memory_percentage`, not listed by the skill — confirm whether they belong in the property table.
-- **Enterprise topic-property defaults** (Iceberg `redpanda.iceberg.*`, `redpanda.remote.*`, schema-ID-validation, `redpanda.leaders.preference`) not each line-verified; treat `topic-properties.adoc` / `object-storage-properties.adoc` as citation of record.
-- **Per-command flag tables** (deploy/init/build/list/logs) not each verified against current flag registrations — re-confirm flag names/shorthands before editing.
-- **Cloud pause/resume**: `cloud-docs modules/reference/pages/rpk/rpk-transform/` has no `rpk-transform-pause`/`-resume` pages (the self-managed reference does). Whether pause/resume work on Cloud clusters is unconfirmed — verify on a live Cloud cluster or with the Cloud team.
-- **Azure enablement path**: the docs do not state how to enable transforms on Azure BYOC/Dedicated clusters, where self-service cluster properties are unavailable.
+Found by the 2026-11-10 evals and checked against source at v26.2.2. None of these is on an
+rpk reference page, so none is an rpk help-text fix, and `docs-data/rpk-overrides.json` in
+`docs` hides nothing about them.
 
-## Redpanda Cloud applicability sources
+- **Lag metric name.** The broker registers the lag gauge as `lag` in the `transform` group, so
+  the public name is `redpanda_transform_lag`, with labels `function_name` and `output_topic`.
+  The Monitor page (`modules/develop/pages/data-transforms/monitor.adoc`) and the public
+  metrics reference (`modules/reference/pages/public-metrics-reference.adoc`) name it
+  `redpanda_transform_processor_lag`. Source: `src/v/transform/probe.cc` (`make_gauge("lag", ...)`,
+  group `transform`; same name at v23.3.1). Case `transform-lag-metric-name`.
+- **Environment variable value limit.** The broker rejects a value longer than 2 KiB (each value,
+  not a combined total), an empty value, a key longer than 128 bytes, more than 128 variables,
+  and a key starting with `REDPANDA_`. The Limitations section of How Data Transforms Work
+  (`modules/develop/pages/data-transforms/how-transforms-work.adoc`) says the combined length of
+  all values must be less than 2000 bytes and each key less than 128 bytes. Source:
+  `src/v/cluster/plugin_frontend.cc` (`max_value_size = 2_KiB`, `max_key_size = 128`,
+  `max_env_vars = 128`). Case `transform-env-var-limits`.
+- **A redeploy cannot change topics.** A deploy of an existing transform name may change the
+  binary, environment, and offset pointer only; a different input topic or output topic list
+  is rejected, so changing topics needs a delete and a new deploy. The Deploy page
+  (`modules/develop/pages/data-transforms/deploy.adoc`) does not say so. Source:
+  `src/v/cluster/plugin_frontend.cc` (`errc::transform_invalid_update`). Case
+  `redeploy-cannot-change-topics`.
+- **Cost of goroutines.** `tinygo-with-goroutines` builds with TinyGo's asyncify scheduler, which
+  makes code about 10 times slower in Redpanda's benchmarks; `tinygo-no-goroutines` uses no
+  scheduler. The Build page (`modules/develop/pages/data-transforms/build.adoc`) lists both
+  languages without the trade-off, and `rpk transform init --help` does not mention it either.
+  Source: `src/go/rpk/pkg/cli/transform/build.go` (scheduler comment). Case
+  `tinygo-goroutines-tradeoff` (docs arm 0/3).
+- **Cycles are rejected.** The broker rejects a transform whose output topics lead back to its
+  input topic, directly or through other transforms. How Data Transforms Work does not say so.
+  Source: `src/v/cluster/plugin_frontend.cc` (`would_cause_cycle`). Case
+  `transform-output-cycle` (baseline 3/3, docs arm 0/3).
 
-The "Redpanda Cloud Applicability" section in `SKILL.md` and the Cloud callouts in `references/deploy-and-operate.md` derive from the **private** repo `redpanda-data/cloud-docs` (read via the Redpanda-Github-Read connector; do not clone) plus the cloud-tagged property partial in `redpanda-data/docs`:
+## Lines removed for lack of a failing baseline
 
-- BYOC/Dedicated (Redpanda 24.3+) availability, Serverless not listed: `cloud-docs modules/develop/pages/data-transforms/how-transforms-work.adoc` (NOTE at top).
-- Cloud enablement via `rpk cluster config set` — rpk 25.1.2+ / Redpanda 25.1.2+, `rpk cloud login` first, BYOC/Dedicated on AWS/GCP only (not Azure, not Serverless), `REASON_INVALID_INPUT` on unsupported properties, restart-requiring sets return a long-running-operation ID: `cloud-docs modules/manage/pages/cluster-maintenance/config-cluster.adoc`; the same command appears in the `ifdef::env-cloud` "Enable data transforms" block of `docs modules/develop/pages/data-transforms/build.adoc`.
-- Cloud-settable `data_transforms_*` subset: `// tag::redpanda-cloud[]` boundaries in `docs modules/reference/partials/properties/cluster-properties.adoc` (included by `cloud-docs modules/reference/pages/properties/cluster-properties.adoc`); the non-cloud tuning sections are also `ifndef::env-cloud`-gated in `docs modules/develop/pages/data-transforms/configure.adoc`.
-- Cloud UI can view transform logs and delete transforms: `ifdef::env-cloud` TIPs in `docs modules/develop/pages/data-transforms/deploy.adoc` and `monitor.adoc`.
-
-## Usage
-
-For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. Verify against the current stable release tag of `redpanda-data/redpanda`, and re-confirm exact command paths, flag names, config keys, and metric names before writing any new fact.
+- "To stop a transform for a while, pause it; don't delete it" was removed on 2026-11-10. Its
+  case `stop-transform-temporarily` (stop a transform for two hours without losing records)
+  passed 3/3 in the baseline once the mock answered compound commands fairly (a first run, with
+  a mock that hid the `rpk transform --help` listing, scored 1/3). A rerun on 2026-11-10
+  (archive run `2026-11-10T20-42-00Z`) scored baseline 0/3, skill 3/3, installed 3/3: each baseline run said
+  Redpanda cannot pause a transform and stopped to ask instead of pausing, while the thin skill,
+  without this line, ran `rpk transform --help`, found `pause`, and paused. The line stays out
+  because the thin skill passes without it, but the baseline result now varies between runs.
+  It was not kept as a safety guardrail: a delete drops committed offsets, but the input records stay and a redeploy with
+  `--from-offset` can recover them, so it is not data loss or an irreversible change.
+- Reprocessing after a fix (delete, then redeploy with `--from-offset`, because `--from-offset`
+  is honored only on a transform's first deploy) got no line. Case
+  `reprocess-existing-records-after-fix` passed 3/3 in the baseline (rerun `2026-11-10T20-42-00Z`: baseline
+  3/3, skill 3/3, installed 3/3); the `--from-offset` help
+  text and the Deploy page both state the rule.
+- The full skill's facts (command and flag tables, SDK templates, cluster properties, metrics,
+  Enterprise features for transform topics, Cloud applicability) were dropped. Of the sampled
+  and targeted cases, the baseline answered 10 of 15, and the docs arm answered two more that
+  the baseline missed (`transform-error-rate-promql`, `js-sdk-specific-output-topic`). The rest
+  are the docs gaps above.

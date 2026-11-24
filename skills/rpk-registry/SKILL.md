@@ -1,269 +1,59 @@
 ---
 name: rpk-registry
 description: >-
-  Manage schemas, subjects, compatibility levels, modes, and contexts in the
-  Redpanda Schema Registry via the `rpk registry` CLI (alias `rpk sr`). Use when
-  registering or fetching Avro/Protobuf/JSON schemas, listing or deleting
-  subjects and schema versions, setting BACKWARD/FORWARD/FULL/NONE compatibility
-  levels, changing registry mode (READONLY/READWRITE/IMPORT), or working with
-  schema contexts for namespace isolation. Also covers Enterprise-licensed
-  registry features: Schema Registry Authorization and server-side Schema ID
-  Validation. For granting ACLs or RBAC on registry resources, see
-  /redpanda:rpk-security; for producing or consuming records with schema
-  encoding/decoding, see /redpanda:rpk-topic.
+  Manage the Redpanda Schema Registry from the CLI with the `rpk registry`
+  command group (alias `rpk sr`), and look up Schema Registry behavior in the
+  Redpanda docs. Use when registering, fetching, or deleting Avro, Protobuf, or
+  JSON schemas and subjects, checking or setting compatibility levels, changing
+  the registry mode for a migration, or working with schema contexts, Schema
+  Registry Authorization, or server-side Schema ID Validation. For granting
+  Kafka ACLs or roles, see /redpanda:rpk-security, and for producing or
+  consuming records with schema encoding, see /redpanda:rpk-topic.
 ---
 
-# rpk registry: Schema Registry
-
-The `rpk registry` command group (alias `rpk sr`) is the CLI front-end to the Redpanda Schema Registry running on port **8081** by default. It lets you register Avro, Protobuf, and JSON schemas, manage subjects and versions, enforce compatibility rules, control registry operating mode, and isolate schemas into named contexts.
-
-The Schema Registry is built directly into the Redpanda broker binary — no separate service is required. Schemas are stored in a compacted internal topic (`_schemas`). Every broker accepts mutating calls; there is no single leader to configure.
-
-The registry endpoint is configurable via `-X registry.hosts=<host>:<port>` or in an rpk profile.
-
-## Quickstart
-
-```bash
-# 1. Point rpk at your cluster (skip if you already have a profile)
-rpk profile create local --set brokers=localhost:9092 \
-  --set registry.hosts=localhost:8081
-
-# 2. Save an Avro schema to a file
-cat > sensor.avsc << 'EOF'
-{
-  "type": "record",
-  "name": "sensor_sample",
-  "fields": [
-    {"name": "timestamp", "type": {"type": "long",   "logicalType": "timestamp-millis"}},
-    {"name": "identifier","type": {"type": "string", "logicalType": "uuid"}},
-    {"name": "value",      "type": "long"}
-  ]
-}
-EOF
-
-# 3. Register the schema under the TopicNameStrategy subject for topic "sensor"
-rpk registry schema create sensor-value --schema sensor.avsc
-
-# 4. List all versions for that subject
-rpk registry schema list sensor-value
-
-# 5. Get schema metadata (subject, version, ID, type)
-rpk registry schema get sensor-value --schema-version latest
-
-# 6. Print the actual schema text
-rpk registry schema get sensor-value --schema-version latest --print-schema
-
-# 7. List all subjects
-rpk registry subject list
-
-# 8. Check global compatibility level
-rpk registry compatibility-level get
-
-# 9. Set BACKWARD compatibility globally
-rpk registry compatibility-level set --level BACKWARD
-
-# 10. Set FULL_TRANSITIVE compatibility on a specific subject
-rpk registry compatibility-level set sensor-value --level FULL_TRANSITIVE
-
-# 11. Check whether a new candidate schema is compatible before registering
-rpk registry schema check-compatibility sensor-value \
-  --schema sensor-v2.avsc --schema-version latest
-
-# 12. Soft-delete a subject (recoverable)
-rpk registry subject delete sensor-value
-
-# 13. Hard-delete a subject (permanent — soft-delete must run first)
-rpk registry subject delete sensor-value --permanent
-
-# 14. One-off override of registry endpoint
-rpk registry subject list -X registry.hosts=my-broker:8081
-```
-
-## Command Group Map
-
-| Subcommand | What it does |
-|---|---|
-| `schema create` | Register a new schema version for a subject |
-| `schema get` | Look up a schema by version, ID, or by matching an existing file |
-| `schema list` | List all schema versions across subjects (or for given subjects) |
-| `schema delete` | Soft- or hard-delete a specific schema version |
-| `schema check-compatibility` | Test a candidate schema against the subject's compatibility rules |
-| `schema references` | List schemas that reference a given subject/version |
-| `subject list` | List all subjects |
-| `subject delete` | Soft- or hard-delete an entire subject and all its versions |
-| `compatibility-level get` | Get global or per-subject compatibility level |
-| `compatibility-level set` | Set global or per-subject compatibility level |
-| `mode get` | Get global or per-subject registry mode |
-| `mode set` | Set global or per-subject registry mode |
-| `mode reset` | Reset per-subject mode back to the global default |
-| `context list` | List all materialized schema contexts |
-| `context delete` | Delete an (empty) context |
-
-Global flags available on every `rpk registry` subcommand:
-
-- `--schema-context <name>` — scope all operations to a named context (names start with `.`)
-- `--skip-context-check` — bypass admin API verification of context support
-- `-X registry.hosts=<host>:<port>` — override the registry endpoint
-- `--format json|yaml|text|wide|help` — persistent flag inherited by all subcommand groups (`schema`, `subject`, `compatibility-level`, `mode`, `context`); controls output format
-
-## Schema Registry Concepts
-
-**Subject** — a logical grouping for schemas. By default rpk topic produce/consume uses the **TopicNameStrategy**: `<topic>-value` for value schemas and `<topic>-key` for key schemas. One subject can hold many versions.
-
-**Version** — an integer (1, 2, 3…). `latest` is accepted anywhere a version is required. Each version has a unique **schema ID** that is globally unique across all subjects (in the default context; within a context, IDs are context-scoped).
-
-**Wire format** — producers prepend a magic byte (`0x00`) + 4-byte big-endian schema ID before the serialized payload. Consumers read the ID and fetch the schema from the registry to deserialize.
-
-**Schema types** — `AVRO`, `PROTOBUF`, `JSON`. The type is auto-detected from the file extension (`.avsc`/`.avro` → Avro, `.proto`/`.protobuf` → Protobuf, `.json` → JSON). Override with `--type`.
-
-**_schemas topic** — the internal compacted Kafka topic that persists all registry state. Do not edit it directly.
-
-**Startup recovery** — the registry store is hydrated by replaying `_schemas`, and by default that replay is **lazy**: nothing loads the topic until the first request arrives, so on a large registry the first request blocks for the whole replay. Set the cluster property `schema_registry_replay_on_startup` to replay at Schema Registry start-up instead, which makes recovery time predictable and keeps the first request from waiting behind it:
-
-```bash
-rpk cluster config set schema_registry_replay_on_startup true
-```
-
-Default `false`; no broker restart required. The replay runs in the background and does not block broker start-up, and a request that races it still triggers exactly one replay. Because the replay reads the whole local log, keep `_schemas` on local disk — see `log_eviction_exempt_topics`, which exempts it by default.
-
-## Compatibility Levels
-
-Compatibility governs which schema versions can coexist. The default is `BACKWARD`. Set globally (no subject arg) or per-subject.
-
-| Level | Guarantee |
-|---|---|
-| `BACKWARD` | New schema readers can read old schema data (previous version only) |
-| `BACKWARD_TRANSITIVE` | New schema readers can read data from all previous versions |
-| `FORWARD` | Old schema readers can read new schema data (previous version only) |
-| `FORWARD_TRANSITIVE` | Old schema readers can read data from all future versions |
-| `FULL` | BACKWARD + FORWARD with the immediately preceding version |
-| `FULL_TRANSITIVE` | BACKWARD_TRANSITIVE + FORWARD_TRANSITIVE with all versions |
-| `NONE` | No compatibility checks performed |
-
-```bash
-# Set globally
-rpk registry compatibility-level set --level BACKWARD
-
-# Set for a subject
-rpk registry compatibility-level set my-topic-value --level FULL_TRANSITIVE
-
-# Set for multiple subjects plus global in one call
-rpk registry compatibility-level set subjectA subjectB --global --level BACKWARD
-
-# Read back
-rpk registry compatibility-level get              # global
-rpk registry compatibility-level get my-topic-value --global  # subject + global
-```
-
-## Registry Mode
-
-Mode controls whether the registry accepts writes. Supported values: `READONLY`, `READWRITE`, `IMPORT`.
-
-- **READWRITE** (normal operation) — allows schema registration and deletion.
-- **READONLY** — accepts reads; rejects all writes.
-- **IMPORT** — allows registering schemas with explicit IDs and versions (for migration). Can only be set on an empty registry/subject (or use `--force` to override the emptiness check).
-
-```bash
-rpk registry mode get                        # get global mode
-rpk registry mode set --mode READONLY        # go read-only globally
-rpk registry mode set --mode READWRITE       # restore normal operation
-rpk registry mode set my-subject --mode READONLY  # per-subject
-rpk registry mode reset my-subject          # revert subject to global default
-```
-
-## Schema Contexts
-
-Contexts provide namespace isolation within a single registry instance. Each context has its own independent schema ID counter, mode settings, and compatibility settings. Requires `schema_registry_enable_qualified_subjects = true` (cluster config) and a broker restart.
-
-Context names must start with `.` and must not contain `:`. Qualified subjects use the syntax `:<context>:<subject>`.
-
-```bash
-# Enable contexts (requires broker restart)
-rpk cluster config set schema_registry_enable_qualified_subjects true
-
-# Use --schema-context to scope all registry operations to a context
-rpk registry --schema-context .staging schema create my-topic-value --schema schema.avsc
-rpk registry --schema-context .staging schema list
-rpk registry --schema-context .staging compatibility-level set --level FULL
-
-# Alternatively, use qualified subject names directly
-rpk registry schema create ":.staging:my-topic-value" --schema schema.avsc
-
-# List and delete contexts
-rpk registry context list
-rpk registry context delete .staging   # all subjects must be hard-deleted first
-```
-
-## Schema References
-
-Schemas can reference other schemas registered under different subjects (supported for Protobuf and Avro). Pass references at registration time with `--references`.
-
-```bash
-# Reference format: name:subject:version (comma-separated for multiple)
-rpk registry schema create my-topic-value \
-  --schema my-schema.proto \
-  --references "google/protobuf/timestamp.proto:google-timestamp:1"
-
-# Find schemas that reference a given subject/version
-rpk registry schema references common-types --schema-version 1
-```
-
-## Producing and Consuming with Schema Registry
-
-`rpk topic produce` and `rpk topic consume` can encode/decode using the registry automatically.
-
-```bash
-# Produce with Avro encoding (registry encodes the value)
-rpk topic produce sensor \
-  --schema-id topic \
-  --format "%v\n" <<'EOF'
-{"timestamp": 1700000000000, "identifier": "abc-123", "value": 42}
-EOF
-
-# Consume and decode Avro
-rpk topic consume sensor --use-schema-registry -f "%v\n"
-```
-
-For full produce/consume flag details, see https://docs.redpanda.com/streaming/current/reference/rpk/rpk-topic/rpk-topic-produce/ and https://docs.redpanda.com/streaming/current/reference/rpk/rpk-topic/rpk-topic-consume/.
-
-## Enterprise Security Features
-
-Two Schema Registry capabilities require a **Redpanda Enterprise license** and are key differentiators. See [enterprise-security.md](references/enterprise-security.md) for full detail.
-
-**Schema Registry Authorization** (Enterprise, v25.2+) — fine-grained ACLs on registry resources, scoped by subject and operation, managed with the same `rpk security acl` command used for Kafka ACLs.
-
-```bash
-# Enable (Self-Managed; on Cloud BYOC/Dedicated it is on by default)
-rpk cluster config set schema_registry_enable_authorization true
-
-# Global registry ACL (--registry-global has no resource name)
-rpk security acl create --allow-principal jane --operation read,write --registry-global
-
-# Per-subject ACL (use prefixed pattern for topic-name-strategy coverage)
-rpk security acl create --allow-principal User:app --operation read,write,describe \
-  --registry-subject "orders-" --resource-pattern-type prefixed
-```
-
-Two new ACL resource types: `registry` (`--registry-global`) and `subject` (`--registry-subject`). Operations: `read`, `write`, `delete`, `describe`, `describe_configs`, `alter_configs`. On license expiration you can no longer enable authorization or create/modify schema ACLs. Requires registry authentication first (`schema_registry_api.authentication_method: http_basic`).
-
-**Server-Side Schema ID Validation** (Enterprise) — brokers reject records whose encoded schema ID is not registered for the subject derived by the configured strategy.
-
-```bash
-# Cluster: none (off) | redpanda (redpanda.* props) | compat (redpanda.* + confluent.*)
-rpk cluster config set enable_schema_id_validation redpanda
-
-# Topic: opt in per key/value
-rpk topic create topic_foo \
-  --topic-config redpanda.value.schema.id.validation=true \
-  --topic-config redpanda.value.subject.name.strategy=RecordNameStrategy
-```
-
-Per-topic keys: `redpanda.key.schema.id.validation`, `redpanda.key.subject.name.strategy`, `redpanda.value.schema.id.validation`, `redpanda.value.subject.name.strategy` (each has a `confluent.*` equivalent). Strategies: `TopicNameStrategy` (default), `RecordNameStrategy`, `TopicRecordNameStrategy`. On license expiration, topics with validation settings cannot be created/modified.
-
-**Authenticating rpk to the registry**: use `-X user=`/`-X pass=` for HTTP Basic, or `-X sasl.mechanism=OAUTHBEARER -X pass=token:<oidc-token>` for OIDC. TLS/mTLS via `registry.tls.*` X-options. (OIDC authentication is Enterprise.)
-
-## Reference Directory
-
-- [schemas-and-subjects.md](references/schemas-and-subjects.md): Registering, fetching, listing, and deleting schemas and subjects; TopicNameStrategy; soft vs hard delete; metadata properties; schema references.
-- [compatibility.md](references/compatibility.md): All compatibility levels (BACKWARD/FORWARD/FULL/NONE + TRANSITIVE variants), get/set at global and subject scope, checking a candidate schema, registry mode, and schema contexts.
-- [enterprise-security.md](references/enterprise-security.md): Enterprise-licensed registry features — Schema Registry Authorization (`schema_registry_enable_authorization`, `registry`/`subject` ACL resource types, `--registry-global`/`--registry-subject`, operation mapping, RBAC roles, migration ACLs) and Server-Side Schema ID Validation (`enable_schema_id_validation`, per-topic `redpanda.*`/`confluent.*` validation + subject-name-strategy keys), plus registry authentication (HTTP Basic, OIDC/OAUTHBEARER, mTLS X-options) and license-compliance checks.
+# rpk registry
+
+`rpk registry` (alias `rpk sr`) manages subjects, schemas, compatibility
+levels, modes, and contexts in the Schema Registry built into every Redpanda
+broker, using the active rpk profile or `-X registry.hosts`. This skill keeps
+only the product-specific procedure below. Look up everything else in the docs
+(last section).
+
+## How to work
+
+**Ask before removing a schema context that still holds subjects.** A context
+can be deleted only after every subject in it is hard-deleted, so removing it
+means permanently deleting those schemas. List what is in it first
+(`rpk registry --schema-context <context> subject list --deleted`), tell the
+user which subjects would go, and get the go-ahead before any `--permanent`
+delete. Don't hard-delete them on your own to get `context delete` to succeed.
+
+**Don't hard-delete a subject or version to get past a compatibility error.**
+A permanent delete removes the schema by ID once no other subject version uses
+it, so records already written with that ID can no longer be decoded. For an
+intentional breaking change, relax the compatibility level of that one subject
+(and restore it after), never the global level, and ask before any
+`--permanent` delete.
+
+## Use the docs for everything else
+
+Look up flags, compatibility levels, modes, contexts, delete behavior,
+authorization ACLs, and Schema ID Validation settings in the Redpanda docs
+instead of from memory:
+
+- Follow `/redpanda:redpanda-docs`. Use `get_rpk_command` for one
+  `rpk registry` subcommand, `get_config_property` for a Schema Registry
+  cluster or topic property, and `ask_redpanda_question` for everything else.
+- Most useful pages: the rpk registry reference at
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-registry/rpk-registry/
+  (one page per subcommand) and the Schema Registry overview at
+  https://docs.redpanda.com/streaming/current/manage/schema-reg/schema-reg-overview/,
+  which links the API, contexts, authorization, and Schema ID Validation pages.
+  Swap `current` for the user's version.
+- For a Redpanda Cloud cluster, pass `platform: "cloud"`.
+
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the
+user to sign in through `/mcp` rather than answering from memory.
+
+`rpk registry <subcommand> --help` on the installed rpk is the live check for
+flags in that version.

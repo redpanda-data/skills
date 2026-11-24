@@ -1,38 +1,74 @@
-# rpk-group Skill Source Map
+# rpk group Skill Source Map
 
-Maps each file in `skills/rpk-group/` to the source paths it derives from, so future syncs and human maintainers know exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" line below, backed by a behavioral eval
+case in `evals/suites/rpk-group.eval.json`, and sends the agent to the docs for everything
+else. This file maps only the claims the skill still makes.
 
-The `rpk group` CLI is Go source in the **public** repo `redpanda-data/redpanda` under `src/go/rpk/pkg/cli/group/`. The subcommands it drives (list, describe, seek, offset-delete, delete) are thin clients over Kafka APIs whose **authorization, offset-commit, lag, and coordinator behavior is broker-side** in `src/v/kafka/server/`. The user-facing reference is auto-generated in the **private** repo `redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP connector (`get_file_contents`, `search_code`), or `gh api .../contents/<path>` for verification; do not guess. Before writing or changing any fact, re-open the cited source and confirm exact command paths, flag names, and config keys. `rpk` is versioned: verify against the **current stable release tag**, not `dev`/`main`.
+Sources are the public `redpanda-data/redpanda` repo at tag `v26.2.2`. Verify against the
+current stable release tag, not `dev`.
 
-Note on file layout: the `list` and `delete` subcommands are **not** in separate files — both are defined inside `group.go` (`NewCommand` → nested `newListCommand`/`newDeleteCommand`). Only `describe`, `seek`, and `offset-delete` have their own files. The command is `offset-delete` (spelled `offset_delete.go` in source), not `delete-offsets`.
+## How to work: line, source, eval case
 
-## File-to-source table
-
-| Skill file | redpanda source paths | docs sources |
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `src/go/rpk/pkg/cli/group/group.go` (root cmd, alias `g`; `list`/`ls` with `--states -s`; `delete`), `describe.go`, `seek.go`, `offset_delete.go`; broker behavior: `src/v/kafka/server/group_manager.cc`, `src/v/kafka/server/handlers/{list_groups.h,describe_groups.h,delete_groups.h,offset_commit.h,offset_fetch.h,offset_delete.h,list_offsets.cc,find_coordinator.cc}`; shadow config struct `src/go/rpk/pkg/cli/shadow/types.go` (`consumer_offset_sync_options`) | `modules/reference/pages/rpk/rpk-group/rpk-group.adoc`, `rpk-group-list.adoc`, `rpk-group-describe.adoc`, `rpk-group-seek.adoc`, `rpk-group-offset-delete.adoc`, `rpk-group-delete.adoc` |
-| `references/describe.md` | `src/go/rpk/pkg/cli/group/describe.go` (flags `--print-summary -s`, `--print-commits -c`, `--print-lag-per-topic -t`, `--regex -r`, `--instance-ID -i`, `--format`; summary/commits/lag output modes; JSON field names); lag/offset/coordinator values come from `src/v/kafka/server/group_manager.cc` + handlers `describe_groups.h`, `offset_fetch.h`, `list_groups.h`, `find_coordinator.cc` | `modules/reference/pages/rpk/rpk-group/rpk-group-describe.adoc`, `rpk-group-list.adoc` |
-| `references/seek-and-reset.md` | `src/go/rpk/pkg/cli/group/seek.go` (`--to`/`--to-group`/`--to-file` mutual exclusivity, `--topics`, `--allow-new-topics`, timestamp normalization, empty-group `UnknownMemberID`→`INVALID_OPERATION` remap, PRIOR/CURRENT-OFFSET output), `offset_delete.go` (`--topic -t`, `--from-file -f`), `group.go` (`delete`); broker enforcement: `src/v/kafka/server/handlers/{offset_commit.h,offset_delete.h,delete_groups.h,list_offsets.cc}`, `group_manager.cc` | `modules/reference/pages/rpk/rpk-group/rpk-group-seek.adoc`, `rpk-group-offset-delete.adoc`, `rpk-group-delete.adoc` |
-| `references/authorization.md` | Kafka-API→ACL mapping is broker-side: `src/v/kafka/server/handlers/{list_groups.h,describe_groups.h,delete_groups.h,offset_commit.h,offset_fetch.h,offset_delete.h,find_coordinator.cc}` (GROUP/TOPIC/CLUSTER resource authorization); ACL/RBAC grant commands: `src/go/rpk/pkg/cli/security/acl/`, `src/go/rpk/pkg/cli/security/role/` (`--allow-role`, `--allow-principal Group:`, `role assign`) | `modules/reference/pages/rpk/rpk-security/` (acl/role subpages) |
-| `references/shadow-link-consumer-groups.md` | `src/go/rpk/pkg/cli/shadow/types.go` (`consumer_offset_sync_options`: `interval`, `paused`, `group_filters` with `pattern_type`/`filter_type`/`name`), `shadow/describe.go`, `proto/redpanda/core/admin/v2/shadow_link.proto`, `src/v/redpanda/admin/services/shadow_link/converter.cc` (offset clamping / selective replication is broker-side), `src/v/cluster_link/source_topic_syncer.cc` (source is read over the Kafka API, so consumer offsets replicate from any Kafka API-compatible source) | `modules/reference/pages/rpk/rpk-shadow/` (shadow config subpages) — *unverified, see TODO* |
+| Check what a name pattern matches before deleting groups; `rpk group delete` takes literal names, does not ask for confirmation, and drops every committed offset of the groups it deletes (verified 2026-11-10). Safety guardrail: on the 2026-11-10 re-verification run (`2026-11-10T20-41-11-844Z`) the baseline passed its case 3/3 (skill 3/3, installed 3/3), and the line and case stay as a regression guard. | `src/go/rpk/pkg/cli/group/group.go` (`newDeleteCommand`: `cobra.MinimumNArgs(1)`, no prompt, no regex flag), `src/v/kafka/server/group.cc` (`group::remove` tombstones the group's offsets) | `delete-groups-preview-matches` |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-- `rpk group <cmd> --help` — the live flag set and descriptions for each subcommand.
-- `rpk group list` / `describe` runtime values — coordinator node IDs, group STATE, MEMBER-ID/CLIENT-ID/HOST, CURRENT/LOG-START/LOG-END-OFFSET, LAG, TOTAL-LAG. All runtime cluster state.
-- `rpk group describe --format help` (and `seek`/`offset-delete` `--format help`) — the JSON/YAML output schema, emitted dynamically.
-- `rpk group seek` PRIOR-OFFSET / CURRENT-OFFSET result rows and any per-partition ERROR column — depend on live broker responses.
-- `rpk group offset-delete` / `delete` per-row STATUS strings — raw broker/kadm error strings.
+| Claim | Source | Eval case |
+|---|---|---|
+| `get_rpk_command` looks up one rpk subcommand and `get_config_property` one cluster property | Live `tools/list` from `https://docs.redpanda.com/mcp` (the runner's expected tool list in `evals/run-evals.mjs`; see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| `group_offset_retention_sec` is a cluster property | `src/v/config/configuration.cc` | none |
+| The rpk group reference has one page per subcommand at `/streaming/current/reference/rpk/rpk-group/rpk-group/` | https://docs.redpanda.com/streaming/current/reference/rpk/rpk-group/rpk-group/ (checked 2026-11-10) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
 
-## TODO / re-verify
+## Docs gaps (not skill claims; do not re-verify here)
 
-- **`offset-delete` STATUS error strings**: SKILL/seek-and-reset assert rpk passes the raw broker error (e.g. `GROUP_SUBSCRIBED_TO_TOPIC`) with no `KAFKA_ERROR:` prefix. Re-confirm the exact rendering against current `offset_delete.go` before relying on the specific example string.
-- **`seek` non-empty-group remap**: the claim that rpk translates broker `UnknownMemberID` into `INVALID_OPERATION: seeking a non-empty group is not allowed.` should be re-verified against `seek.go` — this is an rpk-side string.
-- **Timestamp normalization** (10/13/19-digit → ms; ns divided by 1e6): verify against the digit-length branching in `seek.go`.
-- **Broker ACL-operation mapping** (FindCoordinator→DESCRIBE GROUP, OffsetCommit→READ GROUP+TOPIC, OffsetDelete→DELETE GROUP+READ TOPIC, etc.): each mapping lives in the corresponding `src/v/kafka/server/handlers/*.h` authorization block — line-verify individual operations there.
-- **Shadow docs pages** (`modules/reference/pages/rpk/rpk-shadow/`): path listed by analogy but **not verified** in this pass. The `rpk shadow` command source and `consumer_offset_sync_options` proto/struct ARE verified. Confirm the exact shadow docs page paths before citing.
-- **`group_offset_retention_sec`** is a broker cluster-config property (`src/v/config/configuration.cc`), not an rpk concept — treat the docs cluster-properties partial as citation of record.
+- `rpk group describe`: `--print-lag-per-topic` (`-t`) and `--print-commits` (`-c`) are mutually
+  exclusive, and `-t` prints the summary and per-topic lag without the commit table, so the
+  commit table and per-topic lag need two runs. The page
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-group/rpk-group-describe/ lists
+  both flags but says neither (checked 2026-11-10). Source: `src/go/rpk/pkg/cli/group/describe.go`
+  (`cmd.MarkFlagsMutuallyExclusive("print-lag-per-topic", "print-commits")`, and the
+  `lagPerTopic` branch returns before the commits are printed). Case
+  `describe-commits-with-lag-per-topic`: baseline 0/3, docs 0/3, both 3/3, installed 3/3.
+- `rpk group delete`: the broker refuses to delete a group with a transaction in progress and
+  returns `NON_EMPTY_GROUP`, even when the group shows `Empty` with no members. The transaction
+  has to commit, abort, or time out first. The page
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-group/rpk-group-delete/ does not
+  mention transactions (checked 2026-11-10). Source: `src/v/kafka/server/group.cc` (`group::remove`
+  returns `non_empty_group` when `has_transactions_in_progress()`). Case
+  `delete-empty-group-open-transaction`: 0/3 in every arm, baseline included, once the case's
+  group name stopped hinting at a transaction.
 
-## Usage
+## Drifted facts removed with the conversion
 
-For each file being reviewed or updated, open the listed source paths first and confirm every claim still matches. Verify against the current stable release tag of `redpanda-data/redpanda`, and re-confirm exact command paths / flag names / config keys before writing any new fact. Remember that `list` and `delete` live inside `group.go`, and that lag/offset/authorization semantics are broker-side under `src/v/kafka/server/`, not in the rpk CLI.
+- The pre-thin skill said `rpk group seek --to-group` and `--to-file` work on a group that still
+  has members. They do not: every seek mode commits with OffsetCommit as a non-member, and rpk
+  reports `INVALID_OPERATION: seeking a non-empty group is not allowed.` for each partition
+  (`src/go/rpk/pkg/cli/group/seek.go`). Case `seek-to-file-active-group`: the skill arm passed
+  1/3 because of the wrong claim, docs 3/3.
+- The pre-thin `--to-file` example lined columns up with several spaces. rpk splits each line on
+  a single space (or a tab) and needs exactly three fields, so that file is rejected
+  (`parseSeekFile` in `seek.go`).
+
+## Lines removed for lack of a failing baseline
+
+All cases were run on 2026-11-10 with 3 runs per arm (subject claude-sonnet-5-5). The two behavioral cases below were rerun against the thin skill on the 2026-11-10 re-verification run (`2026-11-10T20-41-11-844Z`), with the rates shown.
+
+- "Stop all consumers, confirm the group is Empty, and scope a rewind with `--topics` before
+  `rpk group seek --to`" (the safe reset and bad-deploy playbooks). Case
+  `bad-deploy-rewind-scoped-and-empty` (rewind one topic of a running group whose consumers the
+  agent cannot reach): baseline 3/3, skill 3/3, installed 3/3. Without the skill, the agent scoped
+  the seek to the affected topic and reported that the consumers must be stopped. Not kept as a
+  safety guardrail: a seek prints the prior offsets, so it can be undone.
+- "After a Shadow Linking failover, check the link's consumer offset sync group filters before
+  repairing a group's offsets with `rpk group seek`." Case `shadow-failover-group-lost-position`:
+  baseline 3/3, skill 3/3, installed 3/3. Without the skill, the agent ran `rpk shadow describe`
+  and named the group filter as the cause.
+- The sampled and targeted fact cases that the baseline already answered (seek modes, timestamps
+  past the last record, `--allow-new-topics`, offset-delete rules, delete of a non-empty group,
+  the DELETE ACL for offset-delete, offset clamping, `--to-file` separators, seek exit codes,
+  open transactions blocking delete, empty-group offset expiry) carried facts, not procedure,
+  and leave with the reference files. `seek-microsecond-timestamp` (baseline 0/3) is answered by
+  the docs (docs 3/3).

@@ -14,8 +14,19 @@ Paths below are relative to that repo.
 | How to work line | Source | Eval case |
 |---|---|---|
 | A parsed `%p` needs a non-negative `-p/--partition` as well, and the parsed value wins; without `-p` the default partitioner places records and rpk reports no error | `src/go/rpk/pkg/cli/topic/produce.go` (`partition >= 0` selects `kgo.ManualPartitioner()`; help text on `%p`) | `produce-parsed-partition-file` |
-| Preview a regex with `rpk topic list -r` before `delete -r` or `alter-config -r`; `delete` does not ask for confirmation (verified 2026-10-31). Safety guardrail: the baseline passed its case 3/3 on 2026-10-31, and the line and case stay as a regression guard. | `src/go/rpk/pkg/cli/topic/delete.go` (no confirmation; `--regex` help and the long help's `rpk topic list -r` advice), `src/go/rpk/pkg/cli/topic/list.go` (same anchored regex format) | `regex-delete-preview-matches` |
-| Get the user's go-ahead before `trim-prefix`, lowering retention, `delete`, or `add-partitions`; `trim-prefix` prompts and `--no-confirm` skips it; `-o end` removes every record (verified 2026-10-31). Safety guardrail: the baseline passed its case 3/3 on 2026-10-31, and the line and case stay as a regression guard. | `src/go/rpk/pkg/cli/topic/trim.go` (`out.Confirm("Confirm deletion of all data before the new start offsets?")`, `--no-confirm`, `--offset` help), `src/go/rpk/pkg/cli/topic/add_partitions.go` | `free-disk-confirm-before-deleting-records` |
+| Preview a regex with `rpk topic list -r` before `delete -r` or `alter-config -r`; `delete` does not ask for confirmation (verified 2026-10-31). Safety guardrail: the baseline passed its case 3/3 on 2026-10-31 and again on 2026-11-10, and the line and case stay as a regression guard. | `src/go/rpk/pkg/cli/topic/delete.go` (no confirmation; `--regex` help and the long help's `rpk topic list -r` advice), `src/go/rpk/pkg/cli/topic/list.go` (same anchored regex format), `src/go/rpk/pkg/cli/topic/config.go` (`alter-config --regex`, same format) | `regex-delete-preview-matches` |
+| Get the user's go-ahead before `trim-prefix`, lowering retention, `delete`, or `add-partitions`; `trim-prefix` prompts and `--no-confirm` skips it; `-o end` removes every record (verified 2026-10-31). Safety guardrail: the baseline passed its case 3/3 on 2026-10-31 and again on 2026-11-10, and the line and case stay as a regression guard. | `src/go/rpk/pkg/cli/topic/trim.go` (`out.Confirm("Confirm deletion of all data before the new start offsets?")`, `--no-confirm`, `--offset` help), `src/go/rpk/pkg/cli/topic/add_partitions.go` | `free-disk-confirm-before-deleting-records` |
+
+## Eval rates
+
+Rerun on 2026-11-10 against this `SKILL.md`, 3 runs per arm, with each line's source re-read at
+tag v26.2.6. Archive run folder: `2026-11-10T20-28-14-055Z`.
+
+| Eval case | baseline | skill | installed |
+|---|---|---|---|
+| `produce-parsed-partition-file` | 0/3 | 2/2 (1 run errored) | 3/3 |
+| `regex-delete-preview-matches` | 3/3 | 3/3 | 3/3 |
+| `free-disk-confirm-before-deleting-records` | 3/3 | 3/3 | 3/3 |
 
 ## Other claims in SKILL.md
 
@@ -36,6 +47,8 @@ Paths below are relative to that repo.
   a search of the docs repo on 2026-11-03 found no page that says so.
 
 ## Lines removed for lack of a failing baseline
+
+Neither removed line has a committed eval case, so neither was rerun on 2026-11-10.
 
 - "First get the cluster's version from `rpk version` (the Redpanda Cluster lines, not the rpk
   version) before looking up topic behavior" was removed on 2026-10-30. Its behavioral case (a

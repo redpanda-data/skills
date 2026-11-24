@@ -13,41 +13,27 @@ description: >-
 
 # Agentic Data Plane: Observability
 
-The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agents and MCP servers. This skill covers the records ADP keeps of what ran: traces, transcripts and the audit log. Building agents, MCP servers and LLM providers, and the `rpk ai` CLI itself, are in `/redpanda:adp`; the controls those records report on (access policies, budgets, guardrails) are in `/redpanda:adp-governance`.
+The Agentic Data Plane (ADP) keeps three records of what ran: traces (`rpk ai trace`),
+conversation transcripts (`rpk ai agent transcript`) and the audit log (`rpk ai auditlog`). The
+docs cover all of them, so this skill carries no procedure of its own. Sign in and select an
+environment first, as described in `/redpanda:adp`.
 
-**Before any command:** sign in and select an environment (`rpk ai auth login`, then `rpk ai env use <environment>`), as described in `/redpanda:adp` (*Auth model*). Operate ADP with `rpk ai`, send the user to the UI for tasks the CLI does not cover, and confirm the live surface with `--help` before acting.
+## Use the docs
 
-**Maturity:** The docs carry no Preview or Experimental marker on traces, transcripts, the audit log, the Agent network view, or the Home dashboard. Traces dropped its Preview badge and its documented Preview marker with the release that moved it under **Observability**.
+Look up commands, flags, filters, columns, statuses, permissions and UI views in the docs instead
+of from memory:
 
-## Where each task lives
+- Follow `/redpanda:redpanda-docs`. Use `get_rpk_command` for one `rpk ai` command's flags and
+  help (for example `rpk ai auditlog list`), `list_rpk_commands` with `plugin: "ai"` to find a
+  command, and `ask_redpanda_question` for everything else. ADP docs are not versioned, so pass
+  no `version`.
+- The ADP docs live at https://docs.redpanda.com/agentic-data-plane/. Most useful pages:
+  https://docs.redpanda.com/agentic-data-plane/monitor/traces/,
+  https://docs.redpanda.com/agentic-data-plane/monitor/transcripts/,
+  https://docs.redpanda.com/agentic-data-plane/monitor/audit-log/ and
+  https://docs.redpanda.com/agentic-data-plane/monitor/agent-network/.
 
-| Task | CLI | UI |
-|---|---|---|
-| Transcripts | `rpk ai agent transcript` | Agent → Transcripts |
-| Audit log | `rpk ai auditlog` | Observability → Audit log |
-| Traces: one row per run, span by span | `rpk ai trace` | Observability → Traces |
-| Agent network | `rpk ai agent-network` | Observability → Agent network |
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the user to sign in
+through `/mcp` rather than answering from memory.
 
-## Discover the live surface
-
-```bash
-# Transcripts are a subcommand of `agent` (aliases: transcripts, tr), not a top-level group
-rpk ai agent transcript list <agent>
-rpk ai agent transcript get <agent> <conversation-id>
-
-# These are read-only top-level groups of their own
-rpk ai auditlog --help      # aliases audit-log, audit; list, get, query
-rpk ai trace --help         # list, get, span
-rpk ai agent-network --help # get, node, provider-failures
-```
-
-## Components
-
-- **Transcripts** (`rpk ai agent transcript list|get`, UI): what an agent did in a conversation: turns, tool calls, models, timing.
-- **Audit log** (`rpk ai auditlog list|get`, UI): who was allowed or refused what across ADP, which policy decided, and on whose behalf an agent acted.
-- **Traces** (`rpk ai trace`, **Observability → Traces**): one row per agent run or gateway call, expandable into a span waterfall — model calls, tool calls, subagent hand-offs, gateway calls, and the guardrail and data-policy decisions each met. Start here to find which call made a run slow, expensive, or wrong.
-- **Home** (UI) and **Agent network** (`rpk ai agent-network`): headline metrics and agent-to-resource topology. Per-agent conversation sessions (**Playground history**, `rpk ai session`) are covered in `/redpanda:adp`.
-
-## Reference files
-
-- [references/observability.md](references/observability.md): which surface answers which question, traces (CLI and UI), transcripts (CLI filters, UI, recorded errors, context size and compaction), the audit log (CLI, table, filters, grouped calls, delegation, event detail, MCP gateway records), the traces/transcripts/audit-log comparison, other monitoring views, and permissions.
+`rpk ai <command> --help` on the installed plugin is the live check for flags in that version.

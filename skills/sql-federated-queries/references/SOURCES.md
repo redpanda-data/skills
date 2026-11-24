@@ -1,62 +1,74 @@
 # sql-federated-queries Skill Source Map
 
-Maps each file in `skills/sql-federated-queries/` to the published Redpanda Cloud docs it
-derives from. The skill serves Redpanda Cloud users of Redpanda SQL (the managed engine on
-BYOC and BYOVPC clusters): querying Redpanda topics through Redpanda catalogs, including the
-Iceberg history of Iceberg-enabled topics through a linked Iceberg catalog.
+Scope gate: what a Redpanda Cloud user of Redpanda SQL (the managed engine on BYOC and BYOVPC
+clusters) can do when querying Redpanda topics through Redpanda catalogs, including the Iceberg
+history of Iceberg-enabled topics through a linked Iceberg catalog. The published Redpanda Cloud
+docs are the scope gate; the engine source only confirms documented behavior.
 
-**Scope gate: the published Redpanda Cloud docs; the engine source is used only to confirm
-behavior of documented surfaces, never to add undocumented ones.** Anything a user cannot
-reach on the managed engine (operator settings, gated features, self-hosted deployment,
-direct reads or writes against an Iceberg catalog's own tables) stays out of the skill.
+The skill is thin and carries no "How to work" line: no procedure from the full skill passed the
+test of a behavioral eval case that the baseline fails (see below). It sends the agent to the
+docs for everything. Its eval suite is `evals/suites/sql-federated-queries.eval.json`.
 
-Read the docs from the private `redpanda-data/cloud-docs` repo at `origin/main`
-(`git -C <cloud-docs> show origin/main:<path>`) or the live site
-(https://docs.redpanda.com/cloud-data-platform/). Pages under `modules/manage/` and
-`modules/reference/pages/properties/` are single-sourced from the private
-`redpanda-data/docs` repo; read the included source there and keep only the
-`ifdef::env-cloud[]` branches and the `redpanda-cloud`-tagged properties.
+## Docs that cover the skill
 
-Verified 2026-11-04.
+The Redpanda SQL docs are published under https://docs.redpanda.com/cloud-data-platform/ from the
+private `redpanda-data/cloud-docs` repo (`platform: "cloud"` in the Docs MCP). Pages under
+`modules/manage/` and `modules/reference/pages/properties/` are single-sourced from the private
+`redpanda-data/docs` repo. Paths are in `redpanda-data/cloud-docs`:
 
-## File-to-source table
+- `modules/sql/pages/query-data/{redpanda-catalogs,query-streaming-topics,query-iceberg-topics,query-nested-fields,tables-and-views}.adoc`
+- `modules/reference/pages/sql/sql-statements/{create,alter,drop}-table.adoc`, `refresh.adoc`,
+  `{create,alter,drop}-redpanda-catalog.adoc`, `{create,alter,drop}-iceberg-catalog.adoc`,
+  `{create,alter,drop}-storage.adoc`, `describe.adoc`, `show-catalogs.adoc`, `show-tables.adoc`
+- `modules/reference/pages/sql/system-virtual-tables.adoc`
+- `modules/manage/pages/iceberg/{about-iceberg-topics,use-iceberg-catalogs,specify-iceberg-schema}.adoc`,
+  `modules/manage/pages/iceberg/rest-catalog/index.adoc`
 
-All paths are in `redpanda-data/cloud-docs` unless noted.
+Engine behavior is checked against the SQL engine source at the release that Redpanda Cloud
+runs. Read the pinned release; do not copy it here.
 
-| Skill file | Published source paths |
+## Claims in SKILL.md
+
+| Claim | Source |
 |---|---|
-| `SKILL.md` | `modules/sql/pages/query-data/{redpanda-catalogs,query-streaming-topics,query-iceberg-topics,query-nested-fields,tables-and-views}.adoc` (the topic-backed-table half of `tables-and-views`; views belong to `/redpanda:sql`), `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{index,create-table,alter-table,drop-table,refresh,describe,show-catalogs,show-tables}.adoc`, `modules/reference/pages/sql/system-virtual-tables.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/sql/pages/get-started/sql-quickstart.adoc` (connection panel) |
-| `references/redpanda-catalogs.md` | `modules/reference/pages/sql/sql-statements/{create,alter,drop}-redpanda-catalog.adoc`, `{create,alter,drop}-table.adoc`, `refresh.adoc`, `modules/sql/pages/query-data/{redpanda-catalogs,query-streaming-topics,query-nested-fields,query-iceberg-topics}.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/sql/pages/manage/manage-access.adoc`, `modules/reference/pages/sql/sql-data-types/{row,map,uuid,bytea,numeric-type/numeric}.adoc` |
-| `references/iceberg.md` | `modules/sql/pages/query-data/{query-iceberg-topics,redpanda-catalogs,query-nested-fields}.adoc`, `modules/reference/pages/sql/sql-statements/refresh.adoc`, `modules/reference/partials/sql-managed-catalog-note.adoc`, `modules/reference/pages/sql/sql-statements/{create,alter,drop}-iceberg-catalog.adoc`, `{create,alter,drop}-storage.adoc`, `alter-redpanda-catalog.adoc`, `create-table.adoc`, `describe.adoc`, `modules/reference/pages/sql/sql-data-types/{map,uuid,numeric-type/numeric}.adoc`, `modules/sql/pages/get-started/{enable-sql-byovpc-aws,enable-sql-byovpc-gcp}.adoc` (BYOVPC catalog access for the engine) |
-| `references/files-and-system-tables.md` | `modules/reference/pages/sql/system-virtual-tables.adoc` (catalog-metadata tables only: `system.catalogs`, `system.kafka_connections`, `system.kafka_sources`, `system.iceberg_catalogs`, `system.iceberg_tables`), `modules/reference/pages/sql/sql-statements/{show-catalogs,show-tables,describe,copy-to,index}.adoc`, `modules/sql/pages/manage/manage-access.adoc` |
-| `references/redpanda-iceberg-source-config.md` | `modules/manage/pages/iceberg/{about-iceberg-topics,use-iceberg-catalogs,specify-iceberg-schema}.adoc`, `modules/manage/pages/iceberg/rest-catalog/index.adoc`, `modules/manage/pages/schema-reg/schema-id-validation.adoc`, `modules/reference/pages/properties/{cluster-properties,topic-properties}.adoc`, `modules/sql/pages/query-data/query-iceberg-topics.adoc`. Single-sourced content: `redpanda-data/docs` `modules/manage/pages/iceberg/*.adoc`, `modules/manage/pages/schema-reg/schema-id-validation.adoc`, `modules/reference/partials/properties/{cluster-properties,topic-properties}.adoc` (Cloud view only) |
+| Topics are mapped to tables through a Redpanda catalog; with an Iceberg REST catalog the same table also returns the Iceberg history | cloud-docs `modules/sql/pages/query-data/{redpanda-catalogs,query-iceberg-topics}.adoc` |
+| Connection details come from the **SQL** tab of **How to connect** | cloud-docs `modules/sql/pages/get-started/sql-quickstart.adoc` |
+| Docs URLs | served at https://docs.redpanda.com/cloud-data-platform/ from cloud-docs |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) |
 
-## Deferred to live introspection (not drift)
+## Lines removed: no failing baseline
 
-- Names of the managed storage connection and Iceberg catalog: read from
-  `system.kafka_connections.iceberg_catalog`, `SHOW ICEBERG CATALOGS`, `DESCRIBE`.
-- Topic and table contents, catalog contents, `system.*` rows.
-- Cluster and topic property defaults: the Cloud Console and Cloud property references.
-- Supported cloud providers and REST catalog providers: the published pages.
-- The connection options that `ALTER REDPANDA CATALOG ... RESET` accepts beyond the
-  ones `create-redpanda-catalog.adoc` documents: the skill resets only documented
-  options, and `DESCRIBE REDPANDA CATALOG` shows what a catalog currently has.
-- Which schema holds the managed catalog connections: read it from `DESCRIBE`.
+Tested for a "How to work" line on 2026-11-10 (3 runs per arm). The baseline handled it, so the
+skill carries no line for it.
 
-## Open questions for human review
+- **After a REST catalog secret rotates, update the cluster-side secret, not the SQL engine's
+  managed Iceberg catalog.** Redpanda Cloud writes the managed catalog's options again when the
+  cluster's Iceberg configuration changes. Case `rotated-catalog-secret-fixed-on-cluster`:
+  baseline 3/3, skill 3/3, installed 3/3 (rerun after the case fix below, eval archive run folder
+  `sql-federated-queries`, 2026-11-10). Not kept as a safety guardrail: changing a managed
+  catalog is overwritten on the next sync and loses no data. Source: cloud-docs
+  `modules/reference/pages/sql/sql-statements/{alter-iceberg-catalog,alter-redpanda-catalog}.adoc`
+  (warnings); rpk `src/go/rpk/pkg/cli/security/secret/update.go` in `redpanda-data/redpanda`.
 
-- `system-virtual-tables.adoc` says Iceberg schemas are auto-loaded "when you `CREATE TABLE`
-  against an Iceberg catalog", while `create-table.adoc` requires a Redpanda catalog and
-  `create-iceberg-catalog.adoc` says standalone Iceberg querying is not supported. The skill
-  says only "automatically when the table is created".
-- The managed Iceberg catalog is named `default_iceberg_catalog` in
-  `create-iceberg-catalog.adoc` but shown as `lakehouse_catalog` / `iceberg_storage` in
-  `query-iceberg-topics.adoc`. The skill avoids hardcoding either name.
-- `alter-redpanda-catalog.adoc` dropped its "Relink to a different Iceberg catalog"
-  example on 2026-10-23 but kept `USING CATALOG <name>` in the syntax, described as
-  linking to an existing Iceberg catalog. The skill no longer describes relinking a
-  linked catalog to a different Iceberg catalog; re-check whether the removal was
-  meant to withdraw that operation, and restore the guidance if it was not.
-- `copy-to.adoc` examples write to server-side paths (`'/path/to/...'`); on the managed engine
-  the useful targets are `STDOUT` and cloud storage. The skill keeps the documented syntax and
-  examples only for `STDOUT`, S3, and GCS.
+The full skill's facts (managed catalogs, `CREATE TABLE` options, metadata columns, decoding,
+`REFRESH`, Iceberg mode matching and type limits, system tables, Iceberg Topics properties) were
+sampled in 13 fact cases. The docs arm passed every one 3/3 (2026-11-10), so none is carried.
+
+## Corrections after the eval run
+
+- `rotated-catalog-secret-fixed-on-cluster` rejected legitimate commands: its mocks did not match a
+  secret name in double quotes, and its expected call did not match a secret value in double
+  quotes. Both now accept quoted arguments. The rerun did not change the verdict: the baseline
+  still passes, so no line is kept.
+
+## Docs gaps reported (not skill claims; do not re-verify here)
+
+- `DESCRIBE REDPANDA CATALOG` output. `modules/reference/pages/sql/sql-statements/describe.adoc`
+  (https://docs.redpanda.com/cloud-data-platform/reference/sql/sql-statements/describe/) says it
+  lists the catalog's tables and topic mappings and shows `table_name` and `topic_name` columns.
+  The engine runs `SELECT * FROM system.kafka_connections` for the named catalog, so it returns
+  the connection row, including the linked `iceberg_catalog`. Source: the SQL
+  engine's query planner (`SHOW_KAFKA_CATALOG`) at the pinned release.
+  `redpanda-catalogs.adoc` correctly says the statement shows the linked catalog, but the docs
+  arm could not say which column holds it.
+

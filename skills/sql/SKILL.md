@@ -42,8 +42,8 @@ the user has no role with *SQL: Access* or *SQL: Manage*: tell the user to assig
 `ALTER USER ... SUPERUSER` for an email-named user. The Cloud user sync owns `CONNECT` and
 superuser for those users and revokes a manual grant on its next pass.
 
-**Read the stored grants before any REVOKE.** `REVOKE` must name a stored pattern exactly. A
-pattern that matches no stored grant is an error, so a wildcard grant cannot be narrowed by
+**Read the stored grants before any REVOKE.** A `REVOKE` pattern removes every stored grant it
+covers, and a pattern that covers none is an error, so a wildcard grant cannot be narrowed by
 revoking one topic under it. Look first:
 
 ```sql

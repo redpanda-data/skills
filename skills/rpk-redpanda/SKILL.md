@@ -1,226 +1,67 @@
 ---
 name: rpk-redpanda
 description: >-
-  Operate a self-managed Redpanda broker process and node from the CLI using the
-  `rpk redpanda` command family and `rpk iotune`: node lifecycle (start/stop),
-  production vs. development mode, kernel autotuning, node configuration
-  (redpanda.yaml), and per-node Admin API operations including broker
-  decommission/recommission. Self-managed only — these commands operate the
-  broker process on the node itself and don't apply to Redpanda Cloud clusters.
-  Use when starting or stopping a broker, bootstrapping redpanda.yaml, switching
-  node mode, running the autotuner, benchmarking disk I/O with iotune, or
-  decommissioning a broker via the admin listener. For cluster-wide operations
-  (cluster config, partition movement, maintenance mode, cluster health), see
-  /redpanda:rpk-cluster.
+  Operate a self-managed Redpanda broker node from the CLI with the
+  `rpk redpanda` command group and `rpk iotune`, and look up node commands and
+  broker properties in the Redpanda docs. Use when starting, stopping, or
+  restarting a broker, preparing a node for production, switching between
+  production, development, and recovery mode, running the autotuner or
+  benchmarking disks with iotune, bootstrapping or editing redpanda.yaml, or
+  taking a broker down for a reboot or upgrade. Self-managed only: these
+  commands act on the broker host and don't apply to Redpanda Cloud. For
+  cluster-wide operations (cluster config, decommission, maintenance mode,
+  partitions, health), see /redpanda:rpk-cluster.
 ---
 
-# rpk redpanda: Node Lifecycle, Tuning & Broker Decommission
+# rpk redpanda
 
-The `rpk redpanda` family operates a **single Redpanda broker process and its
-host node**: starting/stopping the process, editing the node's local
-`redpanda.yaml`, tuning the Linux kernel for production, and talking to a
-broker's Admin API listener (including broker decommission/recommission).
-`rpk iotune` (a separate top-level command) benchmarks the node's disk
-hardware for the same node-provisioning story.
+`rpk redpanda` operates one Redpanda broker on its own host: it starts and stops
+the process, sets the node's mode, tunes the kernel, and edits the local
+`redpanda.yaml`. This skill keeps only the product-specific procedure below.
+Look up everything else in the docs (last section).
 
-**Self-managed only.** These commands manage the broker process on the node
-itself. They are not applicable to Redpanda Cloud (Serverless, BYOC,
-Dedicated), where Redpanda operates the brokers. Most of the family is also
-**Linux-only**: `start`, `stop`, `mode`, `check`, `tune`, `config`, and
-`iotune` are hidden on macOS/Windows builds of rpk — only the `admin`
-subtree (which talks to a possibly-remote Admin API) is available
-everywhere.
+## How to work
 
-## Command Tree
+**Check developer mode before you start a broker that holds real data.** Read
+the node's `redpanda.yaml` first. When `redpanda.developer_mode` is `true` and
+no `--mode` is given, `rpk redpanda start` runs in `dev-container` mode, which
+bypasses fsync and can lose data, and `rpk redpanda start --mode dev-container`
+saves `developer_mode: true` for every later start. On a production broker,
+run `rpk redpanda mode production` (or ask the user) before you start it.
+Never use `--mode dev-container` on a node that serves real data.
 
-| Command | Purpose |
-|---|---|
-| `rpk redpanda start` | Start the local broker process (optionally tuning first) |
-| `rpk redpanda stop` | Stop the local broker: SIGINT → SIGTERM → SIGKILL escalation |
-| `rpk redpanda mode <mode>` | Switch node presets: `production`/`prod`, `development`/`dev`, `recovery` |
-| `rpk redpanda check` | Verify the system meets Redpanda's requirements |
-| `rpk redpanda tune <tuner>...` \| `all` | The autotuner — optimize Linux kernel settings (root required) |
-| `rpk redpanda tune list` | List tuners with enabled/supported status |
-| `rpk redpanda tune help [TUNER]` | Describe a tuner in detail |
-| `rpk redpanda config bootstrap` | Generate `redpanda.yaml` to form/join a cluster |
-| `rpk redpanda config set <key> <value>` | Set node config values in `redpanda.yaml` |
-| `rpk redpanda config print` | Display the node configuration (alias: `dump`) |
-| `rpk redpanda config init` | (Deprecated) Set the node UUID after install |
-| `rpk redpanda admin brokers list` | (Deprecated → `rpk cluster info -b --detailed`) List brokers via the admin listener |
-| `rpk redpanda admin brokers decommission <ID>` | (Deprecated → `rpk cluster brokers decommission`) Remove a broker from the cluster |
-| `rpk redpanda admin brokers decommission-status <ID>` | (Deprecated → `rpk cluster brokers decommission-status`) Monitor decommission progress |
-| `rpk redpanda admin brokers recommission <ID>` | (Deprecated → `rpk cluster brokers recommission`) Abort an in-progress decommission |
-| `rpk redpanda admin partitions list [ID]` | List the partitions hosted on one broker |
-| `rpk redpanda admin config print` | (Deprecated → `rpk cluster config list --node-id <ID>`) Display a broker's effective configuration |
-| `rpk redpanda admin config log-level set` | (Deprecated → `rpk cluster loggers set`) Temporarily change a broker's logger levels |
-| `rpk iotune` | Benchmark disk I/O and write `io-config.yaml` for the broker to read at startup |
+**Drain a broker before you stop it.** When a broker is part of a running
+cluster, run `rpk cluster maintenance enable <broker-id> --wait` first so its
+partition leadership moves to other brokers, then stop Redpanda on it. Turn
+maintenance mode off with `rpk cluster maintenance disable <broker-id>` once it
+is back.
 
-> **v26.2 relocation.** The `rpk redpanda admin brokers` and `rpk redpanda
-> admin config` commands are now **hidden and deprecated**. Broker
-> decommission/recommission moved to `rpk cluster brokers`, log-level control
-> to `rpk cluster loggers`, and per-node config printing to `rpk cluster config
-> list --node-id <ID>` (all in the **rpk-cluster** skill). The old spellings
-> still run — they forward to the new commands — but new automation should use
-> the `rpk cluster ...` forms. `rpk redpanda admin partitions list` is
-> unaffected.
+**Don't run the autotuner on Azure.** In Azure self-managed environments, don't
+apply the tuners: no `rpk redpanda tune`, no `rpk redpanda start --tune`, and no
+`redpanda-tuner` service. Other production preparation, such as production
+mode, `rpk iotune`, and `rpk redpanda check`, still applies.
 
-## Quickstart
+## Use the docs for everything else
 
-```bash
-# --- Provision a production node (run on the node, as root where noted) ---
+Look up subcommands, flags, defaults, modes, tuners, node properties, and
+procedures in the Redpanda docs instead of from memory:
 
-# 1. Generate redpanda.yaml with this node's IP and the seed servers
-rpk redpanda config bootstrap --self <private-ip> --ips <ip1>,<ip2>,<ip3>
+- Follow `/redpanda:redpanda-docs`. Use `get_rpk_command` for one rpk command,
+  `get_config_property` for one broker property and `list_config_properties`
+  to find a property's name, and `ask_redpanda_question` for everything else.
+- Most useful pages: the rpk redpanda reference at
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-redpanda/rpk-redpanda/
+  (one page per subcommand), the rpk iotune reference at
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-iotune/, the
+  broker properties reference at
+  https://docs.redpanda.com/streaming/current/reference/properties/broker-properties/,
+  and the node maintenance procedure at
+  https://docs.redpanda.com/streaming/current/manage/node-management/. Swap
+  `current` for the user's version.
 
-# 2. Switch the node to production mode (enables the production tuner set)
-rpk redpanda mode production
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the
+user to sign in through `/mcp` rather than answering from memory.
 
-# 3. Run the autotuner (requires root; Linux kernel settings)
-sudo rpk redpanda tune all
-
-# 4. Benchmark disk I/O once per hardware type (defaults: 10m run,
-#    writes /etc/redpanda/io-config.yaml which redpanda reads at startup)
-sudo rpk iotune
-
-# 5. Verify the system meets requirements, then start
-rpk redpanda check
-rpk redpanda start
-
-# --- Development: one-shot local broker with dev presets ---
-rpk redpanda start --mode dev-container
-
-# --- Stop the local broker (SIGINT, then SIGTERM, then SIGKILL) ---
-rpk redpanda stop --timeout 10s
-
-# --- Node configuration (redpanda.yaml on local disk) ---
-rpk redpanda config set redpanda.empty_seed_starts_cluster false
-rpk redpanda config set rpk.tune_aio_events true
-rpk redpanda config print
-
-# --- Broker decommission (canonical since v26.2; rpk-cluster skill) ---
-rpk cluster info -b --detailed                     # list brokers
-rpk cluster brokers decommission 4
-rpk cluster brokers decommission-status 4 -d -H    # monitor
-rpk cluster brokers recommission 4                 # abort (only while in progress)
-
-# --- Per-broker diagnostics via the admin listener ---
-rpk redpanda admin partitions list 1 --leader-only
-rpk cluster config list --node-id 0                # a broker's effective config
-rpk cluster loggers set storage --node-id 0 -l debug -e 300
-```
-
-## Decision Rules
-
-- **`rpk redpanda` vs `rpk cluster`:** `rpk redpanda` is node-level (the
-  local process, the local `redpanda.yaml`, per-broker admin operations).
-  `rpk cluster` is cluster-wide (cluster config, health, partition
-  balancing/movement, maintenance mode, self-test) — see the **rpk-cluster**
-  skill.
-- **Broker decommission moved in v26.2.** The canonical commands are now
-  `rpk cluster brokers decommission/decommission-status/recommission`
-  (rpk-cluster skill). The `rpk redpanda admin brokers ...` spellings still
-  work but are hidden, deprecated aliases that forward there.
-- **Maintenance mode is NOT here.** Draining leadership for a rolling
-  restart is `rpk cluster maintenance enable/disable/status` (rpk-cluster
-  skill). Entering maintenance mode before decommissioning is **optional** —
-  decommission drains leadership gracefully on its own.
-- **Node config vs cluster config:** properties in the local
-  `redpanda.yaml` (listeners, seeds, data dir, `rpk.tune_*` tuner flags)
-  are set with `rpk redpanda config set` and generally need a broker
-  restart. Cluster-wide properties (retention, tiered storage, etc.) are
-  `rpk cluster config set` and propagate to all nodes.
-- **`tune` vs `iotune`:** `rpk redpanda tune` (the autotuner) modifies
-  Linux **kernel** settings; `rpk iotune` **benchmarks the disks** and
-  writes an I/O properties file that redpanda reads at startup. A
-  production node wants both. `iotune` output is reusable across nodes with
-  identical hardware.
-- **Which node does a command touch?** `start`, `stop`, `mode`, `check`,
-  `tune`, `config`, and `iotune` act on the **local machine**. The `admin`
-  subtree targets whatever `rpk.admin_api.addresses` (or
-  `-X admin.hosts=...`) points at, so it can be run from anywhere.
-- **Not for local dev containers:** to spin up throwaway local clusters in
-  Docker, use `rpk container` (see the rpk skill) instead of
-  `rpk redpanda start`.
-
-## Broker Decommission (Top-Tier Ops Task)
-
-Decommissioning permanently removes a broker: the controller leader moves
-all of its partition replicas to the remaining brokers, then removes it
-from the cluster. **A decommissioned broker cannot rejoin**, and its node ID
-must never be reused.
-
-Since v26.2 the canonical commands are `rpk cluster brokers ...` (rpk-cluster
-skill); the `rpk redpanda admin brokers ...` aliases still work but are hidden
-and deprecated.
-
-```bash
-# 1. Pre-check: cluster healthy, and remaining brokers can absorb the data
-rpk cluster health
-rpk cluster info -b --detailed
-
-# 2. Start the decommission
-rpk cluster brokers decommission 4
-
-# 3. Monitor until every partition reaches 100% (add -d for bytes moved/remaining)
-rpk cluster brokers decommission-status 4 -d -H
-
-# 4. Changed your mind while it is still moving data? Abort:
-rpk cluster brokers recommission 4
-
-# 5. When complete, verify removal, then shut the node's process down
-rpk cluster info -b --include-decommissioned
-```
-
-Before decommissioning, confirm the remaining broker count still satisfies
-the highest topic replication factor, rack-awareness spread, disk capacity,
-and partition-per-core limits. If progress stalls, check for leaderless
-partitions and consider raising `raft_learner_recovery_rate`. Full
-pre-checks, failure modes, `--skip-liveness-check` semantics, and the
-maintenance-mode interaction are in
-[admin-and-decommission.md](references/admin-and-decommission.md).
-
-## The Autotuner and iotune
-
-`rpk redpanda tune` identifies the node's hardware and optimizes the Linux
-kernel for Redpanda (disk IRQs, scheduler, AIO limits, swappiness, CPU
-governor, and more). Run it as root, as part of production deployment, on
-every broker node. Do not run it in Azure self-managed environments.
-
-```bash
-sudo rpk redpanda tune all          # run every enabled tuner
-rpk redpanda tune list              # tuners + enabled/supported status (live source of truth)
-rpk redpanda tune help <tuner>      # what one tuner does
-sudo rpk iotune                     # disk benchmark -> /etc/redpanda/io-config.yaml
-```
-
-The available tuners and their support status vary by kernel, hardware, and
-cloud — always introspect with `rpk redpanda tune list` rather than relying
-on a static list. Each tuner is toggled by an `rpk.tune_*` key in
-`redpanda.yaml` (for example `rpk.tune_aio_events`), set via
-`rpk redpanda config set`; `rpk redpanda mode production` enables the
-production tuner set in one step. Details, IRQ modes (`sq`/`sq_split`/`mq`),
-the `redpanda-tuner` systemd service, and iotune reuse across identical
-hardware are in
-[node-lifecycle-and-tuning.md](references/node-lifecycle-and-tuning.md).
-
-## Reference Directory
-
-- [node-lifecycle-and-tuning.md](references/node-lifecycle-and-tuning.md):
-  `rpk redpanda start` (flags, `--mode dev-container`, tuning-at-start,
-  well-known-io), `stop` (signal escalation), `mode`
-  (production/development/recovery semantics), `check`, the autotuner
-  (`tune`, `tune list`, `tune help`, IRQ modes, systemd unit), and
-  `rpk iotune` (flags, output file, reuse workflow).
-- [admin-and-decommission.md](references/admin-and-decommission.md): the
-  `rpk redpanda admin` subtree — `brokers list/decommission/
-  decommission-status/recommission` with the full safe-decommission
-  workflow, capacity pre-checks, stall troubleshooting, and
-  maintenance-mode interaction; `partitions list`; `config print`; and
-  `config log-level set`.
-- [config-bootstrap.md](references/config-bootstrap.md): node configuration —
-  `rpk redpanda config bootstrap` (forming a cluster, `--self`, `--ips`,
-  advertised addresses), `config set` (dot paths, YAML/JSON values, arrays),
-  `config print`, the deprecated `config init`, and node-vs-cluster config
-  rules.
-- [SOURCES.md](references/SOURCES.md): source map — where each claim comes
-  from and what is deferred to live introspection.
+Most of `rpk redpanda` and all of `rpk iotune` exist only in Linux builds of
+rpk, so run them on the broker host. `rpk redpanda <subcommand> --help` on that
+host is the live check for flags in that version.

@@ -1,83 +1,94 @@
 # rpk Skill Source Map
 
-Maps each file in `skills/rpk/` to the source paths it derives from, so future syncs and
-human maintainers know exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" procedure below, backed by a behavioral
+eval case in `evals/suites/rpk.eval.json`, and sends the agent to the docs for everything
+else. This file maps only the claims the skill still makes.
 
-The `rpk` CLI is Go source in the **public** repo `redpanda-data/redpanda` under
-`src/go/rpk/`; the user-facing reference is auto-generated in the **private** repo
-`redpanda-data/docs`. Read them via the Redpanda-Github-Read MCP
-connector (`search_code`, `get_file_contents`), or `gh` for verification; do not guess.
-Before writing or changing any fact, re-open the cited source and confirm exact command
-paths, flag names, and config keys. `rpk` is versioned: verify against the **current
-stable release tag**, not `dev`/`main` (unreleased commands are not yet user-facing).
+rpk source is Go under `src/go/rpk/` in the public repo `redpanda-data/redpanda`; broker
+config is `src/v/config/configuration.cc`. Verify against the current stable release tag,
+not `dev`. rpk binaries are published at `https://rpk.redpanda.com/`, which has no in-repo
+source; the repo's own `README.md`, section "rpk binaries", documents its layout.
 
-Scope note: this map covers the core `rpk` skill. `rpk ai` (`src/go/rpk/pkg/cli/ai/`) is
-**out of scope** — it belongs to the ADP skill (`skills/adp/references/cli.md`).
+## How to work: line, source, eval case
 
-## File-to-source table
-
-| Skill file | redpanda source paths | docs sources |
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `src/go/rpk/pkg/cli/root.go`, `root_linux.go`, `root_darwin.go`, `src/go/rpk/pkg/cli/profile/`, `src/go/rpk/pkg/cli/cloud/`, `src/go/rpk/pkg/cli/cluster/license/`, `src/go/rpk/pkg/cli/shadow/`, `src/go/rpk/pkg/cli/security/role/`, `src/go/rpk/pkg/cli/topic/`, `src/go/rpk/pkg/cli/generate/license.go`, `src/go/rpk/pkg/config/params.go`, `rpk_yaml.go`, `redpanda_yaml.go` | `modules/get-started/pages/rpk-install.adoc`, `modules/get-started/pages/intro-to-rpk.adoc`, `modules/reference/pages/rpk/rpk-commands.adoc`, `modules/reference/pages/rpk/rpk-x-options.adoc`, `modules/reference/pages/rpk/rpk-profile/`, `rpk-cluster/`, `rpk-shadow/` |
-| `references/command-map.md` | `src/go/rpk/pkg/cli/root.go`, `root_linux.go`, `root_darwin.go`, `deprecated.go`, `printtree.go`, `plugin_cmds.go`, and the command dirs `topic/`, `cluster/`, `group/`, `security/`, `cloud/`, `debug/`, `registry/`, `transform/`, `connect/`, `profile/`, `acl/`, `generate/`, `version/`, `container/`, `plugin/`, `benchmark/`, `shadow/`, `check/`, `redpanda/` (all under `src/go/rpk/pkg/cli/`), `src/go/rpk/pkg/config/params.go` | `modules/reference/pages/rpk/index.adoc`, `rpk-commands.adoc`, `rpk-help.adoc`, and per-group dirs under `modules/reference/pages/rpk/` (`rpk-topic/`, `rpk-cluster/`, `rpk-group/`, `rpk-security/`, `rpk-debug/`, `rpk-registry/`, `rpk-transform/`, `rpk-connect/`, `rpk-profile/`, `rpk-generate/`, `rpk-container/`, `rpk-plugin/`, `rpk-shadow/`, `rpk-redpanda/`, `rpk-version.adoc`) |
-| `references/enterprise-features.md` | `src/go/rpk/pkg/cli/cluster/license/` (`info.go`, `set.go`, `license.go`), `src/go/rpk/pkg/cli/cluster/config/` (`set.go`, `get.go`), `src/go/rpk/pkg/cli/topic/create.go`, `topic/config.go`, `src/go/rpk/pkg/cli/shadow/` (`update.go` — full-configuration replace + `--config-file`; `types.go` — config sections incl. `role_sync_options`, and `AuthenticationConfiguration` = SASL/PLAIN | SASL/SCRAM only), `src/v/cluster/cluster_link/frontend.cc` + `src/v/features/enterprise_features.h` (the Enterprise license is gated on `enable_shadow_linking`, set on the shadow cluster), `src/go/rpk/pkg/cli/security/role/`, `security/acl/`, `src/go/rpk/pkg/cli/generate/license.go`, `src/go/rpk/pkg/cli/redpanda/config.go`; enterprise **broker** config keys are defined in `src/v/config/configuration.cc` (rpk only passes them through) | `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc`, `object-storage-properties.adoc`, `modules/reference/pages/rpk/rpk-cluster/` (license/config subpages), `rpk-shadow/` |
-| `references/install.md` | `src/go/rpk/pkg/cli/version/` (version-output format only). Release archives are published at `https://rpk.redpanda.com/<release>/` — no in-repo source path; the published file layout (per-platform archive names, the `latest` alias, the checksums files) is documented in the repo's own `README.md`, section "rpk binaries". | `modules/get-started/pages/rpk-install.adoc` + the partials it includes: `modules/get-started/partials/install-rpk-linux.adoc`, `install-rpk-macos.adoc`, `install-rpk-apple-silicon.adoc`, `install-rpk-intel-macos.adoc`, `install-rpk-homebrew.adoc` |
-| `references/profiles.md` | `src/go/rpk/pkg/cli/profile/` (`create.go`, `use.go`, `list.go`, `current.go`, `edit.go`, `set.go`, `set_globals.go`, `delete.go`, `rename.go`, `print.go`, `validate.go`, `clear.go`, `prompt.go`), `src/go/rpk/pkg/config/rpk_yaml.go` (profile + globals structs), `profile_doc.go`, `src/go/rpk/pkg/cli/cloud/` (`--from-cloud` resolution) | `modules/reference/pages/rpk/rpk-profile/`, `modules/get-started/pages/config-rpk-profile.adoc` |
-| `references/x-flags-and-config.md` | `src/go/rpk/pkg/config/params.go` (all `-X` key constants, defaults struct, `XFlags()`, `XFlagYamlPath()`, `RPK_*` env mapping, `RPK_PROFILE`), `rpk_yaml.go` (globals), `redpanda_yaml.go` (the `rpk:` section of redpanda.yaml) | `modules/reference/pages/rpk/rpk-x-options.adoc` |
+| Install rpk from `https://rpk.redpanda.com/<release>/` (`latest` or `v<version>`), Homebrew, or Redpanda's package repository; GitHub release assets no longer get new rpk versions, so the `releases/latest/download` URL installs an older rpk with no error. Baseline 0/3, skill 3/3, installed 3/3 (re-verification run `2026-11-10T20-48-06Z`, after the mock fix under "Corrections after the eval run"). | redpanda `README.md`, section "rpk binaries" (default branch); live check 2026-11-10: GitHub `releases/latest` for `redpanda-data/redpanda` is older than `https://rpk.redpanda.com/latest/`, and the Homebrew tap `redpanda-data/tap/redpanda` matches `rpk.redpanda.com/latest` | `install-rpk-from-current-host` |
+| Ask before turning off an Enterprise feature to leave license violation; `rpk cluster license info` lists the features in use; with Tiered Storage off, topics can't read data held only in object storage. Safety guardrail: on the re-verification run `2026-11-10T20-38-26-145Z` the baseline passed its case 3/3 (skill 3/3, installed 3/3), and the line and case stay as a regression guard. | redpanda `src/go/rpk/pkg/cli/cluster/license/info.go`, tag v26.2.2 (`License violation`, `Enterprise features in use`); `src/v/config/configuration.cc`, tag v26.2.2 (`cloud_storage_enabled`: "Must be set to `true` to use Tiered Storage, Remote Read Replicas, or Cloud Topics", needs restart); `src/v/features/enterprise_features.h`, tag v26.2.2 (license-gated settings) | `license-violation-ask-before-disabling-tiered-storage` |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-The skill deliberately points the agent at live introspection for these; a sync/audit
-must not "correct" them into hardcoded values:
+| Claim | Source | Eval case |
+|---|---|---|
+| Every command shares one connection model: profiles in `rpk.yaml`, overridden by `RPK_*` environment variables and `-X` options | redpanda `src/go/rpk/pkg/config/params.go`, tag v26.2.2 (`Load`: `readRpkConfig`, then `processOverrides` applies env and flags) | `env-var-beats-profile` (fact, baseline 3/3) |
+| `get_rpk_command`, `list_rpk_commands`, `get_config_property`, `ask_redpanda_question`, and `platform: "cloud"` | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
+| The four docs URLs (install, profiles, `-X` options, disable Enterprise features) | Each returned 200 on 2026-11-10 | none |
+| `rpk <command> --help` and `rpk -X help` are the live check | redpanda `src/go/rpk/pkg/config/params.go`, tag v26.2.2 (`ParamsHelp`, `-X help`) | none |
 
-- `rpk -X list` / `rpk -X help` — dynamic output of `XFlags()`.
-- `rpk <cmd> --help` — the live command tree; the skill directs users to introspect rather than trust a static list.
-- `rpk --version` output — runtime value.
-- Install versions / `latest` download URLs (`install.md`) — resolved by the `latest` alias on the download host, intentionally not pinned. The skill names a version only as a `<version>` placeholder.
-- `rpk connect` subcommands/flags — a managed-plugin passthrough to the external Redpanda Connect binary, not defined in `redpanda-data/redpanda`; the skill flags "confirm with `rpk connect list --help`."
+## Docs gaps (not skill claims; do not re-verify here)
 
-## TODO / re-verify
+Found by the 2026-11-10 run of `evals/suites/rpk.eval.json` (3 runs per arm).
 
-- **Drift audit 2026-11-01:** `enterprise-features.md` listed `iceberg_rest_catalog_prefix` and `iceberg_rest_catalog_warehouse` as two separate REST-catalog keys. `_prefix` is a deprecated alias of `iceberg_rest_catalog_warehouse` and is still accepted (redpanda `src/v/config/configuration.cc`, tag v26.2.2, `.aliases = {"iceberg_rest_catalog_prefix"}`), so listing it separately was the error. It was replaced with `iceberg_rest_catalog_base_location`, a distinct property the list was missing. A user's existing `_prefix` setting is not invalid. Method note for future sweeps: a deprecated alias is recorded as an `| Aliases` row inside its canonical property's table in the generated property partials, not as a `=== <name>` anchor of its own, so a sweep that reads only the anchors reports every aliased name as missing. Build the authoritative set from the anchors plus the Aliases rows; the partials carry eight such aliases today, and `iceberg_rest_catalog_warehouse` -> `iceberg_rest_catalog_prefix` is one of them. `command-map.md` spelled the self-test group `rpk cluster selftest`; the command is `rpk cluster self-test` with no alias (redpanda `src/go/rpk/pkg/cli/cluster/selftest/selftest.go`, tag v26.2.2). Iceberg cluster keys swept against docs `modules/reference/partials/properties/cluster-properties.adoc` (regenerated for tag v26.2.4).
+- **GitHub release assets are stale.** The install page,
+  https://docs.redpanda.com/streaming/current/get-started/rpk-install/, gives
+  `rpk.redpanda.com` URLs but does not say that GitHub release assets stopped getting new rpk
+  versions, so an existing `github.com/.../releases/latest/download/rpk-*.zip` URL quietly
+  installs an older rpk. Source: redpanda `README.md`, section "rpk binaries"; GitHub releases
+  API `latest` for `redpanda-data/redpanda` is older than `https://rpk.redpanda.com/latest/`.
+  Case `rpk-download-host-not-github`: docs 0/3, skill 3/3.
+- **Native Windows builds.** The install page says "You can use `rpk` on Windows only with
+  WSL", but `rpk-windows-amd64.zip` and `rpk-windows-arm64.zip` are published at
+  `https://rpk.redpanda.com/latest/` and the redpanda `README.md`, section "rpk binaries",
+  lists Windows (amd64 and arm64). Confirm the support status with the rpk team before the
+  page changes. Case `native-windows-rpk`: 0/3 in every arm (the pre-thin skill also said
+  WSL only).
+- **`--print-tree`.** No rpk reference page, including
+  https://docs.redpanda.com/streaming/current/reference/rpk/rpk-commands/, documents the root
+  flag `--print-tree`, which prints the whole command tree as JSON for automation and agent
+  tooling. Source: redpanda `src/go/rpk/pkg/cli/root.go`, tag v26.2.2. Case `print-tree-json`:
+  docs 0/3, skill 3/3.
+- **`enable_schema_id_validation` value.** The page
+  https://docs.redpanda.com/streaming/current/get-started/licensing/disable-enterprise-features/
+  says to run `rpk cluster config set enable_schema_id_validation false`. The property accepts
+  only `none`, `redpanda`, or `compat`, so the value to turn it off is `none`. Source: redpanda
+  `src/v/config/configuration.cc` and `src/v/config/convert.h` (decode rejects any other value),
+  tag v26.2.2. Found while verifying case `schema-id-validation-mode-values`, which the baseline
+  passed.
 
-- **Where releases are published (verified 2026-10-20).** `v26.2.2` is the last
-  Redpanda release published as a GitHub Release, and the public repo carries no
-  tag or branch head for the releases after it — its `v26.2.x` branch head is
-  still the `v26.2.2` release commit. The user-facing changelog for `v26.2.3`
-  and later is `modules/reference/pages/releases/redpanda.adoc` in the private
-  `redpanda-data/docs` repo, and rpk binaries are distributed from
-  `https://rpk.redpanda.com/` rather than GitHub release assets. Consequence for
-  verification: an rpk behavior introduced in `v26.2.3` or later **cannot** be
-  confirmed against Go source in the public repo. Confirm it against the
-  generated rpk reference under `modules/reference/pages/rpk/` (regenerated per
-  release from the shipped binary's `--help`) or a live binary of the target
-  release; if neither reflects it, record it here as a TODO instead of writing
-  it into a skill.
-- **`-v` configuration provenance** (`x-flags-and-config.md`, added for
-  `v26.2.3`): the claim that `-v` reports the loaded config files, the selected
-  profile and what selected it, overriding environment-variable/`-X` values,
-  and that secrets are never logged, is grounded in the release notes for `v26.2.3` only — the
-  generated rpk reference still describes `-v` as "Enable verbose logging", and
-  the public Go source is frozen before that release (see above). Re-confirm
-  the exact log lines against a live `rpk -v` run and sharpen or trim this note.
-- **`rpk node` is not an rpk command** (resolved): rpk has no `node` command group. Node / `redpanda.yaml` properties — including `fips_mode` — are set via `rpk redpanda config set redpanda.<key>` (`src/go/rpk/pkg/cli/redpanda/config.go`, `NewConfigCommand` → `set`, which edits the local `redpanda.yaml`). The skill already documents this form; `rpk node config set` is a docs/Admin-API spelling, not an rpk command.
-- **Enterprise cluster-config keys / topic properties** (accepted values, defaults) are broker config, not rpk. Treat the docs property partials (`cluster-properties.adoc`, `topic-properties.adoc`, `object-storage-properties.adoc`) as the citation of record; the upstream is `src/v/config/configuration.cc`.
-- **Per-`-X` default values** (resolved): there is **no defaults struct** in `params.go`. The
-  `xflag` struct is `{path, testExample, kind, parse}` — the second string is a *test example*,
-  not a default, and must never be read as one. Authoritative default sources are, per key:
-  - address defaults (`brokers`, `admin.hosts`, `registry.hosts`) — `params.go`, which fills
-    `127.0.0.1:{DefaultKafkaPort,DefaultAdminPort,DefaultSchemaRegPort}`;
-  - `globals.command_timeout` — `rpk_yaml.go` `RpkGlobals.GetCommandTimeout()`;
-  - `globals.dial_timeout` / `request_timeout_overhead` / `retry_timeout` / `fetch_max_wait` /
-    `kafka_protocol_request_client_id` — `src/go/rpk/pkg/kafka/client_franz.go`, where rpk
-    applies its own `kgo.*` options (an unset global means rpk's value stands; a key rpk does
-    not set falls through to the franz-go default);
-  - `globals.prompt`, `globals.no_default_cluster` — zero values; `RpkGlobals` sets no default.
-  `ParamsHelp()` (`rpk -X help`) states the address defaults in prose and is a good cross-check.
+## Lines removed for lack of a failing baseline
 
-## Usage
+Each was a behavioral case on 2026-11-10, 3 runs per arm, graded on the outcome, and was rerun
+against the thin skill on the re-verification runs named below.
 
-For each file being reviewed or updated, open the listed source paths first and confirm
-every claim still matches. Verify against the current stable release tag of
-`redpanda-data/redpanda`, and re-confirm exact command paths / flag names / config keys
-before writing any new fact.
+- "When rpk talks to the wrong cluster after `rpk profile use`, check for `RPK_*` environment
+  variables, which override the profile." Case `profile-overridden-by-env-var`: baseline 3/3, skill 3/3, installed 3/3 (run `2026-11-10T20-38-26-145Z`).
+  Without the skill, the agent found `RPK_BROKERS` in `~/.zshrc` and had it removed.
+- "Update a shadow link from its full current configuration; `rpk shadow update` replaces the
+  whole configuration, so a fragment drops the existing filters." Case
+  `shadow-update-keeps-existing-config`: baseline 3/3, skill 3/3, installed 3/3 (run `2026-11-10T20-48-06Z`, after
+  the mock fix under "Corrections after the eval run"). Without the skill, the agent read
+  `rpk shadow update --help`, which states the replace behavior, and either built the update from
+  `rpk shadow describe` or stopped to ask instead of submitting a fragment. A reset filter list
+  stops replication of the topics it drops but deletes no data, so this is not kept as a safety
+  guardrail.
+- The pre-thin skill's facts on profiles, `-X` options, configuration precedence, SASL and
+  OAUTHBEARER settings, and `rpk shadow update` were tested as fact cases. The docs, or the
+  baseline, answered every one except the docs gaps above.
+
+## Corrections after the eval run
+
+The premise audit of 2026-11-10 found two mock faults; both cases were fixed and rerun in `2026-11-10T20-48-06Z`.
+
+- `shadow-update-keeps-existing-config`: the mock treated `2>&1` as a file redirect and answered
+  any command that also held `--help` with help text, so `rpk shadow describe` often came back
+  empty (the earlier baseline 2/3 and run `2026-11-10T20-38-26-145Z`'s 1/3 came from this). Its `rpk shadow update --help`
+  also left out the password placeholder paragraph, and `rpk shadow config generate` claimed to
+  write a file whose `cat` returned the live link's configuration. Real rpk prints a sample
+  configuration (`src/go/rpk/pkg/cli/shadow/config.go`, tag v26.2.2). The query now says "our
+  inventory topic", because "the topic inventory" read as a feature name. The verdict did not
+  change: the line stays dropped.
+- `install-rpk-from-current-host`: `rpk version` reported the GitHub release's version after an
+  install from `https://rpk.redpanda.com/latest/`, and `ls`, `echo $PATH`, and `id -un` returned
+  nothing, so one installed run decided the shell was broken (run `2026-11-10T20-38-26-145Z`: installed 2/3). The mock
+  now reports the newer version and answers those commands. The verdict did not change.

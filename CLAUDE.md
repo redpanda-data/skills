@@ -15,7 +15,7 @@ products: Streaming, SQL (Oxla), Cloud (Serverless, BYOC, Dedicated), and the
 Agentic Data Plane (ADP), unified by `rpk`. Redpanda Connect's skills live in the
 `redpanda-connect` plugin in the Connect repo, not here. Each skill is a `SKILL.md` (loaded on
 demand) plus `references/` files, grounded in Redpanda's own source code, docs, and APIs.
-Skills are moving, one at a time, to a thin format whose `references/` holds only
+Skills are moving, one at a time, to a thin format with no reference files besides
 `SOURCES.md` (see "Skill format: thin skills"). Several rules below differ for thin skills and
 skills that are not yet thin; each section says which applies.
 
@@ -39,7 +39,8 @@ what to confirm before a destructive or irreversible step, when to escalate to a
 how to use memory and what is worth remembering, and the decision rules and traps an agent
 gets wrong without the skill.
 
-A skill whose `references/` holds only `SOURCES.md` is **thin**. Every other skill is **not
+A skill with no reference files besides `SOURCES.md` is **thin**, whether its `SOURCES.md` sits
+in `references/` or at the skill root (as in `adp`). Every other skill is **not
 yet thin**: it still carries facts, and keeps them up to date under the durability principle and
 the verification process below until it is converted. Skills are converted one at a time, each
 only after its own evals show which of its facts the docs already cover.
@@ -221,7 +222,7 @@ only that. A skill in this format has two sections:
 
 Facts go in the docs, not the skill. When an eval shows the docs lack a fact or state it
 wrongly, the fix is a docs change. A thin `SKILL.md` is as short as its proven procedures allow,
-and `references/` holds only `SOURCES.md`, which maps each "How to work" line to its source and
+and the skill's only reference file is `SOURCES.md`, which maps each "How to work" line to its source and
 its eval case id. A behavioral case counts only if it grades the outcome, its mocks answer every
 legitimate command, and the baseline still fails it. If no procedure for a product survives that
 test, the skill carries none and points at the docs; whether to keep such a skill at all is a

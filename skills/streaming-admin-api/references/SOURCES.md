@@ -1,86 +1,72 @@
 # streaming-admin-api Skill Source Map
 
-Maps each file in `skills/streaming-admin-api/` to the source paths it derives from, so future
-syncs and human maintainers know exactly where to verify claims.
+The skill is thin: it keeps only the "How to work" procedure below, backed by behavioral
+eval cases in `evals/suites/streaming-admin-api.eval.json`, and sends the agent to the docs
+for everything else. This file maps only the claims the skill still makes.
 
-The `streaming-admin-api` skill documents the Redpanda **Admin API** — the HTTP management
-interface served on **port 9644** (base path `/v1`) plus the ConnectRPC services added in
-v25.3. Source of truth is the Admin API server, request handlers, and Swagger 1.2 / OpenAPI
-JSON specs in the **public** repo `redpanda-data/redpanda` under `src/v/redpanda/admin/`
-(server is C++; the API surface is described by the `api-doc/*.json` specs and the ConnectRPC
-`.proto` files). Cluster-config property claims are grounded in the auto-generated partial in
-the **private** repo `redpanda-data/docs`. Read them via the
-Redpanda-Github-Read MCP connector (`get_file_contents`, `search_code`), or `gh api` for
-verification.
+Source of truth is the Admin API server, its Swagger specs and its ConnectRPC `.proto` files
+in the **public** repo `redpanda-data/redpanda`. Verify against the current stable release
+tag, not `dev`. The claims below were checked at tag `v26.2.2`, the latest release tag in the
+public repo on 2026-11-10. Paths are relative to that repo.
 
-**Property grounding:** all cluster-config property claims (types, defaults, `needs_restart`,
-visibility, enum values) are grounded in the auto-generated partial
-`modules/reference/partials/properties/cluster-properties.adoc`, regenerated per release; its
-upstream source of truth is `src/v/config/configuration.cc`. Node-config keys (e.g. the Admin
-API listener `admin_api`, `admin_api_tls`) come from `src/v/config/node_config.cc`. Do not pin
-property defaults to hardcoded values. The Admin API is versioned: verify against the
-**current stable release tag** of `redpanda-data/redpanda`, not `dev`/`main`. (Endpoint
-availability and ConnectRPC services are version-gated — v25.3+ for the `redpanda.core.admin.v2`
-services.)
+## How to work: line, source, eval case
 
-## File-to-source table
-
-| Skill file | redpanda source paths | docs sources |
+| How to work line | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `src/v/redpanda/admin/server.cc`, `server.h` (auth_level enum), `api-doc/*.json` (all specs), `cluster_config_schema_util.cc`, `src/v/config/configuration.cc`, `src/v/config/node_config.cc` (`admin_api`, `admin_api_tls`) | `modules/manage/pages/use-admin-api.adoc`, `modules/reference/pages/api-reference.adoc`, `modules/reference/partials/properties/cluster-properties.adoc` |
-| `references/endpoints-overview.md` | `src/v/redpanda/admin/api-doc/`: `broker.json`, `partition.json`, `cluster.json`, `cluster_config.json` (+`cluster_config.def.json`), `features.json`, `security.json`, `transaction.json`, `shadow_indexing.json` (+`.def.json`), `debug.json`, `debug_bundle.json` (+`.def.json`); handlers `partition.cc`, `transaction.cc`, `security.cc`, `debug.cc`, `debug_bundle.cc`, `recovery.cc`, `services/broker.cc`, `services/cluster.cc`, `services/features.cc`; ConnectRPC `proto/redpanda/core/admin/v2/*.proto` + `src/v/redpanda/admin/services/` | `modules/reference/pages/api-reference.adoc`, `modules/manage/pages/use-admin-api.adoc` |
-| `references/auth-and-connection.md` | `src/v/redpanda/admin/server.h` (`enum class auth_level { publik=0, user, superuser }`; note: `authenticated` in docs = enum `user`/`require_authenticated`), `server.cc`, `src/v/config/node_config.cc` (`admin_api`, `admin_api_tls`, `admin_api_doc_dir`); ConnectRPC `proto/redpanda/core/admin/v2/` | `modules/manage/pages/use-admin-api.adoc`, `modules/manage/pages/security/authentication.adoc`, `listener-configuration.adoc`, `encryption.adoc` |
-| `references/brokers-and-partitions.md` | `src/v/redpanda/admin/api-doc/broker.json`, `partition.json`, `cluster.json`, `debug.json` (`force_replicas`); `src/v/redpanda/admin/partition.cc` (incl. `cancel_partition_reconfig_handler` + `force_set_partition_replicas_handler` controller/raft0 escape hatches, `evil_mode` — **v26.1.12**), `src/v/cluster/controller.cc` (`cancel_raft0_reconfiguration`, `force_raft0_reconfiguration`), `services/broker.cc`/`.h`, `services/cluster.cc`/`.h` | `modules/manage/pages/node-management.adoc`, `modules/manage/pages/cluster-maintenance/decommission-brokers.adoc`, `rolling-restart.adoc`, `partition-recovery.adoc`, `nodewise-partition-recovery.adoc`, `cluster-balancing.adoc`, `raft-group-reconfiguration.adoc` |
-| `references/cluster-config.md` | `src/v/redpanda/admin/api-doc/cluster_config.json` (+`cluster_config.def.json`), `src/v/redpanda/admin/cluster_config_schema_util.cc`/`.h` (builds the `/v1/cluster_config/schema` response; the per-property metadata the public source emits is the key set the skill's table names), `src/v/config/configuration.cc` | `modules/manage/pages/cluster-maintenance/cluster-property-configuration.adoc`, `node-property-configuration.adoc`, `modules/reference/partials/properties/cluster-properties.adoc` |
-| `references/debug-endpoints.md` | `src/v/redpanda/admin/api-doc/debug.json`, `debug_bundle.json` (+`.def.json`); `src/v/redpanda/admin/debug.cc`, `debug_bundle.cc`/`.h` | `modules/troubleshoot/pages/cluster-diagnostics/diagnose-issues.adoc`, `modules/troubleshoot/pages/debug-bundle/` (`overview.adoc`, `generate/`, `configure/`, `inspect.adoc`) |
-| `references/enterprise-features.md` | `src/v/config/configuration.cc` (enterprise keys: `cloud_storage_*`, `cloud_topics_*`, `iceberg_*`, `partition_autobalancing_*`, `core_balancing_*`, `audit_*`, `enable_schema_id_validation`, `default_leaders_preference`, `sasl_mechanisms`, `oidc_*`, `sasl_kerberos_*`), `src/v/config/node_config.cc` (`fips_mode`); `src/v/redpanda/admin/api-doc/shadow_indexing.json`, `features.json`, `security.json`; `src/v/redpanda/admin/cluster_recovery.cc`, `recovery.cc`, `security.cc`, `services/features.cc`; ConnectRPC `proto/redpanda/core/admin/v2/shadow_link.proto` (`ShadowLinkConfigurations` incl. `RoleSyncOptions`) + `src/v/redpanda/admin/services/shadow_link/` (`shadow_link.cc` `check_role_sync_supported`, `converter.cc`), `src/v/features/feature_table.{h,cc}` (`shadow_link_role_sync`, `shadow_link_sr_api_sync`, `shadow_linking` release floors), `src/v/cluster_link/source_topic_syncer.cc` + `roles_migrator.cc` (which source clusters each sync task supports); license gating `src/v/features/enterprise_features.cc`/`.h`, `enterprise_feature_messages.h` | `modules/manage/pages/tiered-storage.adoc`, `remote-read-replicas.adoc`, `mountable-topics.adoc`, `audit-logging.adoc`, `modules/manage/pages/iceberg/`, `modules/manage/pages/disaster-recovery/shadowing/`, `topic-recovery.adoc`, `whole-cluster-restore.adoc`, `modules/manage/pages/cluster-maintenance/continuous-data-balancing.adoc`, `modules/manage/pages/security/authorization/rbac.adoc`, `gbac.adoc`, `modules/manage/pages/security/fips-compliance.adoc`, `modules/develop/pages/manage-topics/cloud-topics.adoc`, `modules/get-started/pages/licensing/disable-enterprise-features.adoc`, `overview.adoc`, `modules/reference/partials/properties/cluster-properties.adoc`, `topic-properties.adoc` |
+| Before restarting a broker, send the pre-restart probe to that broker, because it reports the risks of restarting the broker that answers. If it lists any partition, such as replication-factor-1 partitions that maintenance mode can't drain, tell the user and get the go-ahead first. Rerun against the thin skill on 2026-11-10 (run `2026-11-10T20-28-10Z`): baseline 0/3 (it restarted the broker every time), skill 3/3, installed 3/3. | `src/v/redpanda/admin/server.cc` (`pre_restart_probe` calls `get_current_node_restart_risks`), `src/v/redpanda/admin/api-doc/broker.json` (`restart_risks`: "Partitions affected by the current node restart"; `rf1_offline`) | `restart-broker-rf1-partitions` |
+| A `FailOver` without `shadow_topic_name` fails over the whole link, and the Admin API ignores a JSON field it doesn't recognize, so a misspelled field does the same and returns 200. Failover can't be undone. If the user hasn't named the topics, ask. Safety guardrail (irreversible change): the baseline passes its case, and the line and case stay as a regression guard. Rerun against the thin skill on 2026-11-10 (run `2026-11-10T20-28-10Z`): baseline 2/2 (1 run errored), skill 3/3, installed 3/3. | `proto/redpanda/core/admin/v2/shadow_link.proto` (`FailOverRequest.shadow_topic_name`: "if not set will fail over the entire shadow link"), `bazel/pbgen/main.go` (generated `from_json` skips an unknown key with `skip_value`) | `failover-single-shadow-topic` |
+| An `UpdateShadowLink` whose `update_mask` names a repeated field appends what you send to the existing entries. To remove an entry, read the link with `GetShadowLink`, then mask the parent message and send it whole, or send the full configuration with no mask; fields left out are reset. Rerun against the thin skill on 2026-11-10 (run `2026-11-10T20-28-10Z`): baseline 1/3 (the failing runs masked the filter list itself, so the filter stayed), skill 3/3, installed 3/3. | `src/v/serde/protobuf/field_mask.h` (`merge_into`: "repeated fields are appended to, not replaced"; an empty mask replaces the resource), `src/v/serde/protobuf/tests/field_mask_test.cc` (`[1]` merged with `[3]` gives `[1, 3]`), `src/v/serde/protobuf/tests/goldens/codegen_test.proto.cc` (a path that ends at a message replaces it), `src/v/redpanda/admin/services/shadow_link/converter.cc` (`create_update_cluster_link_config_cmd`) | `shadow-link-remove-topic-filter` |
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+## Other claims in SKILL.md
 
-- **Endpoint response payloads / exact JSON field sets** (e.g. `broker`, `decommission_status`, `partition_state`, `cpu_profile_result`, `cluster_health_overview`): read the `*.def.json` model definitions at the target ref, or the live Admin API. The example JSON bodies in the skill are illustrative and version-specific.
-- **Per-version endpoint availability** (which paths/methods exist in a given release): source from the live Admin API — the served Swagger at `GET /v1/` / the `api-doc/*.json` at the target tag — not a fixed list. New ConnectRPC services (`redpanda.core.admin.v2.*`) are v25.3+.
-- **ConnectRPC message shapes** (ShadowLinkService `CreateShadowLink`, `FailOver`, nested `ShadowLinkConfigurations`): the authoritative structure is `proto/redpanda/core/admin/v2/shadow_link.proto` at the target ref, or the generated SDK. Field names drift; verify against the proto.
-- **Self-test request body** (`{"tests":[...]}`): not modeled in `api-doc/debug.json`; derived from `rpk` + cluster source. Confirm against `debug.cc` / live behavior.
-- **Cluster-config schema metadata key set** (`cluster-config.md`): which metadata keys `/v1/cluster_config/schema` returns is release-dependent — v26.2.4 and later add per-property default value, numeric bounds and enterprise-license restrictions, and widen accepted-value reporting. The skill's table is the key set common to supported releases; the live endpoint is the source of truth for a given cluster. Do not hardcode the newer key names until they can be read from source or a live cluster (see TODO).
-- **`upsert` value coercion** (`cluster-config.md`): Swagger declares `additionalProperties: {type: string}` but the server coerces JSON scalars — behavior; verify against handler.
+| Claim | Source | Eval case |
+|---|---|---|
+| `search_api_reference`, `list_api_reference_pages` and `get_api_reference_content` reach the Admin API reference, and `get_config_property` looks up one cluster property | Live `tools/list` from `https://docs.redpanda.com/mcp` (see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| The Admin API reference is at https://docs.redpanda.com/api/doc/admin/ (`/v1`) and https://docs.redpanda.com/api/doc/admin/v2/ (ConnectRPC), and the Admin API guide is at https://docs.redpanda.com/streaming/current/manage/use-admin-api/ | Published pages (checked 2026-11-10) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
+| `GET /v1/cluster_config/schema` describes every cluster property the cluster accepts | `src/v/redpanda/admin/server.cc` (`get_cluster_config_schema`, `util::generate_json_schema`) | none |
 
-## Naming note
+## Docs gaps (not skill claims; do not re-verify here)
 
-The auth-level enum in `server.h` uses `publik` (not a typo — `public` is a C++ keyword) for
-the unauthenticated level, `user` for the authenticated level, and `superuser`. The skill's
-"authenticated" maps to enum `user` (`require_authenticated()`). Shadow Linking is the
-user-facing name; the ConnectRPC service is `redpanda.core.admin.v2.ShadowLinkService` and the
-broker-side module is `cluster_link` — search source for `shadow_link` and `cluster_link`.
+The Admin API reference is generated from the redpanda source, so each gap is a fix to that
+source's descriptions.
 
-## TODO / re-verify
+- **`force_replicas` on the controller partition needs `evil_mode=true`.** Without it the
+  request is refused with 400 ("Refusing to reconfigure the controller; pass evil_mode=true
+  to force a raft0 reconfiguration"). The reference page
+  https://docs.redpanda.com/api/doc/admin/operation/operation-force_update_partition_replicas
+  lists no query parameters and doesn't mention the controller. Source:
+  `src/v/redpanda/admin/partition.cc` (`controller_ntp` gated by `evil_mode`). Fix: add the
+  `evil_mode` query parameter and the controller rule to `force_update_partition_replicas` in
+  `src/v/redpanda/admin/api-doc/debug.json`. Eval case `force-replicas-controller-gated`:
+  docs arm 0/3, skill arm 3/3.
+- **A mask that names a repeated field appends instead of replacing.** The `updateMask`
+  field on
+  https://docs.redpanda.com/api/doc/admin/v2/operation/operation-redpanda-core-admin-v2-shadowlinkservice-updateshadowlink
+  says only "See AIP-134", and AIP-134 says the opposite. The Shadowing setup page describes
+  the append only as an older-rpk behavior. Source: `src/v/serde/protobuf/field_mask.h`
+  (`merge_into`). Fix: describe the merge (repeated fields append, a message path replaces
+  the message, an empty mask replaces the link) in the `update_mask` comment of
+  `UpdateShadowLinkRequest` in `proto/redpanda/core/admin/v2/shadow_link.proto`. Eval cases
+  `update-shadow-link-mask-appends` (docs 1/3, skill 3/3) and
+  `shadow-link-remove-topic-filter` (docs 0/3).
 
-- **Drift audit 2026-11-01:** `enterprise-features.md` named `cloud_topics_reconciliation_interval`, which is not a cluster property; the reconciliation loop interval is bounded by `cloud_topics_reconciliation_min_interval` and `cloud_topics_reconciliation_max_interval` (docs `modules/reference/partials/properties/cluster-properties.adoc`, regenerated for tag v26.2.4), and both are `integer` properties in milliseconds, as is `cloud_topics_produce_upload_interval`, so the table's type column was corrected with them. Endpoint paths under `/v1/debug/` re-verified against redpanda `src/v/redpanda/admin/api-doc/debug.json` at tag v26.2.2, and `/v1/debug/partitions/{topic}/{partition}/offset_for_leader_epoch` confirmed as declared in `partition.json` (not `debug.json`) — not drift.
+## Drifted facts in the pre-thin skill (removed with the conversion)
 
-- **Schema-endpoint metadata added in v26.2.4 — key names not pinned
-  (2026-10-20).** The `v26.2.4` release notes
-  (`modules/reference/pages/releases/redpanda.adoc` in the private
-  `redpanda-data/docs` repo) state that `/v1/cluster_config/schema` now reports
-  each property's default value, numeric bounds where applicable, and
-  enterprise-license restrictions, and that `sasl_mechanisms`,
-  `log_cleanup_policy`, `transaction_coordinator_cleanup_policy`,
-  `enable_consumer_group_metrics` and `http_authentication` report accepted
-  values. The exact JSON key names are **not** verifiable from the public repo:
-  `cluster_config_schema_util.cc` and `api-doc/cluster_config.json` there still
-  emit only the pre-v26.2.4 key set, because the public repo carries no tag or
-  branch head for releases after `v26.2.2`. The skill therefore describes the
-  added metadata without naming its keys and points at the live endpoint. Pin
-  the key names from a live cluster on `v26.2.4`+ (or from the served Swagger)
-  and then add them to the table.
-- **Current stable release line:** as of verification `redpanda-data/redpanda` was tagging the v26.x line; ConnectRPC references in the skill are labeled "v25.3+". Re-confirm the ConnectRPC service set and paths against the current stable tag (verified above against `dev`).
-- **Security users vs roles specs:** `security.json` covers both SASL users (`/v1/security/users*`) and RBAC roles (`/v1/security/roles*`); the exact nicknames were not pinned to a line — confirm against `security.json` + `security.cc`.
-- **`kafka_connections` ConnectRPC:** `proto/redpanda/core/admin/v2/kafka_connections.proto` + `src/v/redpanda/admin/kafka_connections_service*.{h,cc}` back the "connected-client monitoring" claim; verify if expanded.
+- The pre-thin `SKILL.md` said a plain `GET /v1/cluster_config` returns only non-default
+  values. It returns every property: `include_defaults` defaults to true
+  (`src/v/redpanda/admin/server.cc`). Eval case `get-cluster-config-default-output`: the
+  pre-thin skill arm failed 0/3, the docs arm passed 3/3.
+- The pre-thin skill led agents to say any authenticated user can read
+  `GET /v1/cluster_config`. It is registered at the superuser level
+  (`register_route_raw_sync<superuser>` in `src/v/redpanda/admin/server.cc`). Eval case
+  `cluster-config-read-needs-superuser`: skill arm 0/3, docs arm 3/3.
 
-## Usage
+## Lines removed for lack of a failing baseline
 
-For each file being reviewed or updated, open the listed source paths first and confirm every
-claim still matches. Verify against the current stable release tag of `redpanda-data/redpanda`
-(not `dev`/`main`); prefer the `api-doc/*.json` specs and `*.def.json` models for endpoint/schema
-facts, the generated `cluster-properties.adoc` partial for cluster-config property facts, and
-the `.proto` files for ConnectRPC message shapes. Re-confirm exact paths, methods, and property
-keys before writing any new fact; treat response payloads and per-version endpoint availability
-as live-introspection items, not pinned constants.
+The pre-thin skill had no "How to work" procedure; it was an endpoint reference. Its facts
+were sampled into fact cases on 2026-11-10, and the docs or the baseline answered all but
+the two gaps above: node-local `/v1/partitions`, the node-local pre-restart probe, the local
+pending list in `/v1/cluster_config/status`, the debug bundle's `rpk_path` dependency, the
+unknown-field `FailOver`, `DeleteShadowLink` with active topics, role sync needing an
+include filter, and the license-sanctioned `node_add` balancer mode.

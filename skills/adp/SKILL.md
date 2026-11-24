@@ -1,155 +1,63 @@
 ---
 name: adp
 description: >-
-  Redpanda's Agentic Data Plane: governance infrastructure for building, running, and governing
-  AI agents and MCP servers behind a credential-injecting AI Gateway for LLM providers, operated
-  through the `rpk ai` CLI and the ADP UI at ai.redpanda.com. Use when installing `rpk ai`,
-  signing in to an environment, checking setup with `rpk ai doctor`, managing managed or
+  Redpanda's Agentic Data Plane: governance infrastructure for building, running, and
+  governing AI agents and MCP servers behind a credential-injecting AI Gateway for LLM providers,
+  operated through the `rpk ai` CLI and the ADP UI at ai.redpanda.com. Use when installing
+  `rpk ai`, signing in to an environment, checking setup with `rpk ai doctor`, managing managed or
   self-managed AI agents and their triggers with `rpk ai agent` and `rpk ai trigger`, configuring
   remote or managed MCP servers with `rpk ai mcp-server` (including code mode and user-delegated
   OAuth), setting up LLM providers and models with `rpk ai llm-provider` and `rpk ai model`,
-  applying GitOps manifests, or launching a coding tool with `rpk ai run`. For access policies,
-  budgets and cost, guardrails and the kill switch, or secrets, API keys, data policies and OAuth,
-  see `/redpanda:adp-governance`. For transcripts, the audit log, and traces, see
-  `/redpanda:adp-observability`. For the `rpk cloud mcp` control-plane server, see
+  applying GitOps manifests, or launching a coding tool with `rpk ai run`.
+  For access policies, budgets and cost, guardrails and the kill switch, or secrets, API keys,
+  data policies and OAuth, see `/redpanda:adp-governance`. For transcripts, the audit log, and
+  traces, see `/redpanda:adp-observability`. For the `rpk cloud mcp` control-plane server, see
   `/redpanda:rpk-cloud`.
 ---
 
 # Agentic Data Plane
 
-The Agentic Data Plane (ADP) is Redpanda's governance infrastructure for AI agents and MCP servers. It provides a managed runtime for AI agents and MCP servers, an AI Gateway that proxies LLM provider traffic, and governance controls (budgets, guardrails, Cedar access policies, data policies) to operate those workloads safely.
+The Agentic Data Plane (ADP) runs AI agents and MCP servers behind an AI Gateway that injects
+LLM provider credentials. Operate it with the `rpk ai` CLI, and send the user to the ADP UI
+(ai.redpanda.com) for tasks the CLI does not cover. This skill keeps only the procedures below.
+Look up everything else in the docs (last section).
 
-**How to operate it.** ADP has two supported operator surfaces: the **`rpk ai` CLI** and the **ADP UI** (ai.redpanda.com). Applications and agents then call the endpoints ADP exposes: the AI Gateway's per-provider LLM URLs, each MCP server's URL, and each agent's A2A endpoint. Operate ADP with `rpk ai`, and send the user to the UI for tasks the CLI does not cover. Confirm the live surface with `--help` before acting.
+Governance (access policies, budgets, guardrails, the kill switch, secrets, API keys, OAuth) is
+in `/redpanda:adp-governance`. Transcripts, the audit log, and traces are in
+`/redpanda:adp-observability`.
 
-**Maturity.** The Agentic Data Plane is generally available, and so is the `rpk ai` CLI. Individual features carry their own markers where the product docs state them; for example, guardrails, data policies, MCP output format and the Google Identity-Aware Proxy setting on an MCP server are Preview. Each reference file names these markers.
+## How to work
 
-## Where each task lives
+**Put `enabled: true` in a trigger manifest you apply.** In an `rpk ai trigger apply` manifest,
+a missing `enabled` means false, so the trigger is created or left paused and never fires, even
+though `rpk ai trigger create` enables a trigger by default. Before you apply a trigger manifest
+the user wants live, add `enabled: true`, then confirm with `rpk ai trigger list`.
 
-| Task | CLI | UI |
-|---|---|---|
-| Agents (managed and self-managed), credentials, A2A | `rpk ai agent` | Agents |
-| Agent triggers (Microsoft Teams, cron schedule) | `rpk ai trigger` | Agent → Triggers tab |
-| MCP servers, managed catalog, tool listing and calls | `rpk ai mcp-server` | MCP servers |
-| LLM providers, connection test, pricing overrides | `rpk ai llm-provider` | LLM providers |
-| Model catalog | `rpk ai model` | LLM provider → Models tab |
-| Conversation sessions | `rpk ai session` | Agent → Playground history |
-| Read the product docs in the terminal | `rpk ai docs`, `rpk ai docs search` | — |
-| Diagnosing local CLI setup before debugging a command | `rpk ai doctor` | — |
-| Coding tools through the gateway | `rpk ai run claude`, `rpk ai run codex`, `rpk ai run agy` | — |
+**Build a GitOps manifest from the live resource before `apply`.** `rpk ai <group> apply` treats
+a manifest as the complete desired state, so a field you leave out is cleared on the live
+resource. For a change to an existing agent, provider, MCP server, or trigger, start from
+`rpk ai <group> get <name> -o yaml`, change only what the user asked for, and check the result
+with `diff` before `apply`. Never apply a hand-written partial manifest to an existing resource.
 
-Governance and observability tasks are in sibling skills. Load the named skill for these:
+## Use the docs for everything else
 
-| Task | CLI | UI | Skill |
-|---|---|---|---|
-| Cedar access policies | `rpk ai policy` | Access (when enabled for your organization) | `/redpanda:adp-governance` |
-| Roles and permissions (RBAC) | role bindings via `/redpanda:rpk-cloud` | Access → Roles (read-only view) | `/redpanda:adp-governance` |
-| Data policies on an MCP server | `rpk ai mcp-server create/update --data-policies` | MCP server → Data Policies tab | `/redpanda:adp-governance` |
-| Kill switch policies that contain an agent | `rpk ai kill-switch-policy` | Agent → Govern tab | `/redpanda:adp-governance` |
-| Containing an agent by hand, and releasing it | `rpk ai agent-kill-switch` | Agent → **Contain agent** / **Release agent** | `/redpanda:adp-governance` |
-| OAuth clients (inbound) and providers (outbound) | `rpk ai oauth-client`, `rpk ai oauth-provider` | Integrations setup | `/redpanda:adp-governance` |
-| Your own OAuth connections | `rpk ai connection` | Connections | `/redpanda:adp-governance` |
-| Budgets that cap agent spend | `rpk ai budget` | Budgets | `/redpanda:adp-governance` |
-| Cost and usage analysis | `rpk ai spending` | Cost and usage | `/redpanda:adp-governance` |
-| Guardrails | `rpk ai guardrail` | Guardrails | `/redpanda:adp-governance` |
-| Transcripts | `rpk ai agent transcript` | Agent → Transcripts | `/redpanda:adp-observability` |
-| Audit log | `rpk ai auditlog` | Observability → Audit log | `/redpanda:adp-observability` |
-| Traces: one row per run, span by span | `rpk ai trace` | Observability → Traces | `/redpanda:adp-observability` |
-| Agent network | `rpk ai agent-network` | Observability → Agent network | `/redpanda:adp-observability` |
-| API keys for long-lived clients | `rpk ai api-key` | API keys | `/redpanda:adp-governance` |
-| Secrets other resources reference by ID | `rpk ai secret` | Secrets store | `/redpanda:adp-governance` |
+Look up commands, flags, defaults, limits, error messages, UI steps, and procedures in the ADP
+docs instead of from memory:
 
-## Components
+- Follow `/redpanda:redpanda-docs`. Use `get_rpk_command` for one `rpk ai` command (for example
+  `rpk ai trigger create`): it returns the flags and defaults of the latest published plugin.
+  Use `ask_redpanda_question` for everything else. ADP docs are not versioned, so pass no
+  `version`.
+- Most useful pages: the ADP docs at https://docs.redpanda.com/agentic-data-plane/, the CLI
+  guide at https://docs.redpanda.com/agentic-data-plane/cli/, GitOps at
+  https://docs.redpanda.com/agentic-data-plane/cli/gitops/, and the `rpk ai` reference at
+  https://docs.redpanda.com/agentic-data-plane/reference/rpk/rpk-ai/rpk-ai/ (one page per
+  subcommand).
 
-### AI agents
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the user to sign in
+through `/mcp` rather than answering from memory.
 
-A **managed** agent runs on ADP: you configure a model, an LLM provider, a system prompt, MCP servers, and optional subagents. A **self-managed** agent (`rpk ai agent create --self-managed`) is a metadata-only record for an agent you host yourself. Richer spec fields (subagents, reasoning effort, agent card) go in a manifest applied with `rpk ai agent apply -f` or `--spec-file`. Agents publish an A2A agent card at `/.well-known/agent-card.json`, and `rpk ai agent a2a` talks to a running agent. Triggers fire an agent from Microsoft Teams or on a cron schedule, and can be paused and resumed without losing their configuration or run history.
-
-See [references/agents.md](references/agents.md).
-
-### MCP servers
-
-Each MCP server is either **remote** (you own the upstream and pick an auth mode) or **managed** (a pre-integrated catalog type). The catalog changes, so list it live with `rpk ai mcp-server types` rather than assuming it. **Code mode** serves a second `-code` endpoint that exposes just `search` and `execute` tools in place of the full tool list, which cuts tokens for servers with many tools. **Output format** (Preview) can re-encode tabular tool results into a denser form. **Data policies** (Preview) mask, drop, or clamp data in tool calls before the model sees it. Some managed types can also expose their data as read-only SQL tables alongside their tools, off by default.
-
-See [references/mcp-servers.md](references/mcp-servers.md).
-
-### AI Gateway and LLM providers
-
-The AI Gateway is a managed HTTP proxy. It stores upstream credentials in the Redpanda secret store and injects them on outbound requests, so calling applications never see raw keys. Per-provider URL: `<gateway-base>/llm/v1/providers/<provider-name>/<upstream-path>`. Manage providers with `rpk ai llm-provider`, and discover models with `rpk ai model list`. Provider types include OpenAI, Anthropic, Google Gemini API, Amazon Bedrock, and OpenAI-compatible endpoints; confirm the current set with `rpk ai llm-provider create --help`.
-
-**Scope:** the gateway injects credentials. It does not do routing, failover, cross-provider load balancing, or request rate limiting. To cap spend, use budgets.
-
-See [references/gateway-and-providers.md](references/gateway-and-providers.md).
-
-### Governance and observability
-
-Budgets, cost and usage, guardrails, Cedar access policies, roles and permissions, data policies, the kill switch, secrets, tags, API keys and OAuth decide whether a call runs, what it may cost and which credentials it uses. They are in `/redpanda:adp-governance`. Traces, transcripts, the audit log and the monitoring views record what ran and why. They are in `/redpanda:adp-observability`.
-
-## Auth model
-
-`rpk ai` owns its own credentials and ADP environment selection. It does not ride the `rpk cloud` session.
-
-```bash
-rpk ai auth login             # OAuth device-authorization flow; always runs a fresh grant
-rpk ai env list               # list local and live ADP environments
-rpk ai env use <environment>  # select the environment whose AI Gateway becomes the target
-rpk ai agent list             # now works
-```
-
-Scripts can branch on the exit code: `3` is an authentication or authorization failure (re-login and retry once), `4` is an A2A task that ended failed, canceled, or rejected, `1` is anything else. See [cli.md](references/cli.md#exit-codes).
-
-`rpk ai auth status` shows token state; `rpk ai env show` prints the resolved environment. For headless use, pass `--token <bearer>`. Under `rpk ai` an ambient `RPAI_TOKEN` environment variable is **ignored**. To override the gateway endpoint for one invocation, pass `--rpai-endpoint <url>`; it is flag-only. Define a local gateway with `rpk ai env add <name> --ai-gateway-url <url> --auth-mode none`.
-
-**A sign-in is not a client credential.** The sign-in authenticates the management commands. A client sending traffic through the gateway presents an **ADP API key** (`X-Redpanda-Api-Key`, created in the UI under **API keys**, authenticating as its creator) or **OIDC client credentials** (for applications, CI, and self-managed agents, where the caller should be a service account). Every `rpk ai run` session uses an API key it creates and renews for you. See `/redpanda:adp-governance` (*API keys*) and [gateway-and-providers.md](references/gateway-and-providers.md#how-a-client-authenticates-to-the-gateway).
-
-See [references/cli.md](references/cli.md).
-
-## Discover the live surface
-
-Reference files are a point-in-time snapshot. Command groups, catalogs, and defaults change, so confirm live:
-
-```bash
-rpk ai --help                          # top-level command tree and global flags
-rpk ai agent --help
-rpk ai mcp-server --help
-rpk ai llm-provider --help
-rpk ai mcp-server types                # managed MCP catalog
-rpk ai mcp-server tools list <server>  # tools on one server
-rpk ai model list                      # model catalog (optionally --provider-type)
-```
-
-`llm-provider` and `mcp-server` are the canonical group names; `llm` and `mcp` still work as aliases. For feature and version history, read the ADP product documentation rather than relying on this skill.
-
-## Key patterns and gotchas
-
-- **Use `rpk ai` or the UI, and check the live tree first.** Newer releases keep adding command groups — budgets, spending, traces, the agent network, guardrails, API keys, conversation sessions and manual containment all arrived after this table said "none" for them — so run `rpk ai --help` before you tell a user a task is UI-only, read that group's own `--help` instead of guessing its flags, and never invent a group or flag the live help does not show. Most resource pages in the UI also carry a **Use with rpk ai** button that prints the commands for the resource in front of you.
-- **Cost unit.** The UI shows dollars. Raw cost values in manifests or `-o yaml` output are **USD microcents** ($1 = 100,000,000 microcents). Never treat them as cents.
-- **Piping a secret value needs `--value-file=-`, with the equals sign.** Under `rpk ai`, a bare `-` given as a separate argument never reaches the plugin, so `rpk ai secret create ID --value-file -` fails with an argument error instead of reading stdin. `rpk ai policy --cedar-file` has no stdin mode at all; it takes a path only. See `/redpanda:adp-governance` (*`secret` subcommands*).
-- **Creating an LLM provider turns transcript content capture ON.** If the create does not mention transcripts, prompts and completions are recorded verbatim. To opt out, pass `--transcripts.record-input-messages=false --transcripts.record-output-messages=false` (or set them in the manifest). Existing providers are not changed. See [gateway-and-providers.md](references/gateway-and-providers.md#transcript-recording-defaults-to-on).
-- **A passthrough provider takes two credentials, one of which must be an API key, and cannot be health-checked.** With authorization passthrough the caller's upstream credential goes in `Authorization`, and the gateway credential must be an **ADP API key** in `X-Redpanda-Api-Key` — a sign-in or client-credentials token is refused with **HTTP 400** on Anthropic, OpenAI and OpenAI-compatible alike. Anthropic also returns **400** when `Authorization` is empty, and on the OpenAI family an upstream redirect becomes **HTTP 502**. A connection check reports a passthrough provider as not configured, which is expected; don't gate a create on it. See [gateway-and-providers.md](references/gateway-and-providers.md#authorization-passthrough).
-- **An `rpk ai run` session is authenticated by an API key, never by the sign-in.** `run claude`, `run codex` and `run agy` create a 30-day key on the first launch in an environment (`--api-key=yes` to skip the prompt where nothing can answer it), reuse it until its last tenth, then replace it. There is no fallback to the login token: if no key can be obtained, the launch stops. Creating one needs the *Sandboxed* template or above, and only a user who signs in directly can hold one — so a service account cannot start a session. See [coding-tools.md](references/coding-tools.md#the-session-credential-is-an-adp-api-key).
-- **A new agent has no policy of its own, but its creator can invoke it.** Creating an agent writes no policy for it. `rpk ai agent create` says so on stderr (its notice reads that the agent has no access until a policy names it) and keeps stdout parseable, and in the UI a managed agent's **Permissions** tab warns until you author one. Bind one with `rpk ai policy create --agent <name> --template readonly|sandboxed|standard|full`, or with Cedar whose principal is that agent. Registering a self-managed agent in the UI is the exception: its required **Access** section writes the first policy for you. What the creator *does* get, from the built-in *Owner lifecycle* policy, is `invoke` on an agent and on an LLM provider they created — enough to run their own agent, not a grant to anyone else and not the agent's own access. And because a run a person starts is authorized as **that person**, their successful test says nothing about what the agent may reach on a trigger-started run. See `/redpanda:adp-governance` (*Give a new agent access*).
-- **Agent writes are model-checked, with two exceptions.** Create and update reject a model the provider type does not know, and on Bedrock also a model not enabled on the provider. OpenAI-compatible and Gemini Enterprise Agent Platform providers are not model-checked: there the gateway refuses a disallowed model at call time instead. See [agents.md](references/agents.md#write-time-validation).
-- **Reasoning effort is a provider-owned string, validated per model.** Set `reasoning.effort` in the agent manifest using the exact spelling the model catalog lists for every model the agent and its subagents use. Never assume a level exists, and leave it unset on OpenAI-compatible providers. See [agents.md](references/agents.md#reasoning-effort).
-- **Subagent MCP servers are independent.** A subagent's MCP server list is not a subset of its parent's, and agents reach tools only through MCP server references.
-- **Code mode is a separate endpoint.** The primary server URL is unchanged. The `-code` URL exposes only `search` and `execute`. Code mode is per server; it does not combine servers.
-- **Output format fails open and applies to the whole server.** Results that can't be losslessly re-encoded are forwarded unchanged, and an opted-in server's tool list drops `outputSchema`. Never treat the encoded form as a guaranteed wire format.
-- **A `user_oauth` MCP server's tool list is not proof of access.** A caller with no connection can still open a session and list tools. The first tool call returns a result whose **text** carries the sign-in URL; read it from there, not from an error status. A tool list that fails *hard* is a configuration or infrastructure problem, not a missing connection. See [mcp-servers.md](references/mcp-servers.md#what-a-caller-without-a-connection-can-do-user_oauth).
-- **A per-user Slack connection can still act as the bot.** The acting identity comes from the OAuth provider's Slack token type, not from who owns the connection. Only a user-typed provider acts as the person who authorized. The setting can't be changed after creation, so serving both identities needs two providers. See `/redpanda:adp-governance` (*Slack: whose identity the connection acts as (`slack_token_type`)*).
-- **The audit log records calls, not MCP session traffic.** MCP session setup and keep-alive messages are recorded only when denied or errored. Never count sessions, or conclude that no session happened, from the audit log.
-- **A GitOps manifest is the complete desired state.** `rpk ai <group> apply` / `diff` compare every writable field. A field left out of the manifest is compared as its empty value, so removing it from the manifest counts as drift; it does not mean "leave it alone". Start from `get -o yaml`. Neither command prunes resources missing from the manifests. See [cli.md](references/cli.md#gitops-apply-and-diff).
-- **`connection` manages your own OAuth grants.** `rpk ai connection list` / `revoke <provider>` act only on your connections. Connections are created through the browser consent flow, not the CLI.
-- **Bedrock naming.** Write Amazon Bedrock, the vendor's name, in prose. The ADP UI labels the LLM provider type tile and the managed MCP server type `AWS Bedrock`, so use that exact string only when naming those controls.
-
-## Control-plane MCP server
-
-For the `rpk cloud mcp` control-plane server, which manages Redpanda Cloud clusters, networks, and IAM, see /redpanda:rpk-cloud.
-
-## Reference files
-
-- [references/agents.md](references/agents.md): agent commands, managed agent spec, validation, reasoning effort, subagents, A2A, sessions, credentials, triggers.
-- [references/mcp-servers.md](references/mcp-servers.md): MCP server commands and fields, remote auth modes, `user_oauth` behavior, code mode, output format, data policies, managed catalog.
-- [references/gateway-and-providers.md](references/gateway-and-providers.md): provider management, provider types and credentials, connection tests, failed-call investigation, transcript capture default, client authentication, authorization passthrough, models, pricing overrides, gateway scope.
-- [references/cli.md](references/cli.md): `rpk ai` install and lifecycle, authentication, global flags, command tree, `doctor`, per-group details (including `docs`), GitOps `apply`/`diff`, exit codes, common errors.
-- [references/coding-tools.md](references/coding-tools.md): `run claude` / `run codex` / `run agy` and their session credential.
-
-Governance and observability references are in `/redpanda:adp-governance` and `/redpanda:adp-observability`.
+`rpk ai <group> --help` on the installed plugin is the live check for flags in that version.
+`rpk ai docs` and `rpk ai docs search` read the published ADP docs from the terminal without a
+sign-in. Catalogs change, so list them live: `rpk ai mcp-server types` for managed MCP server
+types, `rpk ai llm-provider types` for provider types, and `rpk ai model list` for models.
