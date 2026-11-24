@@ -11,7 +11,7 @@ procedure into this skill.
 
 | Skill file | Sources |
 |---|---|
-| `SKILL.md` | The catalog's published path and fields: the solutions-catalog extension in the private repo `redpanda-data/docs-extensions-and-macros` (`extensions/solutions-catalog/`), which writes `assets/data/solutions.json`. The companion's path, its `# Agent companion:` first line, and the single-`curl` fetch rule: `extensions/solutions-catalog/agent-companion.js` in the same repo. The "Take this design to production" prompt that points at this skill: `src/js/33-solution-productionize.js` in the private repo `redpanda-data/docs-ui`. |
+| `SKILL.md` | The catalog's published path and fields: the solutions-catalog extension in `redpanda-data/docs-extensions-and-macros` (`extensions/solutions-catalog/`), which writes `assets/data/solutions.json`. The companion's path, its `# Agent companion:` first line, and the single-`curl` fetch rule: `extensions/solutions-catalog/agent-companion.js` in the same repo. The "Take this design to production" prompt that points at this skill: `src/js/33-solution-productionize.js` in `redpanda-data/docs-ui`. |
 
 ## Verify
 
