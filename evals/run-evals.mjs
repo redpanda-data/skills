@@ -57,6 +57,10 @@ const DOCS_TOOLS = [
   "list_connect_components",
   "get_rpk_command",
   "list_rpk_commands",
+  "get_bloblang",
+  "get_glossary_term",
+  "list_glossary_terms",
+  "get_taxonomy_concept",
 ].map((t) => `mcp__${DOCS_SERVER}__${t}`);
 const DOCS_DENIED = [`mcp__${DOCS_SERVER}__give_feedback`];
 // Anonymous callers get a handful of tool calls a day per network address, which

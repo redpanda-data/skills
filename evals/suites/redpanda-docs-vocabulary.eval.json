@@ -1,0 +1,81 @@
+{
+ "name": "redpanda-docs vocabulary",
+ "skill": "redpanda-docs",
+ "description": "Measures what the docs MCP's glossary and taxonomy tools (get_glossary_term, list_glossary_terms, get_taxonomy_concept) add for agents that write or classify Redpanda docs. Every case has an answer only the published docs vocabulary gives: which page category replaces a deprecated one, which categories were dropped with no single replacement, and a glossary definition word for word. Run the docs arm twice, once against a docs MCP without these tools (production before they ship) and once against one with them, and compare. Cases are targeted at the tools, so they measure the tools, not docs coverage.",
+ "test_cases": [
+  {
+   "id": "deprecated-categories-to-current",
+   "query": "I'm updating an old Redpanda docs page. Its AsciiDoc header has `:page-categories: Iceberg, Data Replication, Scaling`. Some of these look like old category names. What should that line be under the current Redpanda docs taxonomy? Give me the corrected line.",
+   "why": "In the docs taxonomy (taxonomy.yml in redpanda-data/docs), Iceberg, Data Replication, and Scaling are deprecated topic concepts. Iceberg is replaced by Iceberg Topics, Data Replication by Replication, and Scaling by Performance and Scaling. Without the taxonomy, an agent keeps the old values or invents near-misses.",
+   "origin": "targeted",
+   "verified_against": [
+    "https://docs.redpanda.com/shared/_attachments/taxonomy.yml"
+   ],
+   "required_patterns": [
+    "Iceberg Topics",
+    "(?<!Data )Replication",
+    "Performance and Scaling"
+   ],
+   "failure_patterns": [
+    ":page-categories:[^\\n]*\\bIceberg\\b(?! Topics)",
+    ":page-categories:[^\\n]*Data Replication"
+   ],
+   "invariants": [
+    {
+     "name": "replacements",
+     "failure_condition": "FAILS if the corrected :page-categories: line is not exactly the three values Iceberg Topics, Replication, and Performance and Scaling (in any order), or if it keeps Iceberg, Data Replication, or Scaling."
+    }
+   ]
+  },
+  {
+   "id": "deprecated-category-without-replacement",
+   "query": "A Redpanda docs page about streaming PostgreSQL changes into Apache Iceberg tables has `:page-categories: Integration`. Is Integration still a valid category in the Redpanda docs taxonomy? If not, what should the page use instead?",
+   "why": "Integration is deprecated in the docs taxonomy with no replacement, because it applies to almost every page. The taxonomy says to tag the technology the page integrates with (PostgreSQL, Apache Iceberg) and the use case it serves (Change data capture) instead.",
+   "origin": "targeted",
+   "verified_against": [
+    "https://docs.redpanda.com/shared/_attachments/taxonomy.yml"
+   ],
+   "required_patterns": [
+    "deprecat",
+    "Change data capture|CDC"
+   ],
+   "invariants": [
+    {
+     "name": "no_single_replacement",
+     "failure_condition": "FAILS if the answer says Integration is still a valid category, or names a single category that replaces it, instead of saying it is deprecated and the page should be tagged with technologies (such as PostgreSQL and Apache Iceberg) and a use case (Change data capture)."
+    }
+   ]
+  },
+  {
+   "id": "glossary-definition-verbatim",
+   "query": "For a tooltip, I need the exact definition the Redpanda docs glossary gives for the term pandaproxy, word for word. Don't paraphrase it.",
+   "why": "The glossary term file shared/modules/terms/partials/pandaproxy.adoc defines it as: Original name for the subsystem of Redpanda that allows access to your data through a REST API. This name still appears in the HTTP Proxy API and the Schema Registry API. A retrieval answer tends to paraphrase or mix in the HTTP Proxy page.",
+   "origin": "targeted",
+   "verified_against": [
+    "https://github.com/redpanda-data/docs/blob/main/shared/modules/terms/partials/pandaproxy.adoc"
+   ],
+   "required_patterns": [
+    "Original name for the subsystem of Redpanda that allows access to your data through a REST API\\.?\\s+This name still appears in the HTTP Proxy API and the Schema Registry API"
+   ]
+  },
+  {
+   "id": "task-categories-to-current",
+   "query": "Our Redpanda docs page header says `:page-categories: Troubleshooting, Emergency Response, Upgrades`. Which of these are current values in the Redpanda docs taxonomy, and what does each old one map to now?",
+   "why": "Troubleshooting and Emergency Response are deprecated and both replaced by the task concept Troubleshoot; Upgrades is replaced by Upgrade. Tasks are derived from the page's Antora module, so check-metadata --fix drops them from page-categories; either answer is right as long as it names the replacements and says none of the three is current.",
+   "origin": "targeted",
+   "verified_against": [
+    "https://docs.redpanda.com/shared/_attachments/taxonomy.yml"
+   ],
+   "required_patterns": [
+    "Troubleshoot\\b",
+    "Upgrade\\b"
+   ],
+   "invariants": [
+    {
+     "name": "all_three_deprecated",
+     "failure_condition": "FAILS if the answer says any of Troubleshooting, Emergency Response, or Upgrades is a current value, or maps them to anything other than Troubleshoot (for the first two) and Upgrade (for Upgrades)."
+    }
+   ]
+  }
+ ]
+}
