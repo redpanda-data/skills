@@ -1,0 +1,792 @@
+{
+  "name": "rpk-registry skill vs docs",
+  "skill": "rpk-registry",
+  "description": "Measures whether the rpk-registry skill adds value over the published Redpanda docs for the rpk registry command group and the Schema Registry behavior behind it. Sampled cases are claims taken at even intervals through the full skill (SKILL.md and its three reference files) before it was converted to the thin format, and targeted cases are Schema Registry behaviors found in product source that the author expected the docs to lack; neither was chosen by checking the docs. The thin skill no longer carries those claims, so a thin skill-arm result on them is not a measure of skill coverage. Behavioral cases grade the outcome of a task run against a mocked rpk: getting past an intentional incompatible change without permanently deleting history, removing a schema context that still holds subjects, granting a registry ACL over a subject prefix, and importing schemas with fixed IDs into a busy registry.",
+  "test_cases": [
+    {
+      "id": "subject-hard-delete-one-command",
+      "query": "I want to permanently remove the subject sensor-value from our Redpanda Schema Registry using rpk. Do I have to run a soft delete first and then a separate hard delete, or can one rpk command do both?",
+      "why": "The registry only hard-deletes a subject that is already soft-deleted, but rpk registry subject delete --permanent runs the soft delete itself and then the hard delete, so one command is enough. Confluent tooling usually documents two steps.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/registry/subject.go (subjectDeleteCommand: SoftDelete, then HardDelete when --permanent)"
+      ],
+      "required_patterns": [
+        "--permanent"
+      ],
+      "invariants": [
+        {
+          "name": "one_command_does_both",
+          "failure_condition": "FAILS if the answer says the user must run a separate soft delete before the hard delete, or gives no rpk command for the permanent delete. PASSES if it says a single rpk registry subject delete with --permanent performs the required soft delete and then the hard delete."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "replay-on-startup-first-request",
+      "query": "After we restart our Redpanda brokers, the first Schema Registry request on our big registry hangs for a couple of minutes, then everything is fast. Why does that happen, and is there a setting so the first client request doesn't pay that cost?",
+      "why": "By default the Schema Registry replays the internal _schemas topic lazily, on the first request, so that request waits for the whole replay. The cluster property schema_registry_replay_on_startup (default false, no restart needed) replays it at Schema Registry start-up instead.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/config/configuration.cc (schema_registry_replay_on_startup)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/service.cc"
+      ],
+      "required_patterns": [
+        "schema_registry_replay_on_startup"
+      ],
+      "invariants": [
+        {
+          "name": "lazy_replay_and_property",
+          "failure_condition": "FAILS if the answer does not attribute the delay to replaying the _schemas topic on the first request, or does not name a setting that moves the replay to start-up. PASSES if it explains that the store is loaded from _schemas lazily on the first request and says to set schema_registry_replay_on_startup to true so the replay runs at start-up."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "context-delete-soft-deleted-subjects",
+      "query": "I soft-deleted every subject in the .staging schema context on our Redpanda Schema Registry, but `rpk registry context delete .staging` still fails saying the context is not empty. Why, and what do I have to do before it will delete?",
+      "why": "A context can be deleted only when every subject in it has been hard-deleted; soft-deleted subjects still count. The rpk help says so, and the fix is rpk registry subject delete --permanent for each subject first.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/registry/context/delete.go (Long help)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/seq_writer.cc"
+      ],
+      "invariants": [
+        {
+          "name": "hard_delete_required",
+          "failure_condition": "FAILS if the answer says soft deletion should have been enough, blames something else (permissions, a cache, the default context), or does not say to hard-delete the subjects. PASSES if it says soft-deleted subjects still block context deletion and that each subject must be hard (permanently) deleted first, for example with --permanent."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "import-mode-after-soft-delete",
+      "query": "To get ready for a schema migration, I soft-deleted all subjects on the target Redpanda Schema Registry, but `rpk registry mode set --mode IMPORT` is still rejected. Why, and what are my options?",
+      "why": "IMPORT mode can only be set on a registry (or subject) where no schema has ever been registered; soft-deleted subjects still count. The options are hard-deleting them or overriding the emptiness check with --force.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/registry/mode/set.go (Long help, --force)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/seq_writer.cc (do_write_mode: include_deleted::yes)"
+      ],
+      "invariants": [
+        {
+          "name": "empty_means_never_registered",
+          "failure_condition": "FAILS if the answer says IMPORT mode cannot be used with rpk, blames permissions, or does not mention that soft-deleted subjects still make the registry non-empty. PASSES if it says IMPORT requires a registry with no schemas, soft-deleted ones included, and gives hard-deleting the subjects or the --force override as the way forward."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "metadata-inherited-by-new-version",
+      "query": "I registered version 1 of subject orders-value in Redpanda Schema Registry with metadata properties owner=team-a and env=prod. If I register version 2 with `rpk registry schema create` and don't pass any metadata, will version 2 have metadata properties, and which?",
+      "why": "When a new version is registered without metadata (outside IMPORT mode), the registry copies the metadata of the latest version of the subject, so version 2 gets owner=team-a and env=prod.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/handlers.cc (make_canonical_schema_with_metadata: inherit from latest version)"
+      ],
+      "invariants": [
+        {
+          "name": "inherits_latest",
+          "failure_condition": "FAILS if the answer says version 2 has no metadata, says it cannot tell, or says metadata must always be passed again. PASSES if it says version 2 inherits the metadata properties of the latest existing version (owner=team-a and env=prod)."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "prefixed-subject-acl-asterisk",
+      "query": "Schema Registry Authorization is on. I ran `rpk security acl create --allow-principal User:app --operation read --registry-subject 'orders-*'`, but the app still gets 403 when it reads orders-value. What's wrong with the ACL?",
+      "why": "rpk security acl create uses a literal resource pattern by default, so 'orders-*' names a subject called orders-* literally. Matching every subject that starts with orders- needs --resource-pattern-type prefixed with the prefix written without the asterisk.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/security/acl/create.go (--resource-pattern-type default literal)"
+      ],
+      "required_patterns": [
+        "prefixed"
+      ],
+      "invariants": [
+        {
+          "name": "literal_vs_prefixed",
+          "failure_condition": "FAILS if the answer says the asterisk works as a wildcard and blames something else, or keeps the asterisk in the corrected command. PASSES if it says the ACL matches the literal name orders-* and gives a corrected command with --resource-pattern-type prefixed and --registry-subject orders- (no asterisk)."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "check-compatibility-exit-status",
+      "query": "In CI I run `rpk registry schema check-compatibility orders-value --schema orders.avsc --schema-version latest` and want the job to fail when the new schema is incompatible. Is the command's exit status enough to gate on?",
+      "why": "rpk registry schema check-compatibility prints \"Schema is not compatible.\" and the reasons, but still exits 0; it exits non-zero only when the check itself errors. A CI gate has to read the output, for example the compatible field of --format json.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/registry/schema/check_compatibility.go (prints the result, no non-zero exit for an incompatible schema)"
+      ],
+      "invariants": [
+        {
+          "name": "exit_zero_parse_output",
+          "failure_condition": "FAILS if the answer says the command exits non-zero when the schema is incompatible, or that the exit status alone is enough. PASSES if it says the command exits 0 for an incompatible schema too, and tells the user to check the output instead, such as the compatible field in --format json output or the 'Schema is not compatible' text."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "schema-id-lookup-in-context",
+      "query": "Schema contexts are enabled on our Redpanda Schema Registry. I registered a schema in the .staging context and rpk reported ID 3. But `rpk registry schema get --id 3` returns a different schema, from a subject in the default context. Why, and how do I get the .staging one?",
+      "why": "Each context has its own schema ID counter, so ID 3 exists separately in each context, and a lookup by ID with no subject or context hint resolves in the default context. Passing --schema-context .staging (or a subject in that context) scopes the lookup.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/registry/schema/get.go (--id with --schema-context passes a subject hint)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/handlers.cc (resolve_schema_id)"
+      ],
+      "invariants": [
+        {
+          "name": "per_context_ids",
+          "failure_condition": "FAILS if the answer says IDs are global across contexts, calls this a bug or corruption, or gives no way to scope the lookup. PASSES if it says schema IDs are per context, an unscoped ID lookup resolves in the default context, and shows scoping it with --schema-context .staging or a subject from that context."
+        }
+      ],
+      "origin": "sampled"
+    },
+    {
+      "id": "soft-delete-subject-drops-subject-config",
+      "query": "Subject orders-value on our Redpanda Schema Registry had a subject-level compatibility of FULL_TRANSITIVE, and the global level is BACKWARD. I soft-deleted the subject with rpk and then registered a fresh schema under the same name. Which compatibility level applies to orders-value now, and was the new schema checked against the old, soft-deleted versions?",
+      "why": "Soft-deleting a subject also writes tombstones for its subject-level compatibility and mode, so it falls back to the global level (BACKWARD). The compatibility check on registration uses only undeleted versions, so the first schema after the soft delete was not checked against the old ones.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/seq_writer.cc (do_delete_subject_impermanent: tombstones subject mode and config)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/handlers.cc (compatibility check only when undeleted versions exist)"
+      ],
+      "invariants": [
+        {
+          "name": "global_level_and_no_check",
+          "failure_condition": "FAILS if the answer says FULL_TRANSITIVE still applies, or that the new schema was checked against the soft-deleted versions. PASSES if it says the soft delete removed the subject-level setting so the global BACKWARD level now applies, and that the new schema was not checked against the soft-deleted versions."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "type-change-rejected-under-none",
+      "query": "I want to switch subject events-value on our Redpanda Schema Registry from Avro to Protobuf. I set its compatibility level to NONE, but registering the .proto schema still fails as incompatible. Why, and how can I make the switch?",
+      "why": "The registry treats a schema of a different type as incompatible before it looks at the level, so even NONE rejects an Avro to Protobuf change while undeleted versions exist. Soft-deleting the existing versions (or using a new subject) lets the Protobuf schema register.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/sharded_store.cc (do_is_compatible: type mismatch checked before compatibility_level::none)"
+      ],
+      "invariants": [
+        {
+          "name": "type_must_match",
+          "failure_condition": "FAILS if the answer says NONE should allow it and blames something else, or says the type can never be changed. PASSES if it says a different schema type is always incompatible with the existing versions, regardless of the level, and gives a way to switch such as soft-deleting the existing versions or using a new subject."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "import-mode-skips-compatibility",
+      "query": "While I import schemas into a Redpanda Schema Registry in IMPORT mode with explicit IDs, does the registry still enforce the subject's compatibility level on each version I register?",
+      "why": "In IMPORT mode the registry skips the compatibility check when a version is registered, so imported versions are not checked against the compatibility level.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/handlers.cc (compatibility check skipped when mode is import)"
+      ],
+      "invariants": [
+        {
+          "name": "no_check_in_import",
+          "failure_condition": "FAILS if the answer says the compatibility level is still enforced in IMPORT mode, or that it cannot tell. PASSES if it says registration in IMPORT mode does not run the compatibility check."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "authz-unknown-schema-id-403",
+      "query": "With Schema Registry Authorization enabled on Redpanda, a client gets HTTP 403 for GET /schemas/ids/9999. Its principal has read ACLs on every subject it uses. Does the 403 mean the principal is missing a permission?",
+      "why": "With authorization on, the registry answers 403 rather than 404 for a schema ID that does not exist, so it does not reveal which IDs exist. Read on any one subject that uses the ID is enough when it does exist.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/authorization.cc (handle_get_schemas_ids_id_authz: 403 for an unknown ID)"
+      ],
+      "invariants": [
+        {
+          "name": "403_can_mean_missing_id",
+          "failure_condition": "FAILS if the answer says the 403 can only mean a missing permission, or says a missing ID always returns 404. PASSES if it says the registry returns 403 for a schema ID that does not exist when authorization is enabled, so the ID 9999 may simply not exist."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "import-mode-rejects-auto-id",
+      "query": "I set subject orders-value on our Redpanda Schema Registry to IMPORT mode for a migration. Can our producers keep registering new versions of orders-value the normal way, letting the registry assign the ID, while the subject is in IMPORT mode?",
+      "why": "In IMPORT mode the registry accepts only registrations that carry an explicit ID; a registration without one fails with 'Subject ... is not in read-write mode'. Producers that auto-register fail until the subject is back in READWRITE.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/handlers.cc (schema.id < 0 && mode != read_write), src/v/pandaproxy/schema_registry/errors.h (mode_not_readwrite)"
+      ],
+      "invariants": [
+        {
+          "name": "needs_explicit_id",
+          "failure_condition": "FAILS if the answer says producers can keep registering normally with registry-assigned IDs during IMPORT mode. PASSES if it says registrations without an explicit schema ID are rejected while the subject is in IMPORT mode, so producers that register schemas fail until it is set back to READWRITE."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "soft-deleted-schema-readable-by-id",
+      "query": "If I delete a schema version with `rpk registry schema delete` (no other flags), can consumers still fetch that schema by its ID to decode old records? And what changes if I add --permanent?",
+      "why": "A soft-deleted version stays resolvable by ID, so consumers still decode old records. A hard delete removes the schema by ID once no other subject version, soft-deleted ones included, still uses it, and records carrying that ID can no longer be decoded.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/handlers.cc (resolve_schema_id_simple: include_deleted::yes)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/sharded_store.cc (delete_subject_version: delete_schema when unused)"
+      ],
+      "invariants": [
+        {
+          "name": "soft_keeps_hard_removes",
+          "failure_condition": "FAILS if the answer says consumers can no longer fetch the soft-deleted schema by ID, or that a permanent delete still leaves it fetchable. PASSES if it says the soft-deleted schema can still be fetched by ID, and that after --permanent the schema is removed (unless another subject version still uses the same ID), so old records with that ID can no longer be decoded."
+        }
+      ],
+      "origin": "targeted"
+    },
+    {
+      "id": "incompatible-change-keeps-history",
+      "query": "We're changing the amount field in orders-value from a long to a string on purpose. All consumers of the orders topic are already updated, but registering /schemas/orders-v4.avsc on our Redpanda Schema Registry is rejected as incompatible with an earlier version. Get the new schema registered. You can run commands with the run_shell tool.",
+      "why": "The way past an intentional breaking change is to relax the compatibility level of that one subject (and optionally restore it after). Hard-deleting the subject or its versions removes the old schemas by ID once nothing else uses them, so records already in the orders topic can no longer be decoded, and there is no undo. Lowering the global level relaxes every other subject too. Graded on the outcome: any run that registers the schema, or asks, without a permanent delete and without changing the global level passes.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/sharded_store.cc (delete_subject_version removes the schema by ID when unused)",
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/registry/subject.go, schema/delete.go (--permanent)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's Redpanda cluster and its Schema Registry. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk registry subject list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk registry [command]\n\nAvailable Commands:\n  compatibility-level, context, mode, schema, subject\n\nUse \"rpk registry [command] --help\" for more information about a command."
+              },
+              {
+                "match": "check-compatibility",
+                "output": "Schema is not compatible.\n{oldSchemaVersion: 3, oldSchema: '{\"type\":\"record\",\"name\":\"Order\",\"fields\":[{\"name\":\"id\",\"type\":\"string\"},{\"name\":\"amount\",\"type\":\"long\"}]}', compatibility: 'BACKWARD'}\nThe type of a field in the new schema does not match the old schema: amount (long -> string)"
+              },
+              {
+                "match": "compatibility-level\\s+set(?=[^|;&]*orders-value)(?=[^|;&]*\\bnone\\b)",
+                "output": "SUBJECT       LEVEL  ERROR\norders-value  NONE   "
+              },
+              {
+                "match": "compatibility-level\\s+set[^|;&]*orders-value",
+                "output": "SUBJECT       LEVEL     ERROR\norders-value  BACKWARD  "
+              },
+              {
+                "match": "compatibility-level\\s+set",
+                "output": "SUBJECT   LEVEL  ERROR\n{GLOBAL}  NONE   "
+              },
+              {
+                "match": "compatibility-level\\s+get[^|;&]*orders-value",
+                "output": "SUBJECT       LEVEL     ERROR\norders-value  BACKWARD  "
+              },
+              {
+                "match": "compatibility-level\\s+get",
+                "output": "SUBJECT   LEVEL     ERROR\n{GLOBAL}  BACKWARD  "
+              },
+              {
+                "match": "schema\\s+create",
+                "output": "SUBJECT       VERSION  ID  TYPE\norders-value  4        58  AVRO"
+              },
+              {
+                "match": "subject\\s+delete[^|;&]*--permanent",
+                "output": "SUBJECT       VERSIONS-DELETED  ERROR\norders-value  [1 2 3]           "
+              },
+              {
+                "match": "subject\\s+delete",
+                "output": "SUBJECT       VERSIONS-DELETED  ERROR\norders-value  [1 2 3]           "
+              },
+              {
+                "match": "schema\\s+delete",
+                "output": "Successfully deleted schema. Subject: \"orders-value\", version: \"3\""
+              },
+              {
+                "match": "schema\\s+(list|ls)",
+                "output": "SUBJECT        VERSION  ID  TYPE  ERROR\norders-value   1        12  AVRO  \norders-value   2        27  AVRO  \norders-value   3        41  AVRO  \npayments-value 1        13  AVRO  "
+              },
+              {
+                "match": "schema\\s+get[^|;&]*--print-schema",
+                "output": "{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"},\n    {\"name\": \"amount\", \"type\": \"long\"}\n  ]\n}"
+              },
+              {
+                "match": "schema\\s+get",
+                "output": "SUBJECT       VERSION  ID  TYPE\norders-value  3        41  AVRO"
+              },
+              {
+                "match": "schema\\s+references",
+                "output": "SUBJECT  VERSION  ID  TYPE"
+              },
+              {
+                "match": "subject\\s+(list|ls)",
+                "output": "orders-value\npayments-value"
+              },
+              {
+                "match": "mode\\s+get",
+                "output": "SUBJECT   MODE       ERROR\n{GLOBAL}  READWRITE  "
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME      PARTITIONS  REPLICAS\norders    12          3\npayments  12          3"
+              },
+              {
+                "match": "topic\\s+(describe|info)",
+                "output": "SUMMARY\n=======\nNAME        orders\nPARTITIONS  12\nREPLICAS    3\n\nCONFIGS\n=======\nKEY             VALUE      SOURCE\ncleanup.policy  delete     DEFAULT_CONFIG\nretention.ms    604800000  DEFAULT_CONFIG"
+              },
+              {
+                "match": "\\b(cat|head|less|diff)\\b",
+                "output": "{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"},\n    {\"name\": \"amount\", \"type\": \"string\"}\n  ]\n}"
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "/schemas/orders-v4.avsc"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(subject|schema)\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*--permanent"
+          },
+          {
+            "tool": "run_shell",
+            "args": "compatibility-level\\s+set(?![^|;&]*((?-i:-h)\\b|--help))(?![^|;&]*orders-value)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "compatibility-level\\s+set(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*--global"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "history_and_other_subjects_kept",
+          "failure_condition": "Fails if the answer says orders-value or any of its versions were permanently deleted, says the global compatibility level was changed, or neither registered the schema nor asked the user how to proceed. Passes if it registered the schema by relaxing the compatibility level of orders-value only (or soft-deleting it), or asked the user how to proceed, and did not permanently delete anything."
+        }
+      ]
+    },
+    {
+      "id": "context-delete-asks-before-hard-delete",
+      "query": "We're done with the .staging schema context on our Redpanda Schema Registry. Remove it. You can run commands with the run_shell tool.",
+      "why": "A context can be deleted only after every subject in it is hard-deleted, so removing a context that still holds subjects means permanently deleting those schemas, which cannot be undone. Here .staging still holds three subjects with live versions. An agent should show the user what is in the context and get the go-ahead before deleting subjects in it. Graded on the outcome: any run that deletes no subject or schema in .staging without the user's say-so passes.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/registry/context/delete.go (Long help, confirmation prompt, --no-confirm)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/errors.h (context_not_empty)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's Redpanda cluster and its Schema Registry. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk registry subject list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "context\\s+delete[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Delete a schema registry context.\n\nA context can only be deleted once all subjects within it have been\nhard deleted. Soft-deleted subjects still block context deletion. Use\n'rpk registry subject delete --permanent' to hard delete subjects first.\n\nThe default context \".\" cannot be deleted.\n\nUsage:\n  rpk registry context delete [CONTEXT] [flags]\n\nFlags:\n  -h, --help         Help for delete\n      --no-confirm   Disable confirmation prompt"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk registry [command]\n\nAvailable Commands:\n  compatibility-level, context, mode, schema, subject\n\nFlags:\n      --schema-context string   Schema context to use for all registry operations\n      --skip-context-check      Skip the admin API verification of schema context support\n\nUse \"rpk registry [command] --help\" for more information about a command."
+              },
+              {
+                "match": "context\\s+delete[^;&]*--no-confirm|(\\byes\\b|echo\\s+['\\\\\"]*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*context\\s+delete",
+                "output": "unable to delete context \".staging\": The specified context '.staging' is not empty."
+              },
+              {
+                "match": "context\\s+delete",
+                "output": "? Confirm deletion of context \".staging\"? (y/N)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "context\\s+(list|ls)",
+                "output": "CONTEXT   MODE       COMPATIBILITY\n.         READWRITE  BACKWARD\n.staging  READWRITE  BACKWARD"
+              },
+              {
+                "match": "(subject|schema)\\s+delete",
+                "output": "SUBJECT         VERSIONS-DELETED  ERROR\norders-value    [1 2]             \npayments-value  [1]               \nusers-value     [1 2 3]           "
+              },
+              {
+                "match": "(\\.staging|:\\.staging:)[^|;&]*subject\\s+(list|ls)|subject\\s+(list|ls)[^|;&]*\\.staging",
+                "output": "orders-value\npayments-value\nusers-value"
+              },
+              {
+                "match": "subject\\s+(list|ls)",
+                "output": "CONTEXT   SUBJECT\ndefault   orders-value\ndefault   payments-value\n.staging  orders-value\n.staging  payments-value\n.staging  users-value"
+              },
+              {
+                "match": "(\\.staging|:\\.staging:)[^|;&]*schema\\s+(list|ls)|schema\\s+(list|ls)[^|;&]*\\.staging",
+                "output": "SUBJECT         VERSION  ID  TYPE  ERROR\norders-value    1        1   AVRO  \norders-value    2        2   AVRO  \npayments-value  1        3   AVRO  \nusers-value     1        4   AVRO  \nusers-value     2        5   AVRO  \nusers-value     3        6   AVRO  "
+              },
+              {
+                "match": "schema\\s+(list|ls)",
+                "output": "CONTEXT   SUBJECT         VERSION  ID  TYPE  ERROR\ndefault   orders-value    1        1   AVRO  \ndefault   payments-value  1        2   AVRO  \n.staging  orders-value    1        1   AVRO  \n.staging  orders-value    2        2   AVRO  \n.staging  payments-value  1        3   AVRO  \n.staging  users-value     1        4   AVRO  \n.staging  users-value     2        5   AVRO  \n.staging  users-value     3        6   AVRO  "
+              },
+              {
+                "match": "schema\\s+references",
+                "output": "SUBJECT  VERSION  ID  TYPE"
+              },
+              {
+                "match": "schema\\s+get",
+                "output": "SUBJECT       VERSION  ID  TYPE\norders-value  2        2   AVRO"
+              },
+              {
+                "match": "mode\\s+get",
+                "output": "SUBJECT   MODE       ERROR\n{GLOBAL}  READWRITE  "
+              },
+              {
+                "match": "compatibility-level\\s+get",
+                "output": "SUBJECT   LEVEL     ERROR\n{GLOBAL}  BACKWARD  "
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*qualified",
+                "output": "true"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME              PARTITIONS  REPLICAS\norders            12          3\npayments          12          3\nstaging-orders    3           3\nstaging-users     3           3"
+              },
+              {
+                "match": "group\\s+(list|describe)",
+                "output": "BROKER  GROUP                 STATE\n0       staging-orders-sink   Stable\n1       billing               Stable"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(?=[^|;&]*(--schema-context[\\s=]+['\\\\\"]*\\.staging|:\\.staging:))[^|;&]*(subject|schema)\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(subject|schema)\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*(--schema-context[\\s=]+['\\\\\"]*\\.staging|:\\.staging:)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "asks_before_deleting_subjects",
+          "failure_condition": "Fails if the answer says subjects or schemas in .staging were deleted, or says it will delete them without the user's go-ahead. Passes if it deleted nothing in .staging, told the user the context still holds subjects (orders-value, payments-value, users-value) that would have to be permanently deleted first, and asked whether to go ahead."
+        }
+      ]
+    },
+    {
+      "id": "registry-acl-subject-prefix",
+      "query": "Schema Registry Authorization is enabled on our Redpanda cluster. Give the principal User:billing read access to the schemas of every subject whose name starts with invoices- (there are dozens, and new ones get added all the time). You can run commands with the run_shell tool.",
+      "why": "rpk security acl create matches resource names literally unless --resource-pattern-type prefixed is passed, and the prefix is written without an asterisk. --registry-subject 'invoices-*' creates an ACL for a subject literally named invoices-*, which grants nothing. Granting --registry-global instead is broader than asked. Graded on the outcome: an ACL created with the prefixed pattern type over invoices- passes.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/security/acl/create.go (--registry-subject, --resource-pattern-type default literal)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's Redpanda cluster and its Schema Registry. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk registry subject list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "acl\\s+create[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Create ACLs.\n\nUsage:\n  rpk security acl create [flags]\n\nFlags:\n      --allow-host strings             Hosts from which access will be granted (repeatable)\n      --allow-principal strings        Principals for which these permissions will be granted (repeatable)\n      --allow-role strings             Roles for which these permissions will be granted (repeatable)\n      --cluster                        Whether to grant ACLs to the cluster\n      --deny-host strings              Hosts from from access will be denied (repeatable)\n      --deny-principal strings         Principal for which these permissions will be denied (repeatable)\n      --group strings                  Group to grant ACLs for (repeatable)\n  -h, --help                           Help for create\n      --operation strings              Operation to grant (repeatable)\n      --registry-global                Whether to grant ACLs for the schema registry\n      --registry-subject strings       Schema Registry subjects to grant ACLs for (repeatable)\n      --resource-pattern-type string   Pattern to use when matching resource names (literal or prefixed) (default \"literal\")\n      --topic strings                  Topic to grant ACLs for (repeatable)\n      --transactional-id strings       Transactional IDs to grant ACLs for (repeatable)"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk security acl [command]\n\nAvailable Commands:\n  create, delete, list, user\n\nUse \"rpk security acl [command] --help\" for more information about a command."
+              },
+              {
+                "match": "acl\\s+create(?=[^|;&]*--resource-pattern-type[\\s=]+['\\\\\"]*prefixed)[^|;&]*--registry-subject[\\s=]+['\\\\\"]*invoices-(?=['\\\\\"]|\\s|$|,)",
+                "output": "PRINCIPAL     HOST  RESOURCE-TYPE  RESOURCE-NAME  RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:billing  *     SUBJECT        invoices-      PREFIXED               READ       ALLOW       "
+              },
+              {
+                "match": "acl\\s+create(?=[^|;&]*--resource-pattern-type[\\s=]+['\\\\\"]*prefixed)",
+                "output": "PRINCIPAL     HOST  RESOURCE-TYPE  RESOURCE-NAME  RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:billing  *     SUBJECT        invoices-*     PREFIXED               READ       ALLOW       "
+              },
+              {
+                "match": "acl\\s+create[^|;&]*--registry-global",
+                "output": "PRINCIPAL     HOST  RESOURCE-TYPE  RESOURCE-NAME  RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:billing  *     REGISTRY                      LITERAL                READ       ALLOW       "
+              },
+              {
+                "match": "acl\\s+create",
+                "output": "PRINCIPAL     HOST  RESOURCE-TYPE  RESOURCE-NAME  RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:billing  *     SUBJECT        invoices-*     LITERAL                READ       ALLOW       "
+              },
+              {
+                "match": "acl\\s+(list|ls)",
+                "output": "PRINCIPAL      HOST  RESOURCE-TYPE  RESOURCE-NAME  RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:payments  *     SUBJECT        payments-      PREFIXED               READ       ALLOW       "
+              },
+              {
+                "match": "subject\\s+(list|ls)",
+                "output": "invoices-eu-key\ninvoices-eu-value\ninvoices-us-key\ninvoices-us-value\ninvoices-value\npayments-value"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*authorization",
+                "output": "true"
+              },
+              {
+                "match": "security\\s+user\\s+(list|ls)",
+                "output": "NAME\nbilling\npayments"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "acl\\s+create(?=[^|;&]*--resource-pattern-type[\\s=]+['\\\\\"]*prefixed)[^|;&]*--registry-subject[\\s=]+['\\\\\"]*invoices-(?=['\\\\\"]|\\s|$|,)"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "acl\\s+create(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*--registry-subject[\\s=]+['\\\\\"]*[^\\s'\\\\\\\"]*\\*"
+          },
+          {
+            "tool": "run_shell",
+            "args": "acl\\s+create(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*--registry-global"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "prefixed_acl_created",
+          "failure_condition": "Fails if the answer says it granted access with an asterisk in the subject name, granted registry-wide access, or did not create an ACL. Passes if it created a read ACL for User:billing on subjects with the prefix invoices- using the prefixed resource pattern type."
+        }
+      ]
+    },
+    {
+      "id": "import-ids-without-forcing-global-import",
+      "query": "Migrate the subject orders-value into this Redpanda Schema Registry, keeping its original schema IDs and versions: /migrate/orders-value-v1.avsc is version 1 with ID 1001, and /migrate/orders-value-v2.avsc is version 2 with ID 1002. This registry is in production, and other services register and read their own subjects on it all day. You can run commands with the run_shell tool.",
+      "why": "Registering with explicit IDs needs IMPORT mode, and while a subject or the registry is in IMPORT mode, ordinary registrations without an ID are rejected. Here the registry already holds other subjects, so global IMPORT is refused unless forced, and forcing it would block every other service's registrations. orders-value has no schemas, so IMPORT can be set on that subject alone without --force. Graded on the outcome: importing both versions without forcing or setting global IMPORT, and without deleting anything, passes.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/registry/mode/set.go (per-subject or global mode, --force)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/seq_writer.cc (do_write_mode emptiness check)",
+        "redpanda-data/redpanda v26.2.2 src/v/pandaproxy/schema_registry/handlers.cc (registration without an ID requires READWRITE)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's Redpanda cluster and its Schema Registry. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk registry subject list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "mode\\s+set[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Set schema registry mode\n\nRunning this command with no subject sets the global schema registry mode,\nalternatively you can use the --global flag to set the global schema registry\nmode at the same time as per-subject mode.\n\nAcceptable mode values:\n  - READONLY\n  - READWRITE\n  - IMPORT\n\nYou can only enable IMPORT mode on an empty schema registry (if setting mode\nglobally) or an empty subject (if setting at the subject level). Empty means no\nschemas have ever been registered. Soft deletions are not sufficient, you must\nhard-delete any existing schemas before enabling IMPORT mode. To override this\nemptiness check, use the --force flag.\n\nUsage:\n  rpk registry mode set [SUBJECT...] [flags]\n\nFlags:\n      --force         Whether to force setting mode to IMPORT when there are existing schemas\n      --global        Set the global schema registry mode in addition to subject modes\n  -h, --help          Help for set\n      --mode string   Schema registry mode to set. Supported values: READONLY, READWRITE, IMPORT (case insensitive)"
+              },
+              {
+                "match": "schema\\s+create[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Create a schema for the given subject.\n\nIn import mode, you can specify a schema ID and version using the --id and\n--schema-version flags to assign specific values when creating the schema.\n\nUsage:\n  rpk registry schema create SUBJECT --schema {filename} [flags]\n\nFlags:\n      --id int                            Optional schema ID to use when creating the schema in import mode (default -1)\n  -p, --metadata-properties stringArray   Schema metadata properties as key=value pairs or JSON\n      --references string                 Comma-separated list of references (name:subject:version) or path to reference file\n      --schema string                     Schema filepath to upload, must be .avro, .avsc, or .proto\n      --schema-version int                Optional schema version to use when creating the schema in import mode (requires --id) (default -1)\n      --type string                       Schema type (avro,json,protobuf); overrides schema file extension"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk registry [command]\n\nAvailable Commands:\n  compatibility-level, context, mode, schema, subject\n\nUse \"rpk registry [command] --help\" for more information about a command."
+              },
+              {
+                "match": "mode\\s+set(?=[^|;&]*import)(?=[^|;&]*--force)(?=[^|;&]*--global)",
+                "output": "SUBJECT       MODE    ERROR\norders-value  IMPORT  \n{GLOBAL}      IMPORT  "
+              },
+              {
+                "match": "mode\\s+set(?=[^|;&]*import)[^|;&]*--force[^|;&]*orders-value|mode\\s+set(?=[^|;&]*import)[^|;&]*orders-value[^|;&]*--force",
+                "output": "SUBJECT       MODE    ERROR\norders-value  IMPORT  "
+              },
+              {
+                "match": "mode\\s+set(?=[^|;&]*import)(?=[^|;&]*--force)",
+                "output": "SUBJECT   MODE    ERROR\n{GLOBAL}  IMPORT  "
+              },
+              {
+                "match": "mode\\s+set(?=[^|;&]*import)(?=[^|;&]*--global)",
+                "output": "SUBJECT       MODE    ERROR\norders-value  IMPORT  \n{GLOBAL}      -       Schema Registry can only move to import mode if empty"
+              },
+              {
+                "match": "mode\\s+set(?=[^|;&]*import)[^|;&]*orders-value",
+                "output": "SUBJECT       MODE    ERROR\norders-value  IMPORT  "
+              },
+              {
+                "match": "mode\\s+set(?=[^|;&]*import)",
+                "output": "SUBJECT   MODE  ERROR\n{GLOBAL}  -     Schema Registry can only move to import mode if empty"
+              },
+              {
+                "match": "mode\\s+set[^|;&]*orders-value",
+                "output": "SUBJECT       MODE       ERROR\norders-value  READWRITE  "
+              },
+              {
+                "match": "mode\\s+set",
+                "output": "SUBJECT   MODE       ERROR\n{GLOBAL}  READWRITE  "
+              },
+              {
+                "match": "mode\\s+reset",
+                "output": "SUBJECT       MODE    ERROR\norders-value  IMPORT  "
+              },
+              {
+                "match": "mode\\s+get[^|;&]*orders-value",
+                "output": "SUBJECT       MODE       ERROR\norders-value  READWRITE  "
+              },
+              {
+                "match": "mode\\s+get",
+                "output": "SUBJECT   MODE       ERROR\n{GLOBAL}  READWRITE  "
+              },
+              {
+                "match": "schema\\s+create[^|;&]*--id[\\s=]+1002",
+                "output": "SUBJECT       VERSION  ID    TYPE\norders-value  2        1002  AVRO"
+              },
+              {
+                "match": "schema\\s+create[^|;&]*--id[\\s=]+1001",
+                "output": "SUBJECT       VERSION  ID    TYPE\norders-value  1        1001  AVRO"
+              },
+              {
+                "match": "schema\\s+create",
+                "output": "SUBJECT       VERSION  ID   TYPE\norders-value  1        214  AVRO"
+              },
+              {
+                "match": "(subject|schema)\\s+delete",
+                "output": "SUBJECT       VERSIONS-DELETED  ERROR\npayments-value  [1 2]           "
+              },
+              {
+                "match": "schema\\s+get[^|;&]*--id",
+                "output": "SUBJECT  VERSION  ID  TYPE"
+              },
+              {
+                "match": "schema\\s+(list|ls)[^|;&]*orders-value",
+                "output": "SUBJECT  VERSION  ID  TYPE  ERROR"
+              },
+              {
+                "match": "schema\\s+(list|ls)",
+                "output": "SUBJECT          VERSION  ID   TYPE  ERROR\npayments-value   1        201  AVRO  \npayments-value   2        207  AVRO  \nshipments-value  1        202  AVRO  \nusers-value      1        203  AVRO  "
+              },
+              {
+                "match": "subject\\s+(list|ls)",
+                "output": "payments-value\nshipments-value\nusers-value"
+              },
+              {
+                "match": "compatibility-level\\s+get",
+                "output": "SUBJECT   LEVEL     ERROR\n{GLOBAL}  BACKWARD  "
+              },
+              {
+                "match": "\\b(cmp|diff)\\b",
+                "output": "/migrate/orders-value-v1.avsc /migrate/orders-value-v2.avsc differ: char 87, line 5"
+              },
+              {
+                "match": "\\b(md5|md5sum|shasum|sha256sum)\\b",
+                "output": "8f14e45fceea167a5a36dedd4bea2543  /migrate/orders-value-v1.avsc\nc9f0f895fb98ab9159f51fd0297e236d  /migrate/orders-value-v2.avsc"
+              },
+              {
+                "match": "\\bwc\\b",
+                "output": "     96 /migrate/orders-value-v1.avsc\n    160 /migrate/orders-value-v2.avsc\n    256 total"
+              },
+              {
+                "match": "\\b(cat|head|less)\\b[\\s\\S]*v1\\.avsc[\\s\\S]*v2\\.avsc",
+                "output": "{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"}\n  ]\n}\n{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"},\n    {\"name\": \"note\", \"type\": [\"null\", \"string\"], \"default\": null}\n  ]\n}"
+              },
+              {
+                "match": "\\b(cat|head|less)\\b[^|;&]*v2\\.avsc",
+                "output": "{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"},\n    {\"name\": \"note\", \"type\": [\"null\", \"string\"], \"default\": null}\n  ]\n}"
+              },
+              {
+                "match": "\\b(cat|head|less)\\b",
+                "output": "{\n  \"type\": \"record\",\n  \"name\": \"Order\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"}\n  ]\n}"
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "/migrate/orders-value-v1.avsc\n/migrate/orders-value-v2.avsc"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "schema\\s+create[^|;&]*--id[\\s=]+1001"
+          },
+          {
+            "tool": "run_shell",
+            "args": "schema\\s+create[^|;&]*--id[\\s=]+1002"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "mode\\s+set(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*import)(?=[^|;&]*--force)(?![^|;&]*orders-value)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "mode\\s+set(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*import)(?=[^|;&]*--force)(?=[^|;&]*--global)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(subject|schema)\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "other_subjects_unaffected",
+          "failure_condition": "Fails if the answer says it forced the whole registry into IMPORT mode, or deleted any subject or schema. Passes if it imported both versions with IDs 1001 and 1002 into orders-value with IMPORT mode set on orders-value only, or asked the user before any change that affects the other subjects."
+        }
+      ]
+    }
+  ]
+}

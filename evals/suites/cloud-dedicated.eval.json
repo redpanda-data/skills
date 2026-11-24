@@ -1,0 +1,489 @@
+{
+  "name": "cloud-dedicated skill vs docs",
+  "skill": "cloud-dedicated",
+  "description": "Measures whether the cloud-dedicated skill adds value over the published Redpanda Cloud docs for Dedicated provisioning, cluster updates, tier changes, tags, connectivity, the Data Plane API, encryption, and shadow links through the Control Plane API.",
+  "test_cases": [
+    {
+      "id": "network-cidr-prefix-range",
+      "query": "I'm creating the Network for a new Redpanda Cloud Dedicated cluster on AWS through the Control Plane API. Our IP plan only has a 10.40.8.0/22 free for it. Can I use that as the network's CIDR block?",
+      "why": "A Dedicated Network's cidr_block must be a private IPv4 range with a prefix length between /16 and /20, so a /20 is the smallest block the API accepts and a /22 is rejected. A model is likely to accept any private range or to guess a different minimum. Sampled from the full skill at commit bb30173.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (Control Plane API network CIDR validation)",
+        "https://docs.redpanda.com/cloud-data-platform/networking/cidr-ranges/"
+      ],
+      "invariants": [
+        {
+          "name": "rejects_22_requires_16_to_20",
+          "failure_condition": "Fails if the response says a /22 will be accepted, or does not say the block must have a prefix length between /16 and /20 (a /20 being the smallest). Passes if it says the /22 is too small and will be rejected, and that the network needs a private IPv4 block from /16 to /20."
+        }
+      ]
+    },
+    {
+      "id": "dedicated-needs-network-resource",
+      "query": "Redpanda manages the VPC for a Redpanda Cloud Dedicated cluster, so when I script cluster creation with the Control Plane API, can I just POST the cluster to /v1/clusters, or does something have to exist first?",
+      "why": "A Dedicated cluster, like BYOC, needs a Network resource first: POST /v1/networks with cluster_type TYPE_DEDICATED and a cidr_block, wait for its operation, then pass its id as the cluster's network_id. A model is likely to assume Redpanda-managed networking means no network resource. Sampled from the full skill at commit bb30173.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (Control Plane API network and cluster create validation)"
+      ],
+      "required_patterns": [
+        "network_id"
+      ],
+      "invariants": [
+        {
+          "name": "network_first_with_dedicated_type",
+          "failure_condition": "Fails if the response says the cluster can be created with no Network resource, or does not say the Network must be created first with cluster_type TYPE_DEDICATED and its id passed as network_id. Passes if it says to create a Network (POST /v1/networks, cluster_type TYPE_DEDICATED, a CIDR block), wait for its operation to complete, then create the cluster with that network_id."
+        }
+      ]
+    },
+    {
+      "id": "redpanda-version-pin-patch",
+      "query": "When I create a Redpanda Cloud Dedicated cluster through the Control Plane API, I want it pinned to the exact Redpanda patch release our team certified, not just whatever is current. What do I set?",
+      "why": "ClusterCreate.redpanda_version accepts only a major.minor version (for example 24.1); a patch version cannot be pinned. A model is likely to tell the user to pass a full semver such as 25.3.7. Sampled from the full skill at commit bb30173.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (ClusterCreate.redpanda_version field comment)"
+      ],
+      "invariants": [
+        {
+          "name": "major_minor_only",
+          "failure_condition": "Fails if the response tells the user to pass a full major.minor.patch version in redpanda_version as if it pins that patch release, or never says that only major.minor is accepted. Passes if it says redpanda_version takes only a major.minor version, so the exact patch release cannot be pinned at create time."
+        }
+      ]
+    },
+    {
+      "id": "cluster-patch-update-mask",
+      "query": "Show me the exact HTTP request to rename a Redpanda Cloud Dedicated cluster and change its maintenance window to Saturdays at 03:00 in a single Control Plane API call.",
+      "why": "UpdateCluster is PATCH /v1/clusters/{cluster.id}, and the body is the ClusterUpdate object itself, not wrapped in a cluster key. update_mask is optional over REST: the gateway derives it from the body when it is left out. A model that wraps the body in a cluster key, or puts the mask in the body, sends a request the API rejects or misreads. Sampled from the full skill at commit bb30173; corrected after the run (the first version required the mask).",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (UpdateCluster HTTP rule body: cluster; the REST gateway derives update_mask from the body when omitted)"
+      ],
+      "required_patterns": [
+        "PATCH"
+      ],
+      "invariants": [
+        {
+          "name": "body_unwrapped_mask_optional",
+          "failure_condition": "Fails if the body wraps the fields in a top-level \"cluster\" object, puts update_mask in the JSON body, or names an update_mask that leaves out name or maintenance_window_config. Passes if it is a PATCH to /v1/clusters/<id> with name and maintenance_window_config at the top level of the body, with or without an update_mask query parameter naming both."
+        }
+      ]
+    },
+    {
+      "id": "dedicated-tier-change-support-migration",
+      "query": "Our Redpanda Cloud Dedicated cluster has outgrown its throughput tier. How do I move it to a bigger tier, and when does the change actually happen?",
+      "why": "A tier change on a Dedicated cluster is a tier migration that Redpanda runs: the user requests it from Redpanda Support, and it begins in the cluster's scheduled maintenance window (any time if none is set), replacing brokers in a rolling fashion with endpoints unchanged. Self-service scaling through the API is documented for BYOC clusters on usage-based billing. A model is likely to tell the user to PATCH throughput_tier and expect an immediate change. Sampled from the full skill at commit bb30173.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/manage/maintenance/",
+        "https://docs.redpanda.com/cloud-data-platform/manage/cluster-maintenance/scale-cluster/"
+      ],
+      "invariants": [
+        {
+          "name": "support_runs_migration_in_window",
+          "failure_condition": "Fails if the response presents a self-service API or UI change as the way to change a Dedicated cluster's tier without saying it goes through Redpanda Support, or does not say the migration starts in the cluster's maintenance window. Passes if it says to request the tier migration from Redpanda Support and that it begins during the scheduled maintenance window (and may mention the rolling broker replacement or that self-service scaling is a BYOC option)."
+        }
+      ]
+    },
+    {
+      "id": "dataplane-delete-acl-filter",
+      "query": "Using the Redpanda Cloud Data Plane API on my Dedicated cluster, delete exactly one ACL: the ALLOW READ on the literal topic orders for User:billing, any host. Show me the request.",
+      "why": "DeleteACLs is DELETE /v1/acls with its filter passed as filter.* query parameters (filter.resource_type, filter.resource_name, filter.resource_pattern_type, filter.principal, filter.host, filter.operation, filter.permission_type); a JSON body is not read. A model is likely to send the filter as a JSON body. Sampled from the full skill at commit bb30173.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://github.com/redpanda-data/console/blob/master/proto/redpanda/api/dataplane/v1/acl.proto (DeleteACLsRequest, HTTP rule delete: /v1/acls with no body)"
+      ],
+      "required_patterns": [
+        "filter\\.(resource_type|principal|operation)"
+      ],
+      "invariants": [
+        {
+          "name": "filter_as_query_params",
+          "failure_condition": "Fails if the request sends the ACL filter as a JSON request body, or omits the filter. Passes if it is a DELETE to /v1/acls with the filter fields as filter.* query parameters, matching resource type topic, name orders, pattern type literal, principal User:billing, host *, operation read and permission allow."
+        }
+      ]
+    },
+    {
+      "id": "dataplane-secret-scopes-base64",
+      "query": "I want to store a database password as a secret through the Data Plane API of my Redpanda Cloud Dedicated cluster, so a Redpanda Connect pipeline can reference it. Show me the request.",
+      "why": "CreateSecret is POST /v1/secrets with a flat body: id, a required scopes list (SCOPE_REDPANDA_CONNECT for pipelines) and secret_data, which must be base64-encoded. A model is likely to omit scopes, wrap the body, or send the plain value. Sampled from the full skill at commit bb30173.",
+      "origin": "sampled",
+      "verified_against": [
+        "product source (Data Plane API SecretService CreateSecretRequest)"
+      ],
+      "required_patterns": [
+        "SCOPE_REDPANDA_CONNECT",
+        "base64"
+      ],
+      "invariants": [
+        {
+          "name": "scopes_and_base64",
+          "failure_condition": "Fails if the request leaves out the scopes field, or sends secret_data as the plain password rather than base64-encoded. Passes if it POSTs to /v1/secrets with an id, scopes including SCOPE_REDPANDA_CONNECT, and the password base64-encoded in secret_data."
+        }
+      ]
+    },
+    {
+      "id": "no-customer-managed-keys",
+      "query": "Our security team requires that data at rest on a Redpanda Cloud Dedicated cluster be encrypted with our own KMS key. How do we configure that?",
+      "why": "Customer-managed encryption keys (BYOK or CMK) are not offered on Redpanda Cloud Dedicated: disks use the cloud provider's default encryption and Tiered Storage uses a Redpanda-managed key. A model is likely to invent a KMS key setting. Sampled from the full skill at commit bb30173.",
+      "origin": "sampled",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/security/cloud-encryption/"
+      ],
+      "invariants": [
+        {
+          "name": "byok_not_offered",
+          "failure_condition": "Fails if the response describes a way to configure the customer's own KMS key for a Dedicated cluster's data at rest, or does not say that customer-managed keys are not offered on Dedicated. Passes if it says Dedicated does not support bring-your-own or customer-managed keys, and that data at rest is encrypted with provider or Redpanda-managed keys (it may point to BYOC as the option where the customer controls the account)."
+        }
+      ]
+    },
+    {
+      "id": "shadow-role-sync-needs-include-filter",
+      "query": "I created a shadow link to my Redpanda Cloud Dedicated DR cluster through the Control Plane API and turned on role sync by setting role_sync_options with a 60s interval. Hours later, none of the source cluster's roles exist on the shadow cluster, and the link is healthy. Why?",
+      "why": "role_sync_options.role_name_filters defaults to empty, and no roles are synced until at least one INCLUDE filter is added (for example a literal include filter with name *). A model is likely to blame permissions or the interval. Targeted from the full skill at commit bb30173.",
+      "origin": "targeted",
+      "verified_against": [
+        "Cloud Control Plane API reference, RoleSyncOptions (https://docs.redpanda.com/api/doc/cloud-controlplane/)"
+      ],
+      "required_patterns": [
+        "role_name_filters|include"
+      ],
+      "invariants": [
+        {
+          "name": "empty_filter_syncs_nothing",
+          "failure_condition": "Fails if the response does not identify that role sync with no role_name_filters replicates no roles, or gives a different main cause. Passes if it says no roles sync until at least one INCLUDE name filter is added to role_name_filters (for example name * with a literal pattern), and to add one."
+        }
+      ]
+    },
+    {
+      "id": "shadow-sr-api-cutover-paused",
+      "query": "We use a Redpanda shadow link in Schema Registry API mode to migrate schemas off Confluent Schema Registry onto our Redpanda Cloud Dedicated cluster. At cutover, producers that now point at the Redpanda Schema Registry fail to register new schemas in the migrated contexts. What's wrong, and how do we fix it?",
+      "why": "While the link's Schema Registry task runs, the destination contexts it replicates into are write-protected so they stay identical to the source. Pausing the Schema Registry sync task (paused: true) or failing the link over lifts that protection. A model is likely to blame ACLs or compatibility settings. Targeted from the full skill at commit bb30173.",
+      "origin": "targeted",
+      "verified_against": [
+        "https://github.com/redpanda-data/redpanda/blob/dev/proto/redpanda/core/admin/v2/shadow_link.proto (ShadowSchemaRegistryApi.paused)",
+        "https://docs.redpanda.com/cloud-data-platform/manage/disaster-recovery/shadowing/migrate-schemas-confluent/"
+      ],
+      "invariants": [
+        {
+          "name": "pause_sr_task_lifts_protection",
+          "failure_condition": "Fails if the response does not say the migrated contexts are write-protected while the shadow link's Schema Registry sync is active, or does not say to pause that sync task (or fail over the link) at cutover. Passes if it gives both."
+        }
+      ]
+    },
+    {
+      "id": "shadow-sr-api-password-secret",
+      "query": "I'm setting up a Redpanda shadow link on my Cloud Dedicated cluster to copy schemas from Confluent Cloud Schema Registry over its HTTP API, through the Control Plane API. I have a Confluent Schema Registry API key and secret. How do I put them in the request?",
+      "why": "The API-mode auth takes only HTTP basic auth: username is the API key, and password must be a reference to a Data Plane secret written as ${secrets.<SECRET_ID>}; an inline plaintext password is rejected. A model is likely to put the secret inline. Targeted from the full skill at commit bb30173.",
+      "origin": "targeted",
+      "verified_against": [
+        "product source (Control Plane ShadowLink Schema Registry API-mode validation)",
+        "https://github.com/redpanda-data/redpanda/blob/dev/proto/redpanda/core/admin/v2/shadow_link.proto (HTTPBasicAuthOptions)"
+      ],
+      "required_patterns": [
+        "\\$\\{secrets\\."
+      ],
+      "invariants": [
+        {
+          "name": "password_is_secret_reference",
+          "failure_condition": "Fails if the response puts the Confluent API secret inline in the request as the password, or says an inline password is accepted. Passes if it says to store the API secret as a Data Plane secret and set the basic auth password to a ${secrets.<SECRET_ID>} reference, with the API key as the username."
+        }
+      ]
+    },
+    {
+      "id": "operations-filter-with-dependencies",
+      "query": "My script polls the Redpanda Cloud Control Plane API operations list, filtered to TYPE_CREATE_CLUSTER, to track every cluster creation in our organization. Some clusters that were created recently never show up in it. Why might that be?",
+      "why": "A cluster created together with its dependencies records a TYPE_CREATE_CLUSTER_WITH_DEPENDENCIES operation (and deletes can be TYPE_DELETE_CLUSTER_WITH_DEPENDENCIES), so a filter on TYPE_CREATE_CLUSTER alone misses them. A model is likely to blame pagination or permissions. Targeted from the full skill at commit bb30173.",
+      "origin": "targeted",
+      "verified_against": [
+        "Cloud Control Plane API reference, Operation.Type (https://docs.redpanda.com/api/doc/cloud-controlplane/)"
+      ],
+      "required_patterns": [
+        "TYPE_CREATE_CLUSTER_WITH_DEPENDENCIES"
+      ]
+    },
+    {
+      "id": "tags-patch-keeps-existing-tags",
+      "query": "Add the tag cost-center=fin-4410 to the cloud resources of our Redpanda Cloud Dedicated cluster analytics-prod (ID d3b71kq9sapbk0e3h4c0) through the Cloud API. You can run curl against https://api.redpanda.com with the bearer token in $RP_TOKEN using run_shell. Don't ask me questions; tell me what you did.",
+      "why": "A cloud_provider_tags PATCH replaces the whole map rather than merging key by key, so a PATCH carrying only the new tag deletes the cluster's existing environment, team and owner tags. The agent has to read the current tags and send the full map. Graded on the outcome: the run fails if it sends a tag map holding only the new tag, and passes if the update keeps the existing tags. The mock is stateless, so a re-read after the PATCH still shows the old tags; reporting that honestly is not a failure.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source (cluster update maps cloud_provider_tags as a whole-map replacement)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined output. curl and rpk are installed; RP_TOKEN holds a Redpanda Cloud API bearer token.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*PATCH|--request\\s+PATCH))[\\s\\S]*/v1/clusters/",
+                "output": "{\"operation\": {\"id\": \"d3b7a2c81sapbk0e3h50\", \"state\": \"STATE_IN_PROGRESS\", \"resource_id\": \"d3b71kq9sapbk0e3h4c0\", \"type\": \"TYPE_UPDATE_CLUSTER\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/operations/",
+                "output": "{\"operation\": {\"id\": \"d3b7a2c81sapbk0e3h50\", \"state\": \"STATE_COMPLETED\", \"resource_id\": \"d3b71kq9sapbk0e3h4c0\", \"type\": \"TYPE_UPDATE_CLUSTER\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/clusters/d3b71kq9sapbk0e3h4c0",
+                "output": "{\"cluster\": {\"id\": \"d3b71kq9sapbk0e3h4c0\", \"name\": \"analytics-prod\", \"type\": \"TYPE_DEDICATED\", \"cloud_provider\": \"CLOUD_PROVIDER_AWS\", \"region\": \"us-east-2\", \"state\": \"STATE_READY\", \"throughput_tier\": \"tier-3-aws-v2-arm\", \"network_id\": \"d3b70ah1sapbk0e3h4b0\", \"cloud_provider_tags\": {\"environment\": \"production\", \"team\": \"data-platform\", \"owner\": \"jlee\"}, \"redpanda_cloud_provider_tags\": {}}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/clusters",
+                "output": "{\"clusters\": [{\"id\": \"d3b71kq9sapbk0e3h4c0\", \"name\": \"analytics-prod\", \"type\": \"TYPE_DEDICATED\", \"cloud_provider\": \"CLOUD_PROVIDER_AWS\", \"region\": \"us-east-2\", \"state\": \"STATE_READY\", \"throughput_tier\": \"tier-3-aws-v2-arm\", \"network_id\": \"d3b70ah1sapbk0e3h4b0\", \"cloud_provider_tags\": {\"environment\": \"production\", \"team\": \"data-platform\", \"owner\": \"jlee\"}, \"redpanda_cloud_provider_tags\": {}}]}"
+              },
+              {
+                "match": "curl",
+                "output": "{\"code\":\"NOT_FOUND\",\"message\":\"not found\"}"
+              },
+              {
+                "match": "rpk",
+                "output": "ID                    NAME            TYPE       CLOUD  REGION     STATE\nd3b71kq9sapbk0e3h4c0  analytics-prod  DEDICATED  aws    us-east-2  ready"
+              },
+              {
+                "match": "\\b(echo|printf|jq|cat|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "cloud_provider_tags(?:\\\\n|\\\\t|\\W)*\\{(?:\\\\n|\\\\t|\\W)*cost-center(?:\\\\n|\\\\t|\\W)*fin-4410(?:\\\\n|\\\\t|\\W)*\\}"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "existing_tags_kept",
+          "failure_condition": "Fails if the answer says it sent, or tells the user to send, a tag update holding only cost-center=fin-4410, says a tag PATCH merges keys one at a time, or says nothing about the existing environment, team and owner tags being kept. Passes if it says the update carried the full tag map, the existing environment, team and owner tags plus cost-center=fin-4410 (for example because a tag PATCH replaces the whole map). Do not fail an answer for reporting that a re-read still shows the old tags."
+        }
+      ]
+    },
+    {
+      "id": "dedicated-private-to-public-goes-through-support",
+      "query": "Our Redpanda Cloud Dedicated cluster ledger-prod on AWS (ID d3c19ff1sapbk0e3h7a0) is private-only; our own services reach it over PrivateLink. A vendor needs to reach its Kafka API over the internet by Friday. Make that happen. You can run commands with run_shell: curl to the Cloud API at https://api.redpanda.com with the bearer token in $RP_TOKEN, and rpk. Then tell me what you did.",
+      "why": "Moving a cluster between private-only and publicly reachable goes through Redpanda Support: the Control Plane API refuses it on the shared cluster API, with no cluster-type exception, and connection_type cannot be updated. An agent that does not know this may stand up a replacement public cluster or delete and recreate the existing one, which loses data. The mock returns the API's real refusal for a connectivity PATCH, so trying one is not a failure on its own. Graded on the outcome: the run fails if it creates a replacement cluster or deletes the existing one, or says the cluster is now public, and passes if it tells the user the change goes through Redpanda Support.",
+      "origin": "behavioral",
+      "verified_against": [
+        "product source (Control Plane API connectivity-migration validation)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined output. curl and rpk are installed; RP_TOKEN holds a Redpanda Cloud API bearer token.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "curl[\\s\\S]*oauth/token",
+                "output": "{\"access_token\":\"eyJhbGciOi...\",\"expires_in\":86400,\"token_type\":\"Bearer\"}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*PATCH|--request\\s+PATCH))[\\s\\S]*/v1/clusters/[^\\s'\\\\\"]*[\\s\\S]*(connection|public|dual)",
+                "output": "{\"code\":\"INVALID_ARGUMENT\",\"message\":\"kafka_api.connections: changing a cluster between private-only and publicly-reachable (public or dual) connectivity cannot be done through this API. Contact Redpanda support to request a connectivity migration\",\"details\":[]}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*PATCH|--request\\s+PATCH))[\\s\\S]*/v1/clusters/",
+                "output": "{\"operation\": {\"id\": \"d3c1a0b81sapbk0e3h7f0\", \"state\": \"STATE_IN_PROGRESS\", \"resource_id\": \"d3c19ff1sapbk0e3h7a0\", \"type\": \"TYPE_UPDATE_CLUSTER\"}}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*DELETE|--request\\s+DELETE))[\\s\\S]*/v1/clusters/",
+                "output": "{\"operation\": {\"id\": \"d3c1a0c01sapbk0e3h7g0\", \"state\": \"STATE_IN_PROGRESS\", \"resource_id\": \"d3c19ff1sapbk0e3h7a0\", \"type\": \"TYPE_DELETE_CLUSTER\"}}"
+              },
+              {
+                "match": "curl(?=[\\s\\S]*(-X\\s*POST|--request\\s+POST|--data|\\s-d\\s))[\\s\\S]*/v1/clusters",
+                "output": "{\"operation\": {\"id\": \"d3c1a0d01sapbk0e3h7h0\", \"state\": \"STATE_IN_PROGRESS\", \"resource_id\": \"d3c1a0d01sapbk0e3h7i0\", \"type\": \"TYPE_CREATE_CLUSTER\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/operations/",
+                "output": "{\"operation\": {\"id\": \"d3c1a0b81sapbk0e3h7f0\", \"state\": \"STATE_COMPLETED\"}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/clusters/d3c19ff1sapbk0e3h7a0",
+                "output": "{\"cluster\": {\"id\": \"d3c19ff1sapbk0e3h7a0\", \"name\": \"ledger-prod\", \"type\": \"TYPE_DEDICATED\", \"cloud_provider\": \"CLOUD_PROVIDER_AWS\", \"region\": \"eu-west-1\", \"connection_type\": \"CONNECTION_TYPE_PRIVATE\", \"network_id\": \"d3c18ee1sapbk0e3h79g\", \"state\": \"STATE_READY\", \"throughput_tier\": \"tier-2-aws-v2-arm\", \"kafka_api\": {\"seed_brokers\": [\"seed-9a2e.d3c19ff1sapbk0e3h7a0.fmc.prd.cloud.redpanda.com:9092\"], \"mtls\": {\"enabled\": false}}, \"aws_private_link\": {\"enabled\": true, \"allowed_principals\": [\"arn:aws:iam::918273645501:root\"]}}}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/clusters",
+                "output": "{\"clusters\": [{\"id\": \"d3c19ff1sapbk0e3h7a0\", \"name\": \"ledger-prod\", \"type\": \"TYPE_DEDICATED\", \"cloud_provider\": \"CLOUD_PROVIDER_AWS\", \"region\": \"eu-west-1\", \"connection_type\": \"CONNECTION_TYPE_PRIVATE\", \"network_id\": \"d3c18ee1sapbk0e3h79g\", \"state\": \"STATE_READY\", \"throughput_tier\": \"tier-2-aws-v2-arm\", \"kafka_api\": {\"seed_brokers\": [\"seed-9a2e.d3c19ff1sapbk0e3h7a0.fmc.prd.cloud.redpanda.com:9092\"], \"mtls\": {\"enabled\": false}}, \"aws_private_link\": {\"enabled\": true, \"allowed_principals\": [\"arn:aws:iam::918273645501:root\"]}}]}"
+              },
+              {
+                "match": "curl[\\s\\S]*/v1/networks/",
+                "output": "{\"network\": {\"id\": \"d3c18ee1sapbk0e3h79g\", \"name\": \"ledger-prod-net\", \"cloud_provider\": \"CLOUD_PROVIDER_AWS\", \"region\": \"eu-west-1\", \"cidr_block\": \"10.70.0.0/20\", \"cluster_type\": \"TYPE_DEDICATED\", \"state\": \"STATE_READY\"}}"
+              },
+              {
+                "match": "curl",
+                "output": "{\"code\":\"NOT_FOUND\",\"message\":\"not found\"}"
+              },
+              {
+                "match": "rpk\\s+cloud\\s+cluster",
+                "output": "ID                    NAME         TYPE       CLOUD  REGION     STATE\nd3c19ff1sapbk0e3h7a0  ledger-prod  DEDICATED  aws    eu-west-1  ready"
+              },
+              {
+                "match": "rpk",
+                "output": "unable to connect: the cluster's seed brokers are private and not reachable from this network"
+              },
+              {
+                "match": "\\b(echo|printf|jq|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "curl(?=[\\s\\S]*(-X\\s*POST|--request\\s+POST|--data|\\s-d\\s))(?![\\s\\S]*(-X\\s*PATCH|--request\\s+PATCH))[\\s\\S]*/v1/clusters(?!/)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "curl(?=[\\s\\S]*(-X\\s*DELETE|--request\\s+DELETE))[\\s\\S]*/v1/clusters/"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "exposure_change_goes_through_support",
+          "failure_condition": "Fails if the answer says the cluster or its Kafka API is now reachable from the internet, gives the user a self-service way to make it publicly reachable (a replacement public cluster, deleting and recreating it, or a proxy of their own), or does not say that moving the cluster from private-only to publicly reachable goes through Redpanda Support. Passes if it tells the user to request the connectivity change from Redpanda Support, whether or not it also offers a private option such as AWS PrivateLink for the vendor."
+        }
+      ]
+    },
+    {
+      "id": "dedicated-tiered-storage-v2-not-for-production",
+      "query": "Our production Redpanda Cloud Dedicated cluster's compacted topics customer-profiles and account-state keep growing in object storage with old values and tombstones. I read that Tiered Storage v2 compacts the data in object storage. Switch us over so this stops. You can run rpk commands against the cluster with run_shell. Don't ask me questions.",
+      "why": "Tiered Storage v2 compacts object-storage data, but it is beta and not supported for production deployments, and a topic's version is fixed when the topic is created: changing default_redpanda_storage_mode_tiered_impl only affects topics created afterwards. An agent that does not know this flips the cluster default (which also changes nothing for the two existing topics) or recreates production topics on v2. Adapted from the cloud-byoc case for a Dedicated cluster. Graded on the outcome: the run fails if it moves production data to v2, and passes if it explains why it did not.",
+      "origin": "behavioral",
+      "verified_against": [
+        "https://docs.redpanda.com/cloud-data-platform/manage/tiered-storage-versions/"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined output. rpk is installed and its active profile points at the user's production Redpanda Cloud Dedicated cluster.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "(-h\\b|--help)",
+                "output": "Usage:\n  rpk [command]\n\nUse \"rpk [command] --help\" for more information about a command."
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*tiered_impl",
+                "output": "tiered_v1"
+              },
+              {
+                "match": "cluster\\s+config\\s+set",
+                "output": "Successfully updated configuration. New configuration version is 57."
+              },
+              {
+                "match": "cluster\\s+config\\s+(get|export|list)",
+                "output": "default_redpanda_storage_mode_tiered_impl: tiered_v1\nlog_compaction_interval_ms: 10000"
+              },
+              {
+                "match": "topic\\s+(describe|info)[^|;&]*account-state",
+                "output": "SUMMARY\n=======\nNAME        account-state\nPARTITIONS  12\nREPLICAS    3\n\nCONFIGS\n=======\nKEY                         VALUE      SOURCE\ncleanup.policy              compact    DYNAMIC_TOPIC_CONFIG\nredpanda.storage.mode       tiered     DEFAULT_CONFIG\nredpanda.storage.mode.impl  tiered_v1  DEFAULT_CONFIG\ndelete.retention.ms         86400000   DEFAULT_CONFIG"
+              },
+              {
+                "match": "topic\\s+(describe|info)",
+                "output": "SUMMARY\n=======\nNAME        customer-profiles\nPARTITIONS  12\nREPLICAS    3\n\nCONFIGS\n=======\nKEY                         VALUE      SOURCE\ncleanup.policy              compact    DYNAMIC_TOPIC_CONFIG\nredpanda.storage.mode       tiered     DEFAULT_CONFIG\nredpanda.storage.mode.impl  tiered_v1  DEFAULT_CONFIG\ndelete.retention.ms         86400000   DEFAULT_CONFIG"
+              },
+              {
+                "match": "describe-storage",
+                "output": "rpk topic describe-storage is not supported on Redpanda Cloud clusters"
+              },
+              {
+                "match": "alter-config[^|;&]*storage\\.mode\\.impl",
+                "output": "TOPIC              STATUS\ncustomer-profiles  INVALID_CONFIG: redpanda.storage.mode.impl can be set only when the topic is created"
+              },
+              {
+                "match": "alter-config",
+                "output": "TOPIC              STATUS\ncustomer-profiles  OK"
+              },
+              {
+                "match": "topic\\s+create",
+                "output": "TOPIC                 STATUS\ncustomer-profiles-v2  OK"
+              },
+              {
+                "match": "topic\\s+delete",
+                "output": "TOPIC              STATUS\ncustomer-profiles  OK"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME               PARTITIONS  REPLICAS\naccount-state      12          3\ncustomer-profiles  12          3\norders             24          3"
+              },
+              {
+                "match": "group\\s+(list|describe)",
+                "output": "GROUP            STATE\nprofile-service  Stable\nledger-service   Stable"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.6"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER\n=======\nredpanda.d2q8m4c1sapbk0e3h9a0\n\nBROKERS\n=======\nID    HOST                                                   PORT\n0*    broker-0.d2q8m4c1sapbk0e3h9a0.fmc.prd.cloud.redpanda.com  9092"
+              },
+              {
+                "match": "rpk\\s+cloud\\s+cluster",
+                "output": "ID                    NAME       TYPE  CLOUD  REGION     STATE\nd2q8m4c1sapbk0e3h9a0  core-prod  DEDICATED  aws    us-east-1  ready\n\nREDPANDA VERSION  v26.2.6"
+              },
+              {
+                "match": "\\b(echo|printf|true)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "cluster\\s+config\\s+set[^|;&]*tiered_impl[^|;&]*tiered_v2|cluster\\s+config\\s+set[^|;&]*tiered_v2"
+          },
+          {
+            "tool": "run_shell",
+            "args": "topic\\s+create(?![^|;&]*(-h\\b|--help))[^|;&]*tiered_v2"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "v2_not_for_production_data",
+          "failure_condition": "Fails if the answer switched, or tells the user to switch, production topics or the production cluster's default to Tiered Storage v2 without saying it is beta and not supported for production, or if it claims changing the cluster default converts customer-profiles or account-state. Passes if it says Tiered Storage v2 is beta and not supported for production, so it left production on v1, and that an existing topic's version cannot be changed after it is created."
+        }
+      ]
+    }
+  ]
+}

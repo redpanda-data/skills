@@ -1,0 +1,566 @@
+{
+  "name": "streaming-admin-api skill vs docs",
+  "skill": "streaming-admin-api",
+  "description": "Measures whether the streaming-admin-api skill adds value over the published Redpanda Admin API docs. Fact cases were picked from the full skill at the commit before it was converted to the thin format, at even intervals (sampled) or as claims expected to be missing from the docs (targeted), without checking the published docs, and verified against the public redpanda repo at v26.2.2: cluster config read defaults and auth level, node-local partition and pre-restart probe endpoints, the config status pending list, the controller force_replicas gate, the debug bundle's rpk dependency, ShadowLinkService failover, update-mask, delete and role-sync semantics, and the license-sanctioned balancer mode. The behavioral cases grade the outcome of tasks run against a mocked shell: failing over one shadow topic without failing over the whole link, removing one auto-create filter from a shadow link, and restarting a broker that hosts replication-factor-1 partitions.",
+  "test_cases": [
+    {
+      "id": "get-cluster-config-default-output",
+      "query": "I want a script that dumps only the cluster properties someone has changed from their defaults, using the Redpanda Admin API's GET /v1/cluster_config. Does a plain GET return just the overridden values, or do I need a query parameter?",
+      "why": "GET /v1/cluster_config includes every property, defaults too: include_defaults defaults to true, and only include_defaults=false (or 0) limits the output to values that differ from their defaults. The pre-thin skill said the opposite (plain GET returns non-default values only), so the skill arm may fail this case on the old skill.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/server.cc (get_cluster_config: `bool include_defaults = true;`, overridden only by the include_defaults query parameter)"
+      ],
+      "invariants": [
+        {
+          "name": "plain_get_includes_defaults",
+          "failure_condition": "FAILS if the answer says a plain GET /v1/cluster_config returns only overridden or non-default values, or does not say how to get only the changed values. PASSES if it says a plain GET returns all properties including defaults and that include_defaults=false (or 0) returns only the properties that differ from their defaults."
+        }
+      ]
+    },
+    {
+      "id": "cluster-config-read-needs-superuser",
+      "query": "Our Redpanda Admin API requires authentication. A monitoring service logs in as a regular SASL user that is not in superusers, and it needs to read the cluster's current config values over the Admin API. Will GET /v1/cluster_config work for that user?",
+      "why": "GET /v1/cluster_config is registered at the superuser auth level, so an authenticated non-superuser gets 403. Only the schema endpoint (/v1/cluster_config/schema) is public, and it carries property metadata, not current values.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/server.cc (register_config_routes: get_cluster_config is register_route_raw_sync<superuser>; get_cluster_config_schema is register_route<publik>)"
+      ],
+      "invariants": [
+        {
+          "name": "cluster_config_read_is_superuser_only",
+          "failure_condition": "FAILS if the answer says any authenticated user can read GET /v1/cluster_config, or that it works without superuser rights. PASSES if it says GET /v1/cluster_config requires a superuser, so the regular user is refused (403), and the user must be made a superuser or the values read some other way."
+        }
+      ]
+    },
+    {
+      "id": "partitions-endpoint-node-local",
+      "query": "I call GET /v1/partitions on one broker of our 5-broker Redpanda cluster to list every partition in the cluster, but the count is lower than rpk reports. Why, and which Admin API endpoint gives the cluster-wide list?",
+      "why": "GET /v1/partitions lists only the partition replicas hosted by the broker that answers the request (it walks that broker's partition manager). The cluster-wide listing is GET /v1/cluster/partitions.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/partition.cc (get_partitions maps over the local _partition_manager)",
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/api-doc/cluster.json (/v1/cluster/partitions)"
+      ],
+      "required_patterns": [
+        "/v1/cluster/partitions"
+      ],
+      "invariants": [
+        {
+          "name": "partitions_is_node_local",
+          "failure_condition": "FAILS if the answer blames pagination, internal topics or a lag in metadata as the main reason, or does not say /v1/partitions is limited to the answering broker. PASSES if it says /v1/partitions lists only the replicas on the broker that served the request and points to /v1/cluster/partitions for the cluster-wide list."
+        }
+      ]
+    },
+    {
+      "id": "pre-restart-probe-node-local",
+      "query": "Before each rolling restart of our Redpanda brokers, our automation calls the Admin API pre-restart probe to see which partitions would go offline. The automation sends every Admin API request to a load balancer that spreads requests across all brokers. Is that fine for this check?",
+      "why": "GET /v1/broker/pre_restart_probe reports the risks of restarting the broker that serves the request (the health monitor's current-node restart risks), so behind a load balancer it reports on whichever broker answered, not the one about to restart. The request must go to the broker being restarted.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/server.cc (pre_restart_probe calls get_current_node_restart_risks)",
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/api-doc/broker.json (restart_risks: 'Partitions affected by the current node restart')"
+      ],
+      "invariants": [
+        {
+          "name": "probe_targets_the_restarting_broker",
+          "failure_condition": "FAILS if the answer says the load balancer is fine because any broker can answer the probe for the cluster, or that the probe reports cluster-wide restart risks. PASSES if it says the probe reports on the broker that answers the request, so the automation must send it directly to the broker it is about to restart."
+        }
+      ]
+    },
+    {
+      "id": "config-status-pending-local-only",
+      "query": "After changing a cluster property that needs a restart, I call GET /v1/cluster_config/status?show_pending=true on broker 0. Broker 2's entry shows restart: true but an empty pending list, while broker 0's pending list names the property. Did broker 2 miss the change?",
+      "why": "The status endpoint fills the pending list only for the broker that serves the request; every other broker's pending list is always empty, because pending state is local and not carried in the on-wire status. restart: true on broker 2 shows it has the change and needs a restart. To see broker 2's pending list, ask broker 2.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/server.cc (get_cluster_config_status: rs.pending = local_pending only when s.first == local_node, otherwise an empty list; TODO notes pending state is local-only)"
+      ],
+      "invariants": [
+        {
+          "name": "pending_list_is_local_only",
+          "failure_condition": "FAILS if the answer says broker 2 missed the change, failed to apply it, or needs the change re-applied. PASSES if it says the pending list is reported only for the broker that answered the request (other brokers always show an empty list), that restart: true means broker 2 has the change and needs a restart, and that querying broker 2 directly shows its pending list."
+        }
+      ]
+    },
+    {
+      "id": "force-replicas-controller-gated",
+      "query": "Our Redpanda controller group is wedged after a dead broker joined it. I POST the surviving replica set to /v1/debug/partitions/redpanda/controller/0/force_replicas and get HTTP 400, though the same kind of body works for a kafka partition. What does the endpoint need for the controller partition?",
+      "why": "force_replicas refuses the controller partition with 400 ('Refusing to reconfigure the controller; pass evil_mode=true to force a raft0 reconfiguration') unless the evil_mode=true query parameter is passed.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/partition.cc (force_update_partition_replicas: controller_ntp gated by the evil_mode query parameter)"
+      ],
+      "required_patterns": [
+        "evil_mode"
+      ],
+      "invariants": [
+        {
+          "name": "names_the_controller_gate",
+          "failure_condition": "FAILS if the answer says the controller cannot be force-reconfigured through this endpoint at all, or blames only the body format. PASSES if it says the controller partition needs the evil_mode=true query parameter on the force_replicas request."
+        }
+      ]
+    },
+    {
+      "id": "admin-debug-bundle-needs-rpk",
+      "query": "I start a debug bundle with POST /v1/debug/bundle on a Redpanda broker that runs from our own minimal container image, and it fails with HTTP 500. The same call works on our standard hosts. What's the likely cause?",
+      "why": "The Admin API debug bundle runs the rpk binary on the broker, at the path in the rpk_path cluster property (default /usr/bin/rpk). When the file is missing the service returns rpk_binary_not_present ('<path> not present'), which maps to HTTP 500. The fix is to install rpk in the image or point rpk_path at it.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/debug_bundle/debug_bundle_service.cc (file_exists check on _rpk_path_binding, error_code::rpk_binary_not_present)",
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/debug_bundle.cc (rpk_binary_not_present maps to internal_server_error)",
+        "redpanda-data/redpanda v26.2.2 src/v/config/configuration.cc (rpk_path, default /usr/bin/rpk)"
+      ],
+      "invariants": [
+        {
+          "name": "bundle_needs_rpk_on_broker",
+          "failure_condition": "FAILS if the answer does not identify a missing rpk binary on the broker as the likely cause (for example it blames only disk space, permissions, or memory). PASSES if it says the Admin API debug bundle runs rpk on the broker and fails when rpk is not at the configured path (the rpk_path property, default /usr/bin/rpk), so the image needs rpk installed or rpk_path set."
+        }
+      ]
+    },
+    {
+      "id": "failover-unknown-field-whole-link",
+      "query": "To fail over one topic on our Redpanda shadow link I ran: curl -u admin:$PW -X POST http://dr-0:9644/redpanda.core.admin.v2.ShadowLinkService/FailOver -H 'Content-Type: application/json' -d '{\"name\":\"dr-east\",\"topic\":\"orders\"}'. It returned 200. Which topics did that fail over?",
+      "why": "The Admin API's ConnectRPC JSON parser skips keys it doesn't know, so 'topic' is ignored and the request carries only the link name. A FailOver without shadow_topic_name fails over the entire shadow link, every shadow topic on it.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 proto/redpanda/core/admin/v2/shadow_link.proto (FailOverRequest.shadow_topic_name: 'if not set will fail over the entire shadow link')",
+        "redpanda-data/redpanda v26.2.2 bazel/pbgen/main.go (generated from_json: an unknown key is skipped with skip_value)"
+      ],
+      "invariants": [
+        {
+          "name": "whole_link_failed_over",
+          "failure_condition": "FAILS if the answer says only orders was failed over, or that the request would have been rejected for an unknown field. PASSES if it says the unknown topic key was ignored, so the call failed over the whole dr-east link (all its shadow topics), and that a single topic needs the shadow_topic_name field (shadowTopicName in JSON)."
+        }
+      ]
+    },
+    {
+      "id": "update-shadow-link-mask-appends",
+      "query": "I want to replace the ACL filter list on a Redpanda shadow link. I call UpdateShadowLink with update_mask set to configurations.security_sync_options.acl_filters and a shadow_link body that holds the new list. Will the link end up with exactly my new list?",
+      "why": "Redpanda's field-mask merge appends to a repeated field that the mask names, instead of replacing it as AIP-134 describes, so the old filters stay and the new ones are added. To replace the list, mask a parent message (which is replaced whole) or send the full configuration with no mask.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/serde/protobuf/field_mask.h (merge_into: 'repeated fields are appended to, not replaced'; empty mask replaces the resource)",
+        "redpanda-data/redpanda v26.2.2 src/v/serde/protobuf/tests/field_mask_test.cc (repeatedInt32 [1] merged with [3] gives [1, 3])",
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/services/shadow_link/converter.cc (create_update_cluster_link_config_cmd uses merge_into)"
+      ],
+      "invariants": [
+        {
+          "name": "masked_repeated_field_appends",
+          "failure_condition": "FAILS if the answer says the masked update replaces the acl_filters list with the new one. PASSES if it says the new filters are appended to the existing ones (the old filters remain), and that replacing the list takes a mask on a parent message or a full-configuration update without a mask."
+        }
+      ]
+    },
+    {
+      "id": "delete-shadow-link-active-topics",
+      "query": "I'm retiring Redpanda shadow link dr-old, which still has active shadow topics. What happens if I call the Admin API DeleteShadowLink with just the link name?",
+      "why": "DeleteShadowLink fails by default while the link has active shadow topics; the request must set force: true to delete it anyway.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 proto/redpanda/core/admin/v2/shadow_link.proto (DeleteShadowLinkRequest.force: 'By default, DeleteShadowLink will fail if there are any active Shadow Topics')"
+      ],
+      "invariants": [
+        {
+          "name": "delete_needs_force",
+          "failure_condition": "FAILS if the answer says the link is deleted (with or without its topics) by a request with just the name. PASSES if it says the request fails because the link still has active shadow topics, and that setting force to true deletes it anyway (or that the topics must be failed over or removed first)."
+        }
+      ]
+    },
+    {
+      "id": "role-sync-needs-include-filter",
+      "query": "I added role_sync_options: {} to a Redpanda shadow link's configuration so the source cluster's RBAC roles get shadowed. An hour later no roles have shown up on the shadow cluster. Why?",
+      "why": "role_name_filters defaults to empty, and with no filter no roles are synced; role sync is opt-in until at least one include filter is added.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 proto/redpanda/core/admin/v2/shadow_link.proto (RoleSyncOptions.role_name_filters: 'Defaults to empty: no roles are synced until at least one include filter is added')"
+      ],
+      "invariants": [
+        {
+          "name": "role_sync_needs_include_filter",
+          "failure_condition": "FAILS if the answer does not say that an empty role sync configuration syncs no roles until a role name include filter is added (for example it blames only the sync interval, permissions, or the source cluster). PASSES if it says role_name_filters is empty by default so nothing is synced, and that adding an include filter (for example a literal or prefix role name, or a wildcard) starts role sync."
+        }
+      ]
+    },
+    {
+      "id": "license-balancer-sanctioned-mode",
+      "query": "Our Redpanda Enterprise license expired, and GET /v1/features/enterprise reports a violation because partition_autobalancing_mode is continuous. Until we renew, how does the partition balancer behave, and what value should I set to clear the violation?",
+      "why": "partition_autobalancing_mode is an enterprise property whose restricted value is continuous and whose sanctioned value is node_add: without a valid license, a cluster set to continuous balances as node_add. Setting node_add clears the violation and keeps balancing on node additions; off disables balancing and is not recommended for production.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/config/configuration.cc (partition_autobalancing_mode: enterprise property, restricted continuous, sanctioned node_add)",
+        "redpanda-data/redpanda v26.2.2 src/v/config/property.h (enterprise: sanctioned value used when the property holds an enterprise value without a valid license)"
+      ],
+      "failure_patterns": [
+        "set (it |partition_autobalancing_mode )?to [`'\\\"]?off[`'\\\"]? to clear"
+      ],
+      "invariants": [
+        {
+          "name": "node_add_clears_violation",
+          "failure_condition": "FAILS if the answer recommends off to clear the violation, or does not name node_add. PASSES if it says setting partition_autobalancing_mode to node_add clears the violation."
+        },
+        {
+          "name": "unlicensed_continuous_runs_as_node_add",
+          "failure_condition": "FAILS if the answer says continuous balancing keeps running as before until renewal, or that balancing stops completely. PASSES if it says that without a valid license the cluster balances as if the mode were node_add (no disk-usage-driven moves) until the license is renewed or the value changed."
+        }
+      ]
+    },
+    {
+      "id": "failover-single-shadow-topic",
+      "query": "Our source region is down. On the DR cluster, shadow link dr-east replicates the orders, payments and inventory topics. Make only orders writable here so the orders team can cut over; payments and inventory must keep replicating, because the source may come back for them. You can run commands with the run_shell tool: curl reaches the DR cluster's Admin API at http://rp-dr-0:9644 with -u admin:$ADMIN_PW, and rpk's active profile points at the DR cluster.",
+      "why": "A FailOver request without shadow_topic_name fails over the whole shadow link, which cannot be undone: every shadow topic stops replicating. The Admin API's JSON parser silently ignores a key it doesn't know, so a guessed field name such as topic or topic_name fails over the whole link and still returns 200; rpk shadow failover without --topic does the same. Graded on the outcome: a failover of orders alone passes, through the Admin API with shadow_topic_name (shadowTopicName) or rpk shadow failover --topic orders; any call that would fail over the whole link fails.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 proto/redpanda/core/admin/v2/shadow_link.proto (FailOverRequest.shadow_topic_name)",
+        "redpanda-data/redpanda v26.2.2 bazel/pbgen/main.go (generated from_json skips unknown keys)",
+        "product source (rpk shadow failover: --topic, --all, --no-confirm)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the DR (shadow) Redpanda cluster; curl reaches its Admin API at http://rp-dr-0:9644. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster health"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "shadow\\s+failover[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Fail over a Redpanda Shadow Link.\n\nFailover converts shadow topics into regular topics on the shadow cluster. A shadow topic stops replicating from the source cluster after it is failed over.\n\nWithout a scope flag, the command fails over the whole Shadow Link. With --all, it fails over every active shadow topic one by one. With --topic, it fails over a single shadow topic; the rest of the link keeps replicating.\n\nThe command prompts you to confirm. Use --no-confirm to skip the prompt.\n\nUsage:\n  rpk shadow failover [LINK_NAME] [flags]\n\nFlags:\n      --all            Fail over every active shadow topic one by one\n  -h, --help           Help for failover\n      --no-confirm     Disable confirmation prompt\n      --topic string   Fail over a single shadow topic, leaving the rest of the link replicating"
+              },
+              {
+                "match": "shadow\\s+((?-i:-h)\\b|--help)|shadow\\s*['\\\\\"]*\\}?$",
+                "output": "Manage Redpanda Shadow Links.\n\nUsage:\n  rpk shadow [command]\n\nAvailable Commands:\n  create      Create a Redpanda Shadow Link\n  delete      Delete a Redpanda Shadow Link\n  describe    Describe a Redpanda Shadow Link\n  failover    Fail over a Redpanda Shadow Link\n  list        List Redpanda Shadow Links\n  status      Get the status of a Redpanda Shadow Link\n  update      Update a Shadow Link\n\nUse \"rpk shadow [command] --help\" for more information about a command."
+              },
+              {
+                "match": "shadow\\s+failover(?=[^|;&]*--topic[\\s=]+['\\\\\"]*orders\\b)(?=[^|;&]*--no-confirm)",
+                "output": "Successfully initiated the Fail Over of shadow topic \"orders\" on Shadow Link \"dr-east\". To check the status, run:\n  rpk shadow status dr-east"
+              },
+              {
+                "match": "shadow\\s+failover[^|;&]*--topic",
+                "output": "? Fail over shadow topic orders of Shadow Link dr-east? (y/N)\nunable to confirm: EOF"
+              },
+              {
+                "match": "shadow\\s+failover(?=[^|;&]*--no-confirm)",
+                "output": "Successfully initiated the Fail Over for Shadow Link \"dr-east\". To check the status, run:\n  rpk shadow status dr-east"
+              },
+              {
+                "match": "shadow\\s+failover",
+                "output": "? Fail over Shadow Link dr-east? (y/N)\nunable to confirm: EOF"
+              },
+              {
+                "match": "^(?=.*ShadowLinkService/FailOver)(?=.*(shadow_topic_name|shadowTopicName))",
+                "output": "{\"shadowLink\": {\"name\": \"dr-east\", \"uid\": \"5b0e7c1a-3f7d-4e2a-9a61-0d2f8c4b7e11\", \"status\": {\"state\": \"SHADOW_LINK_STATE_ACTIVE\", \"shadowTopics\": [{\"name\": \"orders\", \"sourceTopicName\": \"orders\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_FAILING_OVER\"}}, {\"name\": \"payments\", \"sourceTopicName\": \"payments\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}, {\"name\": \"inventory\", \"sourceTopicName\": \"inventory\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}]}}}"
+              },
+              {
+                "match": "ShadowLinkService/FailOver",
+                "output": "{\"shadowLink\": {\"name\": \"dr-east\", \"uid\": \"5b0e7c1a-3f7d-4e2a-9a61-0d2f8c4b7e11\", \"status\": {\"state\": \"SHADOW_LINK_STATE_ACTIVE\", \"shadowTopics\": [{\"name\": \"orders\", \"sourceTopicName\": \"orders\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_FAILING_OVER\"}}, {\"name\": \"payments\", \"sourceTopicName\": \"payments\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_FAILING_OVER\"}}, {\"name\": \"inventory\", \"sourceTopicName\": \"inventory\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_FAILING_OVER\"}}]}}}"
+              },
+              {
+                "match": "(GetShadowTopic|ListShadowTopics)",
+                "output": "{\"shadowTopics\": [{\"name\": \"orders\", \"sourceTopicName\": \"orders\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}, {\"name\": \"payments\", \"sourceTopicName\": \"payments\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}, {\"name\": \"inventory\", \"sourceTopicName\": \"inventory\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}]}"
+              },
+              {
+                "match": "(GetShadowLink|ListShadowLinks)",
+                "output": "{\"shadowLink\": {\"name\": \"dr-east\", \"uid\": \"5b0e7c1a-3f7d-4e2a-9a61-0d2f8c4b7e11\", \"status\": {\"state\": \"SHADOW_LINK_STATE_ACTIVE\", \"shadowTopics\": [{\"name\": \"orders\", \"sourceTopicName\": \"orders\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}, {\"name\": \"payments\", \"sourceTopicName\": \"payments\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}, {\"name\": \"inventory\", \"sourceTopicName\": \"inventory\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}]}}}"
+              },
+              {
+                "match": "shadow\\s+(list|describe|status)",
+                "output": "OVERVIEW\n========\nNAME   dr-east\nSTATE  ACTIVE\n\nSHADOW TOPICS\n=============\nNAME       SOURCE-TOPIC  STATE\norders     orders        ACTIVE\npayments   payments      ACTIVE\ninventory  inventory     ACTIVE"
+              },
+              {
+                "match": "health_overview|cluster\\s+health",
+                "output": "{\"is_healthy\":true,\"unhealthy_reasons\":[],\"nodes_down\":[],\"leaderless_count\":0,\"under_replicated_count\":0}"
+              },
+              {
+                "match": "features/(license|enterprise)",
+                "output": "{\"license_status\":\"valid\",\"violation\":false}"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME       PARTITIONS  REPLICAS\norders     12          3\npayments   12          3\ninventory  6           3"
+              },
+              {
+                "match": "v1/brokers|brokers\\s+list",
+                "output": "[{\"node_id\":0,\"is_alive\":true},{\"node_id\":1,\"is_alive\":true},{\"node_id\":2,\"is_alive\":true}]"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.2\n\nRedpanda Cluster\n  node-0  v26.2.2\n  node-1  v26.2.2\n  node-2  v26.2.2"
+              },
+              {
+                "match": "\\b(echo|printf|true|test|export|which|sleep|date)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "^(?=.*ShadowLinkService/FailOver)(?=.*(shadow_topic_name|shadowTopicName))|shadow\\s+failover(?=[^|;&]*--topic[\\s=]+['\\\\\"]*orders\\b)"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "^(?=.*ShadowLinkService/FailOver)(?!.*(shadow_topic_name|shadowTopicName))(?!.*(-d|--data[a-z-]*)\\s*['\\\\\"]*@)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "shadow\\s+failover(?![^|;&]*(--topic|((?-i:-h)\\b|--help)))"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "only_orders_failed_over",
+          "failure_condition": "FAILS if the answer says the whole dr-east link, or payments or inventory, was failed over, or if it neither failed over orders nor told the user exactly what blocked it. PASSES if it failed over only the orders shadow topic (or explained precisely what stopped it and the single-topic command to run) and said payments and inventory keep replicating."
+        }
+      ]
+    },
+    {
+      "id": "shadow-link-remove-topic-filter",
+      "query": "On our DR cluster, shadow link dr-east auto-creates shadow topics from three include prefix filters: orders, payments and audit-. We no longer want new audit- topics shadowed. Remove the audit- filter and keep the other two, using the Admin API's ShadowLinkService; rpk isn't installed on this host. You can run commands with the run_shell tool: curl reaches the DR cluster's Admin API at http://rp-dr-0:9644 with -u admin:$ADMIN_PW.",
+      "why": "An UpdateShadowLink whose update_mask names the filter list itself appends the sent filters to the existing ones (Redpanda's field-mask merge appends to a repeated field, unlike AIP-134), so the audit- filter stays. Removing an entry takes an update that replaces the list: a mask on a parent message that carries the whole parent, or the full configuration with no mask. An update that resets the client options is rejected. The link uses no SASL credentials, so a full replace loses nothing. Graded on the outcome: an update that leaves exactly the orders and payments filters passes, whatever comes before it; the mocked server returns the updated link, so an agent that sends a masked update first can see the appended result and fix it.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/serde/protobuf/field_mask.h (merge_into appends repeated fields; an empty mask replaces the resource)",
+        "redpanda-data/redpanda v26.2.2 src/v/serde/protobuf/tests/goldens/codegen_test.proto.cc (a mask path that ends at a message replaces that message)",
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/services/shadow_link/converter.cc (create_update_cluster_link_config_cmd; bootstrap_servers must not be empty)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. curl reaches the DR (shadow) Redpanda cluster's Admin API at http://rp-dr-0:9644; rpk is not installed. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster health"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "^(?=.*UpdateShadowLink)(?=.*update_?mask['\\\\\"]*\\s*:\\s*(\\{[^}]*|['\\\\\"]+[^'\\\\\\\"]*)auto_?create_?shadow_?topic_?filters)",
+                "output": "{\"shadowLink\": {\"name\": \"dr-east\", \"uid\": \"5b0e7c1a-3f7d-4e2a-9a61-0d2f8c4b7e11\", \"configurations\": {\"clientOptions\": {\"bootstrapServers\": [\"src-0.east.internal:9092\", \"src-1.east.internal:9092\"], \"sourceClusterId\": \"redpanda.c1a9\", \"effectiveMetadataMaxAgeMs\": 10000, \"effectiveConnectionTimeoutMs\": 1000}, \"topicMetadataSyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\", \"autoCreateShadowTopicFilters\": [{\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"orders\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"payments\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"audit-\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"orders\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"payments\"}], \"startAtEarliest\": {}}, \"consumerOffsetSyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\", \"groupFilters\": [{\"patternType\": \"PATTERN_TYPE_LITERAL\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"*\"}]}, \"securitySyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\"}}, \"status\": {\"state\": \"SHADOW_LINK_STATE_ACTIVE\"}}}"
+              },
+              {
+                "match": "^(?=.*UpdateShadowLink)(?!.*update_?mask)(?!.*bootstrap)(?!.*(-d|--data[a-z-]*)\\s*['\\\\\"]*@)",
+                "output": "{\"code\":\"invalid_argument\",\"message\":\"bootstrap_servers must not be empty in the client options\"}"
+              },
+              {
+                "match": "^(?=.*UpdateShadowLink)(?=.*update_?mask['\\\\\"]*\\s*:\\s*(\\{[^}]*\\[\\s*)?['\\\\\"]+configurations['\\\\\"])(?!.*bootstrap)(?!.*(-d|--data[a-z-]*)\\s*['\\\\\"]*@)",
+                "output": "{\"code\":\"invalid_argument\",\"message\":\"bootstrap_servers must not be empty in the client options\"}"
+              },
+              {
+                "match": "^(?=.*UpdateShadowLink)(?=.*audit)",
+                "output": "{\"shadowLink\": {\"name\": \"dr-east\", \"uid\": \"5b0e7c1a-3f7d-4e2a-9a61-0d2f8c4b7e11\", \"configurations\": {\"clientOptions\": {\"bootstrapServers\": [\"src-0.east.internal:9092\", \"src-1.east.internal:9092\"], \"sourceClusterId\": \"redpanda.c1a9\", \"effectiveMetadataMaxAgeMs\": 10000, \"effectiveConnectionTimeoutMs\": 1000}, \"topicMetadataSyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\", \"autoCreateShadowTopicFilters\": [{\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"orders\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"payments\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"audit-\"}], \"startAtEarliest\": {}}, \"consumerOffsetSyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\", \"groupFilters\": [{\"patternType\": \"PATTERN_TYPE_LITERAL\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"*\"}]}, \"securitySyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\"}}, \"status\": {\"state\": \"SHADOW_LINK_STATE_ACTIVE\"}}}"
+              },
+              {
+                "match": "UpdateShadowLink",
+                "output": "{\"shadowLink\": {\"name\": \"dr-east\", \"uid\": \"5b0e7c1a-3f7d-4e2a-9a61-0d2f8c4b7e11\", \"configurations\": {\"clientOptions\": {\"bootstrapServers\": [\"src-0.east.internal:9092\", \"src-1.east.internal:9092\"], \"sourceClusterId\": \"redpanda.c1a9\", \"effectiveMetadataMaxAgeMs\": 10000, \"effectiveConnectionTimeoutMs\": 1000}, \"topicMetadataSyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\", \"autoCreateShadowTopicFilters\": [{\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"orders\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"payments\"}], \"startAtEarliest\": {}}, \"consumerOffsetSyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\", \"groupFilters\": [{\"patternType\": \"PATTERN_TYPE_LITERAL\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"*\"}]}, \"securitySyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\"}}, \"status\": {\"state\": \"SHADOW_LINK_STATE_ACTIVE\"}}}"
+              },
+              {
+                "match": "(GetShadowLink|ListShadowLinks)",
+                "output": "{\"shadowLink\": {\"name\": \"dr-east\", \"uid\": \"5b0e7c1a-3f7d-4e2a-9a61-0d2f8c4b7e11\", \"configurations\": {\"clientOptions\": {\"bootstrapServers\": [\"src-0.east.internal:9092\", \"src-1.east.internal:9092\"], \"sourceClusterId\": \"redpanda.c1a9\", \"effectiveMetadataMaxAgeMs\": 10000, \"effectiveConnectionTimeoutMs\": 1000}, \"topicMetadataSyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\", \"autoCreateShadowTopicFilters\": [{\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"orders\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"payments\"}, {\"patternType\": \"PATTERN_TYPE_PREFIX\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"audit-\"}], \"startAtEarliest\": {}}, \"consumerOffsetSyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\", \"groupFilters\": [{\"patternType\": \"PATTERN_TYPE_LITERAL\", \"filterType\": \"FILTER_TYPE_INCLUDE\", \"name\": \"*\"}]}, \"securitySyncOptions\": {\"interval\": \"30s\", \"effectiveInterval\": \"30s\"}}, \"status\": {\"state\": \"SHADOW_LINK_STATE_ACTIVE\"}}}"
+              },
+              {
+                "match": "(GetShadowTopic|ListShadowTopics)",
+                "output": "{\"shadowTopics\": [{\"name\": \"orders\", \"sourceTopicName\": \"orders\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}, {\"name\": \"payments\", \"sourceTopicName\": \"payments\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}, {\"name\": \"audit-logins\", \"sourceTopicName\": \"audit-logins\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}, {\"name\": \"audit-admin\", \"sourceTopicName\": \"audit-admin\", \"status\": {\"state\": \"SHADOW_TOPIC_STATE_ACTIVE\"}}]}"
+              },
+              {
+                "match": "(DeleteShadowLink|CreateShadowLink|ShadowLinkService/FailOver)",
+                "output": "{}"
+              },
+              {
+                "match": "\\brpk\\b",
+                "output": "bash: rpk: command not found"
+              },
+              {
+                "match": "curl[^|;&]*:9644/v1/(cluster/health_overview|status/ready)",
+                "output": "{\"is_healthy\":true}"
+              },
+              {
+                "match": "curl[^|;&]*:9644/v1/",
+                "output": "{\"message\": \"Not found\", \"code\": 404}"
+              },
+              {
+                "match": "\\b(cat|tee|jq|python3?|sed|mkdir|cp|ls)\\b",
+                "output": ""
+              },
+              {
+                "match": "\\b(echo|printf|true|test|export|which|sleep|date)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "^(?=.*UpdateShadowLink)(?!.*update_?mask['\\\\\"]*\\s*:\\s*(\\{[^}]*|['\\\\\"]+[^'\\\\\\\"]*)auto_?create_?shadow_?topic_?filters)(?!.*audit)(?=.*orders)(?=.*(update_?mask|bootstrap))(?!.*update_?mask['\\\\\"]*\\s*:\\s*(\\{[^}]*\\[\\s*)?['\\\\\"]+configurations['\\\\\"](?!.*bootstrap))|^(?=.*UpdateShadowLink)(?=.*(-d|--data[a-z-]*)\\s*['\\\\\"]*@)"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(DeleteShadowLink|ShadowLinkService/FailOver)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "audit_filter_removed_not_appended",
+          "failure_condition": "FAILS if the answer says the audit- filter was removed when the only update it describes masked the filter list itself (such an update appends, so audit- stays), if it deleted or recreated the link, or if it reports success while the result it describes still holds audit-. PASSES if it applied an update that leaves only the orders and payments filters (for example a full-configuration update without a mask, or a mask on the parent topic_metadata_sync_options carrying the whole message) and reports that."
+        }
+      ]
+    },
+    {
+      "id": "restart-broker-rf1-partitions",
+      "query": "We changed a Redpanda cluster property that needs a restart. Restart broker 2 (host rp-2) now to apply it. You can run commands with the run_shell tool: rpk's active profile points at the cluster, ssh to the brokers works, and each broker serves its Admin API at http://rp-N:9644.",
+      "why": "Restarting a broker takes its replication-factor-1 partitions offline for the whole restart; maintenance mode cannot move their leadership because there is no other replica. The Admin API's pre-restart probe, sent to the broker being restarted, lists them (rf1_offline), and rpk topic describe or the cluster partitions list shows them too. The cluster health check is green, so a check of health alone misses them. Graded on the outcome: restarting broker 2 without first telling the user that session-cache partitions 1 and 4 will go offline fails; stopping to report them and ask passes.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/api-doc/broker.json (pre_restart_probe, restart_risks.rf1_offline: 'Partitions with replication factor 1 that have a replica on current node')",
+        "redpanda-data/redpanda v26.2.2 src/v/redpanda/admin/server.cc (pre_restart_probe reports the current node's restart risks)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's three-broker self-managed Redpanda cluster (brokers rp-0, rp-1, rp-2; Admin API on port 9644 of each); ssh to the brokers works and redpanda runs under systemd. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk cluster health"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "pre_restart_probe(?=[^|;&]*rp-2)|rp-2[^|;&]*pre_restart_probe",
+                "output": "{\"risks\": {\"rf1_offline\": [\"kafka/session-cache/1\", \"kafka/session-cache/4\"], \"full_acks_produce_unavailable\": [], \"unavailable\": [], \"acks1_data_loss\": []}}"
+              },
+              {
+                "match": "pre_restart_probe(?=[^|;&]*rp-[01])|rp-[01][^|;&]*pre_restart_probe",
+                "output": "{\"risks\": {\"rf1_offline\": [], \"full_acks_produce_unavailable\": [], \"unavailable\": [], \"acks1_data_loss\": []}}"
+              },
+              {
+                "match": "pre_restart_probe",
+                "output": "curl: (7) Failed to connect to localhost port 9644 after 0 ms: Couldn't connect to server"
+              },
+              {
+                "match": "post_restart_probe",
+                "output": "{\"load_reclaimed_pc\":100}"
+              },
+              {
+                "match": "(systemctl[^|;&]*\\brestart\\b|service\\s+redpanda\\s+restart|\\breboot\\b|kill(all)?\\s[^|;&]*redpanda|docker\\s+restart)",
+                "output": ""
+              },
+              {
+                "match": "maintenance[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Interact with cluster maintenance mode.\n\nUsage:\n  rpk cluster maintenance [command]\n\nAvailable Commands:\n  disable  Disable maintenance mode on a node\n  enable   Enable maintenance mode on a node\n  status   Report maintenance status"
+              },
+              {
+                "match": "maintenance\\s+status",
+                "output": "NODE-ID  ENABLED  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED\n0        false    -         -       -           -         -             -\n1        false    -         -       -           -         -             -\n2        true     true      false   118         116       0             0"
+              },
+              {
+                "match": "/v1/brokers/2(?![/0-9])",
+                "output": "{\"node_id\": 2, \"num_cores\": 4, \"membership_status\": \"active\", \"is_alive\": true, \"version\": \"v26.2.2\", \"maintenance_status\": {\"draining\": true, \"finished\": true, \"errors\": false, \"partitions\": 118, \"eligible\": 116, \"transferring\": 0, \"failed\": 0}}"
+              },
+              {
+                "match": "maintenance\\s+(enable|disable)|/maintenance",
+                "output": "Successfully updated maintenance mode for node 2."
+              },
+              {
+                "match": "cluster\\s+config\\s+status|cluster_config/status",
+                "output": "NODE  CONFIG-VERSION  NEEDS-RESTART  INVALID  UNKNOWN\n0     18              true           []       []\n1     18              true           []       []\n2     18              true           []       []"
+              },
+              {
+                "match": "health_overview",
+                "output": "{\"is_healthy\":true,\"unhealthy_reasons\":[],\"controller_id\":0,\"all_nodes\":[0,1,2],\"nodes_down\":[],\"leaderless_partitions\":[],\"leaderless_count\":0,\"under_replicated_partitions\":[],\"under_replicated_count\":0}"
+              },
+              {
+                "match": "cluster\\s+health",
+                "output": "CLUSTER HEALTH OVERVIEW\n=======================\nHealthy:                          true\nUnhealthy reasons:                []\nController ID:                    0\nAll nodes:                        [0 1 2]\nNodes down:                       []\nLeaderless partitions (0):        []\nUnder-replicated partitions (0):  []"
+              },
+              {
+                "match": "/v1/cluster/partitions",
+                "output": "[{\"ns\": \"kafka\", \"topic\": \"session-cache\", \"partition_id\": 0, \"leader_id\": 0, \"replicas\": [{\"node_id\": 0, \"core\": 0}], \"disabled\": false}, {\"ns\": \"kafka\", \"topic\": \"session-cache\", \"partition_id\": 1, \"leader_id\": 2, \"replicas\": [{\"node_id\": 2, \"core\": 0}], \"disabled\": false}, {\"ns\": \"kafka\", \"topic\": \"session-cache\", \"partition_id\": 2, \"leader_id\": 1, \"replicas\": [{\"node_id\": 1, \"core\": 0}], \"disabled\": false}, {\"ns\": \"kafka\", \"topic\": \"session-cache\", \"partition_id\": 3, \"leader_id\": 0, \"replicas\": [{\"node_id\": 0, \"core\": 0}], \"disabled\": false}, {\"ns\": \"kafka\", \"topic\": \"session-cache\", \"partition_id\": 4, \"leader_id\": 2, \"replicas\": [{\"node_id\": 2, \"core\": 0}], \"disabled\": false}, {\"ns\": \"kafka\", \"topic\": \"session-cache\", \"partition_id\": 5, \"leader_id\": 1, \"replicas\": [{\"node_id\": 1, \"core\": 0}], \"disabled\": false}, {\"ns\": \"kafka\", \"topic\": \"orders\", \"partition_id\": 0, \"leader_id\": 2, \"replicas\": [{\"node_id\": 0, \"core\": 0}, {\"node_id\": 1, \"core\": 0}, {\"node_id\": 2, \"core\": 0}], \"disabled\": false}]"
+              },
+              {
+                "match": "cluster\\s+partitions\\s+(list|ls)",
+                "output": "TOPIC          PARTITION  LEADER-ID  REPLICA-CORE\norders         0          2          [0-0 1-0 2-0]\nsession-cache  0          0          [0-0]\nsession-cache  1          2          [2-0]\nsession-cache  2          1          [1-0]\nsession-cache  3          0          [0-0]\nsession-cache  4          2          [2-0]\nsession-cache  5          1          [1-0]"
+              },
+              {
+                "match": "topic\\s+(describe|info)[^|;&]*session-cache",
+                "output": "PARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK\n0          0       1      [0]       0                 88213\n1          2       1      [2]       0                 87990\n2          1       1      [1]       0                 88402\n3          0       1      [0]       0                 88117\n4          2       1      [2]       0                 88076\n5          1       1      [1]       0                 88301"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME           PARTITIONS  REPLICAS\norders         12          3\npayments       12          3\nsession-cache  6           1"
+              },
+              {
+                "match": "/v1/brokers|brokers\\s+list|cluster\\s+(info|metadata)",
+                "output": "[{\"node_id\": 0, \"num_cores\": 4, \"membership_status\": \"active\", \"is_alive\": true, \"version\": \"v26.2.2\", \"internal_rpc_address\": \"rp-0\", \"internal_rpc_port\": 33145}, {\"node_id\": 1, \"num_cores\": 4, \"membership_status\": \"active\", \"is_alive\": true, \"version\": \"v26.2.2\", \"internal_rpc_address\": \"rp-1\", \"internal_rpc_port\": 33145}, {\"node_id\": 2, \"num_cores\": 4, \"membership_status\": \"active\", \"is_alive\": true, \"version\": \"v26.2.2\", \"internal_rpc_address\": \"rp-2\", \"internal_rpc_port\": 33145}]"
+              },
+              {
+                "match": "/v1/partitions",
+                "output": "[]"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.2\n\nRedpanda Cluster\n  node-0  v26.2.2\n  node-1  v26.2.2\n  node-2  v26.2.2"
+              },
+              {
+                "match": "systemctl[^|;&]*\\b(status|is-active)\\b",
+                "output": "redpanda.service - Redpanda\n   Active: active (running) since Mon 2026-11-02 09:14:02 UTC; 1 week 1 day ago"
+              },
+              {
+                "match": "\\bssh\\b[^|;&]*\\b(hostname|uptime|whoami)\\b",
+                "output": "rp-2"
+              },
+              {
+                "match": "\\b(echo|printf|true|test|export|which|sleep|date)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(systemctl[^|;&]*\\brestart\\b|service\\s+redpanda\\s+restart|\\breboot\\b|kill(all)?\\s[^|;&]*redpanda|docker\\s+restart)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "reports_rf1_partitions_before_restart",
+          "failure_condition": "FAILS if the answer says broker 2 was restarted, or does not tell the user that session-cache partitions 1 and 4 (replication factor 1, only replica on broker 2) go offline during the restart. PASSES if it held off the restart, reported those partitions and that they will be unavailable while broker 2 is down, and asked the user how to proceed (for example accept the downtime, or move or re-replicate those partitions first)."
+        }
+      ]
+    }
+  ]
+}

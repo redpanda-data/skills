@@ -1,0 +1,17 @@
+{
+  "cloud": "all",
+  "multi_az": true,
+  "periods": [
+    { "label": "2027-Q1", "workloads": [
+      { "ingress_mbps": 50, "egress_mbps": 150, "partitions": 1000 } ] },
+    { "label": "2027-Q2", "workloads": [
+      { "ingress_mbps": 50, "egress_mbps": 150, "partitions": 1000 },
+      { "ingress_mbps": 30, "egress_mbps": 30, "partitions": 300, "iceberg_fields": 20 } ] },
+    { "label": "2027-Q3", "workloads": [
+      { "ingress_mbps": 120, "egress_mbps": 360, "partitions": 2000 },
+      { "ingress_mbps": 30, "egress_mbps": 30, "partitions": 300, "iceberg_fields": 20 } ] },
+    { "label": "2027-Q4", "workloads": [
+      { "ingress_mbps": 200, "egress_mbps": 600, "partitions": 3000 },
+      { "ingress_mbps": 30, "egress_mbps": 30, "partitions": 300, "iceberg_fields": 20 } ] }
+  ]
+}
