@@ -1,0 +1,29 @@
+{
+  "name": "redpanda-skills",
+  "interface": {
+    "displayName": "Redpanda Agent Skills"
+  },
+  "metadata": {
+    "description": "Agent Skills for Redpanda products: Streaming, SQL, Connect, Cloud, the Agentic Data Plane, and the rpk CLI.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "redpanda",
+      "version": "1.0.0",
+      "description": "Skills for Redpanda's five products (Streaming, SQL, Connect, Cloud, Agentic Data Plane) plus the rpk CLI, grounded in Redpanda source, docs, and APIs.",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "author": {
+        "name": "Redpanda Data"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

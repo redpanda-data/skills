@@ -6,14 +6,38 @@
     "name": "Redpanda Data",
     "url": "https://github.com/redpanda-data"
   },
+  "metadata": {
+    "description": "Agent Skills for Redpanda products: Streaming, SQL, Connect, Cloud, the Agentic Data Plane, and the rpk CLI.",
+    "version": "1.0.0"
+  },
   "plugins": [
     {
       "name": "redpanda",
+      "version": "1.0.0",
       "description": "Skills for Redpanda's five products (Streaming, SQL, Connect, Cloud, Agentic Data Plane) plus the rpk CLI, grounded in Redpanda source, docs, and APIs.",
       "author": {
         "name": "Redpanda Data"
       },
       "source": "./",
+      "category": "devops",
+      "homepage": "https://github.com/redpanda-data/skills"
+    },
+    {
+      "name": "redpanda-adp",
+      "version": "1.0.0",
+      "description": "Skills for Redpanda's Agentic Data Plane (ADP): hosted AI agents, MCP servers, AI Gateway, governance, observability, and Redpanda Docs.",
+      "author": {
+        "name": "Redpanda Data"
+      },
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/adp",
+        "./skills/adp-governance",
+        "./skills/adp-observability",
+        "./skills/redpanda-docs"
+      ],
+      "mcpServers": "./.mcp.json",
       "category": "devops",
       "homepage": "https://github.com/redpanda-data/skills"
     }

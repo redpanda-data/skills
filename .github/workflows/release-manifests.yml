@@ -1,0 +1,75 @@
+name: Release Plugin Manifests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'skills/**'
+      - '.mcp.json'
+      - 'scripts/sync-manifests.mjs'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'SemVer level to bump across all plugin manifests'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-plugin-manifests
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Bump and sync plugin manifests
+        id: bump
+        run: |
+          level="${{ inputs.bump || 'patch' }}"
+          version=$(node scripts/sync-manifests.mjs --bump "$level")
+          node scripts/sync-manifests.mjs --check
+          node --test scripts/sync-manifests.test.mjs
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit, tag, and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            .claude-plugin/plugin.json \
+            .claude-plugin/marketplace.json \
+            .codex-plugin/plugin.json \
+            .agents/plugins/marketplace.json \
+            .cursor-plugin/plugin.json \
+            .cursor-plugin/marketplace.json \
+            gemini-extension.json
+          if git diff --cached --quiet; then
+            echo "No manifest changes to release."
+            exit 0
+          fi
+          git commit -m "chore(release): bump plugin manifests to v${VERSION} [skip ci]"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin HEAD:main
+          git push origin "v${VERSION}"
+          gh release create "v${VERSION}" --title "v${VERSION}" --generate-notes

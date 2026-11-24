@@ -7,10 +7,18 @@ in Redpanda's own source code, documentation, and APIs.
 
 ## Installation
 
-**One command** (from your shell):
+### Claude Code
+
+**Full Redpanda bundle** (all five products + `rpk`):
 
 ```bash
 claude plugin marketplace add redpanda-data/skills && claude plugin install redpanda@redpanda-skills
+```
+
+**Agentic Data Plane only** (`adp`, `adp-governance`, `adp-observability`, and `redpanda-docs`):
+
+```bash
+claude plugin marketplace add redpanda-data/skills && claude plugin install redpanda-adp@redpanda-skills
 ```
 
 Or **inside a Claude Code session**, as two separate slash commands (run one at a time —
@@ -21,8 +29,8 @@ don't paste them together):
 /plugin install redpanda@redpanda-skills
 ```
 
-Once installed, invoke any skill with its `/redpanda:<skill>` name (e.g.
-`/redpanda:streaming`). Each skill's `SKILL.md` frontmatter `description` tells the agent
+Once installed, invoke any skill with its `/redpanda:<skill>` (or `/redpanda-adp:<skill>`) name
+(e.g. `/redpanda:streaming`). Each skill's `SKILL.md` frontmatter `description` tells the agent
 when to load it automatically.
 
 The plugin also installs the Redpanda Docs MCP server (`https://docs.redpanda.com/mcp`), which
@@ -30,27 +38,78 @@ the skills use to look up config fields, flags, and procedures. Without signing 
 few lookups a day. Run `/mcp`, select `redpanda-docs`, and sign in with your Redpanda Cloud
 account to remove the limit.
 
-If you load these skills in an agent other than Claude Code, the plugin's server configuration
-doesn't apply. Add `https://docs.redpanda.com/mcp` to that agent as a remote (streamable HTTP)
-MCP server. Without it, the skills fall back to the Markdown version of each docs page (the page
-URL with `.md` in place of the trailing `/`).
+### OpenAI Codex
+
+```bash
+codex plugin marketplace add redpanda-data/skills && codex plugin add redpanda@redpanda-skills
+```
+
+For ChatGPT / Codex workspaces, import `https://github.com/redpanda-data/skills` under
+**Admin → Plugins → Import marketplace**; automatic daily sync is enabled by default.
+
+### Cursor
+
+Import `https://github.com/redpanda-data/skills` under **Settings → Plugins → Team Marketplaces**
+with the Cursor GitHub App installed. Cursor syncs updates automatically whenever a release bumps
+the manifest version.
+
+### Gemini CLI / Antigravity
+
+```bash
+gemini extensions install https://github.com/redpanda-data/skills
+```
+
+### Universal (`npx skills` — Codex, Cursor, Claude Code, Antigravity, OpenCode)
+
+```bash
+npx skills add redpanda-data/skills -g
+# Or ADP skills only:
+npx skills add redpanda-data/skills --skill adp adp-governance adp-observability redpanda-docs -g
+```
+
+If your agent does not load `.mcp.json` automatically, add `https://docs.redpanda.com/mcp` as a
+remote (streamable HTTP) MCP server. Without it, the skills fall back to the Markdown version of
+each docs page (the page URL with `.md` in place of the trailing `/`).
 
 ### Keep the skills up to date
 
-The skills change as the products do. Claude Code doesn't auto-update plugins from this
-marketplace unless you turn it on: run `/plugin`, open the **Marketplaces** tab, select
-`redpanda-skills`, and select **Enable auto-update**. To update by hand:
+Every skill merge to `main` automatically bumps the SemVer version across all plugin manifests
+(`.claude-plugin/`, `.codex-plugin/`, `.agents/plugins/`, `.cursor-plugin/`, and
+`gemini-extension.json`) and tags a release so client caches invalidate cleanly.
 
-```bash
-claude plugin marketplace update redpanda-skills && claude plugin update redpanda@redpanda-skills
-```
+- **Claude Code:** third-party marketplaces default to manual updates. Turn on auto-updates once
+  in `/plugin` → **Marketplaces** → `redpanda-skills` → **Enable auto-update**, or declare it in
+  `~/.claude/settings.json`:
+
+  ```json
+  {
+    "extraKnownMarketplaces": {
+      "redpanda-skills": {
+        "source": { "source": "github", "repo": "redpanda-data/skills" },
+        "autoUpdate": true
+      }
+    }
+  }
+  ```
+
+  To update by hand:
+
+  ```bash
+  claude plugin marketplace update redpanda-skills && claude plugin update redpanda@redpanda-skills
+  ```
+
+- **OpenAI Codex:** `codex plugin marketplace upgrade redpanda-skills` (or daily sync in workspaces).
+- **Cursor:** automatic via Team Marketplaces + Cursor GitHub App.
+- **Gemini CLI:** `gemini extensions update --all`.
+- **`npx skills`:** `npx skills check` and `npx skills update`.
 
 ## What is this?
 
-This repo is a Claude Code **plugin** named `redpanda`. When installed, every skill is
-available to the agent as `/redpanda:<skill>` (for example `/redpanda:streaming`).
-A skill is a focused, on-demand reference: a `SKILL.md` the agent loads when relevant,
-plus `references/` files it pulls in for depth. Skills are self-contained and contain
+This repo publishes Redpanda Agent Skills across coding-agent marketplaces (`.claude-plugin/`,
+`.agents/plugins/`, `.cursor-plugin/`, and `gemini-extension.json`) plus the open
+`skills/*/SKILL.md` layout. In Claude Code, you can install either the full `redpanda` bundle or
+the scoped `redpanda-adp` bundle. A skill is a focused, on-demand reference: a `SKILL.md` the agent
+loads when relevant, plus `references/` files where needed. Skills are self-contained and contain
 copy-pasteable commands, configs, and code.
 
 ## Available Skills

@@ -4,12 +4,26 @@ on:
   pull_request:
     paths:
       - 'skills/**'
+      - '.mcp.json'
+      - '.claude-plugin/**'
+      - '.codex-plugin/**'
+      - '.agents/plugins/**'
+      - '.cursor-plugin/**'
+      - 'gemini-extension.json'
+      - 'scripts/**'
       - '.github/workflows/validate-skills.yml'
   push:
     branches:
       - main
     paths:
       - 'skills/**'
+      - '.mcp.json'
+      - '.claude-plugin/**'
+      - '.codex-plugin/**'
+      - '.agents/plugins/**'
+      - '.cursor-plugin/**'
+      - 'gemini-extension.json'
+      - 'scripts/**'
       - '.github/workflows/validate-skills.yml'
 
 jobs:
@@ -17,6 +31,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate multi-harness plugin manifests
+        run: |
+          node --test scripts/sync-manifests.test.mjs
+          node scripts/sync-manifests.mjs --check
 
       - name: Check every skill has a SOURCES.md
         run: |

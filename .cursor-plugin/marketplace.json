@@ -1,0 +1,14 @@
+{
+  "name": "redpanda-skills",
+  "owner": {
+    "name": "Redpanda Data",
+    "url": "https://github.com/redpanda-data"
+  },
+  "plugins": [
+    {
+      "name": "redpanda",
+      "source": "./",
+      "description": "Skills for Redpanda's five products (Streaming, SQL, Connect, Cloud, Agentic Data Plane) plus the rpk CLI, grounded in Redpanda source, docs, and APIs."
+    }
+  ]
+}
