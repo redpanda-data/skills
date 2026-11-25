@@ -57,6 +57,11 @@ const DOCS_TOOLS = [
   "list_connect_components",
   "get_rpk_command",
   "list_rpk_commands",
+].map((t) => `mcp__${DOCS_SERVER}__${t}`);
+// Allowed when the server has them, but not required: newer tools, so one
+// allow-list runs against a server with and without them (the vocabulary
+// suite compares exactly that). The report records which ones each run had.
+const OPTIONAL_DOCS_TOOLS = [
   "get_bloblang",
   "get_glossary_term",
   "list_glossary_terms",
@@ -300,7 +305,7 @@ async function runSubject(suite, testCase, arm, model) {
       const server = { type: "http", url: DOCS_MCP_URL };
       if (DOCS_CLIENT_KEY) server.headers = { "x-client-key": DOCS_CLIENT_KEY };
       servers[DOCS_SERVER] = server;
-      allowed.push(...DOCS_TOOLS);
+      allowed.push(...DOCS_TOOLS, ...OPTIONAL_DOCS_TOOLS);
     }
     // A behavioral case's mocked tools are part of the scenario, not knowledge,
     // so every arm gets them, baseline included. The whole mock surface is
@@ -339,7 +344,7 @@ async function runSubject(suite, testCase, arm, model) {
     // leaked in. Missing docs tools means the server did not connect, and the
     // docs arm would be scored on an answer that never had the docs.
     const available = new Set(run.tools ?? []);
-    const extra = [...available].filter((t) => !expected.includes(t) && !DOCS_DENIED.includes(t));
+    const extra = [...available].filter((t) => !expected.includes(t) && !DOCS_DENIED.includes(t) && !(withDocs && OPTIONAL_DOCS_TOOLS.includes(t)));
     const missing = expected.filter((t) => !available.has(t));
     if (extra.length) throw new Error(`subject had tools its arm should not: ${extra.join(", ")}`);
     if (missing.length) throw new Error(`subject lacked tools its arm needs: ${missing.join(", ")}`);
@@ -368,6 +373,7 @@ async function runSubject(suite, testCase, arm, model) {
     ];
     if (leaked.length) throw new Error(`subject loaded what its arm should not: ${leaked.join(", ")}`);
     run.docsCalls = run.toolCalls.filter((c) => c.name.startsWith(`mcp__${DOCS_SERVER}__`)).length;
+    run.optionalDocsTools = OPTIONAL_DOCS_TOOLS.filter((t) => available.has(t)).map((t) => t.split("__").pop());
     // Grade from the mock's own log, not the transcript: the log is what the
     // tools actually received.
     run.mockCalls = fs.existsSync(mockLog)
@@ -732,6 +738,7 @@ async function main() {
                 status: g.passed ? "passed" : g.ungraded ? "ungraded" : "failed",
                 reason: g.reason,
                 docsCalls: subject.docsCalls,
+                optionalDocsTools: subject.optionalDocsTools,
                 usage: subject.usage,
                 skillHash: subject.skillHash,
                 docsStatus: subject.docsStatus,
