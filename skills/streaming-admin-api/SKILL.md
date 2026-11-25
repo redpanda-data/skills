@@ -1,243 +1,70 @@
 ---
 name: streaming-admin-api
 description: >-
-  Operate a Redpanda cluster via its HTTP Admin API on port 9644 (base path /v1)
-  using Basic, Bearer, or mTLS authentication. Covers endpoint groups for
-  brokers/partitions, cluster config/health, features/licensing/transactions,
-  cloud storage, security/RBAC, and debug bundles, plus ConnectRPC endpoints.
-  Also covers configuring Redpanda's Enterprise features through the Admin API:
-  Tiered Storage/Cloud Topics, Iceberg Topics/Continuous Data Balancing, Shadow
-  Linking for cross-cluster disaster recovery, Remote Read Replicas/Topic
-  Recovery/Audit Logging/RBAC, OIDC/OAuthBearer/Kerberos authentication, FIPS
-  mode/Schema ID Validation, and Leadership Pinning (most require an Enterprise
-  license). Use when calling the Admin API directly over HTTP, decommissioning
-  or recovering brokers/partitions, checking cluster health, managing licensing
-  or security, or scripting cluster operations without rpk.
+  Operate a self-managed Redpanda cluster through its HTTP Admin API (port 9644)
+  and its ConnectRPC services, and look up endpoints, request bodies and auth
+  levels in the Redpanda docs. Use when calling the Admin API directly with curl
+  or a script instead of rpk: brokers and decommissioning, maintenance mode and
+  restarts, partitions and replica moves, cluster config, health, licensing and
+  enterprise features, security users and RBAC roles, debug endpoints and debug
+  bundles, and Shadow Linking (ShadowLinkService create, update, failover) for
+  disaster recovery. For the same tasks with rpk, see /redpanda:rpk-cluster,
+  and for troubleshooting, see /redpanda:streaming-debugging.
 ---
 
-# Redpanda Streaming: Admin API
-
-The Redpanda Admin API is an HTTP interface served on **port 9644** (default) with base path `/v1`. It lets you manage brokers, partitions, cluster configuration, security, features, tiered storage, and diagnostics. All operations that `rpk` performs against the cluster go through this API.
-
-Starting in **Redpanda v25.3**, new endpoints are served as **ConnectRPC** services alongside the legacy `/v1` REST endpoints — both on port 9644. Legacy endpoints remain fully supported.
-
-## Quickstart
-
-```bash
-ADMIN=http://localhost:9644
-
-# List all brokers in the cluster
-curl "$ADMIN/v1/brokers"
-
-# Get cluster health overview
-curl "$ADMIN/v1/cluster/health_overview"
-
-# Get cluster config schema (describes every cluster config property)
-curl "$ADMIN/v1/cluster_config/schema"
-
-# Get current cluster config (non-default values only)
-curl "$ADMIN/v1/cluster_config"
-
-# Get the full cluster config including defaults
-curl "$ADMIN/v1/cluster_config?include_defaults=true"
-
-# --- With Basic auth (when authentication is enabled) ---
-curl -u admin:password "$ADMIN/v1/brokers"
-
-# --- With Bearer token ---
-curl -H "Authorization: Bearer <token>" "$ADMIN/v1/brokers"
-
-# Decommission broker 3
-curl -u admin:password -X PUT "$ADMIN/v1/brokers/3/decommission"
-
-# Check decommission progress
-curl -u admin:password "$ADMIN/v1/brokers/3/decommission"
-
-# Alter cluster config: set log_compression_type
-curl -u admin:password -X PUT "$ADMIN/v1/cluster_config" \
-  -H "Content-Type: application/json" \
-  -d '{"upsert": {"log_compression_type": "snappy"}, "remove": []}'
-
-# Get features and cluster logical version
-curl "$ADMIN/v1/features"
-
-# Get license information
-curl -u admin:password "$ADMIN/v1/features/license"
-```
-
-## Base URL and Port
-
-```
-http://<broker-address>:9644/v1/<path>
-```
-
-All brokers in the cluster serve the Admin API. Any broker can answer read requests; write operations that mutate cluster state are forwarded internally to the controller leader. You can target any broker with any request.
-
-## Authentication
-
-Authentication is **optional** — it mirrors the authentication configuration of the cluster. When enabled:
-
-- **Basic auth**: `curl -u <user>:<password> ...`
-- **Bearer token**: `curl -H "Authorization: Bearer <token>" ...`
-- **mTLS**: Provide a client certificate and key when TLS is configured with `require_client_auth: true`.
-
-Most write endpoints and some read endpoints require **superuser** privileges. Some endpoints are public (no auth required even when auth is enabled).
-
-See [auth-and-connection.md](references/auth-and-connection.md) for full details.
-
-## Endpoint Groups
-
-| Group | Base path | What it covers |
-|---|---|---|
-| Brokers | `/v1/brokers` | List, get, decommission, recommission, maintenance mode |
-| Partitions | `/v1/partitions` | Node-local partition list, replica state, move replicas, rebalance |
-| Cluster | `/v1/cluster/` | Health overview, partition balancer status, cluster-wide partition metadata |
-| Cluster Config | `/v1/cluster_config` | Read/alter cluster configuration, schema, per-node status |
-| Features | `/v1/features` | Feature flags, licensing, enterprise status |
-| Security | `/v1/security/` | SASL users (create/list/delete/update), OIDC whoami, RBAC roles (Enterprise) |
-| Transactions | `/v1/transactions` | List transactions, find coordinator, abort stuck transactions |
-| Cloud Storage | `/v1/cloud_storage/` | Tiered storage status per partition, cluster recovery, manifest |
-| Debug | `/v1/debug/` | CPU profile, disk stat, partition state, self-test, controller status |
-| Debug Bundle | `/v1/debug/bundle` | Start, status, cancel, download a debug bundle ZIP |
-| ConnectRPC (v25.3+) | `/redpanda.core.admin.v2.<Service>/<Method>` | Shadowing, connected-client monitoring, and future features |
-
-## Key Operations by Use Case
-
-### Broker Lifecycle
-
-```bash
-# List all brokers
-curl "$ADMIN/v1/brokers"
-
-# Get a specific broker
-curl "$ADMIN/v1/brokers/1"
-
-# Put broker into maintenance mode (drains leadership before restart)
-curl -u admin:password -X PUT "$ADMIN/v1/brokers/2/maintenance"
-
-# Remove from maintenance mode
-curl -u admin:password -X DELETE "$ADMIN/v1/brokers/2/maintenance"
-
-# Decommission (permanently remove broker from cluster)
-curl -u admin:password -X PUT "$ADMIN/v1/brokers/3/decommission"
-
-# Recommission (cancel a decommission in progress)
-curl -u admin:password -X PUT "$ADMIN/v1/brokers/3/recommission"
-
-# Check pre-restart safety
-curl "$ADMIN/v1/broker/pre_restart_probe"
-```
-
-### Partition Operations
-
-```bash
-# Get partitions hosted on this node (node-local only)
-curl "$ADMIN/v1/partitions"
-
-# Get detailed state for a specific partition (namespace/topic/partition)
-curl "$ADMIN/v1/partitions/kafka/my-topic/0"
-
-# Get all partitions across the cluster
-curl "$ADMIN/v1/cluster/partitions"
-
-# Move partition replicas to different nodes
-curl -u admin:password -X POST "$ADMIN/v1/partitions/kafka/my-topic/0/replicas" \
-  -H "Content-Type: application/json" \
-  -d '[{"node_id": 1, "core": 0}, {"node_id": 2, "core": 0}, {"node_id": 3, "core": 0}]'
-
-# Cancel an ongoing reconfiguration
-curl -u admin:password -X POST "$ADMIN/v1/partitions/kafka/my-topic/0/cancel_reconfiguration"
-
-# Trigger on-demand partition rebalance
-curl -u admin:password -X POST "$ADMIN/v1/partitions/rebalance"
-
-# Check partition balancer status
-curl "$ADMIN/v1/cluster/partition_balancer/status"
-```
-
-### Cluster Configuration
-
-```bash
-# Full config schema — inspect property types, defaults, needs_restart, visibility
-curl "$ADMIN/v1/cluster_config/schema" | jq '.["log_retention_ms"]'
-
-# Read a single config property
-curl "$ADMIN/v1/cluster_config?key=log_retention_ms"
-
-# Alter config
-curl -u admin:password -X PUT "$ADMIN/v1/cluster_config" \
-  -H "Content-Type: application/json" \
-  -d '{"upsert": {"log_retention_ms": 86400000}, "remove": []}'
-
-# Dry-run a config change (validates without applying)
-curl -u admin:password -X PUT "$ADMIN/v1/cluster_config?dry_run=1" \
-  -H "Content-Type: application/json" \
-  -d '{"upsert": {"log_retention_ms": -1}, "remove": []}'
-
-# Check which nodes need restart after a config change
-curl "$ADMIN/v1/cluster_config/status"
-```
-
-### Health and Diagnostics
-
-```bash
-# Cluster health overview (is_healthy, leaderless/under-replicated counts, nodes down)
-curl "$ADMIN/v1/cluster/health_overview"
-
-# Get CPU profile (wait 5 seconds for samples)
-curl "$ADMIN/v1/debug/cpu_profile?wait_ms=5000"
-
-# Disk stat for data directory
-curl "$ADMIN/v1/debug/storage/disk_stat/data"
-
-# Controller log status (last_applied_offset, committed_index)
-curl "$ADMIN/v1/debug/controller_status"
-
-# Self-test: start disk + network benchmarks
-curl -u admin:password -X POST "$ADMIN/v1/debug/self_test/start" \
-  -H "Content-Type: application/json" -d '{}'
-# Query results
-curl "$ADMIN/v1/debug/self_test/status"
-```
-
-### ConnectRPC Endpoints (v25.3+)
-
-```bash
-# ConnectRPC endpoints use POST and fully-qualified service paths
-curl -u admin:password \
-  -X POST "http://localhost:9644/redpanda.core.admin.v2.ShadowLinkService/FailOver" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "<shadow-link-name>", "shadowTopicName": "<shadow-topic-name>"}'
-```
-
-ConnectRPC endpoints also accept binary Protobuf bodies with `Content-Type: application/proto`. SDKs can be generated from the Buf Schema Registry at `buf.build/redpandadata/core`.
-
-## Enterprise Features
-
-Most of Redpanda's enterprise differentiators are configured and operated through this same Admin API — cluster config (`PUT /v1/cluster_config`), the cloud_storage endpoints, the RBAC `/v1/security/roles*` endpoints, and the ConnectRPC `ShadowLinkService`. **These require a valid Enterprise license.**
-
-```bash
-# Is an enterprise feature enabled without a valid license?
-curl -u admin:secret "$ADMIN/v1/features/enterprise"   # license_status, violation, features[]
-curl -u admin:secret "$ADMIN/v1/features/license"       # loaded license details
-
-# Enable Continuous Data Balancing (Enterprise)
-curl -u admin:secret -X PUT "$ADMIN/v1/cluster_config" \
-  -H "Content-Type: application/json" \
-  -d '{"upsert": {"partition_autobalancing_mode": "continuous"}, "remove": []}'
-
-# Shadow Linking / DR failover (ConnectRPC, v25.3+)
-curl -u admin:secret -X POST "$ADMIN/redpanda.core.admin.v2.ShadowLinkService/FailOver" \
-  -H "Content-Type: application/json" -d '{"name": "dr-east"}'
-```
-
-Features and their cluster-config / topic keys: Tiered Storage (`cloud_storage_enabled`, `redpanda.remote.*`), Cloud Topics (`cloud_storage_enabled` prerequisite, topic `redpanda.storage.mode=cloud`; `cloud_topics_enabled` deprecated and ignored from v26.2.1), Iceberg Topics (`iceberg_enabled`, `redpanda.iceberg.mode/.delete/.partition.spec/.target.lag.ms/.invalid.record.action`), Continuous Data Balancing (`partition_autobalancing_mode=continuous`, `partition_autobalancing_*`, `core_balancing_continuous`), Shadow Linking (`ShadowLinkService`), Remote Read Replicas (`cloud_storage_enable_remote_read`, `redpanda.remote.readreplica`), Audit Logging (`audit_*`), RBAC (`/v1/security/roles*`), OIDC/Kerberos (`sasl_mechanisms`, `oidc_*`, `sasl_kerberos_*`), Server-Side Schema ID Validation (`enable_schema_id_validation`), Leadership Pinning (`default_leaders_preference`, `redpanda.leaders.preference`), FIPS (`fips_mode`, node config). See [enterprise-features.md](references/enterprise-features.md) for every nested key, grounded in source.
-
-## Reference Directory
-
-- [endpoints-overview.md](references/endpoints-overview.md): Full endpoint-group map with HTTP methods, paths, and what each returns — grounded in the Swagger 1.2 JSON specs.
-- [auth-and-connection.md](references/auth-and-connection.md): Base URL, port 9644, TLS configuration, Basic auth, Bearer tokens, mTLS, and the auth_level model (public / authenticated / superuser).
-- [brokers-and-partitions.md](references/brokers-and-partitions.md): Broker lifecycle (list, decommission, recommission, maintenance mode) and partition operations (state, move replicas, rebalance, force recover). Full curl examples and response schemas.
-- [cluster-config.md](references/cluster-config.md): Reading the config schema, getting and altering cluster configuration, the `needs_restart` flag, the difference between cluster config and node config, and the per-node status endpoint.
-- [debug-endpoints.md](references/debug-endpoints.md): The `/v1/debug/*` endpoints — cpu_profile, disk_stat, partition state, self-test, controller status, sampled memory profile — plus the debug_bundle HTTP API. curl examples and response field meanings.
-- [enterprise-features.md](references/enterprise-features.md): Redpanda Enterprise differentiators driven through the Admin API, with every nested config key and topic property grounded in source: Tiered Storage / shadow indexing, Topic Recovery / Whole Cluster Restore, Remote Read Replicas, Cloud Topics, Iceberg Topics, Continuous Data Balancing (+ intra-broker core balancing), Leadership Pinning, Audit Logging, RBAC roles endpoints, OIDC/OAuthBearer/Kerberos auth, Server-Side Schema ID Validation, FIPS, and the ShadowLinkService ConnectRPC API for cross-cluster disaster recovery. Includes the license-violation remediation table (which config key disables each feature).
+# Redpanda Admin API
+
+The Admin API is the HTTP management interface every Redpanda broker serves,
+with the legacy `/v1` REST endpoints and the newer ConnectRPC services on the
+same port. rpk uses it for cluster operations. This skill keeps only the
+product-specific procedure below. Look up everything else in the docs (last
+section).
+
+## How to work
+
+**Before you restart a broker, run the pre-restart probe on that broker.** Send
+`GET /v1/broker/pre_restart_probe` to the broker you will restart, not to another
+broker or a load balancer, because it reports the risks of restarting the broker
+that answers. If it lists any partition (for example replication-factor-1
+partitions that go offline, which maintenance mode can't drain), tell the user
+which partitions and what happens to them, and get their go-ahead before the
+restart, even when they asked for the restart.
+
+**When failing over a shadow link, name the scope exactly.** A `FailOver` request
+without `shadow_topic_name` fails over the whole link, and the Admin API ignores a
+JSON field it doesn't recognize, so a misspelled field also fails over the whole
+link and still returns 200. Failover can't be undone: a failed-over topic stops
+replicating. Check the field name in the reference, and if the user hasn't said
+which topics to fail over, ask.
+
+**To remove an entry from a list in a shadow link, don't name the list in
+`update_mask`.** An `UpdateShadowLink` whose mask names a repeated field, such as a
+topic filter list, appends what you send to the existing entries. Read the link
+with `GetShadowLink` first, then send the whole parent message with the mask on
+the parent (for example `configurations.topic_metadata_sync_options`), or the
+full configuration with no mask. Fields you leave out are reset. Check the
+returned link to confirm the list.
+
+## Use the docs for everything else
+
+Look up endpoints, methods, request and response bodies, auth levels, cluster
+properties, and procedures in the Redpanda docs instead of from memory:
+
+- Follow `/redpanda:redpanda-docs`. Use `search_api_reference`,
+  `list_api_reference_pages` and `get_api_reference_content` for the Admin API
+  reference, `get_config_property` for one cluster property, and
+  `ask_redpanda_question` for everything else.
+- Most useful pages: the Admin API reference at
+  https://docs.redpanda.com/api/doc/admin/ (legacy `/v1` endpoints) and
+  https://docs.redpanda.com/api/doc/admin/v2/ (ConnectRPC services), the Admin
+  API guide at
+  https://docs.redpanda.com/streaming/current/manage/use-admin-api/, and the
+  cluster properties reference at
+  https://docs.redpanda.com/streaming/current/reference/properties/cluster-properties/.
+  Swap `current` for the user's version.
+
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the
+user to sign in through `/mcp` rather than answering from memory.
+
+The cluster itself is the live check for its version: `GET /v1/cluster_config/schema`
+describes every cluster property it accepts.

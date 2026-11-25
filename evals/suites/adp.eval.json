@@ -1,0 +1,808 @@
+{
+  "name": "adp skill vs docs",
+  "skill": "adp",
+  "description": "Measures whether the adp skill adds value over the published Agentic Data Plane docs (docs.redpanda.com/agentic-data-plane). Sampled and targeted fact cases were picked from the full adp skill before it was converted to the thin format (SKILL.md and its references on CLI, agents, MCP servers, the AI Gateway and coding tools), from the skill and product source, without checking the published docs. The thin skill no longer carries those claims, so a thin skill-arm result on a fact case does not measure skill coverage. Behavioral cases run against a mocked shell with rpk ai and grade the outcome: an MCP server that ends up enabled, a provider that does not keep content, a trigger that is not left paused, a GitOps apply that does not wipe the agent's other fields, and a scheduled agent that has access.",
+  "test_cases": [
+    {
+      "id": "rpai-token-env-ignored",
+      "origin": "sampled",
+      "query": "Our CI job exports RPAI_TOKEN with a bearer token for Redpanda's Agentic Data Plane and then runs `rpk ai agent list`, but the command acts as if no token was given and says to log in. How should the job pass the token?",
+      "why": "Under rpk ai the ambient RPAI_TOKEN environment variable is ignored on purpose; only the --token flag supplies a static bearer token. A model would expect the documented-looking variable to work.",
+      "verified_against": [
+        "product source (rpk ai global flags: --token help text)"
+      ],
+      "required_patterns": [
+        "--token"
+      ],
+      "invariants": [
+        {
+          "name": "env_var_ignored_use_flag",
+          "failure_condition": "FAILS if the answer says RPAI_TOKEN should work under rpk ai and the fix is to export it differently, or names another environment variable as the fix. PASSES if it says rpk ai ignores RPAI_TOKEN and the job must pass the token with the --token flag."
+        }
+      ]
+    },
+    {
+      "id": "a2a-script-exit-codes",
+      "origin": "sampled",
+      "query": "I have a cron script that runs `rpk ai agent a2a send support-bot \"Summarize yesterday's tickets\"`. Without parsing error text, how can the script tell an expired or refused login apart from the agent's task itself ending in failure, and what should it do in each case?",
+      "why": "rpk ai exits 3 on an authentication or authorization failure and 4 when an A2A task ends failed, canceled or rejected; 1 is anything else. On 3 the script re-logs in and retries once; a second 3 is a permissions problem. The codes are product-specific.",
+      "verified_against": [
+        "product source (rpk ai exit-code classification and its tests)"
+      ],
+      "required_patterns": [
+        "\\b3\\b",
+        "\\b4\\b"
+      ],
+      "invariants": [
+        {
+          "name": "three_is_auth_four_is_task",
+          "failure_condition": "FAILS if the answer does not give distinct exit codes, or maps them differently (for example 1 or 2 for an auth failure). PASSES if it says exit code 3 means the call was not authenticated or authorized (log in again and retry) and exit code 4 means the A2A task ended failed, canceled or rejected."
+        }
+      ]
+    },
+    {
+      "id": "provider-create-records-content-default",
+      "origin": "sampled",
+      "query": "When I create an LLM provider in Redpanda's Agentic Data Plane with `rpk ai llm-provider create` and don't pass any transcript options, does the AI Gateway store the full prompts and completions of calls that go through it?",
+      "why": "When a create carries no transcripts settings at all, the server records both input and output messages. The flag help reads like a boolean that is off unless set, so a model guesses it is off.",
+      "verified_against": [
+        "product source (LLM provider create: an absent transcripts message defaults both record fields to true)"
+      ],
+      "invariants": [
+        {
+          "name": "both_recorded_by_default",
+          "failure_condition": "FAILS if the answer says prompts and completions are not stored by default, or says it cannot tell. PASSES if it says yes: by default the gateway records both the full prompts (inputs) and completions (outputs), and it must be turned off explicitly."
+        }
+      ]
+    },
+    {
+      "id": "transcripts-one-flag-turns-both-off",
+      "origin": "targeted",
+      "query": "I'm creating an LLM provider with `rpk ai llm-provider create` and want ADP to keep completions but not prompts. Is passing just `--transcripts.record-input-messages=false` enough?",
+      "why": "The server fills in recording defaults only when the create carries no transcripts settings at all. Passing one transcripts flag sends the message with the other field unset, which is false, so both are off. To keep outputs, pass --transcripts.record-output-messages too.",
+      "verified_against": [
+        "product source (LLM provider create: defaults applied only to an absent transcripts message)"
+      ],
+      "required_patterns": [
+        "record-output-messages"
+      ],
+      "invariants": [
+        {
+          "name": "other_flag_needed",
+          "failure_condition": "FAILS if the answer says the single flag is enough and outputs keep being recorded. PASSES if it says passing only the input flag also turns off output recording, so the user must also pass --transcripts.record-output-messages (set to true)."
+        }
+      ]
+    },
+    {
+      "id": "passthrough-needs-api-key-header",
+      "origin": "sampled",
+      "query": "I set up an Anthropic LLM provider in Redpanda's Agentic Data Plane with authorization passthrough so each developer's own Claude login is used. My client sends the developer's token in Authorization and our rpk ai sign-in token in X-Redpanda-Cloud-Token, and every request fails with HTTP 400 before reaching Anthropic. What's wrong?",
+      "why": "Under authorization passthrough the gateway credential must be an ADP API key sent in X-Redpanda-Api-Key. A sign-in or client-credentials token is refused with HTTP 400 before the upstream is contacted.",
+      "verified_against": [
+        "product source (AI Gateway passthrough handlers: 'authorization passthrough requires verified ADP API-key authentication')"
+      ],
+      "required_patterns": [
+        "X-Redpanda-Api-Key"
+      ],
+      "invariants": [
+        {
+          "name": "api_key_required",
+          "failure_condition": "FAILS if the answer blames the developer's token, the Anthropic configuration, or a missing header other than the API key one. PASSES if it says passthrough requires an ADP API key (not a sign-in token) as the gateway credential, sent in the X-Redpanda-Api-Key header."
+        }
+      ]
+    },
+    {
+      "id": "openai-compatible-model-not-checked",
+      "origin": "sampled",
+      "query": "Does Redpanda's Agentic Data Plane check the model name when I create a managed agent on an OpenAI-compatible LLM provider? If I get the name wrong, when do I find out?",
+      "why": "Agent writes check the model against the catalog for OpenAI, Anthropic, Google and Bedrock providers, but OpenAI-compatible (and Gemini Enterprise Agent Platform) providers are not model-checked: any identifier saves and the mistake surfaces when the gateway refuses the model at call time.",
+      "verified_against": [
+        "product source (managed agent write-time validation)"
+      ],
+      "invariants": [
+        {
+          "name": "not_checked_fails_at_call",
+          "failure_condition": "FAILS if the answer says the create rejects an unknown model on an OpenAI-compatible provider, or does not say when the mistake shows up. PASSES if it says the model is not validated at create time for OpenAI-compatible providers, so a wrong name saves and fails only when the agent first calls the model."
+        }
+      ]
+    },
+    {
+      "id": "aggregate-mcp-reference-cap",
+      "origin": "targeted",
+      "query": "My Redpanda ADP managed agent has 6 subagents. The root agent lists 10 MCP servers and each subagent lists 5, some of them the same servers the root uses. The create is rejected even though every list is far under the per-list limit. Why?",
+      "why": "An agent may reference at most 32 MCP servers in total across the root and every subagent, counting references rather than distinct servers; here 10 + 6x5 = 40.",
+      "verified_against": [
+        "product source (ManagedAgentSpec.mcp_servers: total references across root and subagents capped at 32)"
+      ],
+      "required_patterns": [
+        "\\b32\\b"
+      ],
+      "invariants": [
+        {
+          "name": "total_reference_cap",
+          "failure_condition": "FAILS if the answer blames something else (for example the subagent count or duplicate servers being disallowed). PASSES if it says the agent's total MCP server references across the root and all subagents are capped at 32, duplicates counted each time, and 40 exceeds it."
+        }
+      ]
+    },
+    {
+      "id": "code-mode-separate-endpoint",
+      "origin": "sampled",
+      "query": "I turned on code mode for an MCP server in Redpanda's Agentic Data Plane that has 80 tools, but Claude Code, connected to the server's URL, still lists all 80 tools. Did code mode not take effect?",
+      "why": "Code mode serves a second endpoint, the server URL with a -code suffix, that exposes only search and execute; the primary endpoint is unchanged.",
+      "verified_against": [
+        "product source (code-mode MCP endpoint)"
+      ],
+      "required_patterns": [
+        "-code\\b",
+        "\\bsearch\\b",
+        "\\bexecute\\b"
+      ],
+      "invariants": [
+        {
+          "name": "separate_code_endpoint",
+          "failure_condition": "FAILS if the answer says code mode replaces the tool list on the same URL, or that the setting failed. PASSES if it says code mode adds a separate -code endpoint exposing only search and execute tools, so the client must connect to that URL while the original URL keeps the full tool list."
+        }
+      ]
+    },
+    {
+      "id": "user-oauth-first-call-signin",
+      "origin": "sampled",
+      "query": "Our MCP server in Redpanda's Agentic Data Plane uses per-user delegated OAuth. A new teammate's Cursor connects to it and lists the tools fine, but their first tool call comes back with a text result and no data, and Cursor shows no error. Is the server misconfigured, and what should the teammate do?",
+      "why": "Before a user connects, session setup and tool listing proceed, but a tool call is refused with a tool result whose text carries the sign-in (authorize) URL. The fix is for the user to open that link and connect, not to change the server.",
+      "verified_against": [
+        "product source (user-delegated OAuth method handling)"
+      ],
+      "invariants": [
+        {
+          "name": "connect_via_result_link",
+          "failure_condition": "FAILS if the answer says the server is misconfigured, or tells the user to change the server's auth settings or re-create it. PASSES if it says the teammate has not connected their account yet, that listing works without a connection but calls do not, and that the tool result's text contains the sign-in link they should open to connect."
+        }
+      ]
+    },
+    {
+      "id": "agent-credential-ttl-zero",
+      "origin": "targeted",
+      "query": "I want an ADP agent client secret that never expires, so I ran `rpk ai agent credential create support-bot --ttl 0`. Will that secret last forever?",
+      "why": "--ttl 0 sends no expiry, so the server applies its default lifetime of 90 days. Every agent secret expires, although the flag help says 0 means no expiry.",
+      "verified_against": [
+        "product source (agent credential create sends no expires_at for 0; the service applies a 90-day default)"
+      ],
+      "required_patterns": [
+        "\\b90\\b"
+      ],
+      "invariants": [
+        {
+          "name": "default_ninety_days",
+          "failure_condition": "FAILS if the answer says the secret never expires. PASSES if it says --ttl 0 gets the default 90-day lifetime, that every secret expires, and that the user should rotate before expiry."
+        }
+      ]
+    },
+    {
+      "id": "doctor-no-env-is-warning",
+      "origin": "targeted",
+      "query": "My provisioning script runs `rpk ai doctor` and treats a non-zero exit status as a broken setup. On a fresh machine where the user has logged in but no ADP environment is selected yet, will the script stop?",
+      "why": "rpk ai doctor exits non-zero only when a check reports error. No environment selected is a warning, so the exit status is 0; a selected environment that cannot be resolved is an error.",
+      "verified_against": [
+        "product source (rpk ai doctor check statuses and exit handling)"
+      ],
+      "invariants": [
+        {
+          "name": "warning_exits_zero",
+          "failure_condition": "FAILS if the answer says the script stops because doctor exits non-zero, or cannot say. PASSES if it says no environment selected is only a warning, doctor exits non-zero only on an error check, so the script does not stop (and the script should read the report if it wants to catch warnings)."
+        }
+      ]
+    },
+    {
+      "id": "subagent-mcp-not-subset",
+      "origin": "sampled",
+      "query": "In a Redpanda ADP managed agent, can a subagent use an MCP server that the parent agent doesn't list, or do a subagent's MCP servers have to be a subset of the parent's?",
+      "why": "A subagent's mcp_servers list is independent of the parent's, not restricted to a subset.",
+      "verified_against": [
+        "product source (ManagedAgentSpec subagent mcp_servers comment)"
+      ],
+      "invariants": [
+        {
+          "name": "independent_lists",
+          "failure_condition": "FAILS if the answer says a subagent's servers must be a subset of the parent's or that it inherits the parent's servers. PASSES if it says a subagent can list MCP servers the parent does not, because each subagent's list is independent."
+        }
+      ]
+    },
+    {
+      "id": "gateway-no-failover-or-rate-limit",
+      "origin": "sampled",
+      "query": "Can I configure Redpanda's ADP AI Gateway to fail over from our OpenAI provider to our Anthropic provider when OpenAI is down, and to limit each application to 100 requests per minute?",
+      "why": "The AI Gateway injects credentials per provider; it has no routing, failover, cross-provider load balancing or request rate limiting. Budgets cap agent spend instead.",
+      "verified_against": [
+        "https://docs.redpanda.com/agentic-data-plane/gateway/overview/",
+        "product source"
+      ],
+      "invariants": [
+        {
+          "name": "neither_feature_exists",
+          "failure_condition": "FAILS if the answer describes how to configure failover or a per-minute request limit in ADP. PASSES if it says the AI Gateway supports neither failover/routing nor request rate limits (failover has to be handled in the client), and may mention budgets as the way to cap spend."
+        }
+      ]
+    },
+    {
+      "id": "register-remote-mcp-for-claude-code",
+      "origin": "behavioral",
+      "query": "Register our internal MCP server in Redpanda's Agentic Data Plane as docs-search. It's at https://mcp.internal.example.com/mcp, speaks streamable HTTP and needs no auth. Then give me the URL to add to Claude Code. You can run commands with the run_shell tool.",
+      "why": "rpk ai mcp-server create leaves a server disabled unless --enabled is passed (the UI creates it enabled), and a disabled server rejects every request, so a client given the URL cannot connect. The flag help does not say the default. Graded on the outcome: the server ends up enabled, whether through --enabled on create, a later update --enabled, or a manifest with enabled: true. Mocks are stateless, so get, list and tools list report the server disabled; an agent that checks sees the problem.",
+      "verified_against": [
+        "product source (MCP server create copies enabled from the request, which is false unless --enabled is set)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk with the rpk ai plugin is installed and signed in to the user's Agentic Data Plane environment. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk ai agent list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "mcp-servers?\\s+create[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Create an MCP server.\n\nChoose the backend by setting flags from one group; the group you use selects it: remote, managed, code.\nSetting flags from two groups is an error.\n\nUsage:\n  rpai mcp-server create NAME [flags]\n\nExamples:\n  rpai mcp-server create my-mcp-server \\\n    --remote.url https://mcp.example.com/sse \\\n    --remote.transport sse\n\nFlags:\n      --enabled                                                 Whether this server is active and discoverable.\n                                                                (true when set; pass --enabled=false to disable)\n      --description string                                      Human-readable description shown in help text and UIs.\n      --data-policies stringArray                               Data policies shaping this server's tool calls\n                                                                (see MCPServer.data_policies). (repeatable;\n                                                                protojson object; replaces the full list on update)\n      --response-format string                                  Output format for tool results (token\n                                                                optimization). (one of: jton, toon)\n      --tags stringArray                                        Arbitrary key/value metadata tags (see\n                                                                MCPServer.tags). (repeatable key=value; replaces\n                                                                the full map on update)\n      --remote.url string                                       Endpoint URL of the remote MCP server. (required\n                                                                in its group) (alias: --url)\n      --remote.transport string                                 MCP transport protocol. SSE for server-sent\n                                                                events, Streamable HTTP for newer bidirectional\n                                                                protocol. (one of: sse, streamable-http; required\n                                                                in its group) (alias: --transport)\n      --remote.none                                             None. (selects this auth mode; takes no value)\n      --remote.token-passthrough                                Token passthrough. (selects this auth mode; takes\n                                                                no value)\n      --remote.static-key.key-secret-ref string                 Secret store reference for the API key. (required\n                                                                in its group)\n      --remote.static-key.header-name string                    HTTP header name for the API key. Defaults to\n                                                                'Authorization'.\n      --remote.service-account-oauth.client-id string           OAuth client ID from the provider's developer\n                                                                console. (required in its group)\n      --remote.service-account-oauth.client-secret-ref string   Secret store reference for the OAuth client\n                                                                secret. (required in its group)\n      --remote.service-account-oauth.token-url string           OAuth token endpoint URL for exchanging\n                                                                credentials. (required in its group)\n      --remote.service-account-oauth.scopes strings             OAuth scopes to request when obtaining tokens.\n                                                                (repeatable; replaces the full list on update)\n      --remote.user-oauth.provider-name string                  OAuth provider that manages tokens for this\n                                                                server's users. Leave empty to set OAuth up\n                                                                automatically from the server URL.\n      --remote.user-oauth.required-scopes strings               Minimum OAuth scopes a user's connection must\n                                                                have. Insufficient scopes return a\n                                                                scope_upgrade_required error. (repeatable;\n                                                                replaces the full list on update)\n      --remote.user-oauth.injection.header-name string          HTTP header name for the token. Defaults to\n                                                                'Authorization'.\n      --remote.user-oauth.injection.header-prefix string        Value prefix before the token. Defaults to\n                                                                'Bearer'. Set empty for no prefix.\n      --remote.user-oauth.client-id string                      OAuth client ID from the vendor console. Only for\n                                                                automatic setup of a server without dynamic client\n                                                                registration; leave empty otherwise.\n      --remote.user-oauth.client-secret-ref string              Secret-store reference for the OAuth client secret\n                                                                (confidential apps only). Leave empty for public\n                                                                PKCE clients.\n      --remote.user-oauth.automatic-setup                       Ask the gateway to set OAuth up for this server\n                                                                instead of attaching an existing provider. (true\n                                                                when set; pass\n                                                                --remote.user-oauth.automatic-setup=false to disable)\n      --managed.config types                                    Type-specific configuration for the managed MCP\n                                                                server. (protojson with an \"@type\": a short type\n                                                                name (run the resource's types command) or a full\n                                                                type URL)\n      --code.mcp-servers strings                                MCP servers whose tools programs can call.\n                                                                (repeatable; replaces the full list on update)\n  -f, --filename string                                         manifest to create from (YAML or JSON; \"-\" for\n                                                                stdin); flags override file values\n      --dry-run                                                 print the request that would be sent (with the\n                                                                computed update mask) and exit without calling the\n                                                                server\n  -h, --help                                                    help for create\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with\n                                   env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "mcp-servers?\\s+update[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Update an MCP server. Only the flags you pass change.\n\nChoose the backend by setting flags from one group; the group you use selects it: remote, managed, code.\nSetting flags from two groups is an error.\n\nUsage:\n  rpai mcp-server update NAME [flags]\n\nExamples:\n  rpai mcp-server create my-mcp-server \\\n    --remote.url https://mcp.example.com/sse \\\n    --remote.transport sse\n\nFlags:\n      --enabled                                                 Whether this server is active and discoverable.\n                                                                (true when set; pass --enabled=false to disable)\n      --description string                                      Human-readable description shown in help text and UIs.\n      --data-policies stringArray                               Data policies shaping this server's tool calls\n                                                                (see MCPServer.data_policies). (repeatable;\n                                                                protojson object; replaces the full list on update)\n      --response-format string                                  Output format for tool results (token\n                                                                optimization). (one of: jton, toon)\n      --tags stringArray                                        Arbitrary key/value metadata tags (see\n                                                                MCPServer.tags). (repeatable key=value; replaces\n                                                                the full map on update)\n      --remote.url string                                       Endpoint URL of the remote MCP server. (required\n                                                                in its group) (alias: --url)\n      --remote.transport string                                 MCP transport protocol. SSE for server-sent\n                                                                events, Streamable HTTP for newer bidirectional\n                                                                protocol. (one of: sse, streamable-http; required\n                                                                in its group) (alias: --transport)\n      --remote.none                                             None. (selects this auth mode; takes no value)\n      --remote.token-passthrough                                Token passthrough. (selects this auth mode; takes\n                                                                no value)\n      --remote.static-key.key-secret-ref string                 Secret store reference for the API key. (required\n                                                                in its group)\n      --remote.static-key.header-name string                    HTTP header name for the API key. Defaults to\n                                                                'Authorization'.\n      --remote.service-account-oauth.client-id string           OAuth client ID from the provider's developer\n                                                                console. (required in its group)\n      --remote.service-account-oauth.client-secret-ref string   Secret store reference for the OAuth client\n                                                                secret. (required in its group)\n      --remote.service-account-oauth.token-url string           OAuth token endpoint URL for exchanging\n                                                                credentials. (required in its group)\n      --remote.service-account-oauth.scopes strings             OAuth scopes to request when obtaining tokens.\n                                                                (repeatable; replaces the full list on update)\n      --remote.user-oauth.provider-name string                  OAuth provider that manages tokens for this\n                                                                server's users. Leave empty to set OAuth up\n                                                                automatically from the server URL.\n      --remote.user-oauth.required-scopes strings               Minimum OAuth scopes a user's connection must\n                                                                have. Insufficient scopes return a\n                                                                scope_upgrade_required error. (repeatable;\n                                                                replaces the full list on update)\n      --remote.user-oauth.injection.header-name string          HTTP header name for the token. Defaults to\n                                                                'Authorization'.\n      --remote.user-oauth.injection.header-prefix string        Value prefix before the token. Defaults to\n                                                                'Bearer'. Set empty for no prefix.\n      --remote.user-oauth.client-id string                      OAuth client ID from the vendor console. Only for\n                                                                automatic setup of a server without dynamic client\n                                                                registration; leave empty otherwise.\n      --remote.user-oauth.client-secret-ref string              Secret-store reference for the OAuth client secret\n                                                                (confidential apps only). Leave empty for public\n                                                                PKCE clients.\n      --remote.user-oauth.automatic-setup                       Ask the gateway to set OAuth up for this server\n                                                                instead of attaching an existing provider. (true\n                                                                when set; pass\n                                                                --remote.user-oauth.automatic-setup=false to disable)\n      --managed.config types                                    Type-specific configuration for the managed MCP\n                                                                server. (protojson with an \"@type\": a short type\n                                                                name (run the resource's types command) or a full\n                                                                type URL)\n      --code.mcp-servers strings                                MCP servers whose tools programs can call.\n                                                                (repeatable; replaces the full list on update)\n  -f, --filename string                                         manifest to create from (YAML or JSON; \"-\" for\n                                                                stdin); flags override file values\n      --dry-run                                                 print the request that would be sent (with the\n                                                                computed update mask) and exit without calling the\n                                                                server\n  -h, --help                                                    help for create\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with\n                                   env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\b[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage MCP servers\n\nUsage:\n  rpai mcp-server [command]\n\nAvailable Commands:\n  apply       Reconcile MCP servers from YAML manifests\n  create      Create an MCP server\n  delete      Delete an MCP server\n  diff        Dry-run of apply\n  get         Get an MCP server\n  list        List MCP servers\n  ping        Open a session and report the negotiated protocol and capabilities\n  tools       List or call a server's tools through the gateway\n  types       List managed MCP server types\n  update      Update an MCP server"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Redpanda AI command-line interface\n\nUsage:\n  rpk ai [command]\n\nAvailable Commands:\n  agent                Manage agents (create, get, list, update, delete, start, stop, apply, diff)\n  agent-kill-switch    Inspect, set or release one agent's containment\n  agent-network        Query agent relationships and provider failures\n  api-key              Manage API keys\n  auditlog             Read the audit log (list, get, query)\n  auth                 Manage authentication (login, logout, token, status)\n  budget               Manage budgets\n  connection           Manage your OAuth connections (list, revoke)\n  docs                 Read the Agentic Data Plane documentation\n  doctor               Diagnose local setup\n  env                  Manage environments (add, list, use, show, rename, delete)\n  guardrail            Manage guardrails\n  kill-switch-policy   Manage kill switch policies\n  llm-provider         Manage LLM providers (create, get, list, update, delete, check, apply, diff)\n  mcp-server           Manage MCP servers (create, get, list, update, delete, types, tools, apply, diff)\n  model                Discover available models from the catalog\n  oauth-client         Manage OAuth clients\n  oauth-provider       Manage OAuth providers\n  policy               Manage Cedar authorization policies\n  policy-template      Manage policy templates\n  run                  Launch a third-party AI tool routed through the AI Gateway\n  secret               Manage secrets\n  session              Inspect a managed agent's conversation sessions\n  spending             Query cost and usage\n  trace                Read traces\n  trigger              Manage agent triggers (create, get, list, update, delete, runs, apply, diff)\n  version              Print version and commit\n\nUse \"rpk ai [command] --help\" for more information about a command."
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\s+create[^|;&]*--dry-run",
+                "output": "{\n  \"mcpServer\": {\n    \"name\": \"docs-search\",\n    \"remote\": {\"url\": \"https://mcp.internal.example.com/mcp\", \"transport\": \"TRANSPORT_STREAMABLE_HTTP\", \"none\": {}}\n  }\n}"
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\s+(create|update)[^|;&]*--enabled(?!\\s*=\\s*['\\\\\\\"]*false)",
+                "output": "NAME:         docs-search\nDESCRIPTION:  -\nBACKEND:      remote\nTRANSPORT:    streamable-http\nAUTH:         none\nENABLED:      true\nCODE_MODE:    -\nURL:          https://aigw.acme.ai.redpanda.com/mcp/v1/docs-search"
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\s+(create|apply)",
+                "output": "NAME:         docs-search\nDESCRIPTION:  -\nBACKEND:      remote\nTRANSPORT:    streamable-http\nAUTH:         none\nENABLED:      -\nCODE_MODE:    -\nURL:          https://aigw.acme.ai.redpanda.com/mcp/v1/docs-search"
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\s+get",
+                "output": "NAME:         docs-search\nDESCRIPTION:  -\nBACKEND:      remote\nTRANSPORT:    streamable-http\nAUTH:         none\nENABLED:      -\nCODE_MODE:    -\nURL:          https://aigw.acme.ai.redpanda.com/mcp/v1/docs-search"
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\s+(list|ls)",
+                "output": "NAME         BACKEND  ENABLED\ndocs-search  remote   -\njira-cloud   managed  true"
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\s+(tools|ping)",
+                "output": "Error: MCP server \"docs-search\" is disabled\nCode: failed_precondition"
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\s+types",
+                "output": "TYPE\nSQLMCP\nSlackMCP\nJiraMCP"
+              },
+              {
+                "match": "\\bcurl\\b",
+                "output": "HTTP/2 401\n{\"error\":\"unauthorized\"}"
+              },
+              {
+                "match": "auth\\s+status",
+                "output": "Logged in to organization acme (org_7f2c) as dana@acme.example\nToken expires in 47m"
+              },
+              {
+                "match": "env\\s+(show|list)",
+                "output": "NAME        ID                     AI_GATEWAY_URL\nproduction  env_d1f0c2a9b7e3       https://aigw.acme.ai.redpanda.com  (selected)"
+              },
+              {
+                "match": "\\bversion\\b",
+                "output": "rpai 0.2.110 (4b9e1d2)"
+              },
+              {
+                "match": "\\b(echo|printf|true|mkdir|pwd|which|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(mcp-servers?|\\bmcp)\\s+(create|update)[^|;&]*--enabled(?!\\s*=\\s*['\\\\\\\"]*false)|enabled:\\s*true"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "gives_gateway_url",
+          "failure_condition": "FAILS if the answer gives no MCP URL for docs-search on the AI Gateway (ending /mcp/v1/docs-search), or says the server is disabled and leaves it that way. PASSES if it gives that URL and the server was enabled, or it clearly tells the user the server must be enabled first."
+        }
+      ]
+    },
+    {
+      "id": "hr-provider-keep-no-content",
+      "origin": "behavioral",
+      "query": "Set up an OpenAI LLM provider in Redpanda's Agentic Data Plane called hr-assistant for our HR chatbot. The API key is already in the secret store as HR_OPENAI_KEY. Prompts and answers contain employee personal data, and our policy is that ADP must not keep their content; token and cost tracking is fine. You can run commands with the run_shell tool.",
+      "why": "Creating an LLM provider records full prompts and completions unless the create turns it off. The flag help says '(true when set; pass ...=false to disable)', which reads as off by default. Graded on the outcome: any create or update that sets transcript input or output recording to false passes (setting one already turns both off). The mocks are stateless, and get -o yaml prints no transcripts block, which is how a dump shows both fields false.",
+      "verified_against": [
+        "product source (LLM provider create: an absent transcripts message defaults both record fields to true)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk with the rpk ai plugin is installed and signed in to the user's Agentic Data Plane environment. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk ai agent list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+create[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Create an LLM provider.\n\nChoose the provider-config by setting flags from one group; the group you use selects it: openai-config, anthropic-config, google-config, bedrock-config, openai-compatible-config, vertex-config.\nSetting flags from two groups is an error.\n\nUsage:\n  rpai llm-provider create NAME [flags]\n\nExamples:\n  rpai llm-provider create my-llm-provider \\\n    --openai-config.api-key-ref OPENAI_API_KEY\n\nFlags:\n      --display-name string                                              Human-readable name for display in the UI.\n      --provider-models stringArray                                      Model identifiers available through this\n                                                                         provider. Leave empty to allow all\n                                                                         models. (repeatable; name (bare values\n                                                                         comma-split) or protojson object;\n                                                                         replaces the full list on update)\n      --enabled                                                          Whether this provider is active and\n                                                                         accepting requests. (true when set; pass\n                                                                         --enabled=false to disable)\n      --openai-config.base-url string                                    Override the default API endpoint. Leave\n                                                                         empty for the standard OpenAI API. For\n                                                                         Codex subscription passthrough, use\n                                                                         https://chatgpt.com/backend-api/codex.\n      --openai-config.api-key-ref string                                 Secret store reference for the API key.\n                                                                         Leave empty for authorization passthrough\n                                                                         or no-auth endpoints (Ollama, vLLM, local\n                                                                         models).\n      --openai-config.authorization-passthrough                          Forward the client's Authorization and\n                                                                         ChatGPT-Account-ID headers instead of\n                                                                         using a server-side API key. For Codex\n                                                                         subscriptions, set the base URL to\n                                                                         https://chatgpt.com/backend-api/codex.\n                                                                         (true when set; pass\n                                                                         --openai-config.authorization-passthrough=false to disable)\n      --anthropic-config.base-url string                                 Override the default API endpoint. Leave\n                                                                         empty for the standard Anthropic API.\n      --anthropic-config.api-key-ref string                              Secret store reference for the API key.\n                                                                         Leave empty when using authorization\n                                                                         passthrough.\n      --anthropic-config.authorization-passthrough                       Forward the client's Authorization header\n                                                                         to Anthropic instead of using a\n                                                                         server-side API key. Used for\n                                                                         enterprise/Max plan OAuth passthrough.\n                                                                         (true when set; pass\n                                                                         --anthropic-config.authorization-passthrough=false to disable)\n      --google-config.base-url string                                    Override the default API endpoint. Leave\n                                                                         empty for the standard Google Gemini API\n                                                                         endpoint.\n      --google-config.api-key-ref string                                 Secret store reference for the Google\n                                                                         Gemini API key.\n      --bedrock-config.region string                                     AWS region where the Bedrock endpoint is\n                                                                         deployed. (required in its group) (alias:\n                                                                         --region)\n      --bedrock-config.base-url string                                   Override the default Bedrock endpoint\n                                                                         URL. Leave empty for the standard\n                                                                         regional endpoint.\n      --bedrock-config.static-credentials.access-key-id-ref string       Secret store reference for the AWS access\n                                                                         key ID. (required in its group) (alias:\n                                                                         --access-key-id-ref)\n      --bedrock-config.static-credentials.secret-access-key-ref string   Secret store reference for the AWS secret\n                                                                         access key. (required in its group)\n                                                                         (alias: --secret-access-key-ref)\n      --bedrock-config.assume-role.role-arn string                       ARN of the IAM role to assume for Bedrock\n                                                                         access. (required in its group) (alias:\n                                                                         --role-arn)\n      --bedrock-config.assume-role.external-id string                    External ID for cross-account role\n                                                                         assumption. Required when the role's\n                                                                         trust policy mandates it.\n      --bedrock-config.assume-role.session-name string                   Session name for CloudTrail audit logging.\n      --bedrock-config.api-key.api-key-ref string                        Secret holding a Bedrock API key. Paste\n                                                                         the key only, without the Bearer prefix.\n                                                                         Rotate the secret before the key expires;\n                                                                         the gateway does not generate or renew\n                                                                         keys. (required in its group)\n      --openai-compatible-config.base-url string                         Override the default API endpoint. Leave\n                                                                         empty for the standard OpenAI API. For\n                                                                         Codex subscription passthrough, use\n                                                                         https://chatgpt.com/backend-api/codex.\n      --openai-compatible-config.api-key-ref string                      Secret store reference for the API key.\n                                                                         Leave empty for authorization passthrough\n                                                                         or no-auth endpoints (Ollama, vLLM, local\n                                                                         models).\n      --openai-compatible-config.authorization-passthrough               Forward the client's Authorization and\n                                                                         ChatGPT-Account-ID headers instead of\n                                                                         using a server-side API key. For Codex\n                                                                         subscriptions, set the base URL to\n                                                                         https://chatgpt.com/backend-api/codex.\n                                                                         (true when set; pass\n                                                                         --openai-compatible-config.authorization-passthrough=false to disable)\n      --vertex-config.project string                                     Google Cloud project ID that hosts the\n                                                                         Vertex AI models and is billed for them.\n                                                                         (required in its group)\n      --vertex-config.location string                                    Vertex AI location: global, a\n                                                                         multi-region (us, eu) or a region (for\n                                                                         example, us-east5). Every model on this\n                                                                         provider is served from this location.\n                                                                         (required in its group)\n      --vertex-config.base-url string                                    Override the Vertex AI endpoint URL.\n                                                                         Leave empty for the endpoint derived from\n                                                                         the location.\n      --vertex-config.credentials-json.credentials-json-ref string       Secret store reference for the Google\n                                                                         service-account key JSON document.\n                                                                         (required in its group)\n      --transcripts.record-input-messages                                Capture full request bodies (prompts) on\n                                                                         observability traces. (true when set;\n                                                                         pass\n                                                                         --transcripts.record-input-messages=false\n                                                                         to disable)\n      --transcripts.record-output-messages                               Capture full response bodies\n                                                                         (completions) on observability traces.\n                                                                         (true when set; pass\n                                                                         --transcripts.record-output-messages=false to disable)\n      --guardrail string                                                 Name of a Guardrail to attach to this\n                                                                         provider. Leave empty for no guardrail.\n                                                                         For Bedrock provider the guardrail uses\n                                                                         AWS Bedrock Guardrail directly. For all\n                                                                         other providers the proxy evaluates user\n                                                                         input against the Bedrock Guardrail's\n                                                                         standalone backend. In both cases a\n                                                                         guardrail intervention short-circuits the\n                                                                         request.\n      --tags stringArray                                                 Tags. (repeatable key=value; replaces the\n                                                                         full map on update)\n  -f, --filename string                                                  manifest to create from (YAML or JSON;\n                                                                         \"-\" for stdin); flags override file values\n      --dry-run                                                          print the request that would be sent\n                                                                         (with the computed update mask) and exit\n                                                                         without calling the server\n      --pricing stringArray                                              per-model pricing override in USD per\n                                                                         million tokens (repeatable). Keys: model\n                                                                         (required), input, output, cached,\n                                                                         cache_write_5m, cache_write_1h; e.g.\n                                                                         model=gpt-4o,input=2.50,output=10.00,cached=1.25. Omitted rates keep the catalog default; 0 means an explicit free rate. Merges into --provider-models by model name; on update it replaces the whole model list.\n  -h, --help                                                             help for create\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with\n                                   env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+update[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Update an LLM provider\n\nUsage:\n  rpai llm-provider update NAME [flags]\n\nFlags:\n      --display-name string                                              Human-readable name for display in the UI.\n      --provider-models stringArray                                      Model identifiers available through this\n                                                                         provider. Leave empty to allow all\n                                                                         models. (repeatable; name (bare values\n                                                                         comma-split) or protojson object;\n                                                                         replaces the full list on update)\n      --enabled                                                          Whether this provider is active and\n                                                                         accepting requests. (true when set; pass\n                                                                         --enabled=false to disable)\n      --openai-config.base-url string                                    Override the default API endpoint. Leave\n                                                                         empty for the standard OpenAI API. For\n                                                                         Codex subscription passthrough, use\n                                                                         https://chatgpt.com/backend-api/codex.\n      --openai-config.api-key-ref string                                 Secret store reference for the API key.\n                                                                         Leave empty for authorization passthrough\n                                                                         or no-auth endpoints (Ollama, vLLM, local\n                                                                         models).\n      --openai-config.authorization-passthrough                          Forward the client's Authorization and\n                                                                         ChatGPT-Account-ID headers instead of\n                                                                         using a server-side API key. For Codex\n                                                                         subscriptions, set the base URL to\n                                                                         https://chatgpt.com/backend-api/codex.\n                                                                         (true when set; pass\n                                                                         --openai-config.authorization-passthrough=false to disable)\n      --anthropic-config.base-url string                                 Override the default API endpoint. Leave\n                                                                         empty for the standard Anthropic API.\n      --anthropic-config.api-key-ref string                              Secret store reference for the API key.\n                                                                         Leave empty when using authorization\n                                                                         passthrough.\n      --anthropic-config.authorization-passthrough                       Forward the client's Authorization header\n                                                                         to Anthropic instead of using a\n                                                                         server-side API key. Used for\n                                                                         enterprise/Max plan OAuth passthrough.\n                                                                         (true when set; pass\n                                                                         --anthropic-config.authorization-passthrough=false to disable)\n      --google-config.base-url string                                    Override the default API endpoint. Leave\n                                                                         empty for the standard Google Gemini API\n                                                                         endpoint.\n      --google-config.api-key-ref string                                 Secret store reference for the Google\n                                                                         Gemini API key.\n      --bedrock-config.region string                                     AWS region where the Bedrock endpoint is\n                                                                         deployed. (required in its group) (alias:\n                                                                         --region)\n      --bedrock-config.base-url string                                   Override the default Bedrock endpoint\n                                                                         URL. Leave empty for the standard\n                                                                         regional endpoint.\n      --bedrock-config.static-credentials.access-key-id-ref string       Secret store reference for the AWS access\n                                                                         key ID. (required in its group) (alias:\n                                                                         --access-key-id-ref)\n      --bedrock-config.static-credentials.secret-access-key-ref string   Secret store reference for the AWS secret\n                                                                         access key. (required in its group)\n                                                                         (alias: --secret-access-key-ref)\n      --bedrock-config.assume-role.role-arn string                       ARN of the IAM role to assume for Bedrock\n                                                                         access. (required in its group) (alias:\n                                                                         --role-arn)\n      --bedrock-config.assume-role.external-id string                    External ID for cross-account role\n                                                                         assumption. Required when the role's\n                                                                         trust policy mandates it.\n      --bedrock-config.assume-role.session-name string                   Session name for CloudTrail audit logging.\n      --bedrock-config.api-key.api-key-ref string                        Secret holding a Bedrock API key. Paste\n                                                                         the key only, without the Bearer prefix.\n                                                                         Rotate the secret before the key expires;\n                                                                         the gateway does not generate or renew\n                                                                         keys. (required in its group)\n      --openai-compatible-config.base-url string                         Override the default API endpoint. Leave\n                                                                         empty for the standard OpenAI API. For\n                                                                         Codex subscription passthrough, use\n                                                                         https://chatgpt.com/backend-api/codex.\n      --openai-compatible-config.api-key-ref string                      Secret store reference for the API key.\n                                                                         Leave empty for authorization passthrough\n                                                                         or no-auth endpoints (Ollama, vLLM, local\n                                                                         models).\n      --openai-compatible-config.authorization-passthrough               Forward the client's Authorization and\n                                                                         ChatGPT-Account-ID headers instead of\n                                                                         using a server-side API key. For Codex\n                                                                         subscriptions, set the base URL to\n                                                                         https://chatgpt.com/backend-api/codex.\n                                                                         (true when set; pass\n                                                                         --openai-compatible-config.authorization-passthrough=false to disable)\n      --vertex-config.project string                                     Google Cloud project ID that hosts the\n                                                                         Vertex AI models and is billed for them.\n                                                                         (required in its group)\n      --vertex-config.location string                                    Vertex AI location: global, a\n                                                                         multi-region (us, eu) or a region (for\n                                                                         example, us-east5). Every model on this\n                                                                         provider is served from this location.\n                                                                         (required in its group)\n      --vertex-config.base-url string                                    Override the Vertex AI endpoint URL.\n                                                                         Leave empty for the endpoint derived from\n                                                                         the location.\n      --vertex-config.credentials-json.credentials-json-ref string       Secret store reference for the Google\n                                                                         service-account key JSON document.\n                                                                         (required in its group)\n      --transcripts.record-input-messages                                Capture full request bodies (prompts) on\n                                                                         observability traces. (true when set;\n                                                                         pass\n                                                                         --transcripts.record-input-messages=false\n                                                                         to disable)\n      --transcripts.record-output-messages                               Capture full response bodies\n                                                                         (completions) on observability traces.\n                                                                         (true when set; pass\n                                                                         --transcripts.record-output-messages=false to disable)\n      --guardrail string                                                 Name of a Guardrail to attach to this\n                                                                         provider. Leave empty for no guardrail.\n                                                                         For Bedrock providers the guardrail rides\n                                                                         the upstream call via AWS guardrail\n                                                                         headers and is enforced by Bedrock\n                                                                         itself. For all other providers the proxy\n                                                                         evaluates user input against the\n                                                                         guardrail's standalone ApplyGuardrail\n                                                                         backend before forwarding the request\n                                                                         upstream. In both cases a guardrail\n                                                                         intervention short-circuits the request.\n      --tags stringArray                                                 Tags. (repeatable key=value; replaces the\n                                                                         full map on update)\n  -f, --filename string                                                  manifest to update from (YAML or JSON;\n                                                                         \"-\" for stdin); flags override file values\n      --dry-run                                                          print the request that would be sent\n                                                                         (with the computed update mask) and exit\n                                                                         without calling the server\n      --clear strings                                                    field paths to clear (added to the update\n                                                                         mask with the field unset), e.g. --clear\n                                                                         guardrail\n      --update-mask strings                                              override the inferred update mask with\n                                                                         exactly these paths\n      --pricing stringArray                                              per-model pricing override in USD per\n                                                                         million tokens (repeatable). Keys: model\n                                                                         (required), input, output, cached,\n                                                                         cache_write_5m, cache_write_1h; e.g.\n                                                                         model=gpt-4o,input=2.50,output=10.00,cached=1.25. Omitted rates keep the catalog default; 0 means an explicit free rate. Merges into --provider-models by model name; on update it replaces the whole model list.\n  -h, --help                                                             help for update\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with\n                                   env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\b[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage LLM providers\n\nUsage:\n  rpai llm-provider [command]\n\nAvailable Commands:\n  apply, check, create, delete, diff, get, list, types, update"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Redpanda AI command-line interface\n\nUsage:\n  rpk ai [command]\n\nAvailable Commands:\n  agent                Manage agents (create, get, list, update, delete, start, stop, apply, diff)\n  agent-kill-switch    Inspect, set or release one agent's containment\n  agent-network        Query agent relationships and provider failures\n  api-key              Manage API keys\n  auditlog             Read the audit log (list, get, query)\n  auth                 Manage authentication (login, logout, token, status)\n  budget               Manage budgets\n  connection           Manage your OAuth connections (list, revoke)\n  docs                 Read the Agentic Data Plane documentation\n  doctor               Diagnose local setup\n  env                  Manage environments (add, list, use, show, rename, delete)\n  guardrail            Manage guardrails\n  kill-switch-policy   Manage kill switch policies\n  llm-provider         Manage LLM providers (create, get, list, update, delete, check, apply, diff)\n  mcp-server           Manage MCP servers (create, get, list, update, delete, types, tools, apply, diff)\n  model                Discover available models from the catalog\n  oauth-client         Manage OAuth clients\n  oauth-provider       Manage OAuth providers\n  policy               Manage Cedar authorization policies\n  policy-template      Manage policy templates\n  run                  Launch a third-party AI tool routed through the AI Gateway\n  secret               Manage secrets\n  session              Inspect a managed agent's conversation sessions\n  spending             Query cost and usage\n  trace                Read traces\n  trigger              Manage agent triggers (create, get, list, update, delete, runs, apply, diff)\n  version              Print version and commit\n\nUse \"rpk ai [command] --help\" for more information about a command."
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+(create|update)[^|;&]*--dry-run",
+                "output": "{\n  \"llmProvider\": {\n    \"name\": \"hr-assistant\",\n    \"openaiConfig\": {\"apiKeyRef\": \"HR_OPENAI_KEY\"}\n  }\n}"
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+(create|update|apply)",
+                "output": "NAME:           hr-assistant\nDISPLAY_NAME:   -\nTYPE:           OPENAI\nMODELS:         -\nENABLED:        true\nURL:            https://aigw.acme.ai.redpanda.com/llm/v1/providers/hr-assistant\nOPENAI_CONFIG:  OpenAIConfig"
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+get[^|;&]*(-o|--format)[\\s=]*(yaml|json)",
+                "output": "name: hr-assistant\ntype: OPENAI\nenabled: true\nopenai_config:\n  api_key_ref: HR_OPENAI_KEY\nurl: https://aigw.acme.ai.redpanda.com/llm/v1/providers/hr-assistant"
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+get",
+                "output": "NAME:           hr-assistant\nDISPLAY_NAME:   -\nTYPE:           OPENAI\nMODELS:         -\nENABLED:        true\nURL:            https://aigw.acme.ai.redpanda.com/llm/v1/providers/hr-assistant\nOPENAI_CONFIG:  OpenAIConfig"
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+(list|ls)",
+                "output": "NAME          TYPE       ENABLED\nhr-assistant  OPENAI     true\nanthropic     ANTHROPIC  true"
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+check",
+                "output": "OK  hr-assistant  (412ms)"
+              },
+              {
+                "match": "(llm-providers?|\\bllm|\\blp|\\bprovider)\\s+types",
+                "output": "TYPE\nopenai\nanthropic\ngoogle\nbedrock\nopenai-compatible\nvertex"
+              },
+              {
+                "match": "secrets?\\s+(list|get)",
+                "output": "NAME\nHR_OPENAI_KEY\nOPENAI_API_KEY"
+              },
+              {
+                "match": "models?\\s+(list|get)",
+                "output": "NAME          PROVIDER_TYPE  LABEL\ngpt-5         openai         GPT-5\ngpt-5-mini    openai         GPT-5 mini"
+              },
+              {
+                "match": "auth\\s+status",
+                "output": "Logged in to organization acme (org_7f2c) as dana@acme.example\nToken expires in 47m"
+              },
+              {
+                "match": "env\\s+(show|list)",
+                "output": "NAME        ID                     AI_GATEWAY_URL\nproduction  env_d1f0c2a9b7e3       https://aigw.acme.ai.redpanda.com  (selected)"
+              },
+              {
+                "match": "\\bversion\\b",
+                "output": "rpai 0.2.110 (4b9e1d2)"
+              },
+              {
+                "match": "\\b(echo|printf|true|mkdir|pwd|which|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "record[-_](input|output)[-_]messages['\\\\\\\"]*\\s*[=:]\\s*['\\\\\\\"]*false"
+          }
+        ]
+      }
+    },
+    {
+      "id": "apply-daily-trigger-manifest",
+      "origin": "behavioral",
+      "query": "Our repo has a trigger manifest at gitops/triggers/daily-digest.yaml for our ADP agent support. Apply it so the digest goes out at 9:00 tomorrow morning, Prague time. You can run commands with the run_shell tool.",
+      "why": "In an rpk ai trigger manifest an omitted enabled means false, so applying a manifest without enabled: true creates a paused trigger that never fires, even though trigger create defaults to enabled. Graded on the outcome: the trigger ends up enabled, by adding enabled: true to the manifest or by trigger update --enabled. Mocks are stateless and always report the trigger paused, so an agent that checks sees the problem.",
+      "verified_against": [
+        "product source (trigger GitOps: omitted enabled means false, covered by the apply tests)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk with the rpk ai plugin is installed and signed in to the user's Agentic Data Plane environment. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk ai agent list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "triggers?\\s+apply[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Reconcile triggers from one or more YAML manifests.\n\nFor each manifest: create the resource if absent, otherwise update every field\nthat differs from the live resource. A manifest is the COMPLETE desired state,\nso a field you omit is not left alone - it is compared against the value a\ncreate from that manifest would have produced, and reconciled to it. Lists,\nmaps and oneof variants replace wholesale. Fields that can only be set at\ncreation time are immutable; changing one is an error.\n\nManifests round-trip with `get -o yaml` for this resource, which is how to\nstart from a complete one. Pass -f - to read stdin.\n\nThis does not delete resources absent from the manifests (no prune); see\n`diff --help`.\n\nUsage:\n  rpai trigger apply -f <file|dir|-> [flags]\n\nFlags:\n  -f, --filename strings   manifest file, directory, or - for stdin (repeatable)\n  -h, --help               help for apply\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "triggers?\\s+create[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Create a trigger on <agent>, given as the agent id (my-agent) or its\nresource name (agents/my-agent).\n\nExactly one kind: the --teams-* flags register a Microsoft Teams entry point,\nthe --cron-* flags a schedule. The kind is immutable afterwards.\n\nThe trigger id is assigned by the server unless --id names one. The full\nresource name is printed on success; the other verbs take it verbatim.\n\nUsage:\n  rpai trigger create <agent> [flags]\n\nFlags:\n      --cron-input string                 schedule: message text each scheduled run sends to the agent\n      --cron-schedule string              schedule: standard 5-field cron expression, e.g. \"0 9 * * 1-5\"\n      --cron-timezone string              schedule: IANA timezone the schedule is evaluated in, e.g. \"Europe/Prague\" (required for a cron trigger; the server never falls back to UTC)\n      --description string                longer description of what the trigger is for\n      --display-name string               user-facing label shown in the UI\n      --enabled                           whether the trigger is live immediately after creation (default true)\n  -h, --help                              help for create\n      --id string                         client-supplied trigger id (DNS-1123 label); server-assigned when omitted\n      --teams-bot-app-id string           Microsoft Teams: Azure Bot Application (client) ID\n      --teams-bot-app-secret-ref string   Microsoft Teams: secret-store key holding the bot client secret (bare UPPER_SNAKE_CASE, never the secret itself)\n      --teams-bot-tenant-id string        Microsoft Teams: Azure AD Directory (tenant) ID\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "triggers?\\s+update[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Update a trigger. Only the flags you pass change.\n\nUsage:\n  rpai trigger update <name> [flags]\n\nFlags:\n      --cron-input string\n      --cron-schedule string\n      --cron-timezone string\n      --description string\n      --display-name string\n      --enabled   whether the trigger fires (pass --enabled=false to pause)\n  -h, --help"
+              },
+              {
+                "match": "triggers?\\b[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage the triggers on an agent: the configured ways an agent is invoked\nfrom the outside (Microsoft Teams, or a cron schedule).\n\nA trigger belongs to exactly one agent, and its resource name carries that\nparent: `agents/{agent}/triggers/{trigger}`. So `create` and `list` take the\nparent agent, while `get`, `update`, `delete` and `runs` take the full\ntwo-segment name they print.\n\nThe trigger id is server-assigned unless you pass --id. The kind (--teams-* or\n--cron-*) is fixed at creation; to change it, delete and recreate.\n\nadp-api is a registry: it stores the trigger config but never validates the\ncredentials or resolves the secret refs. A trigger that is accepted here can\nstill be reported unhealthy by the component that operates it.\n\nUsage:\n  rpai trigger [flags]\n  rpai trigger [command]\n\nAliases:\n  trigger, triggers, agent-trigger\n\nAvailable Commands:\n  apply       Create or update triggers from manifest files (GitOps)\n  create      Create a trigger on an agent\n  delete      Delete a trigger by its full resource name\n  diff        Show what apply would change, without applying it\n  get         Get a trigger by its full resource name\n  list        List an agent's triggers\n  runs        List the recorded runs of a schedule trigger (newest first)\n  update      Update a trigger\n\nFlags:\n  -h, --help   help for trigger\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)\n\nUse \"rpai trigger [command] --help\" for more information about a command."
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Redpanda AI command-line interface\n\nUsage:\n  rpk ai [command]\n\nAvailable Commands:\n  agent                Manage agents (create, get, list, update, delete, start, stop, apply, diff)\n  agent-kill-switch    Inspect, set or release one agent's containment\n  agent-network        Query agent relationships and provider failures\n  api-key              Manage API keys\n  auditlog             Read the audit log (list, get, query)\n  auth                 Manage authentication (login, logout, token, status)\n  budget               Manage budgets\n  connection           Manage your OAuth connections (list, revoke)\n  docs                 Read the Agentic Data Plane documentation\n  doctor               Diagnose local setup\n  env                  Manage environments (add, list, use, show, rename, delete)\n  guardrail            Manage guardrails\n  kill-switch-policy   Manage kill switch policies\n  llm-provider         Manage LLM providers (create, get, list, update, delete, check, apply, diff)\n  mcp-server           Manage MCP servers (create, get, list, update, delete, types, tools, apply, diff)\n  model                Discover available models from the catalog\n  oauth-client         Manage OAuth clients\n  oauth-provider       Manage OAuth providers\n  policy               Manage Cedar authorization policies\n  policy-template      Manage policy templates\n  run                  Launch a third-party AI tool routed through the AI Gateway\n  secret               Manage secrets\n  session              Inspect a managed agent's conversation sessions\n  spending             Query cost and usage\n  trace                Read traces\n  trigger              Manage agent triggers (create, get, list, update, delete, runs, apply, diff)\n  version              Print version and commit\n\nUse \"rpk ai [command] --help\" for more information about a command."
+              },
+              {
+                "match": "\\b(cat|head|less|more)\\s+(?![^|;&]*(>|<<))[^|;&]*daily-digest",
+                "output": "name: agents/support/triggers/daily-digest\ndisplay_name: Daily digest\ncron:\n  schedule: \"0 9 * * *\"\n  timezone: Europe/Prague\n  input: Send the daily support digest"
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "gitops/triggers/daily-digest.yaml"
+              },
+              {
+                "match": "triggers?\\s+diff",
+                "output": "create  agents/support/triggers/daily-digest"
+              },
+              {
+                "match": "triggers?\\s+apply",
+                "output": "created agents/support/triggers/daily-digest"
+              },
+              {
+                "match": "triggers?\\s+update",
+                "output": "agents/support/triggers/daily-digest"
+              },
+              {
+                "match": "triggers?\\s+get",
+                "output": "name: agents/support/triggers/daily-digest\ndisplay_name: Daily digest\nenabled: false\ncron:\n  schedule: \"0 9 * * *\"\n  timezone: Europe/Prague\n  input: Send the daily support digest\nnext_run_time: null"
+              },
+              {
+                "match": "triggers?\\s+(list|ls)",
+                "output": "NAME                                   KIND      ENABLED  SCHEDULE   TIMEZONE\nagents/support/triggers/daily-digest   schedule  false    0 9 * * *  Europe/Prague"
+              },
+              {
+                "match": "triggers?\\s+runs",
+                "output": "No runs."
+              },
+              {
+                "match": "\\bgit\\b",
+                "output": ""
+              },
+              {
+                "match": "\\b(sed|yq|tee|cat|python3?|perl)\\b",
+                "output": ""
+              },
+              {
+                "match": "auth\\s+status",
+                "output": "Logged in to organization acme (org_7f2c) as dana@acme.example\nToken expires in 47m"
+              },
+              {
+                "match": "env\\s+(show|list)",
+                "output": "NAME        ID                     AI_GATEWAY_URL\nproduction  env_d1f0c2a9b7e3       https://aigw.acme.ai.redpanda.com  (selected)"
+              },
+              {
+                "match": "\\bversion\\b",
+                "output": "rpai 0.2.110 (4b9e1d2)"
+              },
+              {
+                "match": "\\b(echo|printf|true|mkdir|pwd|which|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "triggers?\\s+update[^|;&]*--enabled(?!\\s*=\\s*['\\\\\\\"]*false)|enabled:\\s*true|\\.enabled\\s*=\\s*true"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "not_left_paused",
+          "failure_condition": "FAILS if the answer says the trigger will run at 9:00 while also reporting it as disabled or paused, or says it is paused and leaves it that way without asking. PASSES if it says the trigger is enabled and will fire at 9:00 Europe/Prague."
+        }
+      ]
+    },
+    {
+      "id": "agent-gitops-raise-iterations",
+      "origin": "behavioral",
+      "query": "We're moving our Redpanda ADP agents to GitOps. Raise agent support-bot's max iterations to 150 by applying a manifest with rpk ai agent apply, and save that manifest in our repo as gitops/agents/support-bot.yaml. You can run commands with the run_shell tool.",
+      "why": "rpk ai apply treats a manifest as the complete desired state: a field the manifest leaves out is reconciled to its empty value, so a hand-written manifest that carries the model and provider but not the rest wipes the agent's system prompt, MCP servers, tags and reasoning effort (one that also leaves out the required model or provider is rejected instead). Start from get -o yaml. Graded on the outcome: any run that never writes or applies a manifest carrying max_iterations without the agent's system prompt passes. A command that only reads the manifest back (grep, diff) is not a write.",
+      "verified_against": [
+        "product source (rpk ai agent apply help: a manifest is the complete desired state)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk with the rpk ai plugin is installed and signed in to the user's Agentic Data Plane environment. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk ai agent list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "agents?\\s+(apply|diff)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Reconcile agents from one or more YAML manifests.\n\nFor each manifest: create the resource if absent, otherwise update every field\nthat differs from the live resource. A manifest is the COMPLETE desired state,\nso a field you omit is not left alone - it is compared against the value a\ncreate from that manifest would have produced, and reconciled to it. Lists,\nmaps and oneof variants replace wholesale. Fields that can only be set at\ncreation time are immutable; changing one is an error.\n\nManifests round-trip with `get -o yaml` for this resource, which is how to\nstart from a complete one. Pass -f - to read stdin.\n\nThis does not delete resources absent from the manifests (no prune); see\n`diff --help`.\n\nUsage:\n  rpai agent apply -f <file|dir|-> [flags]\n\nFlags:\n  -f, --filename strings   manifest file, directory, or - for stdin (repeatable)\n  -h, --help               help for apply\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "agents?\\s+update[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Update an agent\n\nUsage:\n  rpai agent update <name> [flags]\n\nFlags:\n      --description string     new description\n      --display-name string    new display name\n  -h, --help                   help for update\n      --llm-provider string    name of the LLM provider resource the agent uses\n      --max-iterations int32   maximum agent loop iterations per invocation\n      --mcp-server strings     MCP server resource name the agent may call (repeatable)\n      --model string           model the agent runs (e.g. claude-sonnet-4-6)\n      --system-prompt string   system prompt for the agent\n      --tag stringToString     replacement metadata tags key=value (repeatable) (default [])\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "agents?\\b[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage agents\n\nUsage:\n  rpai agent [command]\n\nAvailable Commands:\n  a2a, apply, create, credential, delete, diff, get, list, start, stop, transcript, update"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Redpanda AI command-line interface\n\nUsage:\n  rpk ai [command]\n\nAvailable Commands:\n  agent                Manage agents (create, get, list, update, delete, start, stop, apply, diff)\n  agent-kill-switch    Inspect, set or release one agent's containment\n  agent-network        Query agent relationships and provider failures\n  api-key              Manage API keys\n  auditlog             Read the audit log (list, get, query)\n  auth                 Manage authentication (login, logout, token, status)\n  budget               Manage budgets\n  connection           Manage your OAuth connections (list, revoke)\n  docs                 Read the Agentic Data Plane documentation\n  doctor               Diagnose local setup\n  env                  Manage environments (add, list, use, show, rename, delete)\n  guardrail            Manage guardrails\n  kill-switch-policy   Manage kill switch policies\n  llm-provider         Manage LLM providers (create, get, list, update, delete, check, apply, diff)\n  mcp-server           Manage MCP servers (create, get, list, update, delete, types, tools, apply, diff)\n  model                Discover available models from the catalog\n  oauth-client         Manage OAuth clients\n  oauth-provider       Manage OAuth providers\n  policy               Manage Cedar authorization policies\n  policy-template      Manage policy templates\n  run                  Launch a third-party AI tool routed through the AI Gateway\n  secret               Manage secrets\n  session              Inspect a managed agent's conversation sessions\n  spending             Query cost and usage\n  trace                Read traces\n  trigger              Manage agent triggers (create, get, list, update, delete, runs, apply, diff)\n  version              Print version and commit\n\nUse \"rpk ai [command] --help\" for more information about a command."
+              },
+              {
+                "match": "agents?\\s+get[^|;&]*support-bot",
+                "output": "name: support-bot\ndisplay_name: Support bot\ndescription: Answers tier-1 support questions\ntags:\n  team: support\n  cost-center: cs-104\nmanaged:\n  spec:\n    model: claude-sonnet-4-6\n    llm_provider: anthropic\n    system_prompt: |\n      You are Acme's tier-1 support assistant. Answer from the knowledge base,\n      open a Jira ticket when you cannot resolve a question, and never promise refunds.\n    max_iterations: 100\n    mcp_servers:\n    - jira-cloud\n    - docs-search\n    reasoning:\n      effort: medium"
+              },
+              {
+                "match": "agents?\\s+(list|ls)",
+                "output": "NAME         TYPE     STATE    MODEL\nsupport-bot  managed  running  claude-sonnet-4-6"
+              },
+              {
+                "match": "agents?\\s+diff",
+                "output": "update  support-bot"
+              },
+              {
+                "match": "agents?\\s+apply",
+                "output": "updated support-bot"
+              },
+              {
+                "match": "agents?\\s+update",
+                "output": "updated support-bot"
+              },
+              {
+                "match": "\\b(cat|head)\\s+(?![^|;&]*(>|<<))[^|;&]*support-bot\\.yaml",
+                "output": "cat: gitops/agents/support-bot.yaml: No such file or directory"
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "gitops/triggers/daily-digest.yaml"
+              },
+              {
+                "match": "\\bgit\\b",
+                "output": ""
+              },
+              {
+                "match": "\\b(sed|yq|jq|tee|cat|cp|mv|python3?|perl|awk|grep|diff|wc)\\b",
+                "output": ""
+              },
+              {
+                "match": "auth\\s+status",
+                "output": "Logged in to organization acme (org_7f2c) as dana@acme.example\nToken expires in 47m"
+              },
+              {
+                "match": "env\\s+(show|list)",
+                "output": "NAME        ID                     AI_GATEWAY_URL\nproduction  env_d1f0c2a9b7e3       https://aigw.acme.ai.redpanda.com  (selected)"
+              },
+              {
+                "match": "\\bversion\\b",
+                "output": "rpai 0.2.110 (4b9e1d2)"
+              },
+              {
+                "match": "\\b(echo|printf|true|mkdir|pwd|which|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "max[-_]iterations['\\\\\\\"]*[\\s:=]+['\\\\\\\"]*150|=\\s*150"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "^(?![\\s\\S]*(system_prompt|\\byq\\b|\\bsed\\b|\\bjq\\b|python|perl|\\bawk\\b|\\bcp\\b|\\bmv\\b|\\bgrep\\b|\\bdiff\\b|get\\s+support-bot))[\\s\\S]*max_iterations\\s*:"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "keeps_other_fields",
+          "failure_condition": "FAILS if the answer shows or describes a saved manifest that holds only the name and max_iterations, or says other fields are left unchanged when omitted. PASSES if the manifest it applied and saved was built from the agent's current definition (for example from rpk ai agent get -o yaml) with max_iterations changed to 150."
+        }
+      ]
+    },
+    {
+      "id": "scheduled-agent-has-access",
+      "origin": "behavioral",
+      "query": "Create a managed agent in Redpanda's Agentic Data Plane called ticket-summarizer on our anthropic LLM provider (model claude-sonnet-4-6) that uses the jira-cloud MCP server, with a short system prompt you write. Add a schedule trigger so it summarizes open tickets every weekday at 8:00 New York time, and make sure the scheduled runs will work. You can run commands with the run_shell tool.",
+      "why": "A new agent has no access policy of its own. Its creator can invoke it through the built-in owner policy, so a test the user starts succeeds, but a trigger-started run is authorized as the agent and is denied until a policy names it. rpk ai agent create prints that notice on stderr. Graded on the outcome: the agent gets a policy, or the user is told it needs one.",
+      "verified_against": [
+        "product source (rpk ai agent create no-access notice and --policy-template)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk with the rpk ai plugin is installed and signed in to the user's Agentic Data Plane environment. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk ai agent list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "agents?\\s+create[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Create an agent. Defaults to a managed agent populated from the spec\nflags; --self-managed registers the metadata-only variant.\n\nA new agent has no access until a policy names it as principal.\nBind one after create:\n\n  rpai policy create --agent <name> --template sandboxed\n  rpai policy create --agent <name> --cedar-file policy.cedar\n\nUsage:\n  rpai agent create <name> [flags]\n\nFlags:\n      --description string     longer description of the agent's purpose\n      --display-name string    display name\n  -h, --help                   help for create\n      --llm-provider string    name of the LLM provider resource the agent uses\n      --max-iterations int32   maximum agent loop iterations per invocation\n      --mcp-server strings     MCP server resource name the agent may call (repeatable)\n      --model string           model the agent runs (e.g. claude-sonnet-4-6)\n      --self-managed           register a metadata-only self-managed agent (the platform won't run it)\n      --spec-file string       path to a JSON/YAML ManagedAgentSpec; enables subagents/agent_card that scalar flags can't express (mutually exclusive with --self-managed and the spec flags)\n      --system-prompt string   system prompt for the agent\n      --tag stringToString     metadata tag key=value (repeatable) (default [])\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "polic(y|ies)\\s+create[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Create a Cedar authorization policy: the allow/deny gate that\ndecides WHETHER a principal may call a tool.\n\nThe Cedar body must contain exactly one statement; scope the resource\nto your MCP server, e.g.:\n\n  permit(principal, action == Action::\"dataplane_adp_mcpserver_tools_call\",\n         resource == McpServer::\"servicenow\");\n\nData shaping (masking, dropping, row filtering) is NOT configured here.\nIt lives on the MCP server's data policies (rpai mcp ...), not in Cedar\ntext; the @redact_mask / @redact_drop annotations are gone.\n\nUsage:\n  rpai policy create [flags]\n\nExamples:\n  # Give a new agent access by binding a seeded template\n  rpai policy create --agent invoice-triage --template sandboxed\n\n  # Or write the grant in Cedar; its principal must be Agent::\"invoice-triage\"\n  rpai policy create --agent invoice-triage --cedar-file grant.cedar\n\nFlags:\n      --agent string          agent id (or agents/<id>) to bind as principal (Agent::\"<id>\"); defaults --name to <id>-access and tags the policy redpanda.com/agent-self\n      --cedar string          inline Cedar policy text. Mutually exclusive with --cedar-file.\n      --cedar-file string     path to a file containing the Cedar policy text (.cedar). Mutually exclusive with --cedar.\n      --description string    human-readable description\n      --display-name string   human-readable display name\n  -h, --help                  help for create\n      --name string           policy id (lowercase letters, numbers, hyphens; required unless --agent is set)\n      --template string       policy template to bind: readonly, sandboxed, standard, full (least to most access), or policyTemplates/<id>. Needs --agent.\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "triggers?\\s+create[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Create a trigger on <agent>, given as the agent id (my-agent) or its\nresource name (agents/my-agent).\n\nExactly one kind: the --teams-* flags register a Microsoft Teams entry point,\nthe --cron-* flags a schedule. The kind is immutable afterwards.\n\nThe trigger id is assigned by the server unless --id names one. The full\nresource name is printed on success; the other verbs take it verbatim.\n\nUsage:\n  rpai trigger create <agent> [flags]\n\nFlags:\n      --cron-input string                 schedule: message text each scheduled run sends to the agent\n      --cron-schedule string              schedule: standard 5-field cron expression, e.g. \"0 9 * * 1-5\"\n      --cron-timezone string              schedule: IANA timezone the schedule is evaluated in, e.g. \"Europe/Prague\" (required for a cron trigger; the server never falls back to UTC)\n      --description string                longer description of what the trigger is for\n      --display-name string               user-facing label shown in the UI\n      --enabled                           whether the trigger is live immediately after creation (default true)\n  -h, --help                              help for create\n      --id string                         client-supplied trigger id (DNS-1123 label); server-assigned when omitted\n      --teams-bot-app-id string           Microsoft Teams: Azure Bot Application (client) ID\n      --teams-bot-app-secret-ref string   Microsoft Teams: secret-store key holding the bot client secret (bare UPPER_SNAKE_CASE, never the secret itself)\n      --teams-bot-tenant-id string        Microsoft Teams: Azure AD Directory (tenant) ID\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)"
+              },
+              {
+                "match": "triggers?\\b[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage the triggers on an agent: the configured ways an agent is invoked\nfrom the outside (Microsoft Teams, or a cron schedule).\n\nA trigger belongs to exactly one agent, and its resource name carries that\nparent: `agents/{agent}/triggers/{trigger}`. So `create` and `list` take the\nparent agent, while `get`, `update`, `delete` and `runs` take the full\ntwo-segment name they print.\n\nThe trigger id is server-assigned unless you pass --id. The kind (--teams-* or\n--cron-*) is fixed at creation; to change it, delete and recreate.\n\nadp-api is a registry: it stores the trigger config but never validates the\ncredentials or resolves the secret refs. A trigger that is accepted here can\nstill be reported unhealthy by the component that operates it.\n\nUsage:\n  rpai trigger [flags]\n  rpai trigger [command]\n\nAliases:\n  trigger, triggers, agent-trigger\n\nAvailable Commands:\n  apply       Create or update triggers from manifest files (GitOps)\n  create      Create a trigger on an agent\n  delete      Delete a trigger by its full resource name\n  diff        Show what apply would change, without applying it\n  get         Get a trigger by its full resource name\n  list        List an agent's triggers\n  runs        List the recorded runs of a schedule trigger (newest first)\n  update      Update a trigger\n\nFlags:\n  -h, --help   help for trigger\n\nGlobal Flags:\n  -o, --format string              output format: table|wide|json|yaml|markdown (env: RPAI_FORMAT) (default \"table\")\n      --no-color                   disable colored output (env: NO_COLOR)\n  -c, --rpai-config string         path to rpai config (env: RPAI_CONFIG) (default \"/home/dev/.rpai/config\")\n  -s, --rpai-endpoint string       override the selected environment's AI Gateway URL for this invocation\n      --rpai-environment env use   select a manual environment for this invocation (switch cloud environments with env use)\n  -v, --rpai-verbose               verbose debug logging to stderr (env: RPAI_VERBOSE)\n      --token string               static bearer token override (ambient RPAI_TOKEN is ignored under rpk ai)\n\nUse \"rpai trigger [command] --help\" for more information about a command."
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Redpanda AI command-line interface\n\nUsage:\n  rpk ai [command]\n\nAvailable Commands:\n  agent                Manage agents (create, get, list, update, delete, start, stop, apply, diff)\n  agent-kill-switch    Inspect, set or release one agent's containment\n  agent-network        Query agent relationships and provider failures\n  api-key              Manage API keys\n  auditlog             Read the audit log (list, get, query)\n  auth                 Manage authentication (login, logout, token, status)\n  budget               Manage budgets\n  connection           Manage your OAuth connections (list, revoke)\n  docs                 Read the Agentic Data Plane documentation\n  doctor               Diagnose local setup\n  env                  Manage environments (add, list, use, show, rename, delete)\n  guardrail            Manage guardrails\n  kill-switch-policy   Manage kill switch policies\n  llm-provider         Manage LLM providers (create, get, list, update, delete, check, apply, diff)\n  mcp-server           Manage MCP servers (create, get, list, update, delete, types, tools, apply, diff)\n  model                Discover available models from the catalog\n  oauth-client         Manage OAuth clients\n  oauth-provider       Manage OAuth providers\n  policy               Manage Cedar authorization policies\n  policy-template      Manage policy templates\n  run                  Launch a third-party AI tool routed through the AI Gateway\n  secret               Manage secrets\n  session              Inspect a managed agent's conversation sessions\n  spending             Query cost and usage\n  trace                Read traces\n  trigger              Manage agent triggers (create, get, list, update, delete, runs, apply, diff)\n  version              Print version and commit\n\nUse \"rpk ai [command] --help\" for more information about a command."
+              },
+              {
+                "match": "agents?\\s+create[^|;&]*--policy-template",
+                "output": "NAME:          ticket-summarizer\nTYPE:          managed\nSTATE:         running\nMODEL:         claude-sonnet-4-6\nLLM_PROVIDER:  anthropic\nMCP_SERVERS:   jira-cloud\nURL:           https://aigw.acme.ai.redpanda.com/a2a/v1/ticket-summarizer\nbound policy ticket-summarizer-access (template sandboxed)"
+              },
+              {
+                "match": "agents?\\s+create",
+                "output": "NAME:          ticket-summarizer\nTYPE:          managed\nSTATE:         running\nMODEL:         claude-sonnet-4-6\nLLM_PROVIDER:  anthropic\nMCP_SERVERS:   jira-cloud\nURL:           https://aigw.acme.ai.redpanda.com/a2a/v1/ticket-summarizer\nnote: agent \"ticket-summarizer\" has no access until a policy names it.\n  Bind a template:  rpk ai policy create --agent ticket-summarizer --template sandboxed\n  Write Cedar:      rpk ai policy create --agent ticket-summarizer --cedar-file policy.cedar"
+              },
+              {
+                "match": "agents?\\s+(get|start|update)",
+                "output": "NAME:          ticket-summarizer\nTYPE:          managed\nSTATE:         running\nMODEL:         claude-sonnet-4-6\nLLM_PROVIDER:  anthropic\nMCP_SERVERS:   jira-cloud\nURL:           https://aigw.acme.ai.redpanda.com/a2a/v1/ticket-summarizer"
+              },
+              {
+                "match": "agents?\\s+(list|ls)",
+                "output": "NAME               TYPE     STATE    MODEL\nticket-summarizer  managed  running  claude-sonnet-4-6\nsupport-bot        managed  running  claude-sonnet-4-6"
+              },
+              {
+                "match": "agents?\\s+a2a\\s+card",
+                "output": "{\"name\":\"ticket-summarizer\",\"url\":\"https://aigw.acme.ai.redpanda.com/a2a/v1/ticket-summarizer\"}"
+              },
+              {
+                "match": "agents?\\s+a2a",
+                "output": "There are 14 open tickets. 3 are high priority: ACME-812 (login loop on SSO), ACME-815 (export times out), ACME-820 (billing page 500).\ncontext-id: ctx_3f9a\ntask-id: task_81c2\nstate: completed"
+              },
+              {
+                "match": "triggers?\\s+create",
+                "output": "agents/ticket-summarizer/triggers/weekday-summary"
+              },
+              {
+                "match": "triggers?\\s+(list|ls)",
+                "output": "NAME                                              KIND      ENABLED  SCHEDULE      TIMEZONE\nagents/ticket-summarizer/triggers/weekday-summary  schedule  true     0 8 * * 1-5   America/New_York"
+              },
+              {
+                "match": "triggers?\\s+(get|update)",
+                "output": "name: agents/ticket-summarizer/triggers/weekday-summary\nenabled: true\ncron:\n  schedule: \"0 8 * * 1-5\"\n  timezone: America/New_York\n  input: Summarize the open Jira tickets"
+              },
+              {
+                "match": "triggers?\\s+runs",
+                "output": "No runs."
+              },
+              {
+                "match": "polic(y|ies)\\s+create",
+                "output": "created policy ticket-summarizer-access"
+              },
+              {
+                "match": "polic(y|ies)[-_]?templates?\\s+(list|ls)",
+                "output": "NAME       DESCRIPTION\nreadonly   Read-only access to the resources the agent names\nsandboxed  Invoke named LLM providers and call tools on named MCP servers\nstandard   Sandboxed plus write tools\nfull       Everything the creator can do"
+              },
+              {
+                "match": "polic(y|ies)\\s+(list|ls|get)",
+                "output": "NAME                    PRINCIPAL\nowner-lifecycle         (built-in)\nsupport-bot-access      Agent::\"support-bot\""
+              },
+              {
+                "match": "(llm-providers?|\\bllm)\\s+(list|get)",
+                "output": "NAME       TYPE       ENABLED\nanthropic  ANTHROPIC  true"
+              },
+              {
+                "match": "(mcp-servers?|\\bmcp)\\s+(list|get|tools)",
+                "output": "NAME        BACKEND  ENABLED\njira-cloud  managed  true"
+              },
+              {
+                "match": "auth\\s+status",
+                "output": "Logged in to organization acme (org_7f2c) as dana@acme.example\nToken expires in 47m"
+              },
+              {
+                "match": "env\\s+(show|list)",
+                "output": "NAME        ID                     AI_GATEWAY_URL\nproduction  env_d1f0c2a9b7e3       https://aigw.acme.ai.redpanda.com  (selected)"
+              },
+              {
+                "match": "\\bversion\\b",
+                "output": "rpai 0.2.110 (4b9e1d2)"
+              },
+              {
+                "match": "\\b(echo|printf|true|mkdir|pwd|which|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "agent_access_handled",
+          "failure_condition": "FAILS if the answer presents the scheduled runs as ready without having bound an access policy for the agent and without telling the user the agent has none. PASSES if it bound a policy for ticket-summarizer (a policy template or Cedar), or clearly told the user the agent has no access until a policy names it and that the scheduled runs will be denied until then."
+        }
+      ]
+    }
+  ]
+}

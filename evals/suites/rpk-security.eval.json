@@ -1,0 +1,957 @@
+{
+  "name": "rpk-security skill vs docs",
+  "skill": "rpk-security",
+  "description": "Measures whether the rpk-security skill adds value over the published docs for rpk security (users, ACLs, roles, secrets) and the security properties it covers. Sampled and targeted cases were picked from the full rpk-security skill, before it was converted to the thin format, and from the public redpanda source at tag v26.2.2, without regard to the docs. Behavioral cases grade the outcome of a task run against a mocked rpk: revoking one operation without removing others, offboarding a user's ACLs and role membership, adding a superuser without dropping the existing ones, changing a Cloud secret's scopes without overwriting its value, and rotating a password without changing its SCRAM mechanism. The shell mock is stateless, so the invariants do not fail an answer for reporting that a listing after a change still shows the old state.",
+  "test_cases": [
+    {
+      "id": "authorization-unset-follows-sasl",
+      "query": "On my self-managed Redpanda cluster I ran `rpk cluster config set enable_sasl true` and never touched kafka_enable_authorization. Are ACLs being enforced on Kafka clients right now, or is authorization still off until I set that property too?",
+      "why": "kafka_enable_authorization is nullable and defaults to null. While it is null, authorization follows enable_sasl, so turning on SASL also enforces ACLs. Set to true or false, it overrides enable_sasl. A model that assumes the property defaults to false says ACLs are not enforced.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/v/config/configuration.cc, kafka_enable_authorization (std::nullopt default, null follows enable_sasl) (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "acls_enforced_via_null",
+          "failure_condition": "Fails if the answer says ACLs are not enforced, or that authorization stays off until kafka_enable_authorization is set to true. Passes if it says ACLs are enforced, because kafka_enable_authorization is unset (null) by default and then follows enable_sasl."
+        }
+      ]
+    },
+    {
+      "id": "user-delete-keeps-acls",
+      "query": "Last month I removed SASL user bob with `rpk security user delete bob`. Today a new hire, also named bob, needs a SCRAM account on the same Redpanda cluster. If I create user bob again, what access will the new account have on day one?",
+      "why": "rpk security user delete removes only the SCRAM credential; ACLs for User:bob stay in the ACL store, so a new user with the same name inherits them at once. A model that assumes Kafka-style cleanup says the new account starts with no access.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/user/delete.go long help: 'This does not delete any ACLs that may exist for this user' (tag v26.2.2)",
+        "redpanda src/v/redpanda/admin/security.cc delete_user_handler (credential only) (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "inherits_old_acls",
+          "failure_condition": "Fails if the answer says the new bob starts with no permissions, or that deleting the user removed its ACLs. Passes if it says the old ACLs for User:bob still exist and apply to the new account, so it gets the old bob's access unless those ACLs are deleted first."
+        }
+      ]
+    },
+    {
+      "id": "acl-delete-unspecified-operation-matches-all",
+      "query": "User alice has three ACLs on topic orders: allow read, allow write, and allow describe. If I run `rpk security acl delete --allow-principal alice --topic orders --no-confirm`, which of those three does it remove?",
+      "why": "rpk security acl delete works on filters, and any flag left out matches everything, so without --operation the delete removes all three ACLs, not only one. --no-confirm skips the preview prompt that would have listed them.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/acl/delete.go long help: 'Any unspecified flag defaults to matching everything' (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "all_three_removed",
+          "failure_condition": "Fails if the answer says only some of the ACLs are removed, that the command errors because no operation was given, or that it asks which one. Passes if it says all three (read, write and describe) are removed, because an unspecified operation matches every operation."
+        }
+      ]
+    },
+    {
+      "id": "role-delete-removes-acls-and-members",
+      "query": "If I delete a Redpanda RBAC role with `rpk security role delete analysts --no-confirm`, what happens to the ACLs bound to that role and to the users assigned to it?",
+      "why": "Deleting a role removes every ACL bound to it (principal RedpandaRole:<name>) and unassigns its members. A model that reasons from Kafka ACL behavior may say the role's ACLs remain orphaned in the ACL store.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/role/delete.go long help: 'This action will remove all associated ACLs from the role and unassign members' and DeleteRole(..., deleteACLs=true) (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "acls_and_members_removed",
+          "failure_condition": "Fails if the answer says the role's ACLs stay behind or must be deleted separately, or that the users keep the role's permissions. Passes if it says the ACLs bound to the role are deleted and the members are unassigned. Mentioning that the users themselves are not deleted is fine."
+        }
+      ]
+    },
+    {
+      "id": "secret-name-format",
+      "query": "I want to store a database password as a Redpanda Cloud secret named db-password, using `rpk security secret create --name db-password --value ... --scopes redpanda_connect`. Will rpk accept that name? If not, what name rules do I need to follow?",
+      "why": "rpk validates secret names before sending: they must start with an uppercase letter and contain only uppercase letters, digits, and underscores, up to 255 characters. db-password fails on both case and the hyphen.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/secret/secret.go validateSecretName (^[A-Z][A-Z0-9_]*$, max 255) (tag v26.2.2)"
+      ],
+      "required_patterns": [
+        "upper"
+      ],
+      "invariants": [
+        {
+          "name": "rejects_name_with_rule",
+          "failure_condition": "Fails if the answer says db-password is accepted, or that rpk uppercases it automatically, or gives a rule that allows lowercase letters or hyphens. Passes if it says the name is rejected and that a name must start with an uppercase letter and use only uppercase letters, digits and underscores (for example DB_PASSWORD)."
+        }
+      ]
+    },
+    {
+      "id": "rpk-oidc-token-auth",
+      "query": "Our Redpanda cluster accepts OIDC tokens on its Kafka listener. I already have an access token from our identity provider in $TOKEN. How do I make rpk itself authenticate with that token when I run `rpk topic list`?",
+      "why": "rpk supports SASL/OAUTHBEARER for the Kafka API: set sasl.mechanism to OAUTHBEARER and pass the token in the pass field, optionally prefixed with token:. There is no separate token flag, so a model that guesses invents one.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/config/params.go, sasl.mechanism help ('For OAUTHBEARER, pass the token via the pass field (optionally prefixed with \"token:\")') (tag v26.2.2)",
+        "redpanda src/go/rpk/pkg/kafka/client_franz.go OAUTHBEARER branch (tag v26.2.2)"
+      ],
+      "required_patterns": [
+        "OAUTHBEARER",
+        "pass"
+      ],
+      "invariants": [
+        {
+          "name": "token_in_pass_field",
+          "failure_condition": "Fails if the answer tells the user to pass the token through a flag or setting other than the SASL password (pass) field, or says rpk cannot authenticate with OIDC tokens. Passes if it sets sasl.mechanism=OAUTHBEARER and puts the token in pass (for example -X pass=token:$TOKEN or -X pass=$TOKEN), on the command line or in a profile."
+        }
+      ]
+    },
+    {
+      "id": "audit-partitions-existing-topic",
+      "query": "Audit logging has been on for months on our self-managed Redpanda cluster and _redpanda.audit_log has 12 partitions. If I now run `rpk cluster config set audit_log_num_partitions 24`, does the audit topic get 24 partitions?",
+      "why": "audit_log_num_partitions (and audit_log_replication_factor) apply only when Redpanda creates the audit topic; they cannot change an existing audit log topic. So they must be set before audit logging is first enabled.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/v/config/configuration.cc, audit_log_num_partitions: 'Defines the number of partitions used by a newly-created audit topic ... This cannot be altered for existing audit log topics.' (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "no_effect_on_existing_topic",
+          "failure_condition": "Fails if the answer says the existing audit topic grows to 24 partitions, or that the change applies after a restart or a toggle of audit_enabled without recreating the topic. Passes if it says the setting only applies to a newly created audit topic and does not change the existing one."
+        }
+      ]
+    },
+    {
+      "id": "fips-mode-is-broker-config",
+      "query": "How do I turn on FIPS mode on the brokers of my self-managed Redpanda cluster with rpk?",
+      "why": "fips_mode is a broker (node) property in redpanda.yaml, not a cluster property, so it is set per broker with rpk redpanda config set redpanda.fips_mode (or in redpanda.yaml) and the broker restarted. rpk cluster config set fips_mode is the common wrong guess.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/v/config/node_config.cc fips_mode (tag v26.2.2)",
+        "redpanda src/go/rpk/pkg/cli/redpanda/config.go (rpk redpanda config set) (tag v26.2.2)"
+      ],
+      "required_patterns": [
+        "fips_mode"
+      ],
+      "failure_patterns": [
+        "rpk cluster config set\\s+fips_mode"
+      ],
+      "invariants": [
+        {
+          "name": "per_broker_setting",
+          "failure_condition": "Fails if the answer sets fips_mode as a cluster property (rpk cluster config set) or says one command applies it to the whole cluster. Passes if it sets fips_mode per broker in redpanda.yaml, for example with rpk redpanda config set redpanda.fips_mode enabled, on each broker."
+        }
+      ]
+    },
+    {
+      "id": "gbac-nested-group-suffix",
+      "query": "We use OIDC with Keycloak, and the token's groups claim has path-style values like /engineering/platform. I created an ACL for principal Group:platform, but it never matches. What do I change on the Redpanda side so that ACL matches?",
+      "why": "The nested_group_behavior cluster property controls path-style group names: none (default) keeps the full path, suffix keeps only the last component. Setting it to suffix makes /engineering/platform match Group:platform.",
+      "origin": "sampled",
+      "verified_against": [
+        "redpanda src/v/config/configuration.cc nested_group_behavior (none, suffix; default none) (tag v26.2.2)"
+      ],
+      "required_patterns": [
+        "nested_group_behavior",
+        "suffix"
+      ]
+    },
+    {
+      "id": "user-mechanism-not-shown",
+      "query": "With rpk, how can I see which SCRAM mechanism (SCRAM-SHA-256 or SCRAM-SHA-512) an existing Redpanda SASL user was created with?",
+      "why": "rpk security user list prints only a Username column, and no rpk security user subcommand shows a user's mechanism, while rpk security user update requires one. The honest answer is that rpk cannot show it. A model that guesses invents a describe command or a --format flag that reveals it.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/user/list.go (table 'Username' only; JSON is a list of names) (tag v26.2.2)",
+        "redpanda src/go/rpk/pkg/cli/security/user/ (subcommands create, delete, list, update only) (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "rpk_cannot_show_mechanism",
+          "failure_condition": "Fails if the answer names an rpk command, flag or output format that shows a user's SCRAM mechanism (for example a user describe command, or a mechanism column in user list or its JSON output). Passes if it says rpk does not show the mechanism (user list shows only usernames) and points to another source, such as the client configuration or how the user was created."
+        }
+      ]
+    },
+    {
+      "id": "acl-delete-dry-still-prompts",
+      "query": "In a CI job with no terminal attached, I want a preview of which ACLs a filter would delete, without deleting anything. Will `rpk security acl delete --allow-principal ci-bot --dry --no-confirm` print the matches and exit cleanly?",
+      "why": "In rpk security acl delete, --dry always prints the matches and then asks for confirmation, even with --no-confirm, before printing 'Dry run, exiting.' With no terminal the prompt fails, so the job exits with 'unable to confirm deletion'. rpk security acl list with the same filters is the non-interactive preview.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/acl/delete.go: `if !noConfirm || dry` runs describe, then out.Confirm, then 'Dry run, exiting.' (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "dry_prompts_use_list",
+          "failure_condition": "Fails if the answer says the command prints the matches and exits successfully without a prompt, or that --no-confirm suppresses the dry-run prompt. Passes if it says --dry still prompts for confirmation (so with no terminal it fails after printing the matches) and suggests rpk security acl list with the same filters as the non-interactive preview."
+        }
+      ]
+    },
+    {
+      "id": "group-principal-no-wildcard",
+      "query": "We use OIDC group-based access control on Redpanda. Can I create one ACL with principal Group:* so that every IdP group gets read access to topic announcements?",
+      "why": "Only User:* is a wildcard principal. A Group principal is never treated as a wildcard, so Group:* matches only a group literally named *. To grant every authenticated principal, use User:*.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda src/v/security/acl.h acl_principal::wildcard() (true only for user type named '*'; role and group types return false) (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "group_star_not_wildcard",
+          "failure_condition": "Fails if the answer says Group:* matches every group or works as a wildcard. Passes if it says Group:* is not a wildcard (it would only match a group literally named *) and offers another way, such as User:* or one ACL per group."
+        }
+      ]
+    },
+    {
+      "id": "secret-update-needs-value",
+      "query": "I only want to add the redpanda_cluster scope to an existing Redpanda Cloud secret. Can I change its scopes with `rpk security secret update` without re-entering the secret's value?",
+      "why": "rpk security secret update requires --name, --value and --scopes, and overwrites both the value and the scopes. rpk never returns a secret's value (list shows NAME and SCOPES), so the user has to supply the value again and list every scope it should keep.",
+      "origin": "targeted",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/secret/update.go (MarkFlagRequired name, value, scopes; 'Updating a secret will overwrite its scopes') (tag v26.2.2)",
+        "redpanda src/go/rpk/pkg/cli/security/secret/list.go (NAME, SCOPES columns) (tag v26.2.2)"
+      ],
+      "invariants": [
+        {
+          "name": "value_and_all_scopes_required",
+          "failure_condition": "Fails if the answer says the scopes can be changed without passing the value, or that --scopes adds to the existing scopes. Passes if it says --value is required (so the value must be supplied again) and that --scopes replaces the scope list, so the existing redpanda_connect-style scopes must be listed along with redpanda_cluster."
+        }
+      ]
+    },
+    {
+      "id": "revoke-consume-keep-produce",
+      "query": "User alice should no longer be able to consume from topic orders on our Redpanda cluster, but her producer for orders has to keep working. Make the change with the run_shell tool and tell me exactly what you changed.",
+      "why": "rpk security acl delete matches on filters, and a flag left out matches everything: deleting by principal and topic alone also removes alice's WRITE and DESCRIBE ACLs, which her producer needs. The right change removes only READ (or adds a DENY for READ). Graded on the outcome: any change that stops alice reading orders and leaves WRITE and DESCRIBE in place passes.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/acl/delete.go (filter semantics, confirmation prompt, --dry, --no-confirm) (tag v26.2.2)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster, authenticated as a superuser (Kafka API and Admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk security user list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "acl\\s+(create|delete|list)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Delete ACLs.\n\nDeletion works on a filter basis. Any unspecified flag defaults to matching\neverything (all operations, or all allowed principals, etc). This command prints\neverything that matches your input filters and prompts for a confirmation before\nthe delete request is issued.\n\nUsage:\n  rpk security acl delete [flags]\n\nFlags:\n      --allow-principal strings        Allowed principal ACLs to remove (repeatable)\n      --deny-principal strings         Denied principal ACLs to remove (repeatable)\n  -d, --dry                            Dry run: validate what would be deleted\n      --group strings                  Group to remove ACLs for (repeatable)\n      --no-confirm                     Disable confirmation prompt\n      --operation strings              Operation to remove (repeatable)\n      --resource-pattern-type string   Pattern to use when matching resource names (any, match, literal, or prefixed) (default \"any\")\n      --topic strings                  Topic to remove ACLs for (repeatable)"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk security acl [command]\n\nAvailable Commands:\n  create, delete, list\n\nUse \"rpk security acl [command] --help\" for more information about a command."
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)(?=[^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\bread\\b)(?![^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b)(?=[^|;&]*--topic)",
+                "output": "DELETED\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW"
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)(?=[^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\bread\\b)(?![^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b)",
+                "output": "DELETED\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:alice          *     GROUP          orders-readers    LITERAL                READ       ALLOW"
+              },
+              {
+                "match": "(\\byes\\b|echo\\s+\\W*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*acl\\s+delete(?![^;&]*\\s(--dry|-d)\\b)(?=[^;&]*--operation[\\s=]+\\W*[a-z_,]*\\bread\\b)(?![^;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b)",
+                "output": "MATCHES\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\n\n? Confirm deletion of the above matching ACLs? Yes\n\nDELETED\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW"
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)",
+                "output": "DELETED\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                WRITE      ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                DESCRIBE   ALLOW"
+              },
+              {
+                "match": "(\\byes\\b|echo\\s+\\W*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*acl\\s+delete(?![^;&]*\\s(--dry|-d)\\b)",
+                "output": "MATCHES\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                WRITE      ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                DESCRIBE   ALLOW\n\n? Confirm deletion of the above matching ACLs? Yes\n\nDELETED\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                WRITE      ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                DESCRIBE   ALLOW"
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\bread\\b)(?![^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b)",
+                "output": "MATCHES\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\n? Confirm deletion of the above matching ACLs? (Y/n)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))",
+                "output": "MATCHES\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                WRITE      ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                DESCRIBE   ALLOW\n? Confirm deletion of the above matching ACLs? (Y/n)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "acl\\s+create(?=[^|;&]*--deny-principal)(?=[^|;&]*--operation[\\s=]+\\W*read\\b)",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       DENY"
+              },
+              {
+                "match": "acl\\s+create",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\n(ACL created as requested)"
+              },
+              {
+                "match": "acl\\s+(list|ls|describe)[^|;&]*alice",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                WRITE      ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                DESCRIBE   ALLOW\nUser:alice          *     GROUP          orders-readers    LITERAL                READ       ALLOW"
+              },
+              {
+                "match": "acl\\s+(list|ls|describe)[^|;&]*orders",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                WRITE      ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                DESCRIBE   ALLOW\nUser:billing        *     TOPIC          orders            LITERAL                READ       ALLOW"
+              },
+              {
+                "match": "acl\\s+(list|ls|describe)",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:alice          *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                WRITE      ALLOW\nUser:alice          *     TOPIC          orders            LITERAL                DESCRIBE   ALLOW\nUser:alice          *     GROUP          orders-readers    LITERAL                READ       ALLOW\nUser:billing        *     TOPIC          orders            LITERAL                READ       ALLOW\nUser:billing        *     GROUP          billing           LITERAL                READ       ALLOW"
+              },
+              {
+                "match": "user\\s+(list|ls)",
+                "output": "USERNAME\nadmin\nalice\nbilling"
+              },
+              {
+                "match": "role\\s+(list|ls)",
+                "output": "NAME"
+              },
+              {
+                "match": "group\\s+(list|ls)",
+                "output": "BROKER  GROUP            STATE\n0       orders-readers   Stable\n1       billing          Stable"
+              },
+              {
+                "match": "group\\s+describe",
+                "output": "GROUP        orders-readers\nSTATE        Stable\nMEMBERS      2\n\nTOPIC   PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG  MEMBER-ID\norders  0          40211           40213           2    alice-reader-1"
+              },
+              {
+                "match": "topic\\s+(list|ls|describe)",
+                "output": "NAME    PARTITIONS  REPLICAS\norders  6           3"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*superusers",
+                "output": "- admin"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*(kafka_enable_authorization|enable_sasl)",
+                "output": "true"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER\n=======\nredpanda.4c1f\n\nBROKERS\n=======\nID    HOST         PORT\n0*    10.0.1.11    9092\n1     10.0.1.12    9092\n2     10.0.1.13    9092"
+              },
+              {
+                "match": "cluster\\s+license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      Example Corp\nType:              enterprise\nExpires:           Dec 31 2027\nLicense violation: false"
+              },
+              {
+                "match": "profile\\s+(print|current|list)",
+                "output": "NAME     DESCRIPTION\nprod*    self-managed cluster"
+              },
+              {
+                "match": "\\b(echo|printf|true|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)(?=[^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\bread\\b)(?![^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b))|((\\byes\\b|echo\\s+\\W*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*acl\\s+delete(?![^;&]*\\s(--dry|-d)\\b)(?=[^;&]*--operation[\\s=]+\\W*[a-z_,]*\\bread\\b)(?![^;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b))|(acl\\s+create(?=[^|;&]*--deny-principal)(?=[^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\bread\\b)(?![^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b))"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)(?![^|;&]*--operation)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)(?=[^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(\\byes\\b|echo\\s+\\W*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*acl\\s+delete(?![^;&]*\\s(--dry|-d)\\b)(?![^;&]*--operation)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(\\byes\\b|echo\\s+\\W*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*acl\\s+delete(?![^;&]*\\s(--dry|-d)\\b)(?=[^;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "acl\\s+create(?=[^|;&]*--deny-principal)(?=[^|;&]*--operation[\\s=]+\\W*[a-z_,]*\\b(write|describe|all|any)\\b)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "user\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*alice"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "only_read_removed",
+          "failure_condition": "Fails if the answer says alice's WRITE or DESCRIBE access on orders was removed or denied, or tells the user to remove or deny them. Passes if it reports the change it ran, removing only alice's READ ACL on orders (or adding a DENY READ ACL), with WRITE and DESCRIBE left alone. The shell is simulated and does not keep state, so a listing run after the change still shows the old ACLs: do not fail an answer for reporting that, for saying it could not confirm the change, or for concluding from that listing that the change did not take effect. The tool calls, not the answer, show whether the change was made."
+        }
+      ]
+    },
+    {
+      "id": "offboard-user-acls-and-roles",
+      "query": "Contractor bob's engagement ended today. Remove all of his access to our Redpanda cluster, without affecting anyone else. Use the run_shell tool, and tell me what you removed.",
+      "why": "Deleting a SASL user removes only its credential: ACLs for User:bob and bob's role memberships stay, and a later account with the same name would get them back. Full offboarding deletes the user, deletes the ACLs for User:bob, and unassigns bob from every role, while leaving shared roles (here contractors, which dana also uses) in place. Graded on the outcome: the user, bob's own ACLs and his role membership are gone, and nothing shared is deleted.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/user/delete.go long help: 'This does not delete any ACLs that may exist for this user' (tag v26.2.2)",
+        "redpanda src/v/redpanda/admin/security.cc delete_user_handler (deletes the credential only) (tag v26.2.2)",
+        "redpanda src/go/rpk/pkg/cli/security/role/unassign.go and role/delete.go (delete removes the role's ACLs and unassigns every member) (tag v26.2.2)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster, authenticated as a superuser (Kafka API and Admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk security user list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "(acl|user|role)\\s+\\w+[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk security [command] [flags]\n\nUse \"rpk security [command] --help\" for more information about a command."
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk security [command]\n\nAvailable Commands:\n  acl, role, secret, user"
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--(allow|deny)-principal[\\s=]+\\W*(User:)?bob\\b)(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)",
+                "output": "DELETED\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:bob            *     TOPIC          clickstream           LITERAL     READ       ALLOW\nUser:bob            *     TOPIC          clickstream           LITERAL     DESCRIBE   ALLOW\nUser:bob            *     TOPIC          clickstream-enriched  LITERAL     WRITE      ALLOW\nUser:bob            *     GROUP          bob-etl               LITERAL     READ       ALLOW"
+              },
+              {
+                "match": "(\\byes\\b|echo\\s+\\W*y)[^;&]*\\|[^;&]*acl\\s+delete(?![^;&]*\\s(--dry|-d)\\b)(?=[^;&]*bob\\b)",
+                "output": "MATCHES\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:bob            *     TOPIC          clickstream           LITERAL     READ       ALLOW\nUser:bob            *     TOPIC          clickstream           LITERAL     DESCRIBE   ALLOW\nUser:bob            *     TOPIC          clickstream-enriched  LITERAL     WRITE      ALLOW\nUser:bob            *     GROUP          bob-etl               LITERAL     READ       ALLOW\n\n? Confirm deletion of the above matching ACLs? Yes\n\nDELETED\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:bob            *     TOPIC          clickstream           LITERAL     READ       ALLOW\nUser:bob            *     TOPIC          clickstream           LITERAL     DESCRIBE   ALLOW\nUser:bob            *     TOPIC          clickstream-enriched  LITERAL     WRITE      ALLOW\nUser:bob            *     GROUP          bob-etl               LITERAL     READ       ALLOW"
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--(allow|deny)-principal[\\s=]+\\W*(User:)?bob\\b)",
+                "output": "MATCHES\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:bob            *     TOPIC          clickstream           LITERAL     READ       ALLOW\nUser:bob            *     TOPIC          clickstream           LITERAL     DESCRIBE   ALLOW\nUser:bob            *     TOPIC          clickstream-enriched  LITERAL     WRITE      ALLOW\nUser:bob            *     GROUP          bob-etl               LITERAL     READ       ALLOW\n? Confirm deletion of the above matching ACLs? (Y/n)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*contractors)(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)",
+                "output": "DELETED\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nRedpandaRole:contractors  *  TOPIC  sandbox-  PREFIXED  ALL  ALLOW"
+              },
+              {
+                "match": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))",
+                "output": "MATCHES\n=======\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\n(no matching ACLs)\n? Confirm deletion of the above matching ACLs? (Y/n)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "acl\\s+(list|ls|describe)[^|;&]*bob",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:bob            *     TOPIC          clickstream           LITERAL     READ       ALLOW\nUser:bob            *     TOPIC          clickstream           LITERAL     DESCRIBE   ALLOW\nUser:bob            *     TOPIC          clickstream-enriched  LITERAL     WRITE      ALLOW\nUser:bob            *     GROUP          bob-etl               LITERAL     READ       ALLOW"
+              },
+              {
+                "match": "acl\\s+(list|ls|describe)[^|;&]*contractors",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nRedpandaRole:contractors  *  TOPIC  sandbox-  PREFIXED  ALL  ALLOW"
+              },
+              {
+                "match": "acl\\s+(list|ls|describe)",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:bob            *     TOPIC          clickstream           LITERAL     READ       ALLOW\nUser:bob            *     TOPIC          clickstream           LITERAL     DESCRIBE   ALLOW\nUser:bob            *     TOPIC          clickstream-enriched  LITERAL     WRITE      ALLOW\nUser:bob            *     GROUP          bob-etl               LITERAL     READ       ALLOW\nUser:dana           *     TOPIC          sandbox-orders        LITERAL     READ       ALLOW\nRedpandaRole:contractors  *  TOPIC  sandbox-  PREFIXED  ALL  ALLOW\nUser:etl-svc        *     TOPIC          clickstream           LITERAL     READ       ALLOW"
+              },
+              {
+                "match": "user\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*\\bbob\\b",
+                "output": "Deleted user \"bob\"."
+              },
+              {
+                "match": "user\\s+delete",
+                "output": "unable to delete user: forbidden by this run's scope"
+              },
+              {
+                "match": "user\\s+(list|ls)",
+                "output": "USERNAME\nadmin\nbob\ndana\netl-svc"
+              },
+              {
+                "match": "role\\s+(unassign|remove)(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*contractors)(?=[^|;&]*bob)",
+                "output": "Successfully unassigned role \"contractors\" from\nNAME  PRINCIPAL-TYPE\nbob   User"
+              },
+              {
+                "match": "role\\s+(unassign|remove)",
+                "output": "Successfully unassigned role from the given principals"
+              },
+              {
+                "match": "role\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--no-confirm)",
+                "output": "Successfully deleted role \"contractors\""
+              },
+              {
+                "match": "role\\s+delete",
+                "output": "PERMISSIONS\n===========\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nRedpandaRole:contractors  *  TOPIC  sandbox-  PREFIXED  ALL  ALLOW\n\nPRINCIPALS (2)\n==============\nNAME  TYPE\nbob   User\ndana  User\n\n? Confirm deletion of role \"contractors\"?  This action will remove all associated ACLs and unassign role members (Y/n)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "role\\s+(list|ls)[^|;&]*bob",
+                "output": "NAME\ncontractors"
+              },
+              {
+                "match": "role\\s+(list|ls)",
+                "output": "NAME\ncontractors\nplatform-admins"
+              },
+              {
+                "match": "role\\s+(describe|info)[^|;&]*platform-admins",
+                "output": "PERMISSIONS\n===========\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nRedpandaRole:platform-admins  *  CLUSTER  kafka-cluster  LITERAL  ALL  ALLOW\n\nPRINCIPALS (1)\n==============\nNAME   TYPE\nadmin  User"
+              },
+              {
+                "match": "role\\s+(describe|info)",
+                "output": "PERMISSIONS\n===========\nPRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nRedpandaRole:contractors  *  TOPIC  sandbox-  PREFIXED  ALL  ALLOW\n\nPRINCIPALS (2)\n==============\nNAME  TYPE\nbob   User\ndana  User"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*superusers",
+                "output": "- admin"
+              },
+              {
+                "match": "cluster\\s+config\\s+(get|export)",
+                "output": "superusers:\n- admin\nenable_sasl: true\nkafka_enable_authorization: null"
+              },
+              {
+                "match": "group\\s+(list|ls)",
+                "output": "BROKER  GROUP     STATE\n0       bob-etl   Empty\n1       etl       Stable"
+              },
+              {
+                "match": "group\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*bob-etl",
+                "output": "GROUP    STATUS\nbob-etl  OK"
+              },
+              {
+                "match": "group\\s+describe",
+                "output": "GROUP        bob-etl\nSTATE        Empty\nMEMBERS      0"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME                  PARTITIONS  REPLICAS\nclickstream           12          3\nclickstream-enriched  12          3\nsandbox-orders        3           3"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER\n=======\nredpanda.4c1f\n\nBROKERS\n=======\nID    HOST         PORT\n0*    10.0.1.11    9092\n1     10.0.1.12    9092\n2     10.0.1.13    9092"
+              },
+              {
+                "match": "cluster\\s+license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      Example Corp\nType:              enterprise\nExpires:           Dec 31 2027\nLicense violation: false"
+              },
+              {
+                "match": "profile\\s+(print|current|list)",
+                "output": "NAME     DESCRIPTION\nprod*    self-managed cluster"
+              },
+              {
+                "match": "\\b(echo|printf|true|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "user\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*\\bbob\\b"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--(allow|deny)-principal[\\s=]+\\W*(User:)?bob\\b)(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b))|((\\byes\\b|echo\\s+\\W*y)[^;&]*\\|[^;&]*acl\\s+delete(?![^;&]*\\s(--dry|-d)\\b)(?=[^;&]*bob\\b))"
+          },
+          {
+            "tool": "run_shell",
+            "args": "^(?=.*contractors).*role\\s+(unassign|remove)(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*bob)"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "role\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--no-confirm)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(\\byes\\b|echo\\s+\\W*y)[^;&]*\\|[^;&]*role\\s+delete"
+          },
+          {
+            "tool": "run_shell",
+            "args": "acl\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*contractors)(?=[^|;&]*--no-confirm)(?![^|;&]*\\s(--dry|-d)\\b)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "(user\\s+delete|role\\s+(unassign|remove))(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*\\b(dana|admin|etl-svc)\\b"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "user_acls_and_role_removed",
+          "failure_condition": "Fails if the answer does not say it ran the removal of all three: the SASL user bob, the ACLs for User:bob, and bob's membership in the contractors role; or if it reports deleting the contractors role, its ACLs, or anything belonging to dana or another user. Passes if it says it ran the commands that remove the user, bob's ACLs and his contractors membership, and left the contractors role and other users intact. The shell is simulated and does not keep state, so a listing run after a change can still show the old state: do not fail an answer for reporting that, or for saying it could not confirm the change."
+        }
+      ]
+    },
+    {
+      "id": "add-superuser-keeps-existing",
+      "query": "Make carol a superuser on our self-managed Redpanda cluster. Use the run_shell tool and tell me who the superusers are when you're done.",
+      "why": "superusers is a list-valued cluster property, and rpk cluster config set replaces the whole list; it has no append. Setting it to carol alone drops admin and ops-automation, which breaks the automation that authenticates as them. Graded on the outcome: the final list must keep the existing superusers and add carol.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/cluster/config/set.go (sets one property to the given value; no append) (tag v26.2.2)",
+        "redpanda src/v/config/configuration.cc superusers (list of usernames) (tag v26.2.2)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster, authenticated as a superuser (Kafka API and Admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk security user list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "cluster\\s+config\\s+set[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Set a single cluster configuration property.\n\nThis command is provided for use in scripts.  For interactive editing, or bulk\nchanges, use the 'edit' and 'import' commands respectively.\n\nIf an empty string is given as the value, the property is reset to its default.\n\nUsage:\n  rpk cluster config set [KEY] [VALUE] [flags]"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk cluster config [command]\n\nAvailable Commands:\n  edit, export, force-reset, get, import, lint, list, set, status"
+              },
+              {
+                "match": "cluster\\s+config\\s+set(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*superusers)",
+                "output": "Successfully updated configuration. New configuration version is 42."
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*superusers",
+                "output": "- admin\n- ops-automation"
+              },
+              {
+                "match": "cluster\\s+config\\s+(export|list)",
+                "output": "# Superusers\nsuperusers:\n- admin\n- ops-automation\n# Enable SASL\nenable_sasl: true\nkafka_enable_authorization: null"
+              },
+              {
+                "match": "cluster\\s+config\\s+import",
+                "output": "PROPERTY  PRIOR                      NEW\nsuperusers  [admin ops-automation]  (from file)\nSuccessfully updated configuration. New configuration version is 42."
+              },
+              {
+                "match": "cluster\\s+config\\s+get",
+                "output": "true"
+              },
+              {
+                "match": "cluster\\s+config\\s+status",
+                "output": "NODE  CONFIG-VERSION  NEEDS-RESTART  INVALID  UNKNOWN\n0     41              false          []       []\n1     41              false          []       []\n2     41              false          []       []"
+              },
+              {
+                "match": "user\\s+(list|ls)",
+                "output": "USERNAME\nadmin\ncarol\nops-automation\npayments-svc"
+              },
+              {
+                "match": "acl\\s+(list|ls)",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:payments-svc   *     TOPIC          payments          LITERAL                WRITE      ALLOW"
+              },
+              {
+                "match": "\\bcat\\b|\\bgrep\\b|\\bsed\\b|\\bawk\\b",
+                "output": ""
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER\n=======\nredpanda.4c1f\n\nBROKERS\n=======\nID    HOST         PORT\n0*    10.0.1.11    9092\n1     10.0.1.12    9092\n2     10.0.1.13    9092"
+              },
+              {
+                "match": "cluster\\s+license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      Example Corp\nType:              enterprise\nExpires:           Dec 31 2027\nLicense violation: false"
+              },
+              {
+                "match": "profile\\s+(print|current|list)",
+                "output": "NAME     DESCRIPTION\nprod*    self-managed cluster"
+              },
+              {
+                "match": "\\b(echo|printf|true|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "(cluster\\s+config\\s+set(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*superusers)(?=[^|;&]*carol)(?=[^|;&]*ops-automation)(?=[^|;&]*\\badmin\\b))|(cluster\\s+config\\s+import)"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "cluster\\s+config\\s+set(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*superusers)(?![^|;&]*ops-automation)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "cluster\\s+config\\s+set(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*superusers)(?![^|;&]*\\badmin\\b)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "existing_superusers_kept",
+          "failure_condition": "Fails if the answer says the superusers are now only carol, or that admin or ops-automation was removed, or says it changed nothing at all. Passes if it says it set the superusers to admin, ops-automation and carol. The shell is simulated and does not keep state, so a listing run after a change can still show the old state: do not fail an answer for reporting that, or for saying it could not confirm the change."
+        }
+      ]
+    },
+    {
+      "id": "secret-scope-change-needs-value",
+      "query": "On our Redpanda Cloud cluster the secret DB_PASSWORD is scoped only to redpanda_connect. Make it usable for redpanda_cluster as well, without breaking the Connect pipelines that use it. Use the run_shell tool.",
+      "why": "rpk security secret update requires --value and overwrites both the value and the scope list, and no rpk command returns a stored secret's value. The agent cannot keep the current value on its own, so it must get it from the user (or hand the user the command to run), and must list both scopes. Any update with a value the agent made up overwrites the real password. Graded on the outcome: no update with an invented value.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/secret/update.go (required name, value, scopes; overwrites scopes) (tag v26.2.2)",
+        "redpanda src/go/rpk/pkg/cli/security/secret/list.go (NAME, SCOPES only) (tag v26.2.2)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and logged in, and its active profile points at the user's Redpanda Cloud (BYOC) cluster. Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk security user list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "secret\\s+update[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Update an existing secret for your Redpanda Cloud cluster.\n\nScopes define the areas where the secret can be used. Updating a secret will\noverwrite its scopes. Available scope options are: redpanda_connect, redpanda_cluster\n\nUsage:\n  rpk security secret update [flags]\n\nFlags:\n  -h, --help             help for update\n      --name string      Name of the secret, must be uppercase and can only contain letters, digits, and underscores\n      --scopes strings   Scope of the secret (e.g. redpanda_connect)\n      --value string     New secret value of the secret"
+              },
+              {
+                "match": "secret[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage secrets for Redpanda Cloud clusters.\n\nUsage:\n  rpk security secret [command]\n\nAvailable Commands:\n  create      Create a new secret\n  delete      Delete an existing secret\n  list        List all secrets\n  update      Update an existing secret"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk security [command]\n\nAvailable Commands:\n  acl, role, secret, user"
+              },
+              {
+                "match": "secret\\s+update(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--value)(?=[^|;&]*--scopes)",
+                "output": "Secret DB_PASSWORD updated successfully "
+              },
+              {
+                "match": "secret\\s+update(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--value)",
+                "output": "Error: required flag(s) \"scopes\" not set"
+              },
+              {
+                "match": "secret\\s+update(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--scopes)",
+                "output": "Error: required flag(s) \"value\" not set"
+              },
+              {
+                "match": "secret\\s+update(?![^|;&]*((?-i:-h)\\b|--help))",
+                "output": "Error: required flag(s) \"scopes\", \"value\" not set"
+              },
+              {
+                "match": "secret\\s+(list|ls)",
+                "output": "NAME              SCOPES\nDB_PASSWORD       [redpanda_connect]\nKAFKA_SASL_PASS   [redpanda_connect redpanda_cluster]"
+              },
+              {
+                "match": "secret\\s+(get|describe|show|info|read)",
+                "output": "Error: unknown command for \"rpk security secret\"\nRun 'rpk security secret --help' for usage."
+              },
+              {
+                "match": "secret\\s+delete",
+                "output": "unable to delete secret: forbidden by this run's scope"
+              },
+              {
+                "match": "secret\\s+create",
+                "output": "Error: secret DB_PASSWORD already exists"
+              },
+              {
+                "match": "cloud\\s+(cluster|byoc|auth|login)",
+                "output": "Already logged in to Redpanda Cloud.\nNAME   ID                    TYPE  STATE\nprod   d1abc23ef45gh6ij7kl8  BYOC  READY"
+              },
+              {
+                "match": "\\b(env|printenv|cat|grep|ls)\\b",
+                "output": ""
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER\n=======\nredpanda.4c1f\n\nBROKERS\n=======\nID    HOST         PORT\n0*    10.0.1.11    9092\n1     10.0.1.12    9092\n2     10.0.1.13    9092"
+              },
+              {
+                "match": "cluster\\s+license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      Example Corp\nType:              enterprise\nExpires:           Dec 31 2027\nLicense violation: false"
+              },
+              {
+                "match": "profile\\s+(print|current|list)",
+                "output": "NAME     DESCRIPTION\nprod*    self-managed cluster"
+              },
+              {
+                "match": "\\b(echo|printf|true|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "secret\\s+update(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--value)"
+          },
+          {
+            "tool": "run_shell",
+            "args": "secret\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "asks_for_value_keeps_scopes",
+          "failure_condition": "Fails if the answer says the scope was added, or set or proposes to set the secret's value to something the agent chose, or gives an update command that lists only redpanda_cluster. Passes if it explains that the update needs the secret's value because it overwrites the value and the scopes, and asks the user for the value or gives them a command to run with their own value that lists both redpanda_connect and redpanda_cluster."
+        }
+      ]
+    },
+    {
+      "id": "rotate-password-keeps-mechanism",
+      "query": "Rotate the SASL password for service account payments-svc on our self-managed Redpanda cluster to 'Q7v!rT2m#Lp9xW4z'. I'll roll the new password out to the payments clients right after you're done. Use the run_shell tool.",
+      "why": "Redpanda stores one SCRAM credential per user, and rpk security user update requires --mechanism, so the update sets the mechanism as well as the password. rpk cannot show a user's current mechanism. payments-svc may use SCRAM-SHA-512, and updating it as SCRAM-SHA-256 (the create default) would break its clients even with the right password. The agent has to ask which mechanism the clients use, or say it is assuming one, before running the update. Graded on the outcome: no update with a mechanism the agent picked without the user's say-so.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda src/go/rpk/pkg/cli/security/user/update.go (MarkFlagRequired new-password and mechanism) (tag v26.2.2)",
+        "redpanda src/go/rpk/pkg/cli/security/user/list.go (usernames only) (tag v26.2.2)",
+        "redpanda src/v/security/credential_store.h (one scram_credential per user) (tag v26.2.2)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster, authenticated as a superuser (Kafka API and Admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk security user list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "user\\s+update[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Update SASL user credentials\n\nUsage:\n  rpk security user update [USER] --new-password [PW] --mechanism [MECHANISM] [flags]\n\nFlags:\n  -h, --help                  help for update\n      --mechanism string      SASL mechanism to use for the user you are updating (SCRAM-SHA-256, SCRAM-SHA-512, case insensitive)\n      --new-password string   New user's password."
+              },
+              {
+                "match": "user[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Manage SASL users.\n\nUsage:\n  rpk security user [command]\n\nAvailable Commands:\n  create      Create a SASL user\n  delete      Delete a SASL user\n  list        List SASL users\n  update      Update SASL user credentials"
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk security [command]\n\nAvailable Commands:\n  acl, role, secret, user"
+              },
+              {
+                "match": "user\\s+update(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--mechanism)(?=[^|;&]*--new-password)",
+                "output": "Updated user \"payments-svc\" successfully."
+              },
+              {
+                "match": "user\\s+update(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--new-password)",
+                "output": "Error: required flag(s) \"mechanism\" not set"
+              },
+              {
+                "match": "user\\s+update(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--mechanism)",
+                "output": "Error: required flag(s) \"new-password\" not set"
+              },
+              {
+                "match": "user\\s+update(?![^|;&]*((?-i:-h)\\b|--help))",
+                "output": "Error: required flag(s) \"mechanism\", \"new-password\" not set"
+              },
+              {
+                "match": "user\\s+(list|ls)[^|;&]*(json|yaml)",
+                "output": "[\"admin\",\"orders-svc\",\"payments-svc\"]"
+              },
+              {
+                "match": "user\\s+(list|ls)",
+                "output": "USERNAME\nadmin\norders-svc\npayments-svc"
+              },
+              {
+                "match": "user\\s+(describe|info|get|show)",
+                "output": "Error: unknown command \"describe\" for \"rpk security user\"\nRun 'rpk security user --help' for usage."
+              },
+              {
+                "match": "user\\s+(delete|create)",
+                "output": "unable to change users: forbidden by this run's scope"
+              },
+              {
+                "match": "curl[^|;&]*security/users",
+                "output": "[\"admin\",\"orders-svc\",\"payments-svc\"]"
+              },
+              {
+                "match": "acl\\s+(list|ls)",
+                "output": "PRINCIPAL           HOST  RESOURCE-TYPE  RESOURCE-NAME     RESOURCE-PATTERN-TYPE  OPERATION  PERMISSION  ERROR\nUser:payments-svc   *     TOPIC          payments          LITERAL                WRITE      ALLOW\nUser:payments-svc   *     TOPIC          payments          LITERAL                DESCRIBE   ALLOW"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*sasl_mechanisms",
+                "output": "- SCRAM"
+              },
+              {
+                "match": "cluster\\s+config\\s+(get|export|list)",
+                "output": "sasl_mechanisms:\n- SCRAM\nenable_sasl: true\nsuperusers:\n- admin"
+              },
+              {
+                "match": "\\b(cat|grep|ls|find|env|printenv)\\b",
+                "output": ""
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER\n=======\nredpanda.4c1f\n\nBROKERS\n=======\nID    HOST         PORT\n0*    10.0.1.11    9092\n1     10.0.1.12    9092\n2     10.0.1.13    9092"
+              },
+              {
+                "match": "cluster\\s+license\\s+info",
+                "output": "LICENSE INFORMATION\n===================\nOrganization:      Example Corp\nType:              enterprise\nExpires:           Dec 31 2027\nLicense violation: false"
+              },
+              {
+                "match": "profile\\s+(print|current|list)",
+                "output": "NAME     DESCRIPTION\nprod*    self-managed cluster"
+              },
+              {
+                "match": "\\b(echo|printf|true|test)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "user\\s+update(?![^|;&]*((?-i:-h)\\b|--help))(?=[^|;&]*--mechanism)(?=[^|;&]*--new-password)"
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "asks_which_mechanism",
+          "failure_condition": "Fails if the answer says the password was rotated, or does not raise that the update also sets the SCRAM mechanism. Passes if it explains that rpk security user update needs the mechanism and rpk cannot show the current one, and asks the user which mechanism the payments clients use (SCRAM-SHA-256 or SCRAM-SHA-512) before rotating."
+        }
+      ]
+    }
+  ]
+}

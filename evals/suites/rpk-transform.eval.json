@@ -1,0 +1,827 @@
+{
+  "name": "rpk-transform skill vs docs",
+  "skill": "rpk-transform",
+  "description": "Measures whether the rpk-transform skill adds value over the published Data Transforms docs and rpk transform reference. Sampled and targeted fact cases were picked from the full rpk-transform skill, before it was converted to the thin format, and from the public redpanda source at v26.2.2, without regard to the docs. The thin skill no longer carries those facts, so a thin skill-arm result on a sampled or targeted case is not a measure of skill coverage. The behavioral cases grade the outcome of tasks run against a mocked rpk: reprocessing history after a fix, redeploying without dropping deploy-time settings, and stopping a transform temporarily without losing its offsets.",
+  "test_cases": [
+    {
+      "id": "serverless-transform-support",
+      "origin": "sampled",
+      "query": "I want to run a Redpanda data transform on my Redpanda Cloud Serverless cluster. How do I deploy it there?",
+      "why": "Data transforms run on BYOC and Dedicated clusters, not on Serverless; rpk transform commands exit on a Serverless profile. A model may assume transforms work on every Cloud tier.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/transform/deploy.go (config.CheckExitServerlessAdmin before deploy)"
+      ],
+      "invariants": [
+        {
+          "name": "says_not_on_serverless",
+          "failure_condition": "Fails if the answer gives deploy steps as though transforms run on a Serverless cluster. Passes if it says data transforms are not supported on Serverless (and may point to BYOC or Dedicated instead)."
+        }
+      ]
+    },
+    {
+      "id": "tinygo-goroutines-tradeoff",
+      "origin": "sampled",
+      "query": "rpk transform init asks me to pick tinygo-no-goroutines or tinygo-with-goroutines for a Go transform. What's the practical difference, and which one should I pick for a simple filter?",
+      "why": "With goroutines, rpk builds with TinyGo's asyncify scheduler, which makes the code about 10 times slower in Redpanda's benchmarks; without goroutines it uses no scheduler. A model may not know the size of the cost.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/transform/build.go (-scheduler asyncify vs none; comment on 10x slower)"
+      ],
+      "invariants": [
+        {
+          "name": "no_goroutines_is_faster",
+          "failure_condition": "Fails if the answer says the two perform the same, or recommends tinygo-with-goroutines for a simple filter. Passes if it says the goroutines variant is markedly slower (asyncify scheduler) and recommends tinygo-no-goroutines unless the code needs goroutines or channels."
+        }
+      ]
+    },
+    {
+      "id": "from-offset-in-transform-yaml",
+      "origin": "sampled",
+      "query": "Can I set from-offset in transform.yaml so that rpk transform deploy starts my new transform from the beginning of the input topic, or does it have to be a flag?",
+      "why": "rpk reads name, description, input-topic, output-topics, language, env, and compression from transform.yaml; it ignores a from-offset key, so the start position must be passed as --from-offset on the deploy command.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/transform/project/project.go (UnmarshalConfig reads no from-offset key)"
+      ],
+      "required_patterns": [
+        "--from-offset"
+      ],
+      "invariants": [
+        {
+          "name": "yaml_key_ignored",
+          "failure_condition": "Fails if the answer says a from-offset key in transform.yaml is honored. Passes if it says the start position has to be passed with the --from-offset flag at deploy time (a from-offset key in transform.yaml is not read)."
+        }
+      ]
+    },
+    {
+      "id": "builtin-topic-env-vars",
+      "origin": "sampled",
+      "query": "Inside a Go data transform, how can my code learn the name of its input topic and its first output topic at runtime, without hardcoding them?",
+      "why": "Redpanda sets REDPANDA_INPUT_TOPIC and REDPANDA_OUTPUT_TOPIC_<n> (zero-based) in the transform's environment.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/wasm/wasmtime.cc (env REDPANDA_INPUT_TOPIC, REDPANDA_OUTPUT_TOPIC_{i})"
+      ],
+      "required_patterns": [
+        "REDPANDA_INPUT_TOPIC",
+        "REDPANDA_OUTPUT_TOPIC_0"
+      ]
+    },
+    {
+      "id": "transform-env-var-limits",
+      "origin": "targeted",
+      "query": "What limits does Redpanda put on the environment variables I pass to a data transform with --var?",
+      "why": "The broker rejects a deploy with more than 128 variables, a key longer than 128 bytes, a key starting with REDPANDA_, an empty value, or a value longer than 2 KiB. The 2 KiB limit is per value, not a combined total.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/cluster/plugin_frontend.cc (max_env_vars 128, max_key_size 128, REDPANDA_ prefix, empty value, max_value_size 2_KiB)"
+      ],
+      "required_patterns": [
+        "REDPANDA_",
+        "128"
+      ],
+      "invariants": [
+        {
+          "name": "value_limit_per_value",
+          "failure_condition": "Fails if the answer says the values have a combined or total size limit, or gives no limit on value size. Passes if it says each value is limited to 2 KiB (2048 bytes)."
+        }
+      ]
+    },
+    {
+      "id": "transform-stdout-stderr-logs",
+      "origin": "sampled",
+      "query": "My Redpanda data transform prints with fmt.Println and also writes some lines to os.Stderr. Where do those lines end up, and how can I tell which stream a line came from?",
+      "why": "Transform stdout and stderr go to the internal topic _redpanda.transform_logs, read with rpk transform logs; stdout lines are logged at INFO and stderr lines at WARN.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/wasm/wasi.cc (fd_write: fd 1 logs at info, fd 2 at warn)",
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/transform/logs.go (_redpanda.transform_logs)"
+      ],
+      "required_patterns": [
+        "_redpanda\\.transform_logs"
+      ],
+      "invariants": [
+        {
+          "name": "levels_by_stream",
+          "failure_condition": "Fails if the answer does not say how to tell the streams apart, or maps them wrongly. Passes if it says stdout lines are logged at INFO and stderr lines at WARN (for example visible with rpk transform logs --format=wide or json)."
+        }
+      ]
+    },
+    {
+      "id": "transform-error-rate-promql",
+      "origin": "sampled",
+      "query": "Give me a PromQL query for the per-second rate of execution errors of the Redpanda data transform named enricher.",
+      "why": "Transform metrics on the public endpoint carry the transform's name in the function_name label; the error counter is redpanda_transform_execution_errors.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/wasm/transform_probe.cc (group transform_execution, counter errors, label function_name)"
+      ],
+      "required_patterns": [
+        "redpanda_transform_execution_errors",
+        "function_name\\s*=\\s*\"enricher\""
+      ],
+      "failure_patterns": [
+        "transform_name\\s*=\\s*\"enricher\""
+      ]
+    },
+    {
+      "id": "js-sdk-specific-output-topic",
+      "origin": "sampled",
+      "query": "My JavaScript Redpanda data transform is deployed with two output topics. How do I send a particular record to the second output topic?",
+      "why": "The JavaScript SDK's RecordWriter.write takes only a record and writes to the first output topic; choosing an output topic per record is supported in the Go and Rust SDKs only.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/transform-sdk/js/module/index.d.ts (write(record: Record): void)"
+      ],
+      "invariants": [
+        {
+          "name": "js_cannot_route",
+          "failure_condition": "Fails if the answer gives a JavaScript API call that writes a record to a chosen output topic. Passes if it says the JavaScript SDK cannot pick the output topic per record (writes go to the first output topic) and suggests Go or Rust, or a separate transform, instead."
+        }
+      ]
+    },
+    {
+      "id": "transform-license-requirement",
+      "origin": "sampled",
+      "query": "Do I need a Redpanda Enterprise license to deploy data transforms on a self-managed cluster?",
+      "why": "Data transforms are not in the broker's list of license-required features; Iceberg, Tiered Storage, Schema ID Validation and others on the transform's topics are.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/features/enterprise_features.h (license_required_feature has no transforms entry)"
+      ],
+      "invariants": [
+        {
+          "name": "no_license_needed",
+          "failure_condition": "Fails if the answer says data transforms themselves need an Enterprise license. Passes if it says data transforms do not need an Enterprise license (features used on the topics, such as Iceberg or Tiered Storage, may)."
+        }
+      ]
+    },
+    {
+      "id": "max-output-topics",
+      "origin": "sampled",
+      "query": "What's the largest number of output topics one Redpanda data transform can write to?",
+      "why": "The broker rejects a transform with more than 8 output topics, and duplicate output topics.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/cluster/plugin_frontend.cc (max_output_topics = 8)"
+      ],
+      "required_patterns": [
+        "\\b8\\b|eight"
+      ]
+    },
+    {
+      "id": "redeploy-cannot-change-topics",
+      "origin": "targeted",
+      "query": "Our transform router is deployed with one output topic. If I add a second topic under output-topics in transform.yaml and run rpk transform deploy again, will the running transform start writing to both?",
+      "why": "A deploy of an existing transform name may change only the Wasm binary, the environment, and the offset pointer. A different input topic or output topic list is rejected as an invalid update, so changing topics needs a delete and a fresh deploy.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/cluster/plugin_frontend.cc (existing transform: input_topic or output_topics differ -> errc::transform_invalid_update)"
+      ],
+      "invariants": [
+        {
+          "name": "topics_fixed_on_update",
+          "failure_condition": "Fails if the answer says the redeploy adds the second output topic to the running transform. Passes if it says a redeploy cannot change an existing transform's input or output topics (the deploy is rejected), and that the transform must be deleted and deployed again (or deployed under a new name)."
+        }
+      ]
+    },
+    {
+      "id": "transform-count-limit",
+      "origin": "targeted",
+      "query": "Deploying a new data transform to our self-managed Redpanda cluster now fails because the cluster has too many transforms. What sets that limit, and how do I raise it?",
+      "why": "The cluster accepts at most data_transforms_per_core_memory_reservation divided by data_transforms_per_function_memory_limit transforms. Raising the reservation or lowering the per-function limit raises the count; both need a restart.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/cluster/plugin_frontend.cc (max_transforms = per_core_memory_reservation / per_function_memory_limit; errc::transform_count_limit_exceeded)",
+        "redpanda-data/redpanda v26.2.2 src/v/config/configuration.cc (both properties needs_restart::yes)"
+      ],
+      "required_patterns": [
+        "data_transforms_per_core_memory_reservation",
+        "data_transforms_per_function_memory_limit"
+      ],
+      "invariants": [
+        {
+          "name": "limit_is_ratio",
+          "failure_condition": "Fails if the answer names a different setting as the limit or a fixed count. Passes if it says the limit is the per-core memory reservation divided by the per-function memory limit, and that raising the reservation or lowering the per-function limit allows more transforms."
+        }
+      ]
+    },
+    {
+      "id": "transform-lag-metric-name",
+      "origin": "targeted",
+      "query": "What's the exact Prometheus metric name for a Redpanda data transform's lag (input records not yet processed) on the public metrics endpoint, and which labels does it carry?",
+      "why": "The broker registers the lag gauge as lag in the transform group, so the public name is redpanda_transform_lag, with labels function_name and output_topic (one series per output topic).",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/transform/probe.cc (public metrics group transform; gauge lag; labels function_name, output_topic)"
+      ],
+      "required_patterns": [
+        "redpanda_transform_lag\\b",
+        "function_name",
+        "output_topic"
+      ],
+      "failure_patterns": [
+        "redpanda_transform_processor_lag"
+      ]
+    },
+    {
+      "id": "transform-output-cycle",
+      "origin": "targeted",
+      "query": "Can a Redpanda data transform write back into its own input topic, or into a topic that another transform reads and writes back into the first transform's input? I want to re-tag records in place.",
+      "why": "The broker rejects a deploy whose output topics lead back to its input topic, directly or through other transforms.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/cluster/plugin_frontend.cc (would_cause_cycle -> errc::transform_invalid_create)"
+      ],
+      "invariants": [
+        {
+          "name": "cycles_rejected",
+          "failure_condition": "Fails if the answer says either setup can be deployed. Passes if it says Redpanda rejects a transform whose output leads back to its own input, directly or through a chain of transforms."
+        }
+      ]
+    },
+    {
+      "id": "enable-transforms-restart",
+      "origin": "targeted",
+      "query": "On my self-managed Redpanda cluster I just ran rpk cluster config set data_transforms_enabled true. Can I deploy a transform right away?",
+      "why": "data_transforms_enabled needs a restart on self-managed clusters: setting it records the change, and the brokers must be restarted before transforms can be deployed.",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/v/config/configuration.cc (data_transforms_enabled needs_restart::yes)"
+      ],
+      "invariants": [
+        {
+          "name": "restart_required",
+          "failure_condition": "Fails if the answer says transforms can be deployed right away with no restart. Passes if it says the brokers must be restarted (for example a rolling restart) before the setting takes effect."
+        }
+      ]
+    },
+    {
+      "id": "reprocess-existing-records-after-fix",
+      "query": "Our data transform order-enricher has been running on topic orders for a month, and I just fixed a bug in it. The project is in the current directory and I've already run rpk transform build. Roll out the fix, and run every record currently in orders through the fixed version so the output topic gets corrected records. You can run commands with the run_shell tool.",
+      "why": "rpk transform deploy --from-offset is honored only on the first deploy of a transform name. Redeploying the same name resumes from the committed offset, which the broker keeps until the transform is deleted, and the deploy reports success either way. To reprocess, the transform must be deleted (or deployed under a new name) and then deployed with --from-offset +0. An agent that redeploys with --from-offset +0 alone tells the user the history is being reprocessed when it is not. Graded on the outcome: any route that really starts the fixed code from the beginning of orders passes, and so does stopping to ask before the delete.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/transform/deploy.go (--from-offset help: honored only on the first deploy; state kept until the transform is deleted)",
+        "redpanda-data/redpanda v26.2.2 src/v/transform/transform_processor.cc (load_latest_committed uses offset_options only when no offset is committed)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation, in the transform project's directory, and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster (admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk transform list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "rpk\\s+(transform|wasm)\\s+((?-i:-h)\\b|--help)",
+                "output": "Develop, deploy and manage Redpanda data transforms\n\nUsage:\n  rpk transform [command]\n\nAliases:\n  transform, wasm, transfrom\n\nAvailable Commands:\n  build       Build a transform\n  delete      Delete a data transform\n  deploy      Deploy a transform\n  init        Initialize a transform\n  list        List data transforms\n  logs        View logs for a transform\n  pause       Pause a data transform\n  resume      Resume a data transform\n\nUse \"rpk transform [command] --help\" for more information about a command."
+              },
+              {
+                "match": "transform\\s+deploy[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Deploy a transform.\n\nWhen run in the same directory as a transform.yaml, this reads the configuration\nfile, then looks for a .wasm file with the same name as your project. If the\ninput and output topics are specified in the configuration file, those are used.\nOtherwise, the topics can be specified on the command line using the\n--input-topic and --output-topic flags.\n\nTo deploy Wasm files directly without a transform.yaml file:\n\n  rpk transform deploy --file transform.wasm --name myTransform \\\n    --input-topic my-topic-1 \\\n    --output-topic my-topic-2\n    --output-topic my-topic-3\n\nEnvironment variables can be specified for the transform using the --var flag, these\nare separated by an equals for example: --var=KEY=VALUE\n\nThe --var flag can be repeated to specify multiple variables like so:\n\n  rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ\n\nThe --from-offset flag can be used to specify where on the input topic the transform\nshould begin processing. Expressed as:\n\n  - @T - Begin reading records with committed timestamp >= T (UNIX time, ms from epoch)\n  - +N - Begin reading N records from the start of each input partition\n  - -N - Begin reading N records prior to the end of each input partition\n\nNote that the broker will only respect from-offset on the first deploy for a given\ntransform. Re-deploying the transform will cause processing to pick up at the last\ncommitted offset. Recall that this state is maintained until the transform is deleted.\n\nUsage:\n  rpk transform deploy [flags]\n\nFlags:\n      --compression string            Output batch compression type\n      --file string                   The WebAssembly module to deploy\n      --from-offset string            Process an input topic partition from a relative offset; check help text for more information\n  -h, --help                          Help for deploy\n  -i, --input-topic string            The input topic to apply the transform to\n      --name string                   The name of the transform\n  -o, --output-topic strings          The output topic to write the transform results to (repeatable)\n      --var environmentVariable       Specify an environment variable in the form of KEY=VALUE"
+              },
+              {
+                "match": "transform\\s+delete[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Delete a data transform\n\nUsage:\n  rpk transform delete [NAME] [flags]\n\nFlags:\n  -h, --help         Help for delete\n      --no-confirm   Disable confirmation prompt"
+              },
+              {
+                "match": "transform\\s+pause[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Pause a data transform.\n\nThis command suspends execution of the specified transform without removing\nit from the system. In this way, a transform may resume at a later time, with\neach new processor picking up processing from the last committed offset on the\ncorresponding input partition.\n\nSubsequent 'rpk transform list' operations will show transform processors as\n\"inactive\".\n\nTo resume a paused transform, use 'rpk transform resume'.\n\nUsage:\n  rpk transform pause [NAME] [flags]\n\nFlags:\n  -h, --help   Help for pause"
+              },
+              {
+                "match": "transform\\s+resume[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Resume a data transform.\n\nThis command resumes execution of the specified data transform, if it was\npreviously paused. Transform processors are restarted and resume processing\nfrom the last committed offset on the corresponding input partition.\n\nSubsequent 'rpk transform list' operations will show transform processors as\n\"running\".\n\nUsage:\n  rpk transform resume [NAME] [flags]\n\nFlags:\n  -h, --help   Help for resume"
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "List data transforms.\n\nThis command lists all data transforms in a cluster, as well as showing the\nstate of a individual transform processor, such as if it's errored or how many\nrecords are pending to be processed (lag).\n\nThere is a processor assigned to each partition on the input topic, and each\nprocessor is a separate entity that can make progress or fail independently.\n\nThe --detailed flag (-d) opts in to printing extra per-processor information.\n\nUsage:\n  rpk transform list [flags]\n\nAliases:\n  list, ls\n\nFlags:\n  -d, --detailed        Print per-partition information for data transforms\n      --format string   Output format: json,yaml,text,wide,help (default \"text\")\n  -h, --help            Help for list"
+              },
+              {
+                "match": "(transform|wasm)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Develop, deploy and manage Redpanda data transforms\n\nUsage:\n  rpk transform [command]\n\nAliases:\n  transform, wasm, transfrom\n\nAvailable Commands:\n  build       Build a transform\n  delete      Delete a data transform\n  deploy      Deploy a transform\n  init        Initialize a transform\n  list        List data transforms\n  logs        View logs for a transform\n  pause       Pause a data transform\n  resume      Resume a data transform\n\nUse \"rpk transform [command] --help\" for more information about a command."
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk [command]\n\nUse \"rpk [command] --help\" for more information about a command."
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+deploy(?![^|;&]*((?-i:-h)\\b|--help)))",
+                "output": "name: order-enricher\nlanguage: tinygo-no-goroutines\ninput-topic: orders\noutput-topics:\n    - orders-enriched\ntransform \"order-enricher\" deployed."
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+(list|ls)\\b[^|;&]*(json|yaml))",
+                "output": "name: order-enricher\nlanguage: tinygo-no-goroutines\ninput-topic: orders\noutput-topics:\n    - orders-enriched\n[{\"name\":\"order-enricher\",\"input_topic\":\"orders\",\"output_topics\":[\"orders-enriched\"],\"environment\":{},\"running\":\"6 / 6\",\"lag\":0,\"compression\":\"none\"}]"
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+(list|ls)\\b)",
+                "output": "README.md\ngo.mod\ngo.sum\norder-enricher.wasm\ntransform.go\ntransform.yaml\nname: order-enricher\nlanguage: tinygo-no-goroutines\ninput-topic: orders\noutput-topics:\n    - orders-enriched\nNAME            INPUT-TOPIC  OUTPUT-TOPIC     RUNNING  LAG\norder-enricher  orders       orders-enriched  6 / 6    0"
+              },
+              {
+                "match": "(?=.*\\bls\\b)(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)",
+                "output": "README.md\ngo.mod\ngo.sum\norder-enricher.wasm\ntransform.go\ntransform.yaml\nname: order-enricher\nlanguage: tinygo-no-goroutines\ninput-topic: orders\noutput-topics:\n    - orders-enriched\n"
+              },
+              {
+                "match": "(?=.*\\bls\\b)(?=.*transform\\s+(list|ls)\\b)",
+                "output": "README.md\ngo.mod\ngo.sum\norder-enricher.wasm\ntransform.go\ntransform.yaml\nNAME            INPUT-TOPIC  OUTPUT-TOPIC     RUNNING  LAG\norder-enricher  orders       orders-enriched  6 / 6    0"
+              },
+              {
+                "match": "transform\\s+build",
+                "output": "build successful"
+              },
+              {
+                "match": "transform\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^;&]*--no-confirm|(\\byes\\b|echo\\s+['\\\\\\\"]*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*transform\\s+delete",
+                "output": "Delete successful!"
+              },
+              {
+                "match": "transform\\s+delete",
+                "output": "? Confirm deletion of transform \"order-enricher\"? (y/N)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "transform\\s+deploy(?![^|;&]*--name)|transform\\s+deploy[^|;&]*--name[\\s=]*['\\\\\\\"]*order-enricher['\\\\\\\"]*(\\s|$)",
+                "output": "transform \"order-enricher\" deployed."
+              },
+              {
+                "match": "transform\\s+deploy",
+                "output": "transform deployed."
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*(json|yaml)",
+                "output": "[{\"name\":\"order-enricher\",\"input_topic\":\"orders\",\"output_topics\":[\"orders-enriched\"],\"environment\":{},\"running\":\"6 / 6\",\"lag\":0,\"compression\":\"none\"}]"
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*(\\s-d\\b|--detailed)",
+                "output": "order-enricher, orders → orders-enriched\n   PARTITION  NODE  STATUS   LAG\n   0          0     running  0\n   1          1     running  0\n   2          2     running  0\n   3          0     running  0\n   4          1     running  0\n   5          2     running  0"
+              },
+              {
+                "match": "transform\\s+(list|ls)",
+                "output": "NAME            INPUT-TOPIC  OUTPUT-TOPIC     RUNNING  LAG\norder-enricher  orders       orders-enriched  6 / 6    0"
+              },
+              {
+                "match": "transform\\s+logs",
+                "output": "enriched order o-99121 with region eu-west\nenriched order o-99122 with region us-east"
+              },
+              {
+                "match": "\\b(cat|head|less|more)\\b[^|;&]*transform\\.yaml",
+                "output": "name: order-enricher\nlanguage: tinygo-no-goroutines\ninput-topic: orders\noutput-topics:\n    - orders-enriched\n"
+              },
+              {
+                "match": "\\b(cat|head|less|more|sed)\\b[^|;&]*\\.go\\b",
+                "output": "package main\n\nimport (\n\t\"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform\"\n)\n\nfunc main() {\n\ttransform.OnRecordWritten(enrich)\n}\n\nfunc enrich(e transform.WriteEvent, w transform.RecordWriter) error {\n\tr := e.Record()\n\tr.Value = addRegion(r.Value)\n\treturn w.Write(r)\n}\n"
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "README.md\ngo.mod\ngo.sum\norder-enricher.wasm\ntransform.go\ntransform.yaml"
+              },
+              {
+                "match": "\\bgit\\b",
+                "output": "M transform.go"
+              },
+              {
+                "match": "topic\\s+consume",
+                "output": "{\"topic\":\"orders-enriched\",\"value\":\"{\\\"id\\\":\\\"o-99122\\\",\\\"region\\\":\\\"us-east\\\"}\",\"partition\":3,\"offset\":2210487}"
+              },
+              {
+                "match": "topic\\s+(describe|info)[^|;&]*(\\s-p\\b|--print-partitions)",
+                "output": "PARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK\n0          0       4      [0 1 2]   0                 2210311\n1          1       4      [0 1 2]   0                 2209874\n2          2       4      [0 1 2]   0                 2210102\n3          0       4      [0 1 2]   0                 2210488\n4          1       4      [0 1 2]   0                 2209950\n5          2       4      [0 1 2]   0                 2210230"
+              },
+              {
+                "match": "transform\\s+pause",
+                "output": "Transform paused!"
+              },
+              {
+                "match": "transform\\s+resume",
+                "output": "Transform resumed!"
+              },
+              {
+                "match": "topic\\s+(describe|info)",
+                "output": "SUMMARY\n=======\nNAME        orders\nPARTITIONS  6\nREPLICAS    3\n\nCONFIGS\n=======\nKEY             VALUE      SOURCE\ncleanup.policy  delete     DEFAULT_CONFIG\nretention.ms    -1         DYNAMIC_TOPIC_CONFIG"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME             PARTITIONS  REPLICAS\norders           6           3\norders-enriched  6           3"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\bdate\\b[^|;&]*%s",
+                "output": "1762780800"
+              },
+              {
+                "match": "\\bdate\\b",
+                "output": "Mon Nov 10 13:20:00 UTC 2026"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER HEALTH OVERVIEW\n=======================\nHealthy:                          true\nUnhealthy reasons:                []\nNodes down:                       []"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*data_transforms_enabled",
+                "output": "true"
+              },
+              {
+                "match": "\\b(echo|printf|true|pwd)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        {
+          "name": "history_really_reprocessed",
+          "failure_condition": "Background: rpk transform deploy --from-offset is honored only on a transform's first deploy; redeploying an existing transform under the same name resumes from its last committed offset and still reports success. Fails if the answer says or implies the existing records in orders are being (or will be) reprocessed after a same-name redeploy with --from-offset and no delete first, or if it deleted the transform and redeployed without a --from-offset that starts at the beginning of the partitions. Passes if it deleted order-enricher and then deployed the fix with --from-offset +0 (or another position at the start of orders), or deployed the fix under a new name with --from-offset +0 and handled the old transform, or explained that a same-name redeploy keeps the committed offset and asked the user before deleting."
+        }
+      ]
+    },
+    {
+      "id": "redeploy-keeps-deployed-settings",
+      "query": "I changed the masking logic in our pii-masker data transform and rebuilt it; the project is in the current directory. Roll the new build out to the cluster so it replaces the running version. You can run commands with the run_shell tool.",
+      "why": "A redeploy replaces the transform's whole deploy configuration: the environment variables and compression come only from transform.yaml and the flags of that deploy, so anything set with --var or --compression on the earlier deploy is dropped. Here the running transform has MASK_FIELDS set (visible in rpk transform list --format json) but transform.yaml has no env block, and the code reads MASK_FIELDS. A plain rpk transform deploy succeeds and silently stops masking. Graded on the outcome: the rollout passes if the new deploy carries MASK_FIELDS=ssn,card_number,dob, by --var or by adding it to transform.yaml.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/transform/deploy.go (metadata built from transform.yaml merged with this deploy's flags; compression defaults to none)",
+        "redpanda-data/redpanda v26.2.2 src/v/cluster/plugin_frontend.cc (an update of an existing transform may change its environment)",
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/transform/list.go (environment and compression in json and yaml output)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation, in the transform project's directory, and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster (admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk transform list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "rpk\\s+(transform|wasm)\\s+((?-i:-h)\\b|--help)",
+                "output": "Develop, deploy and manage Redpanda data transforms\n\nUsage:\n  rpk transform [command]\n\nAliases:\n  transform, wasm, transfrom\n\nAvailable Commands:\n  build       Build a transform\n  delete      Delete a data transform\n  deploy      Deploy a transform\n  init        Initialize a transform\n  list        List data transforms\n  logs        View logs for a transform\n  pause       Pause a data transform\n  resume      Resume a data transform\n\nUse \"rpk transform [command] --help\" for more information about a command."
+              },
+              {
+                "match": "transform\\s+deploy[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Deploy a transform.\n\nWhen run in the same directory as a transform.yaml, this reads the configuration\nfile, then looks for a .wasm file with the same name as your project. If the\ninput and output topics are specified in the configuration file, those are used.\nOtherwise, the topics can be specified on the command line using the\n--input-topic and --output-topic flags.\n\nTo deploy Wasm files directly without a transform.yaml file:\n\n  rpk transform deploy --file transform.wasm --name myTransform \\\n    --input-topic my-topic-1 \\\n    --output-topic my-topic-2\n    --output-topic my-topic-3\n\nEnvironment variables can be specified for the transform using the --var flag, these\nare separated by an equals for example: --var=KEY=VALUE\n\nThe --var flag can be repeated to specify multiple variables like so:\n\n  rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ\n\nThe --from-offset flag can be used to specify where on the input topic the transform\nshould begin processing. Expressed as:\n\n  - @T - Begin reading records with committed timestamp >= T (UNIX time, ms from epoch)\n  - +N - Begin reading N records from the start of each input partition\n  - -N - Begin reading N records prior to the end of each input partition\n\nNote that the broker will only respect from-offset on the first deploy for a given\ntransform. Re-deploying the transform will cause processing to pick up at the last\ncommitted offset. Recall that this state is maintained until the transform is deleted.\n\nUsage:\n  rpk transform deploy [flags]\n\nFlags:\n      --compression string            Output batch compression type\n      --file string                   The WebAssembly module to deploy\n      --from-offset string            Process an input topic partition from a relative offset; check help text for more information\n  -h, --help                          Help for deploy\n  -i, --input-topic string            The input topic to apply the transform to\n      --name string                   The name of the transform\n  -o, --output-topic strings          The output topic to write the transform results to (repeatable)\n      --var environmentVariable       Specify an environment variable in the form of KEY=VALUE"
+              },
+              {
+                "match": "transform\\s+delete[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Delete a data transform\n\nUsage:\n  rpk transform delete [NAME] [flags]\n\nFlags:\n  -h, --help         Help for delete\n      --no-confirm   Disable confirmation prompt"
+              },
+              {
+                "match": "transform\\s+pause[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Pause a data transform.\n\nThis command suspends execution of the specified transform without removing\nit from the system. In this way, a transform may resume at a later time, with\neach new processor picking up processing from the last committed offset on the\ncorresponding input partition.\n\nSubsequent 'rpk transform list' operations will show transform processors as\n\"inactive\".\n\nTo resume a paused transform, use 'rpk transform resume'.\n\nUsage:\n  rpk transform pause [NAME] [flags]\n\nFlags:\n  -h, --help   Help for pause"
+              },
+              {
+                "match": "transform\\s+resume[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Resume a data transform.\n\nThis command resumes execution of the specified data transform, if it was\npreviously paused. Transform processors are restarted and resume processing\nfrom the last committed offset on the corresponding input partition.\n\nSubsequent 'rpk transform list' operations will show transform processors as\n\"running\".\n\nUsage:\n  rpk transform resume [NAME] [flags]\n\nFlags:\n  -h, --help   Help for resume"
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "List data transforms.\n\nThis command lists all data transforms in a cluster, as well as showing the\nstate of a individual transform processor, such as if it's errored or how many\nrecords are pending to be processed (lag).\n\nThere is a processor assigned to each partition on the input topic, and each\nprocessor is a separate entity that can make progress or fail independently.\n\nThe --detailed flag (-d) opts in to printing extra per-processor information.\n\nUsage:\n  rpk transform list [flags]\n\nAliases:\n  list, ls\n\nFlags:\n  -d, --detailed        Print per-partition information for data transforms\n      --format string   Output format: json,yaml,text,wide,help (default \"text\")\n  -h, --help            Help for list"
+              },
+              {
+                "match": "(transform|wasm)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Develop, deploy and manage Redpanda data transforms\n\nUsage:\n  rpk transform [command]\n\nAliases:\n  transform, wasm, transfrom\n\nAvailable Commands:\n  build       Build a transform\n  delete      Delete a data transform\n  deploy      Deploy a transform\n  init        Initialize a transform\n  list        List data transforms\n  logs        View logs for a transform\n  pause       Pause a data transform\n  resume      Resume a data transform\n\nUse \"rpk transform [command] --help\" for more information about a command."
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk [command]\n\nUse \"rpk [command] --help\" for more information about a command."
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+deploy(?![^|;&]*((?-i:-h)\\b|--help)))",
+                "output": "name: pii-masker\nlanguage: tinygo-no-goroutines\ninput-topic: customers-raw\noutput-topics:\n    - customers-masked\ntransform \"pii-masker\" deployed."
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+(list|ls)\\b[^|;&]*(json|yaml))",
+                "output": "name: pii-masker\nlanguage: tinygo-no-goroutines\ninput-topic: customers-raw\noutput-topics:\n    - customers-masked\n[{\"name\":\"pii-masker\",\"input_topic\":\"customers-raw\",\"output_topics\":[\"customers-masked\"],\"environment\":{\"MASK_FIELDS\":\"ssn,card_number,dob\"},\"running\":\"6 / 6\",\"lag\":0,\"compression\":\"zstd\"}]"
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+(list|ls)\\b)",
+                "output": "README.md\ngo.mod\ngo.sum\npii-masker.wasm\ntransform.go\ntransform.yaml\nname: pii-masker\nlanguage: tinygo-no-goroutines\ninput-topic: customers-raw\noutput-topics:\n    - customers-masked\nNAME        INPUT-TOPIC    OUTPUT-TOPIC      RUNNING  LAG\npii-masker  customers-raw  customers-masked  6 / 6    0"
+              },
+              {
+                "match": "(?=.*\\bls\\b)(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)",
+                "output": "README.md\ngo.mod\ngo.sum\npii-masker.wasm\ntransform.go\ntransform.yaml\nname: pii-masker\nlanguage: tinygo-no-goroutines\ninput-topic: customers-raw\noutput-topics:\n    - customers-masked\n"
+              },
+              {
+                "match": "(?=.*\\bls\\b)(?=.*transform\\s+(list|ls)\\b)",
+                "output": "README.md\ngo.mod\ngo.sum\npii-masker.wasm\ntransform.go\ntransform.yaml\nNAME        INPUT-TOPIC    OUTPUT-TOPIC      RUNNING  LAG\npii-masker  customers-raw  customers-masked  6 / 6    0"
+              },
+              {
+                "match": "transform\\s+build",
+                "output": "build successful"
+              },
+              {
+                "match": "transform\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^;&]*--no-confirm|(\\byes\\b|echo\\s+['\\\\\\\"]*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*transform\\s+delete",
+                "output": "Delete successful!"
+              },
+              {
+                "match": "transform\\s+delete",
+                "output": "? Confirm deletion of transform \"pii-masker\"? (y/N)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "transform\\s+deploy",
+                "output": "transform \"pii-masker\" deployed."
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*json",
+                "output": "[{\"name\":\"pii-masker\",\"input_topic\":\"customers-raw\",\"output_topics\":[\"customers-masked\"],\"environment\":{\"MASK_FIELDS\":\"ssn,card_number,dob\"},\"running\":\"6 / 6\",\"lag\":0,\"compression\":\"zstd\"}]"
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*yaml",
+                "output": "- name: pii-masker\n  input_topic: customers-raw\n  output_topics:\n    - customers-masked\n  environment:\n    MASK_FIELDS: ssn,card_number,dob\n  running: 6 / 6\n  lag: 0\n  compression: zstd"
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*(\\s-d\\b|--detailed)",
+                "output": "pii-masker, customers-raw → customers-masked\n   PARTITION  NODE  STATUS   LAG\n   0          0     running  0\n   1          1     running  0\n   2          2     running  0\n   3          0     running  0\n   4          1     running  0\n   5          2     running  0"
+              },
+              {
+                "match": "transform\\s+(list|ls)",
+                "output": "NAME        INPUT-TOPIC    OUTPUT-TOPIC      RUNNING  LAG\npii-masker  customers-raw  customers-masked  6 / 6    0"
+              },
+              {
+                "match": "transform\\s+logs",
+                "output": "masked 3 fields in record 0/88123\nmasked 3 fields in record 1/90211"
+              },
+              {
+                "match": "\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml",
+                "output": "name: pii-masker\nlanguage: tinygo-no-goroutines\ninput-topic: customers-raw\noutput-topics:\n    - customers-masked\n"
+              },
+              {
+                "match": "\\b(cat|head|less|more|sed)\\b[^|;&]*\\.go\\b",
+                "output": "package main\n\nimport (\n\t\"os\"\n\t\"strings\"\n\n\t\"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform\"\n)\n\nvar fields []string\n\nfunc main() {\n\tfields = strings.Split(os.Getenv(\"MASK_FIELDS\"), \",\")\n\ttransform.OnRecordWritten(mask)\n}\n\nfunc mask(e transform.WriteEvent, w transform.RecordWriter) error {\n\tr := e.Record()\n\tr.Value = maskJSON(r.Value, fields)\n\treturn w.Write(r)\n}\n"
+              },
+              {
+                "match": "\\bgrep\\b[^|;&]*(Getenv|MASK|env)",
+                "output": "transform.go:13:\tfields = strings.Split(os.Getenv(\"MASK_FIELDS\"), \",\")"
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "README.md\ngo.mod\ngo.sum\npii-masker.wasm\ntransform.go\ntransform.yaml"
+              },
+              {
+                "match": "\\bgit\\b[^|;&]*diff",
+                "output": "diff --git a/transform.go b/transform.go\n-\t\tout[k] = \"***\"\n+\t\tout[k] = strings.Repeat(\"*\", len(v))"
+              },
+              {
+                "match": "\\bgit\\b",
+                "output": "M transform.go"
+              },
+              {
+                "match": "topic\\s+consume",
+                "output": "{\"topic\":\"customers-masked\",\"value\":\"{\\\"id\\\":\\\"c-1042\\\",\\\"ssn\\\":\\\"***\\\",\\\"card_number\\\":\\\"***\\\",\\\"dob\\\":\\\"***\\\"}\",\"partition\":0,\"offset\":88123}"
+              },
+              {
+                "match": "transform\\s+pause",
+                "output": "Transform paused!"
+              },
+              {
+                "match": "transform\\s+resume",
+                "output": "Transform resumed!"
+              },
+              {
+                "match": "topic\\s+(describe|info)",
+                "output": "SUMMARY\n=======\nNAME        customers-raw\nPARTITIONS  6\nREPLICAS    3"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME              PARTITIONS  REPLICAS\ncustomers-masked  6           3\ncustomers-raw     6           3"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\bdate\\b[^|;&]*%s",
+                "output": "1762780800"
+              },
+              {
+                "match": "\\bdate\\b",
+                "output": "Mon Nov 10 13:20:00 UTC 2026"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER HEALTH OVERVIEW\n=======================\nHealthy:                          true\nUnhealthy reasons:                []\nNodes down:                       []"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*data_transforms_enabled",
+                "output": "true"
+              },
+              {
+                "match": "\\b(echo|printf|true|pwd)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "MASK_FIELDS['\\\\\\\"]*\\s*[=:]\\s*['\\\\\\\"]*ssn,card_number,dob"
+          },
+          {
+            "tool": "run_shell",
+            "args": "transform\\s+deploy(?![^|;&]*((?-i:-h)\\b|--help))"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stop-transform-temporarily",
+      "query": "The team that owns the consumers of topic payments-clean is migrating them over the next two hours and needs nothing new written to payments-clean until they say go. Stop our payments-cleaner transform for now. Every record that lands on payments-raw in the meantime still has to reach payments-clean afterwards. You can run commands with the run_shell tool.",
+      "why": "rpk transform pause stops a transform's processors and keeps the transform and its committed offsets, so rpk transform resume picks up where it stopped. rpk transform delete removes the transform and its committed offsets, and a later redeploy starts at the time of the deploy, so records produced in between are never transformed. Graded on the outcome: any run that stops the transform without deleting it passes.",
+      "origin": "behavioral",
+      "verified_against": [
+        "redpanda-data/redpanda v26.2.2 src/go/rpk/pkg/cli/transform/meta.go (pause and resume keep the last committed offset)",
+        "redpanda-data/redpanda v26.2.2 src/v/transform/api.cc (a deploy with no --from-offset starts at the deploy timestamp)"
+      ],
+      "tools": {
+        "mock": [
+          {
+            "name": "run_shell",
+            "description": "Run a shell command on the user's workstation, in the transform project's directory, and return its combined stdout and stderr. rpk is installed and its active profile points at the user's self-managed Redpanda cluster (admin API reachable). Commands run non-interactively, with no terminal attached.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "The shell command line to run, for example: rpk transform list"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "responses": [
+              {
+                "match": "rpk\\s+(transform|wasm)\\s+((?-i:-h)\\b|--help)",
+                "output": "Develop, deploy and manage Redpanda data transforms\n\nUsage:\n  rpk transform [command]\n\nAliases:\n  transform, wasm, transfrom\n\nAvailable Commands:\n  build       Build a transform\n  delete      Delete a data transform\n  deploy      Deploy a transform\n  init        Initialize a transform\n  list        List data transforms\n  logs        View logs for a transform\n  pause       Pause a data transform\n  resume      Resume a data transform\n\nUse \"rpk transform [command] --help\" for more information about a command."
+              },
+              {
+                "match": "transform\\s+deploy[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Deploy a transform.\n\nWhen run in the same directory as a transform.yaml, this reads the configuration\nfile, then looks for a .wasm file with the same name as your project. If the\ninput and output topics are specified in the configuration file, those are used.\nOtherwise, the topics can be specified on the command line using the\n--input-topic and --output-topic flags.\n\nTo deploy Wasm files directly without a transform.yaml file:\n\n  rpk transform deploy --file transform.wasm --name myTransform \\\n    --input-topic my-topic-1 \\\n    --output-topic my-topic-2\n    --output-topic my-topic-3\n\nEnvironment variables can be specified for the transform using the --var flag, these\nare separated by an equals for example: --var=KEY=VALUE\n\nThe --var flag can be repeated to specify multiple variables like so:\n\n  rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ\n\nThe --from-offset flag can be used to specify where on the input topic the transform\nshould begin processing. Expressed as:\n\n  - @T - Begin reading records with committed timestamp >= T (UNIX time, ms from epoch)\n  - +N - Begin reading N records from the start of each input partition\n  - -N - Begin reading N records prior to the end of each input partition\n\nNote that the broker will only respect from-offset on the first deploy for a given\ntransform. Re-deploying the transform will cause processing to pick up at the last\ncommitted offset. Recall that this state is maintained until the transform is deleted.\n\nUsage:\n  rpk transform deploy [flags]\n\nFlags:\n      --compression string            Output batch compression type\n      --file string                   The WebAssembly module to deploy\n      --from-offset string            Process an input topic partition from a relative offset; check help text for more information\n  -h, --help                          Help for deploy\n  -i, --input-topic string            The input topic to apply the transform to\n      --name string                   The name of the transform\n  -o, --output-topic strings          The output topic to write the transform results to (repeatable)\n      --var environmentVariable       Specify an environment variable in the form of KEY=VALUE"
+              },
+              {
+                "match": "transform\\s+delete[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Delete a data transform\n\nUsage:\n  rpk transform delete [NAME] [flags]\n\nFlags:\n  -h, --help         Help for delete\n      --no-confirm   Disable confirmation prompt"
+              },
+              {
+                "match": "transform\\s+pause[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Pause a data transform.\n\nThis command suspends execution of the specified transform without removing\nit from the system. In this way, a transform may resume at a later time, with\neach new processor picking up processing from the last committed offset on the\ncorresponding input partition.\n\nSubsequent 'rpk transform list' operations will show transform processors as\n\"inactive\".\n\nTo resume a paused transform, use 'rpk transform resume'.\n\nUsage:\n  rpk transform pause [NAME] [flags]\n\nFlags:\n  -h, --help   Help for pause"
+              },
+              {
+                "match": "transform\\s+resume[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Resume a data transform.\n\nThis command resumes execution of the specified data transform, if it was\npreviously paused. Transform processors are restarted and resume processing\nfrom the last committed offset on the corresponding input partition.\n\nSubsequent 'rpk transform list' operations will show transform processors as\n\"running\".\n\nUsage:\n  rpk transform resume [NAME] [flags]\n\nFlags:\n  -h, --help   Help for resume"
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "List data transforms.\n\nThis command lists all data transforms in a cluster, as well as showing the\nstate of a individual transform processor, such as if it's errored or how many\nrecords are pending to be processed (lag).\n\nThere is a processor assigned to each partition on the input topic, and each\nprocessor is a separate entity that can make progress or fail independently.\n\nThe --detailed flag (-d) opts in to printing extra per-processor information.\n\nUsage:\n  rpk transform list [flags]\n\nAliases:\n  list, ls\n\nFlags:\n  -d, --detailed        Print per-partition information for data transforms\n      --format string   Output format: json,yaml,text,wide,help (default \"text\")\n  -h, --help            Help for list"
+              },
+              {
+                "match": "(transform|wasm)[^|;&]*((?-i:-h)\\b|--help)",
+                "output": "Develop, deploy and manage Redpanda data transforms\n\nUsage:\n  rpk transform [command]\n\nAliases:\n  transform, wasm, transfrom\n\nAvailable Commands:\n  build       Build a transform\n  delete      Delete a data transform\n  deploy      Deploy a transform\n  init        Initialize a transform\n  list        List data transforms\n  logs        View logs for a transform\n  pause       Pause a data transform\n  resume      Resume a data transform\n\nUse \"rpk transform [command] --help\" for more information about a command."
+              },
+              {
+                "match": "((?-i:-h)\\b|--help)",
+                "output": "Usage:\n  rpk [command]\n\nUse \"rpk [command] --help\" for more information about a command."
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+deploy(?![^|;&]*((?-i:-h)\\b|--help)))",
+                "output": "name: payments-cleaner\nlanguage: rust\ninput-topic: payments-raw\noutput-topics:\n    - payments-clean\ntransform \"payments-cleaner\" deployed."
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+(list|ls)\\b[^|;&]*(json|yaml))",
+                "output": "name: payments-cleaner\nlanguage: rust\ninput-topic: payments-raw\noutput-topics:\n    - payments-clean\n[{\"name\":\"payments-cleaner\",\"input_topic\":\"payments-raw\",\"output_topics\":[\"payments-clean\"],\"environment\":{},\"running\":\"12 / 12\",\"lag\":37,\"compression\":\"none\"}]"
+              },
+              {
+                "match": "(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)(?=.*transform\\s+(list|ls)\\b)",
+                "output": "Cargo.lock\nCargo.toml\nREADME.md\npayments-cleaner.wasm\nsrc\ntransform.yaml\nname: payments-cleaner\nlanguage: rust\ninput-topic: payments-raw\noutput-topics:\n    - payments-clean\nNAME              INPUT-TOPIC   OUTPUT-TOPIC    RUNNING  LAG\npayments-cleaner  payments-raw  payments-clean  12 / 12  37"
+              },
+              {
+                "match": "(?=.*\\bls\\b)(?=.*\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml)",
+                "output": "Cargo.lock\nCargo.toml\nREADME.md\npayments-cleaner.wasm\nsrc\ntransform.yaml\nname: payments-cleaner\nlanguage: rust\ninput-topic: payments-raw\noutput-topics:\n    - payments-clean\n"
+              },
+              {
+                "match": "(?=.*\\bls\\b)(?=.*transform\\s+(list|ls)\\b)",
+                "output": "Cargo.lock\nCargo.toml\nREADME.md\npayments-cleaner.wasm\nsrc\ntransform.yaml\nNAME              INPUT-TOPIC   OUTPUT-TOPIC    RUNNING  LAG\npayments-cleaner  payments-raw  payments-clean  12 / 12  37"
+              },
+              {
+                "match": "\\b(cat|head|less|more|sed)\\b[^|;&]*transform\\.yaml",
+                "output": "name: payments-cleaner\nlanguage: rust\ninput-topic: payments-raw\noutput-topics:\n    - payments-clean\n"
+              },
+              {
+                "match": "\\bls\\b",
+                "output": "Cargo.lock\nCargo.toml\nREADME.md\npayments-cleaner.wasm\nsrc\ntransform.yaml"
+              },
+              {
+                "match": "transform\\s+pause",
+                "output": "Transform paused!"
+              },
+              {
+                "match": "transform\\s+resume",
+                "output": "Transform resumed!"
+              },
+              {
+                "match": "transform\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^;&]*--no-confirm|(\\byes\\b|echo\\s+['\\\\\\\"]*y|printf[^|;&]*\\by)[^;&]*\\|[^;&]*transform\\s+delete",
+                "output": "Delete successful!"
+              },
+              {
+                "match": "transform\\s+delete",
+                "output": "? Confirm deletion of transform \"payments-cleaner\"? (y/N)\nunable to confirm deletion: EOF"
+              },
+              {
+                "match": "transform\\s+deploy",
+                "output": "transform \"payments-cleaner\" deployed."
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*(json|yaml)",
+                "output": "[{\"name\":\"payments-cleaner\",\"input_topic\":\"payments-raw\",\"output_topics\":[\"payments-clean\"],\"environment\":{},\"running\":\"12 / 12\",\"lag\":37,\"compression\":\"none\"}]"
+              },
+              {
+                "match": "transform\\s+(list|ls)[^|;&]*(\\s-d\\b|--detailed)",
+                "output": "payments-cleaner, payments-raw → payments-clean\n   PARTITION  NODE  STATUS   LAG\n   0          0     running  3\n   1          1     running  4\n   2          2     running  2\n   ... (9 more partitions)"
+              },
+              {
+                "match": "transform\\s+(list|ls)",
+                "output": "NAME              INPUT-TOPIC   OUTPUT-TOPIC    RUNNING  LAG\npayments-cleaner  payments-raw  payments-clean  12 / 12  37"
+              },
+              {
+                "match": "transform\\s+logs",
+                "output": "dropped record with invalid currency code"
+              },
+              {
+                "match": "topic\\s+alter-config",
+                "output": "TOPIC           STATUS\npayments-clean  OK"
+              },
+              {
+                "match": "security\\s+acl",
+                "output": "PRINCIPAL  HOST  RESOURCE-TYPE  RESOURCE-NAME  OPERATION  PERMISSION  ERROR"
+              },
+              {
+                "match": "group\\s+(list|describe)",
+                "output": "GROUP                 STATE\nsettlement-consumers  Empty\nledger-sync           Empty"
+              },
+              {
+                "match": "transform\\s+pause",
+                "output": "Transform paused!"
+              },
+              {
+                "match": "transform\\s+resume",
+                "output": "Transform resumed!"
+              },
+              {
+                "match": "topic\\s+(describe|info)",
+                "output": "SUMMARY\n=======\nNAME        payments-raw\nPARTITIONS  12\nREPLICAS    3"
+              },
+              {
+                "match": "topic\\s+(list|ls)",
+                "output": "NAME            PARTITIONS  REPLICAS\npayments-clean  12          3\npayments-raw    12          3"
+              },
+              {
+                "match": "rpk\\s+(--)?version",
+                "output": "rpk version: v26.2.5\n\nRedpanda Cluster\n  node-0  v26.2.5\n  node-1  v26.2.5\n  node-2  v26.2.5"
+              },
+              {
+                "match": "\\bdate\\b[^|;&]*%s",
+                "output": "1762780800"
+              },
+              {
+                "match": "\\bdate\\b",
+                "output": "Mon Nov 10 13:20:00 UTC 2026"
+              },
+              {
+                "match": "cluster\\s+(info|metadata|health)",
+                "output": "CLUSTER HEALTH OVERVIEW\n=======================\nHealthy:                          true\nUnhealthy reasons:                []\nNodes down:                       []"
+              },
+              {
+                "match": "cluster\\s+config\\s+get[^|;&]*data_transforms_enabled",
+                "output": "true"
+              },
+              {
+                "match": "\\b(echo|printf|true|pwd)\\b",
+                "output": ""
+              }
+            ]
+          }
+        ],
+        "expected_calls": [
+          {
+            "tool": "run_shell",
+            "args": "transform\\s+pause[^|;&]*payments-cleaner"
+          }
+        ],
+        "forbidden_calls": [
+          {
+            "tool": "run_shell",
+            "args": "transform\\s+delete(?![^|;&]*((?-i:-h)\\b|--help))[^|;&]*payments-cleaner"
+          }
+        ]
+      }
+    }
+  ]
+}

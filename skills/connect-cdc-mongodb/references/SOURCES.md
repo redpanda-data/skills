@@ -30,7 +30,7 @@ they belong to other skills' domains and are cited here only as pairing context.
 
 | Skill file | redpanda-data/connect source paths | rp-connect-docs sources |
 |---|---|---|
-| `SKILL.md` | `internal/impl/mongodb/cdc/input.go` (config spec, `newMongoCDC`, `license.CheckRunningEnterprise`, checkpoint/snapshot/streaming logic, metadata keys), `internal/impl/mongodb/cdc/schema.go` (schema metadata, `normaliseDecimal128`), `internal/impl/mongodb/cdc/checkpoint_cache.go`, `internal/impl/mongodb/common.go` (connection/URL/auth/driver timeouts) | `modules/components/pages/inputs/mongodb_cdc.adoc` (auto-generated); `docs-data/overrides.json` (`mongodb_cdc` entry) |
+| `SKILL.md` | `internal/impl/mongodb/cdc/input.go` (config spec, `newMongoCDC`, `license.CheckRunningEnterprise`, checkpoint/snapshot/streaming logic, metadata keys), `internal/impl/mongodb/cdc/incremental_snapshot.go` (chunked read alongside streaming, `incSnapshotRun.request`), `internal/impl/mongodb/cdc/signalling.go` (`decodeMongoSignal`, `parseSnapshotCollections`, `handleSignal`), `internal/replication/signalling.go` (`LogSignalType`, `SnapshotSignalType`, `SnapshotSignal`), `internal/replication/incrementalsnapshot/coordinator.go` (chunk/window algorithm), `internal/impl/mongodb/cdc/schema.go` (schema metadata, `normaliseDecimal128`), `internal/impl/mongodb/cdc/checkpoint_cache.go`, `internal/impl/mongodb/common.go` (connection/URL/auth/driver timeouts) | `modules/components/pages/inputs/mongodb_cdc.adoc` (auto-generated); `docs-data/overrides.json` (`mongodb_cdc` entry) |
 | `references/config-reference.md` | `internal/impl/mongodb/cdc/input.go` (every field: `url`, `database`, `username`, `password`, `app_name`, `collections`, `checkpoint_*`, `read_*`, `stream_snapshot`, `snapshot_parallelism`, `snapshot_auto_bucket_sharding`, `document_mode`, `json_marshal_mode`, `auto_replay_nacks`; `$match` filter; driver timeouts), `internal/impl/mongodb/cdc/schema.go` (`normaliseDecimal128`, `schema.BigDecimal` contract) | `modules/components/pages/inputs/mongodb_cdc.adoc` (field list + defaults — **auto-generated, source of record**); `docs-data/overrides.json` |
 | `references/setup-mongodb.md` | `internal/impl/mongodb/cdc/input.go` (startup `{hello:1}` check, `lastWrite.majorityOpTime.ts` / `isdbgrid` / `getCurrentResumeToken`, version `< 4` error string, `splitVector` / `$bucketAuto` snapshot paths, error messages) | `modules/components/pages/inputs/mongodb_cdc.adoc` |
 | `references/pipeline-and-output.md` | `internal/impl/mongodb/cdc/input.go` (message body per `document_mode`, metadata keys `operation`/`collection`/`operation_time`/`schema`, resume/restart semantics, `ResumeAfter`), `internal/impl/mongodb/cdc/schema.go` (Decimal128 normalization) | `modules/components/pages/inputs/mongodb_cdc.adoc`; cache-resource and `redpanda`/`kafka_franz` output pages under `modules/components/pages/` (see TODO) |
@@ -44,6 +44,12 @@ they belong to other skills' domains and are cited here only as pairing context.
 
 ## TODO / re-verify
 
+- **`references/pipeline-and-output.md` and `references/config-reference.md` predate the v4.116.0
+  incremental snapshot mode.** `SKILL.md` now carries the modes, the signal contract and the
+  enforced constraints, and `pipeline-and-output.md`'s restart/resume prose still describes only
+  the up-front snapshot. Fold the incremental and signal paths into those two files on the next
+  pass, or leave them to the docs if this skill is converted to the thin format first.
+
 - **Skill cites a wrong docs path:** `config-reference.md` and `setup-mongodb.md` reference the generated page as `connect/docs/modules/components/pages/inputs/mongodb_cdc.adoc`. The published page actually lives in **`rp-connect-docs`** at `modules/components/pages/inputs/mongodb_cdc.adoc` (no `connect/docs/` prefix). The Go docstrings that feed generation are in `connect/internal/impl/mongodb/cdc/input.go`. Correct the skill's citation.
 - **Enterprise topic/cluster properties** (`iceberg_enabled`, `redpanda.iceberg.*`, `enable_schema_id_validation`, `redpanda.{key,value}.schema.id.validation`, `redpanda.{key,value}.subject.name.strategy`, `redpanda.remote.{read,write,delete}`, `retention.local.target.{ms,bytes}`) in `enterprise-integration.md` are **broker** properties, not Connect. Citation of record: `redpanda-data/docs` property partials (`topic-properties.adoc`, `cluster-properties.adoc`, `object-storage-properties.adoc`), upstream `redpanda-data/redpanda` `src/v/config/configuration.cc`. Not verified this session.
 - **Licensing / Schema ID Validation prose** (`licensing/overview.adoc`, `schema-reg/schema-id-validation.adoc`) live in `redpanda-data/docs`, not Connect — not verified this session.
@@ -52,6 +58,50 @@ they belong to other skills' domains and are cited here only as pairing context.
 - **Individual defaults/enums** in `config-reference.md` (e.g. `app_name: "benthos"`, `checkpoint_limit: 1000`, `read_max_wait: 1s`, `document_mode`/`json_marshal_mode` enums, `snapshot_parallelism >= 1` lint) not each line-verified against `cdc/input.go` this session.
 
 ## Sync log
+
+- **Verified against Connect v4.118.0 (2026-11-13 sync).** One new structural surface: `mongodb_cdc`
+  gained an incremental snapshot mode and a signal collection at **v4.116.0**, neither of which the
+  skill covered. Grounded at tag `v4.118.0` in `internal/impl/mongodb/cdc/input.go` (the field
+  constants `incremental_snapshot` with `enabled` / `chunk_size` / `checkpoint_cache_key` /
+  `retry_cooldown`, and `signal_collection_name`; their `Description` strings; and the startup
+  checks in the config parse), `internal/impl/mongodb/cdc/signalling.go` and
+  `internal/replication/signalling.go`.
+  - **Two mutually exclusive snapshot modes.** `stream_snapshot` and
+    `incremental_snapshot.enabled` are rejected together at startup — "are mutually exclusive
+    snapshot modes, only one can be enabled" — because both read the same documents. The
+    incremental mode reads collections in `_id`-ordered chunks alongside the stream with no up-front
+    phase, releasing each chunk once the stream has caught up with the moment it was read.
+  - **A `snapshot-execute` signal works in every snapshot mode**, `incremental_snapshot.enabled`
+    included or not; the field's own description says so, and `handleSignal` queues on the run that
+    "every connection with a signal collection has, whatever the snapshot mode". The payload accepts
+    `collections` **and** the shared `tables` key, merged by `parseSnapshotCollections`.
+  - **The four traps taken into the skill**, each from an enforced check or a log line:
+    `signal_collection_name` must not name a streamed collection ("its inserts are read as
+    signals"); signal inserts are also emitted as ordinary messages with `collection` metadata set
+    to the signal collection (stated in the field description); a signal naming a collection outside
+    `collections` is rejected and only logged at error while the stream continues
+    (`handleSignal`), and one already queued or being read is logged at info; and with neither
+    `enabled` nor a signal collection the stored progress is discarded (the "Discarding the
+    incremental snapshot progress stored under %s" log).
+  - **Two startup constraints**, both from the config parse: `incremental_snapshot.checkpoint_cache_key`
+    must differ from `checkpoint_key`, and `incremental_snapshot.chunk_size` must not exceed
+    `checkpoint_limit` ("a chunk is in flight as a whole").
+  - **Contrast with `postgres_cdc` taken from the field description verbatim in substance:** a new
+    `checkpoint_cache_key` does *not* cause a new read in `mongodb_cdc`; re-reading a collection
+    takes a signal.
+  - **`references/pipeline-and-output.md` Restart Behavior was drifted** by the same change — it
+    said no snapshot runs on restart "regardless of the `stream_snapshot` setting", which is still
+    true of the up-front snapshot but not of an incremental read (resumed from its own progress key)
+    or of a queued signal (checkpointed into the queue before the carrying transaction is acked).
+    Corrected in `SKILL.md`; see the TODO below for the reference file.
+  - **Deliberately deferred:** the field types, defaults and the full `incremental_snapshot` block
+    stay in the generated reference and `rpk connect create mongodb_cdc`. The skill documents the
+    modes, the signal contract and the enforced constraints only.
+  - **Also in the window, deliberately not documented:** the `v4.116.0` fix to snapshot-signal
+    behavior across all modes and for collections unknown to stored progress (`#5066`), and the
+    `v4.118.0` fix making the incremental snapshot wait for the majority snapshot to reach the
+    stream start (`#5132`). Both are corrections to the behavior the skill now describes, with no
+    separate config or decision surface.
 
 - **Verified against Connect v4.106.0 (2026-08-21 sync).** New sources for this release:
   - `internal/impl/mongodb/common.go` — `AWSIAMAuthField()` (the shared `aws` block spec: `enabled`, `region`, `session_duration`, `id`/`secret`/`token`, `role`/`role_external_id`, `roles[]`), plus the startup errors rejecting `username`/`password` and url-embedded credentials when `aws.enabled` is true, and the note that the processor and cache reject role/session credentials (no refresh path).

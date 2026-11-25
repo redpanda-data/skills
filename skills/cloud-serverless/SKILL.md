@@ -1,297 +1,61 @@
 ---
 name: cloud-serverless
 description: >-
-  Provisions and manages Redpanda Cloud Serverless clusters via the public Control Plane
-  API (api.redpanda.com): fully managed Kafka-compatible clusters in Redpanda's own
-  account reached through a per-cluster Data Plane API. Use when creating or deleting
-  Serverless clusters; authenticating with OAuth2 client credentials; picking a
-  ServerlessRegion; polling the create/delete Operation state machine; managing topics,
-  ACLs or secrets on the data-plane URL; or enabling Iceberg Topics, schema ID
-  validation or RBAC. For BYOC clusters, see `/redpanda:cloud-byoc`; for Dedicated
+  Provisions and manages Redpanda Cloud Serverless clusters through the Control Plane API
+  and each cluster's Data Plane API. Serverless clusters are fully managed and
+  Kafka-compatible, and run in Redpanda's own cloud account. Use when you create, update,
+  or delete a Serverless cluster, authenticate to the Cloud API with a service account, or
+  set up AWS PrivateLink for one. Also use it to add partitions or change topic configs
+  through the Data Plane API, or to manage ACLs, users, secrets, quotas, roles, and Redpanda
+  Connect pipelines there. For BYOC clusters, see `/redpanda:cloud-byoc`; for Dedicated
   clusters, see `/redpanda:cloud-dedicated`; for the rpk CLI equivalent, see
   `/redpanda:rpk-cloud`.
 ---
 
-# Redpanda Cloud API: Serverless Clusters
+# Redpanda Cloud Serverless
 
-Redpanda Cloud Serverless clusters are fully managed Kafka-compatible clusters
-provisioned through the public Control Plane API at `https://api.redpanda.com`.
-You authenticate once with OAuth2 client credentials, then create a
-`ResourceGroup`, pick a `ServerlessRegion`, and call `POST /v1/serverless/clusters`.
-The API returns an async `Operation`; when the Operation reaches
-`STATE_COMPLETED`, the cluster has reached `STATE_READY` and its
-`dataplane_api.url` is live for Kafka workloads and the Data Plane REST API.
-(`STATE_COMPLETED` is the Operation state; `STATE_READY` is the cluster state —
-they are distinct state machines.)
+A Serverless cluster is its own Control Plane API resource, separate from BYOC and Dedicated
+clusters. Create, update, and delete return a long-running operation; poll it until it
+completes. Each cluster reports its own Data Plane API URL, which serves topics, ACLs, users,
+secrets, quotas, and pipelines with the same bearer token.
 
-This skill does **not** cover BYOC (Bring Your Own Cloud) clusters — see the
-`cloud-byoc` skill for those. For the CLI equivalent, see the `rpk-cloud` skill.
+## How to work
 
-## Quickstart
+**Adding partitions: work out the number to add first.** The add-partitions request (PATCH)
+takes the number of partitions to add, not the new total. Read the topic's current count, then
+send the difference (or use the set-partitions request, PUT, with the total). Partitions can't
+be removed, so a wrong count is permanent.
 
-Copy-paste these commands. Replace `CLIENT_ID` and `CLIENT_SECRET` with the
-credentials from your Redpanda Cloud service account.
+**Change one topic config with PATCH, not PUT.** PUT on a topic's configurations replaces the
+whole set, and every config you leave out goes back to its default. On a compacted topic or one
+with custom retention, that can delete data. Use PATCH, or read the current configs and send
+them all with the change.
 
-```bash
-# ── 1. Get a bearer token ─────────────────────────────────────────────────────
-TOKEN=$(curl -s -X POST https://auth.prd.cloud.redpanda.com/oauth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials" \
-  -d "client_id=${CLIENT_ID}" \
-  -d "client_secret=${CLIENT_SECRET}" \
-  -d "audience=cloudv2-production.redpanda.cloud" \
-  | jq -r .access_token)
+**Set up PrivateLink as two resources, link first.** Create a Serverless private link that
+allows the user's AWS account, wait for its operation to complete, then update the cluster to
+enable private networking with that link's ID. Give the user the endpoint service name from
+the link's status for their VPC endpoint. Leave public access on unless the user asks to turn
+it off.
 
-# ── 2. List available serverless regions ──────────────────────────────────────
-curl -s -X GET "https://api.redpanda.com/v1/serverless/regions?cloud_provider=CLOUD_PROVIDER_AWS" \
-  -H "Authorization: Bearer ${TOKEN}" | jq .
+**When a cluster is at its pipeline limit, list drafts too.** Draft pipelines use slots but
+are left out of the pipeline list by default. List with drafts included before you tell the
+user what fills the limit. Don't delete or start a draft without asking.
 
-# ── 3. Create a resource group (billing/org container) ───────────────────────
-RG_ID=$(curl -s -X POST https://api.redpanda.com/v1/resource-groups \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"resource_group": {"name": "my-dev-group"}}' \
-  | jq -r .resource_group.id)
+## Use the docs for everything else
 
-# ── 4. Create a serverless cluster ────────────────────────────────────────────
-OP_ID=$(curl -s -X POST https://api.redpanda.com/v1/serverless/clusters \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"serverless_cluster\": {
-      \"name\": \"my-cluster\",
-      \"resource_group_id\": \"${RG_ID}\",
-      \"serverless_region\": \"us-east-1\"
-    }
-  }" | jq -r .operation.id)
+Look up request bodies, field names, endpoints, token settings, limits, error codes, and
+networking steps in the Redpanda docs, following `/redpanda:redpanda-docs`. Pass
+`platform: "cloud"` to `ask_redpanda_question` so self-managed answers are left out, and use
+`search_api_reference` and `get_api_reference_content` for Control Plane and Data Plane API
+endpoints and schemas. For a topic or cluster property, `get_config_property` with
+`platform: "cloud"` says whether it is supported or editable in Redpanda Cloud.
 
-# ── 5. Poll the operation until STATE_COMPLETED ───────────────────────────────
-watch -n 5 "curl -s https://api.redpanda.com/v1/operations/${OP_ID} \
-  -H 'Authorization: Bearer ${TOKEN}' | jq '{state: .operation.state}'"
+Start with:
 
-# ── 6. Get the cluster and its data-plane URL ─────────────────────────────────
-# Read the cluster ID directly from the completed operation (resource_id or
-# metadata.serverless_cluster_id) — more reliable than listing by name.
-OP_RESP=$(curl -s "https://api.redpanda.com/v1/operations/${OP_ID}" \
-  -H "Authorization: Bearer ${TOKEN}")
-CLUSTER_ID=$(echo "${OP_RESP}" | jq -r '.operation.resource_id')
+- https://docs.redpanda.com/cloud-data-platform/get-started/cluster-types/serverless/
+  (what Serverless offers, and its usage limits)
+- https://docs.redpanda.com/cloud-data-platform/networking/serverless/aws/privatelink-api/
+  (PrivateLink through the Cloud API)
 
-CLUSTER=$(curl -s "https://api.redpanda.com/v1/serverless/clusters/${CLUSTER_ID}" \
-  -H "Authorization: Bearer ${TOKEN}" | jq '.serverless_cluster')
-echo "${CLUSTER}" | jq '{id: .id, state: .state, dataplane_url: .dataplane_api.url}'
-
-DP_URL=$(echo "${CLUSTER}" | jq -r '.dataplane_api.url')
-
-# ── 7. Create a topic via the data-plane URL ──────────────────────────────────
-curl -s -X POST "${DP_URL}/v1/topics" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"topic": {"name": "events", "partition_count": 3, "replication_factor": 3}}'
-```
-
-## Authentication
-
-The Control Plane API and Data Plane API both use the same OAuth2 bearer token.
-See [Authentication Reference](references/auth.md) for full details.
-
-| Field | Value |
-|---|---|
-| Token endpoint | `https://auth.prd.cloud.redpanda.com/oauth/token` |
-| Audience | `cloudv2-production.redpanda.cloud` |
-| Grant type | `client_credentials` |
-| Control Plane base URL | `https://api.redpanda.com` |
-
-Credentials come from a **ServiceAccount** created in the Redpanda Cloud console
-or via `POST /v1/service-accounts`. The response includes a `client_id` and
-`client_secret` (the secret is only shown once on creation; save it securely).
-`GET /v1/service-accounts/{id}/credentials` returns the client ID only, so a
-lost secret must be rotated with
-`GET /v1/service-accounts/{id}/rotate-secret` — it cannot be read back.
-
-## Control Plane Resources
-
-### ResourceGroup
-
-A ResourceGroup is the billing and organizational container for clusters. It
-must exist before you can create a ServerlessCluster.
-
-```
-POST   /v1/resource-groups
-GET    /v1/resource-groups/{id}
-GET    /v1/resource-groups          # list with optional filter.name_contains
-PATCH  /v1/resource-groups/{resource_group.id}
-DELETE /v1/resource-groups/{id}
-```
-
-Name constraints: 3–253 alphanumeric characters and hyphens (`^[a-zA-Z0-9-]+$`).
-
-### ServerlessRegion
-
-Regions represent the cloud-provider geographic areas where Serverless clusters
-can be placed. List them before creating a cluster to confirm `placement.enabled`.
-
-```
-GET /v1/serverless/regions?cloud_provider=CLOUD_PROVIDER_AWS
-GET /v1/serverless/regions?cloud_provider=CLOUD_PROVIDER_GCP
-GET /v1/serverless/region?cloud_provider=CLOUD_PROVIDER_AWS&name=us-east-1
-```
-
-`cloud_provider` accepts `CLOUD_PROVIDER_AWS`, `CLOUD_PROVIDER_GCP`, or
-`CLOUD_PROVIDER_AZURE`. Use `filter.placement_enabled_only=true` to skip
-regions that cannot currently accept new clusters.
-
-### ServerlessCluster Lifecycle
-
-Full CRUD plus the Operation pattern:
-
-```
-POST   /v1/serverless/clusters           → 202 CreateServerlessClusterOperation
-GET    /v1/serverless/clusters/{id}      → ServerlessCluster
-GET    /v1/serverless/clusters           → ListServerlessClustersResponse (paginated)
-PATCH  /v1/serverless/clusters/{id}      → 202 UpdateServerlessClusterOperation
-DELETE /v1/serverless/clusters/{id}      → 202 DeleteServerlessClusterOperation
-GET    /v1/serverless/clusters/{id}/prometheus/credentials
-```
-
-**State machine** (from the proto):
-
-| State | Meaning |
-|---|---|
-| `STATE_PLACING` | Finding a cell with sufficient resources |
-| `STATE_CREATING` | Creating control-plane state |
-| `STATE_READY` | Running and accepting requests |
-| `STATE_SUSPENDED` | Running but blocking external requests |
-| `STATE_DELETING` | Removal in progress |
-| `STATE_FAILED` | Could not reach READY from PLACING or CREATING |
-
-**Create request fields**:
-
-| Field | Required | Notes |
-|---|---|---|
-| `name` | yes | 3–128 chars, `^[A-Za-z0-9-_:]+$` |
-| `resource_group_id` | yes | UUID of an existing ResourceGroup |
-| `serverless_region` | yes | Region name string, e.g. `"us-east-1"` |
-| `tags` | no | `map<string,string>`, max 50 pairs |
-| `networking_config` | no | Optional `public` / `private`, each `STATE_ENABLED` or `STATE_DISABLED`; omitted resolves as public enabled, private disabled |
-
-**Response fields on GET** (output-only):
-
-| Field | Notes |
-|---|---|
-| `id` | 20-char opaque ID |
-| `state` | One of the states above |
-| `kafka_api.seed_brokers[]` | Public bootstrap servers |
-| `kafka_api.private_seed_brokers[]` | Private bootstrap (when private networking enabled) |
-| `dataplane_api.url` | Base URL for the per-cluster Data Plane REST API |
-| `schema_registry.url` | Schema Registry public endpoint |
-| `console_url` | Redpanda Console web UI URL |
-| `prometheus.url` | Prometheus scrape endpoint |
-
-### Operations
-
-Create, Update, and Delete each return an `Operation` whose `type` is
-`TYPE_CREATE_SERVERLESS_CLUSTER`, `TYPE_UPDATE_SERVERLESS_CLUSTER`, or
-`TYPE_DELETE_SERVERLESS_CLUSTER` respectively, so you can filter operations by
-any of the three. Poll at `GET /v1/operations/{id}`.
-
-```
-GET /v1/operations/{id}
-GET /v1/operations               # list with filter.type_in / filter.state / filter.resource_id
-```
-
-Operation states: `STATE_IN_PROGRESS`, `STATE_COMPLETED`, `STATE_FAILED`.
-When `state == STATE_COMPLETED`, the `response` field contains the final
-resource. When `state == STATE_FAILED`, the `error` field contains a
-`google.rpc.Status`.
-
-### ServerlessPrivateLink (AWS PrivateLink)
-
-The `private_link_id` field on a cluster refers to a **ServerlessPrivateLink**
-resource, managed by its own control-plane service (**AWS only**). Create the
-private link first, then pass its 20-char `id` as `private_link_id` when you
-create a cluster with private networking enabled. Serverless on AWS went GA in
-Feb 2026 with PrivateLink support.
-
-```
-POST   /v1/serverless/private-links       → 202 Operation (TYPE_CREATE_SERVERLESS_PRIVATE_LINK)
-GET    /v1/serverless/private-links/{id}
-GET    /v1/serverless/private-links        # list (paginated, filterable)
-PATCH  /v1/serverless/private-links/{id}   → 202 Operation
-DELETE /v1/serverless/private-links/{id}   → 202 Operation
-```
-
-Required create fields: `name`, `resource_group_id`, `cloudprovider`
-(`CLOUD_PROVIDER_AWS` only, set together with `aws_config`),
-`aws_config.allowed_principals` (min 1 AWS principal ARN), and
-`serverless_region`. See
-[Control Plane: Serverless](references/control-plane-serverless.md#serverlessprivatelink)
-for the full field-level reference and the private-networking workflow.
-
-## Data Plane API
-
-Once your cluster is `STATE_READY`, use `dataplane_api.url` as the base URL.
-The same bearer token is valid. Base path is `/v1`. Always read the URL from
-the API response — do not construct it manually. The real DNS pattern (from
-the Control Plane API reference examples) is
-`https://<cluster-id>.any.<region>.mpx.prd.cloud.redpanda.com`.
-
-Available services:
-
-| Service | Endpoint prefix |
-|---|---|
-| Topic | `/v1/topics` |
-| ACL | `/v1/acls` |
-| User | `/v1/users` |
-| Secret | `/v1/secrets` |
-| Pipeline (Redpanda Connect) | `/v1/redpanda-connect/pipelines` |
-| Security (RBAC roles) | `/v1/roles` |
-| Quota | `/v1/quotas` |
-| KafkaConnect | `/v1/kafka-connect/clusters/{cluster_name}/connectors` |
-
-**Topic and partition ceilings.** A Serverless cluster has a maximum number of
-topics and a maximum number of partitions. Once it reaches either, requests to
-create topics or add partitions fail with `POLICY_VIOLATION` until topics are
-deleted or Redpanda Support raises the topic limit.
-
-See [Data Plane Reference](references/data-plane.md) for examples, where to read
-the current ceilings, and availability notes on Serverless clusters.
-
-## Enterprise Features on Serverless
-
-Redpanda Cloud is a managed deployment of **Redpanda Enterprise Edition** — the
-license is included, so there is no `rpk cluster license` step for tenants. The
-enterprise differentiators you configure on Serverless are exposed as **topic
-configuration keys** (via `${DP_URL}/v1/topics`) and **RBAC roles** (via
-`${DP_URL}/v1/roles`), not cluster/node config:
-
-| Feature (Enterprise) | How to set on Serverless | Key(s) |
-|---|---|---|
-| Iceberg Topics | Topic config | `redpanda.iceberg.mode` (`disabled`/`key_value`/`value_schema_id_prefix`/`value_schema_latest`), `redpanda.iceberg.target.lag.ms`, `redpanda.iceberg.partition.spec`, `redpanda.iceberg.invalid.record.action` (`drop`/`dlq_table`), `redpanda.iceberg.delete` |
-| Server-Side Schema ID Validation | Topic config | `redpanda.key.schema.id.validation`, `redpanda.value.schema.id.validation`, `redpanda.key.subject.name.strategy`, `redpanda.value.subject.name.strategy` (`TopicNameStrategy`/`RecordNameStrategy`/`TopicRecordNameStrategy`) |
-| Leadership Pinning | Topic config | `redpanda.leaders.preference` (inherits cluster `default_leaders_preference`) |
-| RBAC | Data Plane SecurityService | `${DP_URL}/v1/roles` |
-
-Cluster/node-level enterprise features (Tiered Storage internals, FIPS,
-Continuous Data Balancing thresholds, Audit Logging, Remote Read Replicas,
-Cloud Topics, Shadow Linking / cross-cluster DR, Whole Cluster Restore) are
-**managed by Redpanda** on Serverless and are not tenant-configurable — use a
-BYOC/Dedicated or self-managed cluster for those. See
-[Enterprise Features Reference](references/enterprise-features.md) for the full
-key tables, accepted values, defaults, mode semantics, and self-managed mappings.
-
-## Serverless vs BYOC
-
-| | Serverless | BYOC |
-|---|---|---|
-| Infra ownership | Redpanda manages everything | Customer's cloud account |
-| Network resources | Not required | Requires creating a `Network` resource |
-| Cluster type | Serverless (separate `ServerlessCluster` resource; no `Cluster.Type`) | BYOC (`Cluster.Type` = `TYPE_BYOC`) |
-| Provisioning agent | None | `rpk cloud byoc apply` runs Terraform |
-| Billing | Redpanda bills per-use | Customer pays cloud provider directly |
-
-## Reference Directory
-
-- [Authentication](references/auth.md): OAuth2 client-credentials flow, token endpoint, audience, Authorization header, service-account creation, and token refresh.
-- [Control Plane: Serverless](references/control-plane-serverless.md): ResourceGroup, ServerlessRegion, and ServerlessCluster field-level reference, the async Operation pattern, state machine, and list filtering.
-- [Data Plane](references/data-plane.md): Using the per-cluster Data Plane API URL, Topic/ACL/User/Secret/Pipeline endpoints with curl examples, and where to read the per-cluster topic and partition ceilings.
-- [Enterprise Features](references/enterprise-features.md): Enterprise differentiators configurable on Serverless — Iceberg Topics, Server-Side Schema ID Validation, Leadership Pinning, and RBAC — with every topic config key, accepted values, defaults, Iceberg mode semantics, license-requirement notes, and which cluster-level features are managed by Redpanda (not tenant-configurable).
+If the Docs MCP server refuses for quota and you can't fetch the page, tell the user to sign in
+through `/mcp` rather than answering from memory.

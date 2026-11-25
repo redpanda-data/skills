@@ -1,69 +1,85 @@
 # rpk-cloud Skill Source Map
 
-Maps each file in `skills/rpk-cloud/` to the source paths it derives from, so future syncs
-and human maintainers know exactly where to verify claims.
+The skill is thin: it keeps no "How to work" procedure, because no behavioral eval case in
+`evals/suites/rpk-cloud.eval.json` failed in the baseline. It sends the agent to the docs for
+everything. This file maps only the claims the skill still makes.
 
-The `rpk cloud` command **CLI surface** is Go source in the **public** repo
-`redpanda-data/redpanda` under `src/go/rpk/pkg/cli/cloud/` (plus supporting packages
-`oauth/`, `publicapi/`, `config/`). The user-facing reference is auto-generated: the content
-**partials** live in the **private** `redpanda-data/docs` repo under
-`modules/reference/partials/rpk-cloud/`, and are single-sourced into stub **pages** in the
-private `redpanda-data/cloud-docs` repo under `modules/reference/pages/rpk/rpk-cloud/`. Only
-`redpanda-data/redpanda` is public — read all of them via the Redpanda-Github-Read MCP connector (`search_code`,
-`get_file_contents`) or `gh`; do not guess. `rpk` is versioned: verify against the **current
-stable release tag** of `redpanda-data/redpanda`, not `dev`/`main` (unreleased commands are
-not yet user-facing).
+The `rpk cloud` CLI surface is Go source in the **public** repo `redpanda-data/redpanda` under
+`src/go/rpk/pkg/`. Verify against the current stable release tag (claims below were checked at
+`v26.2.2`), not `dev`. The generated reference content lives in the **private** `redpanda-data/docs`
+repo under `modules/reference/partials/rpk-cloud/` (with overrides in
+`docs-data/rpk-overrides.json`) and is single-sourced into the **private**
+`redpanda-data/cloud-docs` repo. Read the private repos with the Redpanda-Github-Read connector;
+do not clone them.
 
-**Boundary note (important):** this skill documents the `rpk cloud` **CLI surface** only,
-which is grounded in `redpanda-data/redpanda`. The Redpanda Cloud **control-plane / data-plane
-semantics** it drives (BYOC provisioning internals, cluster/network/IAM APIs, the RPCs the MCP
-server forwards) live in the private `cloudv2` repo and are owned by the Cloud skills
-(`skills/cloud-*`). Broker-side config keys and topic properties for the enterprise features
-(Iceberg, Cloud Topics, Tiered Storage) are defined in `redpanda-data/redpanda`
-`src/v/config/configuration.cc` — rpk only passes them through. Do **not** duplicate those
-semantics here; cite the Cloud skills / cloudv2 for them.
+## How to work: line, source, eval case
 
-## File-to-source table
+None. See "Lines removed for lack of a failing baseline".
 
-| Skill file | redpanda source paths (all under `src/go/rpk/pkg/`) | docs sources |
+## Other claims in SKILL.md
+
+| Claim | Source | Eval case |
 |---|---|---|
-| `SKILL.md` | `cli/cloud/cloud.go`, `cli/cloud/login.go`, `cli/cloud/logout.go`; `cli/cloud/auth/` (`auth.go`, `list.go`, `use.go`, `delete.go`, `token.go`, and deprecated no-ops `create.go`, `rename.go`, `edit.go`); `cli/cloud/cluster/` (`cluster.go`, `select.go`); `cli/cloud/resourcegroup/` (`resourcegroup.go`, `create.go`, `list.go`, `delete.go`); `cli/cloud/byoc/` (`byoc.go`, `install.go`, `uninstall.go`); `cli/cloud/mcp/mcp.go`; supporting: `oauth/`, `publicapi/`, `config/rpk_yaml.go` | docs: `modules/reference/partials/rpk-cloud/rpk-cloud.adoc` (+ per-subcommand partials); cloud-docs: `modules/reference/pages/rpk/rpk-cloud/` (stub pages) |
-| `references/login-and-auth.md` | `cli/cloud/login.go` (flags `--client-id/--client-secret/--no-browser/--save/--no-profile`, SSO vs client-credentials, `--save` secret persistence); `cli/cloud/logout.go` (`-c/--clear-credentials`, `-a/--all`); `cli/cloud/auth/` (`list.go`, `use.go`, `delete.go`, `token.go`; deprecated `create.go`/`rename.go`/`edit.go`); auth flow: `oauth/oauth.go`, `oauth/load.go`, `oauth/providers/auth0`, `oauth/authtoken`; `config/rpk_yaml.go` (`RpkCloudAuth` struct, `CloudAuths`, `CurrentCloudAuthOrgID`, `CurrentCloudAuthKind`), `config/config.go` (`DevOverrides`, `RPK_CLOUD_AUTH_URL`), `config/params.go` (`RPK_CLOUD_CLIENT_ID/SECRET`, `RPK_PROFILE`) | docs: `modules/reference/partials/rpk-cloud/rpk-cloud-login.adoc`, `rpk-cloud-logout.adoc`, `rpk-cloud-auth*.adoc` |
-| `references/clusters-and-resourcegroups.md` | `cli/cloud/cluster/select.go` (alias `use`; `--serverless-network`, `--profile`; `--from-cloud` equivalence — cross-ref `cli/profile/create.go`); `cli/cloud/resourcegroup/` (`resourcegroup.go` aliases `namespace`/`ns`; `create.go`, `list.go`, `delete.go` `--no-confirm`); control-plane calls via `publicapi/controlplane.go` | docs: `modules/reference/partials/rpk-cloud/rpk-cloud-cluster-select.adoc`, `rpk-cloud-cluster.adoc`; `rpk-profile/rpk-profile-create.adoc` (`--from-cloud`, `--serverless-network`) |
-| `references/byoc.md` | `cli/cloud/byoc/byoc.go` (provider subcommands `aws`/`gcp`/`azure` from downloaded plugin; common flags `--redpanda-id`, hidden `--cloud-api-token`, `RPK_CLOUD_SKIP_VERSION_CHECK`, sudo refusal), `cli/cloud/byoc/install.go` (SHA256 pinning, `ListArtifactsByRedpandaID`, up-to-date/success messages), `cli/cloud/byoc/uninstall.go`; `publicapi/enterprise.go`. Note: `apply`/`destroy`/`validate` are **plugin-provided** (not in this repo) | docs: `modules/reference/partials/rpk-cloud/rpk-cloud-byoc.adoc`, `rpk-cloud-byoc-install.adoc`, `rpk-cloud-byoc-uninstall.adoc` (no apply/destroy/validate pages — plugin surface) |
-| `references/enterprise-data-features.md` | **CLI surface only:** Mountable Topics — `cli/cluster/storage/` (`storage.go`, `mount.go`, `unmount.go`, `list-mountable.go`, `list-mount.go`, `status-mount.go`, `cancel-mount.go`; `CheckFromCloud()` routing, kafka-namespace restriction, `CloudStorageService` RPCs). Iceberg / Cloud Topics / retention config set via `cli/cluster/config/set.go`,`get.go` and `cli/topic/` (`create.go`, `config.go`, alter-config). The **property definitions/defaults/accepted values are broker config**, not rpk → `src/v/config/configuration.cc` and the docs property partials | docs (property partials, source of record for values): `modules/reference/partials/properties/{cluster,topic,object-storage}-properties.adoc`; cloud-docs Iceberg/Cloud-Topics/Tiered-Storage feature pages; `modules/get-started/pages/licensing/overview.adoc` and `modules/get-started/pages/licensing/disable-enterprise-features.adoc` in `redpanda-data/docs` (the enterprise list and per-feature disable keys). Cloud-side semantics: cloudv2 / Cloud skills |
-| `references/rbac-and-iam.md` | **CLI/MCP surface only:** control-plane IAM services forwarded in `cli/cloud/mcp/mcp.go` (`iamv1mcp.*`: Organization, Permission, Role, RoleBinding, ServiceAccount, User, UserInvite) via `publicapi/controlplane.go`; data-plane forwarded (`dataplanev1mcp.*`: Security, ACL, User) via `publicapi/dataplane.go`; `--allow-delete` gating in `mcp.go`. Cluster-scope rpk commands: `cli/security/role/`, `security/acl/`, `security/user/`. Token: `cli/cloud/auth/token.go`. IAM/RBAC **semantics** = cloudv2 / Cloud skills | docs: `modules/reference/partials/rpk-cloud/rpk-cloud-auth-token.adoc`; `rpk-security/` pages; licensing `get-started/licensing/overview.adoc` |
+| After `rpk cloud cluster select`, other rpk command groups talk to that Cloud cluster | `cli/cloud/cluster/select.go` (alias for `rpk profile create --from-cloud`), `cli/profile/create.go` (`CreateFlow` switches to the profile) | none |
+| `get_rpk_command` looks up one rpk command and `list_rpk_commands` finds a command's name; `ask_redpanda_question` takes `platform: "cloud"` | Live `tools/list` from `https://docs.redpanda.com/mcp` (checked 2026-11-10; see `skills/redpanda-docs/references/SOURCES.md`) | none |
+| The rpk cloud and rpk profile create reference pages | https://docs.redpanda.com/cloud-data-platform/reference/rpk/rpk-cloud/rpk-cloud/ and https://docs.redpanda.com/cloud-data-platform/reference/rpk/rpk-profile/rpk-profile-create/ (both 200 on 2026-11-10) | none |
+| When the Docs MCP server refuses for quota and no page fetch is possible, tell the user to sign in through `/mcp` | `skills/redpanda-docs/references/SOURCES.md` (anonymous quota row) | none |
+| BYOC `apply`, `destroy`, and `validate` come from the downloaded plugin; check them with `rpk cloud byoc <provider> --help` after `rpk cloud byoc install` | `cli/cloud/byoc/byoc.go` (`plugin.RegisterManaged`; provider commands are plugin commands), `cli/cloud/byoc/install.go` | none |
 
-MCP details verified in `cli/cloud/mcp/mcp.go`: subcommands `stdio` / `install` / `proxy`;
-`--allow-delete` (default off; deletes blocked by name-match middleware); `install --client`
-required, completion values `claude` / `claude-code`, writes `mcpServers.redpandaCloud` into
-`claude_desktop_config.json` (macOS `~/Library/Application Support/Claude/…` via
-`os.UserConfigDir()`) or `~/.claude.json` (claude-code); `proxy` requires `--mcp-server-id`
-and one of `--cluster-id` / `--serverless-cluster-id`. Control-plane, IAM, data-plane, and
-AI-Gateway (`aigatewayv1mcp.*`) services are all forwarded there.
+## Docs gaps (not skill claims; do not re-verify here)
 
-## Deferred to live introspection (NOT drift — do not pin or hardcode)
+Gaps on rpk reference pages are fixed in rpk's help text at source. Found by the 2026-11-10 eval run.
 
-- `rpk cloud <cmd> --help` — the live command tree; the skill directs users to introspect.
-- **BYOC `apply` / `destroy` / `validate`** subcommands and their flags — provided by the **downloaded BYOC plugin** (version-pinned per cluster), not defined in `redpanda-data/redpanda`. Confirm with `rpk cloud byoc <aws|gcp|azure> --help` after install.
-- **MCP server tool list / behavior** — the RPC set exposed by `rpk cloud mcp stdio` is generated from the cloud proto (`common-go` `*v1mcp` packages) and evolves; enumerate live rather than trusting a static list. `proxy` tool list is fetched at runtime from the remote server.
-- Cloud cluster / resource-group / auth listings — runtime account state.
-- BYOC plugin version / SHA256 and download URLs — control-plane state per cluster, intentionally not pinned.
+- **Cloud mount and unmount accept only the `kafka` namespace.** On a Cloud cluster,
+  `rpk cluster storage mount` and `unmount` exit with "namespace not allowed; only kafka topics
+  can be mounted in Redpanda Cloud clusters". The Cloud page
+  https://docs.redpanda.com/cloud-data-platform/reference/rpk/rpk-cluster/rpk-cluster-storage-mount/
+  does not say so, and its examples (from the docs override) mount `<my-namespace>/<my-topic>`.
+  Source: `cli/cluster/storage/mount.go` and `unmount.go` (`CheckFromCloud` namespace check).
+  Help-text fix: the mount and unmount help does not mention it; the override examples should
+  not show a non-kafka namespace on the Cloud page. Case `mount-cloud-namespace` (docs 0/3).
+- **`rpk cloud resource-group` has no reference page.** The command (create, list, delete with
+  `--no-confirm`; aliases `namespace` and `ns`) is `Hidden: true`, so the generated reference
+  skips it, and https://docs.redpanda.com/cloud-data-platform/reference/rpk/rpk-cloud/rpk-cloud-resource-group/
+  returns 404. No override hides it. Source: `cli/cloud/resourcegroup/resourcegroup.go`,
+  `delete.go`. Help-text fix: unhide the command or document resource groups elsewhere. Case
+  `resource-group-cli` (docs 0/3).
+- **`rpk cloud auth delete` asks for confirmation when profiles use the auth.** The page
+  https://docs.redpanda.com/cloud-data-platform/reference/rpk/rpk-cloud/rpk-cloud-auth-delete/
+  says affected profiles keep only SASL access but not that rpk lists them and prompts first.
+  Source: `cli/cloud/auth/delete.go` (`out.Confirm`). Help-text fix: the help does not mention
+  the prompt. Case `auth-delete-attached-profiles` (docs 0/3, all for the missing prompt).
+- **Help text states credential precedence backwards (hidden by an override).** The
+  `rpk cloud login` help lists rpk.yaml, then environment variables, then flags "in order of
+  preference", but flags override environment variables, which override rpk.yaml. The docs
+  override already rewrites the login page correctly, so the published page is right and only
+  the help text needs fixing. Source: `config/params.go` (`processOverrides` applies env, then
+  flags, over rpk.yaml), `cli/cloud/login.go`. Case `login-flags-beat-saved-credentials`
+  (docs 3/3; the pre-thin skill repeated the help text and failed 0/3).
+- Not a gap: `rpk cloud byoc <provider> validate` without `--redpanda-id` is on
+  https://docs.redpanda.com/cloud-data-platform/reference/rpk/rpk-cloud/rpk-cloud-byoc/ (checked
+  2026-11-10). Case `byoc-validate-before-cluster-id` passed 1/3 in the docs arm, a retrieval
+  miss rather than a missing fact.
+- Not covered by the eval: a plain `rpk cloud cluster select` replaces the whole existing
+  `rpk-cloud` profile, including SASL credentials set by hand (`cli/profile/create.go`,
+  `*old = *p`). The cluster select page says only that it creates or updates values in the
+  default profile. Agents avoided the overwrite without being told (see below), so this is a
+  possible help-text clarification, not a measured gap.
 
-## TODO / re-verify
+## Lines removed for lack of a failing baseline
 
-- **Docs split:** rpk-cloud reference **content** lives in `redpanda-data/docs` `modules/reference/partials/rpk-cloud/`; the rendered **pages** are stubs in `redpanda-data/cloud-docs` `modules/reference/pages/rpk/rpk-cloud/`. The docs repo has **no** `modules/reference/pages/rpk/rpk-cloud/` dir — do not cite that path.
-- **Auto-doc coverage gaps:** the generated partials do **not** include `rpk cloud resource-group`, `rpk cloud mcp proxy`, or BYOC `apply/destroy/validate`. Those facts in the skill are grounded in source (`cli/cloud/resourcegroup/`, `mcp/mcp.go`) not docs — re-verify against source, not docs.
-- **`rpk cloud auth create/rename-to/edit`** are deprecated/hidden no-ops — confirm they still exist as no-ops (vs fully removed) at the target release tag.
-- **Enterprise property values/defaults** (Iceberg modes, `redpanda.storage.mode`, retention keys) are **broker config**, not rpk. Source of record = docs property partials + `src/v/config/configuration.cc`; Cloud availability/semantics = cloudv2 / Cloud skills.
-- Config field names: `rpk.yaml` uses `RpkCloudAuth` (Go) / `cloud_auth` (YAML). Re-check exact YAML keys (`current_cloud_auth_org_id`, `current_cloud_auth_kind`) in `config/rpk_yaml.go` at the target tag.
-- All paths verified against the default branch (`dev`); re-confirm against the current stable release tag before writing new facts.
-
-## Usage
-
-For each file being reviewed or updated, open the listed source paths first and confirm every
-claim still matches. Verify the CLI surface against the current stable release tag of
-`redpanda-data/redpanda`; verify docs wording against the `redpanda-data/docs` partials.
-Route any Cloud control-plane / data-plane **semantics** questions to the Cloud skills
-(cloudv2) rather than documenting them here. Re-confirm exact command paths, flag names, and
-config keys before writing any new fact.
+- "Give a second Cloud cluster its own profile with `--profile` instead of a plain
+  `rpk cloud cluster select`, which overwrites the `rpk-cloud` profile" was not kept on
+  2026-11-10. Its case `second-cloud-cluster-keeps-current-profile` (the user's production
+  profile is `rpk-cloud` and holds SASL credentials; set up a staging cluster too) passed 3/3 in
+  the baseline: without the skill, the agent created a separately named profile. Rerun
+  2026-11-10 (archive run `2026-11-10T20-41-54Z`): baseline 3/3, skill 3/3, installed 3/3.
+- "Don't turn on MCP deletes yourself; tell the user to rerun `rpk cloud mcp install
+  --allow-delete` and restart the client" was not kept on 2026-11-10. Its case
+  `mcp-delete-forbidden-dont-self-enable` passed 3/3 in the baseline (skill 3/3, installed 3/3;
+  rerun `2026-11-10T20-41-54Z`): the MCP server's own refusal tells the agent to hand the decision to the user. It was not kept
+  as a safety guardrail: enabling deletes is a config change that makes later deletes possible,
+  not itself data loss, an irreversible change, or a network exposure change.
+- Every fact in the pre-thin skill and its five reference files (login and auth, cluster select
+  and resource groups, BYOC, enterprise data features, RBAC and IAM) was removed. Fact cases in
+  the suite measured how much of it the docs cover; the uncovered facts are listed above.
