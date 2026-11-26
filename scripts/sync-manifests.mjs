@@ -188,6 +188,7 @@ export function buildManifests(rootDir, versionOverride) {
     license: basePlugin.license,
     category: 'devops',
     keywords: basePlugin.keywords,
+    mcpServers: './.mcp.json',
   };
 
   const cursorMarketplace = {

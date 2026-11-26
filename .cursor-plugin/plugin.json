@@ -25,5 +25,6 @@
     "adp",
     "ai-gateway",
     "agentic"
-  ]
+  ],
+  "mcpServers": "./.mcp.json"
 }

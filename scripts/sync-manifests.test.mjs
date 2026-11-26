@@ -64,6 +64,8 @@ describe('manifest synchronization', () => {
       assert.equal(codexMarketplace.metadata.version, bumped.version);
       assert.equal(codexMarketplace.plugins[0].version, bumped.version);
       assert.equal(cursorPlugin.version, bumped.version);
+      assert.equal(cursorPlugin.mcpServers, './.mcp.json');
+      assert.equal(codexPlugin.mcpServers, './.mcp.json');
       assert.equal('keywords' in cursorMarketplace.plugins[0], false);
       assert.equal('category' in cursorMarketplace.plugins[0], false);
       assert.equal(geminiExtension.version, bumped.version);
